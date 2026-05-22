@@ -1,0 +1,33 @@
+[package]
+name              = "cave-home-hue-bridge-emu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-hue-bridge-emu — Hue Bridge emulator. CLEAN-ROOM Rust implementation written exclusively from the Philips Hue developer-portal CLIP API v1 + v2 public documentation. diyHue (GPL-3.0) source is NEVER consulted by design; the upstream is listed only as a reference for what a Hue-Bridge emulator does in concept. See ADR-010 + Charter §6.1."
+
+[package.metadata.cave-home]
+upstream    = "Philips Hue developer-portal Hue API v1+v2 public documentation"
+port-method = "clean-room"
+spec-source = "developers.meethue.com/develop/hue-api/ + developers.meethue.com/develop/hue-api-v2/"
+adr         = "ADR-010"
+gpl-quarantine = "diyhue/diyHue (GPL-3.0) — REFERENCE ONLY (concept); source NOT read"
+
+[dependencies]
+async-trait = "0.1"
+parking_lot = "0.12"
+rand        = "0.9"
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+thiserror   = "2"
+tokio       = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "io-util"] }
+tracing     = "0.1"
+uuid        = { version = "1", features = ["v4", "serde"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "io-util", "test-util"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,139 @@
+# cave-home UniFi ecosystem alerts (ADR-009)
+#
+# Charter v6 §8 — alerts are written in home-world vocabulary first
+# (`summary:`) so the Portal can render them to grandma without
+# translation. The matching technical `description:` field is what
+# the on-call engineer sees in Grafana / Alertmanager.
+#
+# Real Prometheus expressions land here once the observability M3
+# crate ships; the rule names + thresholds below are the contract.
+
+groups:
+  - name: cave-home-unifi-network
+    interval: 30s
+    rules:
+      - alert: UnifiNetworkControllerUnreachable
+        expr: |
+          # Phase 2 placeholder: up{job="cave-home-unifi-network-controller"} == 0
+          # for > 2m
+          vector(0)
+        for: 2m
+        labels:
+          severity: warning
+          pillar: unifi-network
+        annotations:
+          summary: "Wi-Fi yönlendiriciye ulaşılamıyor"
+          description: "cave-home-unifi-network: UniFi controller TCP probe failing for > 2m"
+      - alert: UnifiNetworkDeviceDisconnected
+        expr: |
+          # Phase 2: count by (mac) (unifi_device_state{state!="connected"}) > 0
+          # for > 5m
+          vector(0)
+        for: 5m
+        labels:
+          severity: warning
+          pillar: unifi-network
+        annotations:
+          summary: "Wi-Fi noktası veya switch çevrimdışı"
+          description: "cave-home-unifi-network: device.state != connected for > 5m"
+
+  - name: cave-home-unifi-protect
+    interval: 30s
+    rules:
+      - alert: UnifiProtectNvrUnreachable
+        expr: |
+          # Phase 2: up{job="cave-home-unifi-protect-nvr"} == 0 for > 2m
+          vector(0)
+        for: 2m
+        labels:
+          severity: warning
+          pillar: unifi-protect
+        annotations:
+          summary: "Kamera kayıt cihazına ulaşılamıyor"
+          description: "cave-home-unifi-protect: NVR REST endpoint failing > 2m"
+      - alert: UnifiProtectCameraOffline
+        expr: |
+          # Phase 2: protect_camera_state{state="offline"} > 0 for > 10m
+          vector(0)
+        for: 10m
+        labels:
+          severity: warning
+          pillar: unifi-protect
+        annotations:
+          summary: "Kamera çevrimdışı"
+          description: "cave-home-unifi-protect: camera.state == offline for > 10m"
+      - alert: UnifiProtectVersionTooOld
+        expr: |
+          # Phase 2: protect_nvr_version_meets_min == 0
+          vector(0)
+        for: 5m
+        labels:
+          severity: critical
+          pillar: unifi-protect
+        annotations:
+          summary: "Kamera sistemi güncellenmeli"
+          description: "cave-home-unifi-protect: NVR firmware below MIN_PROTECT_VERSION (6.0.0)"
+
+  - name: cave-home-unifi-access
+    interval: 30s
+    rules:
+      - alert: UnifiAccessHubUnreachable
+        expr: |
+          # Phase 2: up{job="cave-home-unifi-access-hub"} == 0 for > 2m
+          vector(0)
+        for: 2m
+        labels:
+          severity: critical
+          pillar: unifi-access
+        annotations:
+          summary: "Kapı sistemi yanıt vermiyor"
+          description: "cave-home-unifi-access: hub REST endpoint failing > 2m"
+      - alert: UnifiAccessEmergencyLockdown
+        expr: |
+          # Phase 2: unifi_access_emergency_lockdown_active == 1
+          vector(0)
+        for: 0s
+        labels:
+          severity: critical
+          pillar: unifi-access
+        annotations:
+          summary: "Acil durum kilitlemesi etkin"
+          description: "cave-home-unifi-access: EmergencyStatus.lockdown == true"
+      - alert: UnifiAccessEmergencyEvacuation
+        expr: |
+          # Phase 2: unifi_access_emergency_evacuation_active == 1
+          vector(0)
+        for: 0s
+        labels:
+          severity: critical
+          pillar: unifi-access
+        annotations:
+          summary: "Tahliye modu etkin — tüm kapılar açık"
+          description: "cave-home-unifi-access: EmergencyStatus.evacuation == true"
+
+  - name: cave-home-unifi-talk
+    interval: 60s
+    rules:
+      - alert: UnifiTalkHubUnreachable
+        expr: |
+          # Phase 2: up{job="cave-home-unifi-talk-hub"} == 0 for > 5m
+          vector(0)
+        for: 5m
+        labels:
+          severity: warning
+          pillar: unifi-talk
+        annotations:
+          summary: "İnterkom sistemine ulaşılamıyor"
+          description: "cave-home-unifi-talk: Talk hub REST endpoint failing > 5m"
+      - alert: UnifiTalkAllPhonesBusy
+        expr: |
+          # Phase 2: sum(unifi_talk_phone_is_busy) ==
+          #         count(unifi_talk_phone_is_busy) for > 5m
+          vector(0)
+        for: 5m
+        labels:
+          severity: info
+          pillar: unifi-talk
+        annotations:
+          summary: "Tüm interkomlar meşgul"
+          description: "cave-home-unifi-talk: every TalkPhone in the roster is_busy for > 5m"

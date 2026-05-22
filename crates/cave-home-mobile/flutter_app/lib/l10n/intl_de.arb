@@ -1,0 +1,13 @@
+{
+    "@@locale": "de",
+    "appTitle": "cave-home",
+    "welcome": "Willkommen zu Hause",
+    "username": "Benutzername",
+    "password": "Passwort",
+    "login": "Anmelden",
+    "biometric": "Fingerabdruck / Face ID",
+    "devices": "Geräte",
+    "automations": "Automatisierungen",
+    "scenes": "Szenen",
+    "settings": "Einstellungen"
+}

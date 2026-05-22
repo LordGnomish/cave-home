@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 cave-home contributors
+#
+# cave-home-mobile — Flutter companion app (ADR-006 (b) Flutter is the
+# recommended stack; cave-home Charter §3 mobile pillar).
+#
+# Use a recent stable Flutter SDK. README documents the version we
+# pinned during the Phase 1 MVP scaffold.
+
+name: cave_home_mobile
+description: cave-home mobile companion app — devices, automations, scenes, geofence, push.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # Routing
+  go_router: ^14.0.0
+
+  # State management — keep simple for the MVP.
+  provider: ^6.1.2
+
+  # Biometric login (Charter §9 privacy-first — local auth only by default).
+  local_auth: ^2.3.0
+
+  # Geofencing + location.
+  geolocator: ^13.0.1
+
+  # Local + push notifications. FCM/APNs traverse the cave-home back-end
+  # per Charter §9 — we do NOT register the device directly with FCM.
+  flutter_local_notifications: ^17.2.3
+
+  # JSON + small utils.
+  json_annotation: ^4.9.0
+
+  # Localization for TR + EN + DE (ADR-007 i18n mandate, M1).
+  intl: any
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  json_serializable: ^6.8.0
+  build_runner: ^2.4.13
+
+flutter:
+  uses-material-design: true
+  generate: true

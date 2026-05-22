@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# Standard Flutter / Dart ignore set.
+
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+.idea/
+.vscode/
+ios/Pods/
+android/.gradle/
+android/local.properties
+*.iml
+
+# Generated localisation
+lib/l10n/intl_*.arb.dart

@@ -1,0 +1,115 @@
+# cave-home-hue + cave-home-hue-bridge-emu alerts — Phase 1 MVP (ADR-010).
+#
+# Prometheus alert rules covering both the *integration* path (cave-home
+# talking to a physical Hue Bridge) and the *bridge-emu* path (cave-home
+# advertising itself as a Hue Bridge).
+#
+# Per ADR-007 grandma-friendly UX: alert summaries use the headline
+# vocabulary ("Hue Bridge'e ulaşılamıyor"); developer detail goes in the
+# `description` block.
+
+groups:
+  - name: cave_home_hue_integration
+    interval: 30s
+    rules:
+      - alert: CaveHomeHueBridgeUnreachable
+        expr: cave_home_hue_bridge_up == 0
+        for: 2m
+        labels:
+          severity: warning
+          area: hue
+          subsystem: integration
+        annotations:
+          summary: "Hue Bridge'e ulaşılamıyor"
+          description: "Bridge {{ $labels.bridge_id }} at host {{ $labels.host }} has been unreachable for 2 minutes. Check power + LAN connectivity to the bridge."
+
+      - alert: CaveHomeHueBridgeAuthFailed
+        expr: increase(cave_home_hue_unauthorized_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          area: hue
+          subsystem: integration
+        annotations:
+          summary: "Hue Bridge yetkilendirmesi başarısız"
+          description: "Bridge {{ $labels.bridge_id }} returned `unauthorized user` ({{ $value }} times in the last 5 minutes). The application key may have been revoked from the bridge — re-pair from the Portal."
+
+      - alert: CaveHomeHueEventStreamDown
+        expr: cave_home_hue_eventstream_connected == 0
+        for: 3m
+        labels:
+          severity: warning
+          area: hue
+          subsystem: integration
+        annotations:
+          summary: "Hue Bridge gerçek-zamanlı bağlantısı kopuk"
+          description: "Bridge {{ $labels.bridge_id }} v2 EventStream has been disconnected for 3 minutes. Light/scene state changes from the Hue app will not flow until reconnect."
+
+      - alert: CaveHomeHueLatencyHigh
+        expr: histogram_quantile(0.95, rate(cave_home_hue_request_duration_seconds_bucket[5m])) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          area: hue
+          subsystem: integration
+        annotations:
+          summary: "Hue Bridge yavaşlıyor"
+          description: "p95 request latency to bridge {{ $labels.bridge_id }} exceeds 1s. Either Wi-Fi/Zigbee is congested or the bridge is overloaded (BridgeBusy)."
+
+      - alert: CaveHomeHueBridgeBusyStorm
+        expr: increase(cave_home_hue_bridge_busy_total[10m]) > 20
+        for: 5m
+        labels:
+          severity: warning
+          area: hue
+          subsystem: integration
+        annotations:
+          summary: "Hue Bridge aşırı yüklendi"
+          description: "Bridge {{ $labels.bridge_id }} returned BridgeBusy (HTTP 503/429) {{ $value }} times in 10m. Back off the command rate."
+
+  - name: cave_home_hue_bridge_emu
+    interval: 30s
+    rules:
+      - alert: CaveHomeHueEmuPairingFloodAttempt
+        expr: increase(cave_home_hue_emu_pair_attempts_total[1m]) > 30
+        for: 1m
+        labels:
+          severity: warning
+          area: hue
+          subsystem: bridge-emu
+        annotations:
+          summary: "Hue Bridge eşleşme denemeleri çok yoğun"
+          description: "More than 30 pair attempts against the cave-home Hue Bridge emulator in the last minute. Possible scanning attacker. The link-button window is the only path to a successful pair; check audit logs in Portal → Developer view."
+
+      - alert: CaveHomeHueEmuPairingWindowOpenTooLong
+        expr: cave_home_hue_emu_link_button_open == 1
+        for: 2m
+        labels:
+          severity: warning
+          area: hue
+          subsystem: bridge-emu
+        annotations:
+          summary: "Hue Bridge eşleşme penceresi açık kaldı"
+          description: "The bridge-emu link-button window has been open for > 2 minutes. The published 30s contract is exceeded; investigate Portal Admin → Developer view."
+
+      - alert: CaveHomeHueEmuEventstreamSubscribersZero
+        expr: cave_home_hue_emu_on_air == 1 and cave_home_hue_emu_eventstream_subscribers == 0
+        for: 10m
+        labels:
+          severity: info
+          area: hue
+          subsystem: bridge-emu
+        annotations:
+          summary: "Hue Bridge yayında ama dinleyen yok"
+          description: "cave-home is advertising as a Hue Bridge but no client is subscribed to the v2 eventstream. The emulator may not be reachable from the LAN — check firewall + mDNS."
+
+      - alert: CaveHomeHueEmuDiscoveryQuiet
+        expr: rate(cave_home_hue_emu_ssdp_responses_total[10m]) == 0 and cave_home_hue_emu_on_air == 1
+        for: 15m
+        labels:
+          severity: info
+          area: hue
+          subsystem: bridge-emu
+        annotations:
+          summary: "Hue Bridge keşif yanıtı vermiyor"
+          description: "cave-home is advertised as on-air but answered no SSDP M-SEARCH probes in the last 10 minutes. UPnP multicast may be blocked at the switch."

@@ -1,0 +1,545 @@
+# cave-home-kubelet-rs — line-by-line port manifest.
+#
+# Honest scoping: pkg/kubelet is enormous (~65 kLOC across 30+ sub-packages).
+# Phase 1 only ports the syncPod-driving slice (PodWorker + Volume +
+# PLEG + Status + CRI client trait + supporting API types). Everything
+# else is enumerated under [[unmapped]] for Phase 1b or beyond.
+
+[crate]
+name             = "cave-home-kubelet-rs"
+upstream_repo    = "kubernetes/kubernetes"
+upstream_release = "v1.36.1"
+upstream_sha     = "756939600b9a7180fc2df6550a4585b638875e67"
+upstream_subpath = "pkg/kubelet"
+ported_at        = "2026-05-15"
+linux_min_kernel = "7.1"
+
+[ratios]
+# src LOC is ~2.5 kLOC against an upstream pkg/kubelet of ~65 kLOC =>
+# fill_ratio ≈ 0.039. This is honest: kubelet is the largest component in
+# the Kubernetes monorepo and Phase 1 is deliberately the syncPod core only.
+fill_ratio      = 0.04
+test_port_ratio = 0.02
+
+# ---- mapped (line-by-line port present in this crate) -----------------------
+
+[[mapped]]
+upstream = "pkg/kubelet/kubelet.go::syncPod"
+ours     = "src/kubelet.rs::Kubelet::sync_pod"
+
+[[mapped]]
+upstream = "pkg/kubelet/kubelet_pods.go::generateAPIPodStatus"
+ours     = "src/kubelet.rs::Kubelet::compose_status"
+
+[[mapped]]
+upstream = "pkg/kubelet/pod_workers.go::podWorker"
+ours     = "src/podworker/worker.rs::PodWorker"
+
+[[mapped]]
+upstream = "pkg/kubelet/pod_workers.go::WorkType"
+ours     = "src/podworker/types.rs::WorkType"
+
+[[mapped]]
+upstream = "pkg/kubelet/kuberuntime/kuberuntime_manager.go::computePodActions"
+ours     = "src/podworker/worker.rs::compute_container_action"
+
+[[mapped]]
+upstream = "pkg/kubelet/kuberuntime/kuberuntime_sandbox.go::createPodSandbox"
+ours     = "src/podworker/worker.rs::PodWorker::ensure_sandbox"
+
+[[mapped]]
+upstream = "pkg/kubelet/pleg/generic.go::Relist"
+ours     = "src/pleg/generic.rs::GenericPleg::relist"
+
+[[mapped]]
+upstream = "pkg/kubelet/pleg/generic.go::podRecord"
+ours     = "src/pleg/pod_record.rs::PodRecord"
+
+[[mapped]]
+upstream = "pkg/kubelet/pleg/pleg.go::PodLifecycleEvent"
+ours     = "src/pleg/types.rs::PodLifecycleEvent"
+
+[[mapped]]
+upstream = "pkg/kubelet/pleg/pleg.go::PodLifecycleEventType"
+ours     = "src/pleg/types.rs::PodLifecycleEventType"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/utils/clock/clock.go::Clock"
+ours     = "src/pleg/clock.rs::Clock"
+
+[[mapped]]
+upstream = "pkg/kubelet/volumemanager/cache/desired_state_of_world.go"
+ours     = "src/volume/desired.rs::DesiredStateOfWorld"
+
+[[mapped]]
+upstream = "pkg/kubelet/volumemanager/cache/actual_state_of_world.go"
+ours     = "src/volume/actual.rs::ActualStateOfWorld"
+
+[[mapped]]
+upstream = "pkg/kubelet/volumemanager/reconciler/reconciler.go::reconcile"
+ours     = "src/volume/reconciler.rs::Reconciler::reconcile_once"
+
+[[mapped]]
+upstream = "pkg/volume/plugins.go::VolumePlugin"
+ours     = "src/volume/plugin.rs::VolumePlugin"
+
+[[mapped]]
+upstream = "pkg/volume/emptydir/empty_dir.go::SetUp"
+ours     = "src/volume/emptydir.rs::EmptyDirPlugin::set_up"
+
+[[mapped]]
+upstream = "pkg/volume/emptydir/empty_dir.go::TearDown"
+ours     = "src/volume/emptydir.rs::EmptyDirPlugin::tear_down"
+
+[[mapped]]
+upstream = "pkg/volume/hostpath/host_path.go::checkType"
+ours     = "src/volume/hostpath.rs::check_type"
+
+[[mapped]]
+upstream = "pkg/volume/hostpath/host_path.go::SetUp"
+ours     = "src/volume/hostpath.rs::HostPathPlugin::set_up"
+
+[[mapped]]
+upstream = "pkg/kubelet/status/status_manager.go::SetPodStatus"
+ours     = "src/status/manager.rs::PodStatusManager::set_pod_status"
+
+[[mapped]]
+upstream = "pkg/kubelet/status/status_manager.go::syncBatch"
+ours     = "src/status/manager.rs::PodStatusManager::sync_batch"
+
+[[mapped]]
+upstream = "pkg/kubelet/status/status_manager.go::deletePodStatus"
+ours     = "src/status/manager.rs::PodStatusManager::forget_pod"
+
+[[mapped]]
+upstream = "k8s.io/cri-api/pkg/apis/runtime/v1/api.proto::RuntimeService"
+ours     = "src/cri/client.rs::CriClient"
+
+[[mapped]]
+upstream = "k8s.io/cri-api/pkg/apis/runtime/v1/api.proto::PodSandboxConfig"
+ours     = "src/cri/types.rs::PodSandboxConfig"
+
+[[mapped]]
+upstream = "k8s.io/cri-api/pkg/apis/runtime/v1/api.proto::ContainerConfig"
+ours     = "src/cri/types.rs::ContainerConfig"
+
+[[mapped]]
+upstream = "k8s.io/cri-api/pkg/apis/runtime/v1/api.proto::ContainerStatus"
+ours     = "src/cri/types.rs::ContainerStatus"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::Pod"
+ours     = "src/api/mod.rs::Pod"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::PodSpec"
+ours     = "src/api/mod.rs::PodSpec"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::PodStatus"
+ours     = "src/api/mod.rs::PodStatus"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::Volume"
+ours     = "src/api/mod.rs::Volume"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::HostPathVolumeSource"
+ours     = "src/api/mod.rs::HostPathVolumeSource"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::EmptyDirVolumeSource"
+ours     = "src/api/mod.rs::EmptyDirVolumeSource"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::ContainerStatus"
+ours     = "src/api/mod.rs::ContainerStatus"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::PodPhase"
+ours     = "src/api/mod.rs::PodPhase"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::RestartPolicy"
+ours     = "src/api/mod.rs::RestartPolicy"
+
+# ---- unmapped (NOT in this crate; tagged for follow-up) ---------------------
+
+[[unmapped]]
+area     = "pkg/kubelet/eviction"
+priority = "phase-1b"
+note     = "Memory/disk pressure eviction manager; needs cadvisor + summary API."
+
+[[unmapped]]
+area     = "pkg/kubelet/cri/remote"
+priority = "phase-1b"
+note     = "Real CRI gRPC client wiring is a workspace-level integration concern; Phase 1 ships the trait + MockCriClient only."
+
+[[unmapped]]
+area     = "k8s.io/client-go (apiserver client)"
+priority = "phase-1b"
+note     = "kubeconfig / mTLS / watch streams; status manager talks to MockStatusSink in Phase 1."
+
+[[unmapped]]
+area     = "pkg/volume/configmap"
+priority = "phase-1b"
+note     = "ConfigMap volume plugin — needs apiserver client first."
+
+[[unmapped]]
+area     = "pkg/volume/secret"
+priority = "phase-1b"
+note     = "Secret volume plugin — needs apiserver client first."
+
+[[unmapped]]
+area     = "pkg/volume/projected"
+priority = "phase-1b"
+note     = "Projected volume plugin (combines downwardAPI + serviceAccountToken)."
+
+[[unmapped]]
+area     = "pkg/volume/csi"
+priority = "phase-1b"
+note     = "CSI volume plugin — needs CSI gRPC client + plugin registration socket."
+
+[[unmapped]]
+area     = "pkg/volume/persistentvolumeclaim"
+priority = "phase-1b"
+note     = "PVC volume — needs apiserver-backed PV/PVC binding flow."
+
+[[unmapped]]
+area     = "pkg/kubelet/dockershim & legacy runtimes"
+priority = "permanent"
+note     = "Removed upstream in v1.24; cave-home is CRI-only per ADR-004."
+
+[[unmapped]]
+area     = "pkg/kubelet/network / cni"
+priority = "phase-1b"
+note     = "CNI plugin invocation lives in cave-home-cni-flannel; kubelet only supplies pod sandbox config in Phase 1."
+
+[[unmapped]]
+area     = "pkg/kubelet/cm (cgroup manager)"
+priority = "phase-1b"
+note     = "cgroup v2 manager + per-pod cgroup creation; Linux 7.1 only (cgroup v1 is permanently out per ADR-003)."
+
+[[unmapped]]
+area     = "pkg/kubelet/cm/cpumanager"
+priority = "phase-1b"
+note     = "Static CPU pinning for guaranteed-class pods."
+
+[[unmapped]]
+area     = "pkg/kubelet/cm/memorymanager"
+priority = "phase-1b"
+note     = "Static memory reservations for guaranteed-class pods."
+
+[[unmapped]]
+area     = "pkg/kubelet/cm/devicemanager"
+priority = "phase-1b"
+note     = "Device plugin gRPC server + allocation."
+
+[[unmapped]]
+area     = "pkg/kubelet/cm/dra"
+priority = "phase-1b"
+note     = "Dynamic Resource Allocation (DRA) — beta in v1.32+."
+
+[[unmapped]]
+area     = "pkg/kubelet/cm/topologymanager"
+priority = "phase-1b"
+note     = "NUMA-aware admission for guaranteed-class pods."
+
+[[unmapped]]
+area     = "pkg/kubelet/prober"
+priority = "phase-1b"
+note     = "liveness / readiness / startup probes (HTTP/TCP/Exec/gRPC)."
+
+[[unmapped]]
+area     = "pkg/kubelet/images (ImageGCManager)"
+priority = "phase-1b"
+note     = "Disk-pressure-driven image GC."
+
+[[unmapped]]
+area     = "pkg/kubelet/container/container_gc.go"
+priority = "phase-1b"
+note     = "Dead-container reaper."
+
+[[unmapped]]
+area     = "pkg/kubelet/server (HTTP /healthz /containerLogs /exec /attach /portForward)"
+priority = "phase-1b"
+note     = "kubelet read-only HTTP/HTTPS surface."
+
+[[unmapped]]
+area     = "pkg/kubelet/cri/streaming"
+priority = "phase-1b"
+note     = "Streaming exec/attach/portforward server."
+
+[[unmapped]]
+area     = "pkg/kubelet/server/stats (/stats/summary)"
+priority = "phase-1b"
+note     = "cadvisor-backed stats summary API."
+
+[[unmapped]]
+area     = "pkg/kubelet/cadvisor"
+priority = "phase-1b"
+note     = "cadvisor wrapper for container metrics."
+
+[[unmapped]]
+area     = "pkg/kubelet/runtimeclass"
+priority = "phase-1b"
+note     = "RuntimeClass-aware scheduling hook."
+
+[[unmapped]]
+area     = "pkg/kubelet/preemption"
+priority = "phase-1b"
+note     = "Critical-pod preemption when admission fails."
+
+[[unmapped]]
+area     = "pkg/kubelet/lifecycle"
+priority = "phase-1b"
+note     = "PreStop / PostStart lifecycle hooks (HTTP, exec, sleep)."
+
+[[unmapped]]
+area     = "pkg/kubelet/checkpoint"
+priority = "phase-1b"
+note     = "Container checkpoint/restore (CRIU)."
+
+[[unmapped]]
+area     = "pkg/kubelet/userns"
+priority = "phase-1b"
+note     = "User-namespace remapping for unprivileged pods."
+
+[[unmapped]]
+area     = "pkg/kubelet/oom"
+priority = "phase-1b"
+note     = "OOM-score adjustment for kubelet + containers."
+
+[[unmapped]]
+area     = "pkg/kubelet/sysctl"
+priority = "phase-1b"
+note     = "Allowed sysctl admission."
+
+[[unmapped]]
+area     = "pkg/kubelet/qos"
+priority = "phase-1b"
+note     = "QoS class assignment (Guaranteed / Burstable / BestEffort)."
+
+[[unmapped]]
+area     = "pkg/kubelet/secret + configmap managers"
+priority = "phase-1b"
+note     = "Watch-cached managers used by the projected volume plugin."
+
+[[unmapped]]
+area     = "pkg/kubelet/nodestatus + node lease"
+priority = "phase-1b"
+note     = "kubelet -> apiserver node heartbeat + Node status patch loop."
+
+[[unmapped]]
+area     = "Windows kubelet (kubelet_windows.go, *_windows.go)"
+priority = "permanent"
+note     = "Linux 7.1+ only per Charter §3."
+
+[[unmapped]]
+area     = "cgroup v1 paths"
+priority = "permanent"
+note     = "Linux 7.1+ only; legacy linux out of scope per Charter §3."
+
+[[unmapped]]
+area     = "pre-Linux 5.0 kernel fallbacks"
+priority = "permanent"
+note     = "Charter §3 mandates Linux 7.1+ baseline."
+
+[[unmapped]]
+area     = "pkg/kubelet/kuberuntime/legacy_logs.go"
+priority = "permanent"
+note     = "dockershim-era log file format."
+
+# ---- upstream_test (Go tests we conceptually re-port) -----------------------
+
+[[upstream_test]]
+file = "pkg/kubelet/pod_workers_test.go::TestUpdatePod"
+ours = "tests/podworker_test.rs::sync_creates_sandbox_and_starts_containers"
+
+[[upstream_test]]
+file = "pkg/kubelet/pod_workers_test.go::TestUpdatePodForRuntimePod"
+ours = "tests/podworker_test.rs::second_sync_is_a_no_op_when_already_in_desired_state"
+
+[[upstream_test]]
+file = "pkg/kubelet/pod_workers_test.go::TestSyncKnownPods"
+ours = "tests/podworker_test.rs::sync_creates_multiple_containers"
+
+[[upstream_test]]
+file = "pkg/kubelet/pod_workers_test.go::TestPodSyncIfTerminationGracePeriodChanged"
+ours = "tests/podworker_test.rs::sync_kills_container_no_longer_in_spec"
+
+[[upstream_test]]
+file = "pkg/kubelet/pod_workers_test.go::TestPodWorkerHandlesPodsExternalUpdate"
+ours = "tests/podworker_test.rs::sync_after_external_sandbox_loss_recreates_sandbox"
+
+[[upstream_test]]
+file = "pkg/kubelet/pod_workers_test.go::TestSyncPodTerminating"
+ours = "tests/podworker_test.rs::terminating_stops_all_containers"
+
+[[upstream_test]]
+file = "pkg/kubelet/pod_workers_test.go::TestSyncPodTerminated"
+ours = "tests/podworker_test.rs::terminated_removes_containers_and_sandbox"
+
+[[upstream_test]]
+file = "pkg/kubelet/pod_workers_test.go::TestComputePodActionsRestartPolicy"
+ours = "tests/podworker_test.rs::sync_restarts_exited_container_with_restart_always"
+
+[[upstream_test]]
+file = "pkg/kubelet/pod_workers_test.go::TestComputePodActionsContainersRemoved"
+ours = "tests/podworker_test.rs::sync_does_not_restart_with_never_policy"
+
+[[upstream_test]]
+file = "pkg/kubelet/pod_workers_test.go::TestComputePodActionsContainerLifecycle"
+ours = "tests/podworker_test.rs::sync_adds_container_when_spec_grows"
+
+[[upstream_test]]
+file = "pkg/kubelet/pod_workers_test.go::TestKillPodSandbox"
+ours = "tests/podworker_test.rs::syncing_pod_with_no_containers_creates_only_sandbox"
+
+[[upstream_test]]
+file = "pkg/kubelet/pod_workers_test.go::TestSyncKnownPodsWithRequeueDelay"
+ours = "tests/podworker_test.rs::syncing_a_terminated_pod_is_idempotent"
+
+[[upstream_test]]
+file = "pkg/kubelet/pod_workers_test.go::TestComputePodActionsImageChanged"
+ours = "tests/podworker_test.rs::sync_skips_containers_that_changed_image"
+
+[[upstream_test]]
+file = "pkg/kubelet/pleg/generic_test.go::TestRelisting"
+ours = "tests/pleg_test.rs::first_relist_emits_started_for_each_running_container"
+
+[[upstream_test]]
+file = "pkg/kubelet/pleg/generic_test.go::TestRelistingForRunningContainer"
+ours = "tests/pleg_test.rs::relist_no_changes_emits_zero_events"
+
+[[upstream_test]]
+file = "pkg/kubelet/pleg/generic_test.go::TestRecordContainerEvent"
+ours = "tests/pleg_test.rs::relist_emits_died_when_container_exits"
+
+[[upstream_test]]
+file = "pkg/kubelet/pleg/generic_test.go::TestUpdateRunningPod"
+ours = "tests/pleg_test.rs::relist_emits_removed_when_container_disappears"
+
+[[upstream_test]]
+file = "pkg/kubelet/pleg/generic_test.go::TestRelistWithReinspection"
+ours = "tests/pleg_test.rs::relist_handles_two_pods_independently"
+
+[[upstream_test]]
+file = "pkg/kubelet/pleg/generic_test.go::TestEventChannelFull"
+ours = "tests/pleg_test.rs::pleg_supports_multiple_subscribers"
+
+[[upstream_test]]
+file = "pkg/kubelet/pleg/generic_test.go::TestSetPodRecord"
+ours = "tests/pleg_test.rs::relist_emits_pod_sync_when_sandbox_appears"
+
+[[upstream_test]]
+file = "pkg/kubelet/pleg/generic_test.go::TestRelistWithCachedPodRecord"
+ours = "tests/pleg_test.rs::relist_emits_pod_sync_when_sandbox_disappears"
+
+[[upstream_test]]
+file = "staging/src/k8s.io/utils/clock/clock_test.go"
+ours = "tests/pleg_test.rs::mock_clock_advance_increments_now"
+
+[[upstream_test]]
+file = "pkg/volume/emptydir/empty_dir_test.go::TestCanSupport"
+ours = "tests/volume_emptydir_test.rs::can_support_empty_dir_only"
+
+[[upstream_test]]
+file = "pkg/volume/emptydir/empty_dir_test.go::TestPlugin"
+ours = "tests/volume_emptydir_test.rs::name_is_kubernetes_io_empty_dir"
+
+[[upstream_test]]
+file = "pkg/volume/emptydir/empty_dir_test.go::TestSetUp"
+ours = "tests/volume_emptydir_test.rs::set_up_creates_directory"
+
+[[upstream_test]]
+file = "pkg/volume/emptydir/empty_dir_test.go::TestTearDown"
+ours = "tests/volume_emptydir_test.rs::tear_down_removes_the_directory"
+
+[[upstream_test]]
+file = "pkg/volume/emptydir/empty_dir_test.go::TestPluginEmptyRootContext"
+ours = "tests/volume_emptydir_test.rs::host_path_layout_matches_kubelet_default"
+
+[[upstream_test]]
+file = "pkg/volume/hostpath/host_path_test.go::TestCanSupport"
+ours = "tests/volume_hostpath_test.rs::can_support_host_path_only"
+
+[[upstream_test]]
+file = "pkg/volume/hostpath/host_path_test.go::TestPlugin"
+ours = "tests/volume_hostpath_test.rs::name_is_kubernetes_io_host_path"
+
+[[upstream_test]]
+file = "pkg/volume/hostpath/host_path_test.go::TestSetUp"
+ours = "tests/volume_hostpath_test.rs::set_up_returns_the_host_path"
+
+[[upstream_test]]
+file = "pkg/volume/hostpath/host_path_test.go::TestPathDoesNotExist"
+ours = "tests/volume_hostpath_test.rs::set_up_directory_rejects_missing_path"
+
+[[upstream_test]]
+file = "pkg/volume/hostpath/host_path_test.go::TestNotADirectory"
+ours = "tests/volume_hostpath_test.rs::set_up_directory_rejects_when_path_is_a_file"
+
+[[upstream_test]]
+file = "pkg/volume/hostpath/host_path_test.go::TestDirectoryOrCreate"
+ours = "tests/volume_hostpath_test.rs::set_up_directory_or_create_creates_missing_directory"
+
+[[upstream_test]]
+file = "pkg/volume/hostpath/host_path_test.go::TestFileOrCreate"
+ours = "tests/volume_hostpath_test.rs::set_up_file_or_create_touches_missing_file"
+
+[[upstream_test]]
+file = "pkg/kubelet/volumemanager/cache/desired_state_of_world_test.go::TestAddPodToVolume"
+ours = "tests/volume_reconciler_test.rs::dsw_add_remove_pod_round_trips"
+
+[[upstream_test]]
+file = "pkg/kubelet/volumemanager/cache/actual_state_of_world_test.go::TestMarkVolumeAsAttached"
+ours = "tests/volume_reconciler_test.rs::asw_mark_and_unmark_volumes"
+
+[[upstream_test]]
+file = "pkg/kubelet/volumemanager/reconciler/reconciler_test.go::TestReconcile"
+ours = "tests/volume_reconciler_test.rs::reconciler_mounts_desired_emptydir_volumes"
+
+[[upstream_test]]
+file = "pkg/kubelet/volumemanager/reconciler/reconciler_test.go::TestReconcileWithUnmountDevice"
+ours = "tests/volume_reconciler_test.rs::reconciler_unmounts_volumes_no_longer_desired"
+
+[[upstream_test]]
+file = "pkg/kubelet/status/status_manager_test.go::TestNewStatus"
+ours = "tests/status_manager_test.rs::first_set_pod_status_writes_through_to_sink"
+
+[[upstream_test]]
+file = "pkg/kubelet/status/status_manager_test.go::TestStatusEquality"
+ours = "tests/status_manager_test.rs::duplicate_status_is_deduplicated"
+
+[[upstream_test]]
+file = "pkg/kubelet/status/status_manager_test.go::TestUpdatePodStatusBatch"
+ours = "tests/status_manager_test.rs::changed_status_writes_again"
+
+[[upstream_test]]
+file = "pkg/kubelet/status/status_manager_test.go::TestStaleUpdatesAreIgnored"
+ours = "tests/status_manager_test.rs::cached_status_reflects_last_set"
+
+[[upstream_test]]
+file = "pkg/kubelet/status/status_manager_test.go::TestSyncBatchIgnoresNotFound"
+ours = "tests/status_manager_test.rs::transient_failure_is_retried_and_eventually_succeeds"
+
+[[upstream_test]]
+file = "pkg/kubelet/status/status_manager_test.go::TestSyncBatchNoDeadlock"
+ours = "tests/status_manager_test.rs::always_failing_sink_keeps_status_pending"
+
+[[upstream_test]]
+file = "pkg/kubelet/kubelet_test.go::TestSyncPodNoExtraneousMounts"
+ours = "tests/kubelet_sync_pod_test.rs::sync_pod_creates_sandbox_container_and_mounts_volume"
+
+[[upstream_test]]
+file = "pkg/kubelet/kubelet_test.go::TestSyncPodKill"
+ours = "tests/kubelet_sync_pod_test.rs::sync_pod_terminating_then_terminated_cleans_everything"
+
+[[upstream_test]]
+file = "pkg/kubelet/kubelet_test.go::TestPodPhase"
+ours = "tests/kubelet_sync_pod_test.rs::sync_pod_status_phase_pending_until_started"
+
+[[upstream_test]]
+file = "pkg/kubelet/kubelet_test.go::TestSyncPodWithVolumes"
+ours = "tests/kubelet_sync_pod_test.rs::two_pods_get_independent_workers"

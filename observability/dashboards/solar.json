@@ -1,0 +1,157 @@
+{
+  "_comment": "cave-home solar Tier 1 Grafana dashboard. Charter §6.3: titles/labels use home-world vocabulary (Solar / Battery / EV Charger / Heat Pump); raw Modbus IDs / Watt counters live on the developer-only sub-folder dashboards.",
+  "uid": "cave-home-solar",
+  "title": "cave-home — Solar, EV, Battery, Forecast",
+  "tags": ["cave-home", "solar", "pillar"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Solar producing now",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "expr": "sum(cave_home_solar_sunspec_inverter_ac_power_w) / 1000",
+          "legendFormat": "kW"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "kw", "decimals": 1 } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Home using now",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "expr": "sum(cave_home_solar_evcc_home_load_w) / 1000",
+          "legendFormat": "kW"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "kw", "decimals": 1 } }
+    },
+    {
+      "id": 3,
+      "type": "gauge",
+      "title": "Home battery",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "expr": "avg(cave_home_solar_sunspec_battery_soc_percent)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 20, "color": "yellow" },
+              { "value": 50, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Sending to grid (24h)",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "expr": "increase(cave_home_solar_evcc_grid_export_kwh_total[24h])",
+          "legendFormat": "kWh"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "kwatth", "decimals": 1 } }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Solar production vs. home use",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(cave_home_solar_sunspec_inverter_ac_power_w)",
+          "legendFormat": "Solar"
+        },
+        {
+          "expr": "sum(cave_home_solar_evcc_home_load_w)",
+          "legendFormat": "Home"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "watt" } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "EV chargers & heat-pump",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "cave_home_solar_evcc_loadpoint_power_w",
+          "legendFormat": "{{ loadpoint }}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "watt" } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Today's solar forecast",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "cave_home_solar_forecast_today_kwh_hourly",
+          "legendFormat": "kWh / h"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "kwatth" } }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Forecast for today",
+      "gridPos": { "x": 12, "y": 12, "w": 6, "h": 6 },
+      "targets": [
+        {
+          "expr": "cave_home_solar_forecast_today_kwh_total",
+          "legendFormat": "kWh"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "kwatth", "decimals": 1 } }
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Forecast for tomorrow",
+      "gridPos": { "x": 18, "y": 12, "w": 6, "h": 6 },
+      "targets": [
+        {
+          "expr": "cave_home_solar_forecast_tomorrow_kwh_total",
+          "legendFormat": "kWh"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "kwatth", "decimals": 1 } }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "developer",
+        "type": "custom",
+        "label": "Developer view",
+        "query": "off,on",
+        "current": { "selected": false, "text": "off", "value": "off" }
+      }
+    ]
+  }
+}

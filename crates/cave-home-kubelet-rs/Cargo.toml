@@ -1,0 +1,34 @@
+[package]
+name              = "cave-home-kubelet-rs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-kubelet-rs — node-side agent; upstream: kubernetes/kubernetes (K3s-vendored copy, not vanilla); port method: line-by-line (Orchestration Phase 1, ADR-004)"
+
+[package.metadata.cave-home]
+upstream    = "kubernetes/kubernetes (K3s-vendored)"
+port-method = "line-by-line"
+phase       = "orchestration-phase-1"
+
+[package.metadata.upstream]
+repo    = "kubernetes/kubernetes"
+release = "v1.36.1"
+sha     = "756939600b9a7180fc2df6550a4585b638875e67"
+subpath = "pkg/kubelet"
+
+[dependencies]
+async-trait = "0.1"
+futures     = "0.3"
+parking_lot = "0.12"
+thiserror   = "2"
+tokio       = { version = "1", features = ["rt-multi-thread", "sync", "macros", "fs", "time"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio    = { version = "1", features = ["rt-multi-thread", "sync", "macros", "fs", "time", "test-util"] }
+
+[lints]
+workspace = true

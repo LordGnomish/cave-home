@@ -1,0 +1,17 @@
+[package]
+name              = "cave-home-mqtt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-mqtt — embedded MQTT broker (upstream: eclipse/mosquitto, port method: clean-room from MQTT 3.1.1 + 5.0 spec)"
+
+[package.metadata.cave-home]
+upstream    = "eclipse/mosquitto"
+port-method = "clean-room"
+spec-source = "MQTT 3.1.1 (OASIS) + MQTT 5.0 (OASIS)"
+
+[lints]
+workspace = true

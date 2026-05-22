@@ -1,0 +1,17 @@
+[package]
+name              = "cave-home-node-discovery"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-node-discovery — LAN auto-discovery (mDNS / Bonjour, plus a cave-home-specific discovery protocol) for multi-node bootstrap; first-party, no upstream port. Used by cave-home-cluster during join. Shape gated by ADR-005."
+
+[package.metadata.cave-home]
+upstream    = "none (first-party)"
+port-method = "first-party"
+role        = "LAN node auto-discovery for multi-node bootstrap"
+
+[lints]
+workspace = true

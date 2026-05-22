@@ -1,0 +1,17 @@
+[package]
+name              = "cave-home-lock"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-lock — residential smart locks (Nuki, SwitchBot, August/Yale, ESPHome lock components) + Zigbee/Z-Wave/Matter lock-domain bindings; port method: line-by-line (ADR-016)"
+
+[package.metadata.cave-home]
+upstream    = "home-assistant/core (lock-domain integrations) + Nuki/SwitchBot public REST APIs"
+port-method = "line-by-line"
+adr         = "ADR-016"
+
+[lints]
+workspace = true

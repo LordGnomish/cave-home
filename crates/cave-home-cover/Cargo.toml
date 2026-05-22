@@ -1,0 +1,18 @@
+[package]
+name              = "cave-home-cover"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-cover — covers/blinds/garage/awning; upstreams: OpenGarage (Apache, line-by-line) + ESPHome cover bindings (MIT, line-by-line) + Somfy RTS (clean-room from public RF spec, no source read); port method: hybrid (ADR-015)"
+
+[package.metadata.cave-home]
+upstream    = "OpenGarage HA integration (Apache-2.0) + ESPHome cover bindings (MIT) + Somfy RTS public RF spec (clean-room)"
+port-method = "hybrid"
+spec-source = "Somfy RTS: public RF spec + Wireshark dissections + public reverse-engineering write-ups (no specific repo read)"
+adr         = "ADR-015"
+
+[lints]
+workspace = true

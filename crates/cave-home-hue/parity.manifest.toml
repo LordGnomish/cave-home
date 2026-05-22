@@ -1,0 +1,279 @@
+# cave-home-hue — line-by-line port manifest (Phase 1 MVP per ADR-010).
+#
+# Two Apache-2.0 upstreams are line-by-line-ported here:
+#
+#   - `home-assistant/core` v2026.5.2
+#     (SHA 456202325ac48549bd3c895dc3e69ecd3e2ba6a4)
+#     subpath `homeassistant/components/hue/` — the HA "hue" integration
+#     glue (bridge lifecycle, errors, migration).
+#
+#   - `home-assistant-libs/aiohue` v4.8.1
+#     (SHA 394aa9394838841bbd5358d78edc140766db127c)
+#     — the underlying Hue API client (v1 REST + v2 CLIP + SSE).
+#
+# Honest scoping: upstream HA hue + aiohue together total ~12 kLOC of
+# production Python (excluding tests + JSON strings). Phase 1 MVP ports
+# the headline resource surface (lights, groups, scenes, sensors, motion,
+# buttons, devices, rooms/zones, grouped_light, v2 events) and the
+# bridge initialisation flow. Entertainment (DTLS streaming), HomeKit /
+# Matter bridge mirroring, full ConfigFlow re-auth, advanced v1 rule
+# engine and the long tail of v2 feature variants are tracked as
+# `[[unmapped]]` for Phase 1b / 2.
+
+[crate]
+name             = "cave-home-hue"
+port_method      = "line-by-line"
+ported_at        = "2026-05-17"
+linux_min_kernel = "7.1"
+adr              = "ADR-010"
+
+[[upstream]]
+repo    = "home-assistant/core"
+release = "2026.5.2"
+sha     = "456202325ac48549bd3c895dc3e69ecd3e2ba6a4"
+subpath = "homeassistant/components/hue"
+license = "Apache-2.0"
+
+[[upstream]]
+repo    = "home-assistant-libs/aiohue"
+release = "4.8.1"
+sha     = "394aa9394838841bbd5358d78edc140766db127c"
+subpath = "aiohue"
+license = "Apache-2.0"
+
+[ratios]
+# Production src LOC: ~2.7 kLOC (everything outside `#[cfg(test)]`).
+# Combined upstream production LOC: ~5.4 kLOC (aiohue main + HA hue
+# integration glue excluding test_*.py and string assets). fill_ratio is
+# the headline production-port ratio.
+fill_ratio              = 0.50
+fill_ratio_basis        = "phase-1 MVP: v1 lights/groups/scenes/sensors/config + v2 lights/scenes/devices/motion/buttons/rooms/zones/grouped_light + EventStream parser + bridge lifecycle"
+test_port_ratio         = 0.30
+
+# ---- mapped (line-by-line port present in this crate) -----------------------
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/util.py::normalize_bridge_id"
+ours     = "src/util.rs::normalize_bridge_id"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/util.py::mac_from_bridge_id"
+ours     = "src/util.rs::mac_from_bridge_id"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/errors.py::*"
+ours     = "src/errors.rs::HueError"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/errors.py::raise_from_error"
+ours     = "src/errors.rs::from_hue_error"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/discovery.py::DiscoveredHueBridge"
+ours     = "src/discovery.rs::DiscoveredHueBridge"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/discovery.py::discover_bridge"
+ours     = "src/discovery.rs::discover_bridge"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/discovery.py::discover_nupnp"
+ours     = "src/discovery.rs::discover_nupnp"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/discovery.py::is_hue_bridge"
+ours     = "src/discovery.rs::is_hue_bridge"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/discovery.py::is_v2_bridge"
+ours     = "src/discovery.rs::is_v2_bridge"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v1/api.py::APIItems"
+ours     = "src/v1/api.rs::ApiItems"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v1/lights.py::Light"
+ours     = "src/v1/lights.rs::Light"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v1/lights.py::Lights"
+ours     = "src/v1/lights.rs::Lights"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v1/lights.py::Light.set_state"
+ours     = "src/v1/lights.rs::Light::set_state"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v1/lights.py::XYPoint + GamutType"
+ours     = "src/v1/lights.rs::XYPoint + GamutType"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v1/groups.py::Group + Groups"
+ours     = "src/v1/groups.rs::Group + Groups"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v1/groups.py::Group.set_action"
+ours     = "src/v1/groups.rs::Group::set_action"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v1/groups.py::Groups.get_all_lights_group"
+ours     = "src/v1/groups.rs::get_all_lights_group"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v1/scenes.py::Scene + Scenes"
+ours     = "src/v1/scenes.rs::Scene + Scenes"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v1/sensors.py::GenericSensor (+ subclasses, button/motion/temperature/light_level/daylight)"
+ours     = "src/v1/sensors.rs::GenericSensor"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v1/sensors.py::TYPE_* + ZGP/ZLL button event constants"
+ours     = "src/v1/sensors.rs (module constants)"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v1/config.py::Config"
+ours     = "src/v1/config.rs::Config"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v1/__init__.py::HueBridgeV1"
+ours     = "src/v1/bridge.rs::HueBridgeV1"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v2/models/resource.py::ResourceTypes + ResourceIdentifier + SENSOR_RESOURCE_TYPES"
+ours     = "src/v2/models/resource.rs"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v2/models/feature.py (OnFeature, DimmingFeature, ColorFeature, ColorTemperatureFeature, DynamicsFeature, AlertFeature, ButtonReport, MotionReport)"
+ours     = "src/v2/models/feature.rs"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v2/models/light.py::Light + LightPut + LightMetaData + LightMode"
+ours     = "src/v2/models/light.rs"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v2/models/scene.py::Scene + ScenePut + SceneRecall + SceneAction"
+ours     = "src/v2/models/scene.rs"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v2/models/motion.py::Motion + MotionSensingFeature"
+ours     = "src/v2/models/motion.rs"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v2/models/button.py::Button + ButtonFeature"
+ours     = "src/v2/models/button.rs"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v2/models/device.py::Device + ProductData + DeviceMetaData"
+ours     = "src/v2/models/device.rs"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v2/models/room.py::Room + RoomMetadata"
+ours     = "src/v2/models/room.rs"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v2/models/zone.py::Zone"
+ours     = "src/v2/models/zone.rs"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v2/models/grouped_light.py::GroupedLight + GroupedLightPut"
+ours     = "src/v2/models/grouped_light.rs"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v2/controllers/base.py::BaseResourcesController"
+ours     = "src/v2/controllers/base.rs::ResourcesController"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v2/controllers/lights.py::LightsController"
+ours     = "src/v2/controllers/lights.rs::LightsController"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v2/controllers/scenes.py::ScenesController + recall"
+ours     = "src/v2/controllers/scenes.rs::ScenesController"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v2/controllers/events.py::EventStream + EventType + HueEvent + SSE parser"
+ours     = "src/v2/events.rs::EventStreamParser + EventType + HueEvent"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v2/__init__.py::HueBridgeV2"
+ours     = "src/v2/bridge.rs::HueBridgeV2"
+
+[[mapped]]
+upstream = "home-assistant/core/homeassistant/components/hue/bridge.py::HueBridge + HUB_BUSY_SLEEP"
+ours     = "src/bridge.rs::HueBridge + HUB_BUSY_SLEEP"
+
+# ---- unmapped (NOT in this crate; tagged for follow-up) ---------------------
+
+[[unmapped]]
+area     = "Hue Entertainment / DTLS streaming"
+priority = "phase-2"
+note     = "v2 entertainment_configuration + the realtime DTLS stream is a separate sub-protocol; ADR-010 §Open questions §1."
+
+[[unmapped]]
+area     = "v2 controllers: devices, groups (rooms/zones), sensors, config"
+priority = "phase-1b"
+note     = "Models are in place; the controllers wiring + EventStream dispatch are Phase 1b."
+
+[[unmapped]]
+area     = "v1 rule engine + schedules + resourcelinks"
+priority = "phase-2"
+note     = "Niche legacy v1 API surfaces (sensors-on-rules, schedules-on-bridge). v2 supersedes via behavior_instance."
+
+[[unmapped]]
+area     = "Behavior scripts / smart scenes (v2 behavior_instance, smart_scene)"
+priority = "phase-1b"
+note     = "Models will land in Phase 1b alongside the events controller."
+
+[[unmapped]]
+area     = "HomeKit / Matter resources (homekit, matter, matter_fabric)"
+priority = "phase-2"
+note     = "Bridge can expose itself as a HomeKit / Matter accessory; cave-home does this through its own Matter crate, so this v2-side surface is informational only."
+
+[[unmapped]]
+area     = "ConfigFlow re-auth UI"
+priority = "phase-1b"
+note     = "The bridge.rs surfaces LinkButtonNotPressed/Unauthorized as Ok(false); wiring the Portal re-pair flow is Phase 1b."
+
+[[unmapped]]
+area     = "Migration of v1 -> v2 entries (HA's migration.py)"
+priority = "phase-1b"
+note     = "Single-direction migration helper; runtime priority is low because cave-home defaults new entries to v2."
+
+[[unmapped]]
+area     = "Diagnostics dump (HA's diagnostics.py)"
+priority = "phase-1b"
+note     = "Snapshot of bridge state for support bundles; trivial port once Portal is wired."
+
+[[unmapped]]
+area     = "32-bit ARM / pre-Linux 7.1 kernels"
+priority = "permanent"
+note     = "ADR-003 — Linux 7.1+ only."
+
+[[unmapped]]
+area     = "Round-bridge BLE-pairing flow"
+priority = "phase-1b"
+note     = "ADR-010 mandates Hue Bridge v2 (square) + BLE-pairing first; legacy round bridge nice-to-have."
+
+# ---- test mapping ------------------------------------------------------------
+
+[[mapped_test]]
+upstream = "tests/components/hue/test_init.py + test_bridge.py (HA)"
+ours     = "src/bridge.rs::tests + src/v1/bridge.rs::tests + src/v2/bridge.rs::tests"
+
+[[mapped_test]]
+upstream = "tests/test_discovery.py (aiohue)"
+ours     = "src/discovery.rs::tests"
+
+[[mapped_test]]
+upstream = "tests/test_v1.py (aiohue) — lights/groups/scenes/sensors/config"
+ours     = "src/v1/{lights,groups,scenes,sensors,config,bridge}.rs::tests"
+
+[[mapped_test]]
+upstream = "tests/test_v2_eventstream.py (aiohue)"
+ours     = "src/v2/events.rs::tests"
+
+[[mapped_test]]
+upstream = "tests/test_v2.py (aiohue) — light/scene/motion/button/device/room/zone/grouped_light"
+ours     = "src/v2/{models,controllers}/*.rs::tests"

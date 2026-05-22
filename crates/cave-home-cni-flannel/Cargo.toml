@@ -1,0 +1,47 @@
+[package]
+name              = "cave-home-cni-flannel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-cni-flannel — flannel CNI Rust port (pod networking, VXLAN datapath); upstream: flannel-io/flannel Apache-2.0; port method: line-by-line (Orchestration Phase 1, ADR-004 + ADR-008)"
+
+[package.metadata.cave-home]
+upstream         = "flannel-io/flannel"
+upstream-release = "v0.28.4"
+upstream-sha     = "3adfe3e04407869b9f84be0a68a6cebb73df9c6e"
+port-method      = "line-by-line"
+phase            = "orchestration-phase-1"
+adr              = "ADR-008"
+
+[[bin]]
+name = "cave-home-cni-flannel"
+path = "src/bin/cave-home-cni-flannel.rs"
+
+[dependencies]
+# Cross-platform deps (compile everywhere, including macOS dev machines).
+thiserror   = "2"
+ipnet       = { version = "2", features = ["serde"] }
+parking_lot = "0.12"
+rand        = "0.8"
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+async-trait = "0.1"
+tokio       = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros", "fs", "net", "time", "io-util", "io-std"] }
+sha2        = "0.10"
+
+# Linux-only deps (netlink for VXLAN device manipulation, etcd client, futures).
+# Keeping them gated lets `cargo check` succeed on macOS dev machines.
+[target.'cfg(target_os = "linux")'.dependencies]
+rtnetlink            = "0.14"
+netlink-packet-route = "0.19"
+futures              = "0.3"
+etcd-client          = "0.13"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros", "fs", "net", "time", "io-util", "io-std", "test-util"] }
+
+[lints]
+workspace = true

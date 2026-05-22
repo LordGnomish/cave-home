@@ -1,0 +1,42 @@
+[package]
+name              = "cave-home-hue"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-hue — Philips Hue Bridge client; upstreams: home-assistant/core (hue integration, Apache-2.0) + home-assistant-libs/aiohue (Apache-2.0) + Philips Hue API v1/v2 developer-portal docs; port method: line-by-line (ADR-010)"
+
+[package.metadata.cave-home]
+upstream    = "home-assistant/core (hue) + home-assistant-libs/aiohue + Philips Hue API v1/v2"
+port-method = "line-by-line"
+adr         = "ADR-010"
+
+[package.metadata.upstream.home-assistant]
+repo    = "home-assistant/core"
+release = "2026.5.2"
+sha     = "456202325ac48549bd3c895dc3e69ecd3e2ba6a4"
+subpath = "homeassistant/components/hue"
+
+[package.metadata.upstream.aiohue]
+repo    = "home-assistant-libs/aiohue"
+release = "4.8.1"
+sha     = "394aa9394838841bbd5358d78edc140766db127c"
+subpath = "aiohue"
+
+[dependencies]
+async-trait = "0.1"
+futures     = "0.3"
+parking_lot = "0.12"
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+thiserror   = "2"
+tokio       = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "io-util"] }
+tracing     = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "io-util", "test-util"] }
+
+[lints]
+workspace = true

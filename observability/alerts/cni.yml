@@ -1,0 +1,8 @@
+# cave-home-cni-flannel alerts — Phase 1b
+#
+# Planned alert rules (real Prometheus expressions land here once the
+# observability crate ships in M3):
+#   - VxlanLeaseChurn:      sustained Added/Removed event rate > 0.5/s
+#   - SubnetExhausted:      free-subnet count == 0 for > 5m
+#   - LeaseRenewalLag:      max(time() - lease_renewed_at_seconds) > 23h
+#   - VxlanFdbInstallFail:  rate(cni_fdb_install_errors_total[5m]) > 0

@@ -1,0 +1,10 @@
+# cave-home-free-home alerts — Phase 1
+#
+# Planned alert rules (real Prometheus expressions land here once the
+# observability crate ships in M3):
+#   - SysApUnreachable:       absent_over_time(free_home_sysap_up[1m])
+#   - WsReconnectStorm:       rate(free_home_ws_reconnect_total[5m]) > 0.2/s
+#   - DatapointSetFailures:   rate(free_home_set_datapoint_errors_total[5m]) > 0
+#   - DeviceUnresponsive:     count by(serial) (free_home_device_unresponsive == 1) > 0
+#   - WsBacklog:              free_home_ws_pending_messages > 256 for 1m
+#   - ConfigRefreshLag:       (time() - free_home_config_loaded_timestamp) > 3600

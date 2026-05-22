@@ -1,0 +1,63 @@
+[package]
+name              = "cave-home-containerd-rs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-containerd-rs — container runtime; upstream: containerd/containerd, port method: line-by-line (Orchestration Phase 1, ADR-004)"
+
+[package.metadata.cave-home]
+upstream    = "containerd/containerd"
+port-method = "line-by-line"
+phase       = "orchestration-phase-1"
+
+# Charter rule 6 (always-latest mandate): pinned to the latest containerd
+# stable release as of the port date. See parity.manifest.toml for the
+# resolved git SHA.
+[package.metadata.upstream]
+release   = "v2.3.0"
+sha       = "2976f38ccbfcda5ef1364d63d60b0a304e4bf94a"
+ported_at = "2026-05-15"
+
+[lints]
+workspace = true
+
+[dependencies]
+# gRPC + protobuf for CRI v1 service
+tonic       = "0.12"
+prost       = "0.13"
+prost-types = "0.13"
+
+# async runtime + utilities
+tokio        = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs", "io-util", "time"] }
+futures-core = "0.3"
+async-trait  = "0.1"
+
+# HTTP client for OCI distribution-spec image pulls
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+
+# digest verification (sha256 per OCI spec)
+sha2 = "0.10"
+
+# error / logging primitives (no panics)
+thiserror = "2"
+tracing   = "0.1"
+
+# concurrency / data
+parking_lot = "0.12"
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+hex         = "0.4"
+url         = "2"
+bytes       = "1"
+uuid        = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3"
+httpmock = "0.7"
+tokio    = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs", "io-util", "time", "test-util"] }
+
+[build-dependencies]
+tonic-build = "0.12"

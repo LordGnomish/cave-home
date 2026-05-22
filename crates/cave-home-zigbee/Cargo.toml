@@ -1,0 +1,30 @@
+[package]
+name              = "cave-home-zigbee"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-zigbee — Zigbee 3.0 stack (upstream: Koenkk/zigbee2mqtt, port method: clean-room from Zigbee 3.0 / ZCL specs + zigbee-herdsman public API docs)"
+
+[package.metadata.cave-home]
+upstream    = "Koenkk/zigbee2mqtt"
+port-method = "clean-room"
+spec-source = "Zigbee 3.0 spec (CSA) + ZCL spec + zigbee-herdsman public API docs"
+
+[dependencies]
+async-trait = "0.1"
+bytes       = "1"
+futures     = "0.3"
+parking_lot = "0.12"
+serde       = { version = "1", features = ["derive"] }
+thiserror   = "2"
+tokio       = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "io-util", "fs", "net"] }
+tracing     = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "io-util", "fs", "net", "test-util"] }
+
+[lints]
+workspace = true

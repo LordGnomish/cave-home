@@ -1,0 +1,17 @@
+[package]
+name              = "cave-home-audio-mass"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-audio-mass — Music Assistant orchestration; upstream: music-assistant/server (Apache-2.0); port method: line-by-line (ADR-020)"
+
+[package.metadata.cave-home]
+upstream    = "music-assistant/server"
+port-method = "line-by-line"
+adr         = "ADR-020"
+
+[lints]
+workspace = true

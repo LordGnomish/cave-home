@@ -1,0 +1,91 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/cave-home-core",
+    "crates/cave-home-mqtt",
+    "crates/cave-home-zigbee",
+    "crates/cave-home-zwave",
+    "crates/cave-home-matter",
+    "crates/cave-home-automation",
+    "crates/cave-home-integrations",
+    "crates/cave-home-camera",
+    "crates/cave-home-voice",
+    "crates/cave-home-portal",
+    "crates/cave-home-orchestration",
+    "crates/cave-home-containerd-rs",
+    "crates/cave-home-kubelet-rs",
+    "crates/cave-home-kube-proxy-rs",
+    "crates/cave-home-cni-flannel",
+    "crates/cave-home-apiserver-rs",
+    "crates/cave-home-scheduler-rs",
+    "crates/cave-home-controller-manager-rs",
+    "crates/cave-home-kine-rs",
+    "crates/cave-home-helm-controller-rs",
+    "crates/cave-home-klipper-lb-rs",
+    "crates/cave-home-traefik-rs",
+    "crates/cave-home-cluster",
+    "crates/cave-home-node-discovery",
+    "crates/cave-home-mobile",
+    "crates/cave-home-unifi-network",
+    "crates/cave-home-unifi-protect",
+    "crates/cave-home-unifi-access",
+    "crates/cave-home-unifi-talk",
+    "crates/cave-home-hue",
+    "crates/cave-home-hue-bridge-emu",
+    "crates/cave-home-free-home",
+    "crates/cave-home-knx",
+    "crates/cave-home-hvac",
+    "crates/cave-home-water",
+    "crates/cave-home-lighting-wled",
+    "crates/cave-home-cover",
+    "crates/cave-home-lock",
+    "crates/cave-home-vacuum",
+    "crates/cave-home-doorbell",
+    "crates/cave-home-alarm",
+    "crates/cave-home-air-quality",
+    "crates/cave-home-audio-mass",
+    "crates/cave-home-audio-snapcast",
+    "crates/cave-home-audio-mopidy",
+    "crates/cave-home-notify",
+    "crates/cave-home-dns-adguard",
+    "crates/cave-home-dns-unbound",
+    "crates/cave-home-history",
+    "crates/cave-home-wellness",
+    "crates/cave-home-household",
+    "crates/cave-home-calendar",
+    "crates/cave-home-display",
+    "crates/cave-home-garden",
+    "crates/cave-home-pool",
+    "crates/cave-home-wearable",
+    "crates/cave-home-solar-evcc",
+    "crates/cave-home-solar-sunspec",
+    "crates/cave-home-solar-hoymiles",
+    "crates/cave-home-solar-forecast",
+    "crates/cave-home-cli",
+    "crates/cave-home-binary",
+]
+
+# cave-home — Cargo workspace root.
+#
+# Single unified Rust binary per Charter §5: every crate listed above
+# compiles into one process via `crates/cave-home-binary`.
+
+[workspace.package]
+version       = "0.0.0"
+edition       = "2024"
+rust-version  = "1.85"
+license       = "Apache-2.0"
+repository    = "https://github.com/cave-home/cave-home"
+authors       = ["The cave-home Authors"]
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+pedantic   = { level = "warn", priority = -1 }
+nursery    = { level = "warn", priority = -1 }
+unwrap_used        = "warn"
+expect_used        = "warn"
+panic              = "warn"
+todo               = "warn"
+unimplemented      = "warn"

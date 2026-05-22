@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Charter rule 6: track latest stable. CI uses `stable` from rustup, never
+# pins a specific version. If a clippy/rustc release breaks us, we fix
+# code, not the toolchain.
+
+jobs:
+  fmt:
+    name: cargo fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install rust stable
+        run: rustup update stable && rustup default stable
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: cargo clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install rust stable
+        run: rustup update stable && rustup default stable && rustup component add clippy
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  check:
+    name: cargo check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install rust stable
+        run: rustup update stable && rustup default stable
+      - name: cargo check
+        run: cargo check --workspace --all-targets
+
+  test:
+    name: cargo test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install rust stable
+        run: rustup update stable && rustup default stable
+      - name: cargo test
+        run: cargo test --workspace --all-targets
+
+  # Placeholder: the workspace currently has zero crates, so fmt/clippy/check/test
+  # are all no-ops. They are wired up now so the *first* crate added under
+  # crates/ is automatically gated by them.

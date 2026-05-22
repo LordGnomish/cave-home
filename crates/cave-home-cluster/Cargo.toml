@@ -1,0 +1,17 @@
+[package]
+name              = "cave-home-cluster"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-cluster — multi-node cluster lifecycle (init / join / status / destroy), K3s join-token coordination, active-passive failover; first-party, no upstream port (Charter §5 deployment-topology). Shape gated by ADR-005."
+
+[package.metadata.cave-home]
+upstream    = "none (first-party)"
+port-method = "first-party"
+role        = "multi-node cluster lifecycle"
+
+[lints]
+workspace = true

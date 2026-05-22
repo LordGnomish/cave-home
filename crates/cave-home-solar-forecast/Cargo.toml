@@ -1,0 +1,31 @@
+[package]
+name              = "cave-home-solar-forecast"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-solar-forecast — solar production forecasting via Forecast.Solar + PVGIS public APIs; port method: API client (no upstream port)"
+
+[package.metadata.cave-home]
+upstream    = "Forecast.Solar + PVGIS (public APIs)"
+port-method = "api-client"
+
+[package.metadata.upstream]
+forecast-solar-api = "https://doc.forecast.solar/api"
+pvgis-api          = "https://re.jrc.ec.europa.eu/api/v5_2/"
+
+[dependencies]
+thiserror   = "2"
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+tokio       = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros", "time"] }
+tracing     = "0.1"
+async-trait = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros", "time", "test-util"] }
+
+[lints]
+workspace = true

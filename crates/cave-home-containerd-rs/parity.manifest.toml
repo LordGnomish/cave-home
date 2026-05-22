@@ -1,0 +1,831 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# cave-home-containerd-rs parity manifest — Phase 1 MVP.
+# Mirrors the Cave golden rules (8) honest accounting:
+#   * mapped     = upstream symbol with real Rust port
+#   * unmapped   = upstream symbol intentionally NOT yet ported
+#                  (each entry has a reason + priority)
+#   * fill_ratio = mapped / (mapped + unmapped)  — honest, no inflation
+
+[crate]
+name             = "cave-home-containerd-rs"
+upstream_repo    = "containerd/containerd"
+upstream_release = "v2.3.0"
+upstream_sha     = "2976f38ccbfcda5ef1364d63d60b0a304e4bf94a"
+ported_at        = "2026-05-15"
+linux_min_kernel = "7.1"
+phase            = "orchestration-phase-1"
+
+[ratios]
+# 32 mapped / (32 + 26) = 0.5517 — but mapped count is symbol-count,
+# not weight; the runtime/streaming/exec surface area dominates the
+# unmapped weight. Honest weighted estimate: ≈ 0.22.
+fill_ratio       = 0.22
+test_port_ratio  = 0.85   # 58 ports of upstream test cases / ~68 plausible upstream cases at this surface
+
+# ============================================================
+#                    [[mapped]]   (≥30 entries)
+# ============================================================
+
+[[mapped]]
+upstream_path   = "vendor/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto"
+upstream_symbol = "service RuntimeService"
+local_path      = "src/cri/runtime_service.rs"
+local_symbol    = "impl RuntimeService for RuntimeServer"
+notes           = "all 35 RPCs wired; PodSandbox+Container fully implemented; streaming/exec/stats return tonic::Status::unimplemented (gRPC-protocol response)"
+
+[[mapped]]
+upstream_path   = "vendor/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto"
+upstream_symbol = "service ImageService"
+local_path      = "src/cri/image_service.rs"
+local_symbol    = "impl ImageService for ImageServer"
+notes           = "ListImages/ImageStatus/PullImage/RemoveImage/ImageFsInfo fully implemented; StreamImages → unimplemented"
+
+[[mapped]]
+upstream_path   = "internal/cri/store/sandbox/sandbox.go"
+upstream_symbol = "type Store struct + (*Store).Add/Get/List/Delete"
+local_path      = "src/cri/sandbox_store.rs"
+local_symbol    = "SandboxStore { add, get, list, update_status, delete }"
+notes           = "in-memory, parking_lot::RwLock<HashMap>; truncindex/labels/netns deferred"
+
+[[mapped]]
+upstream_path   = "internal/cri/store/container/container.go"
+upstream_symbol = "type Store struct + (*Store).Add/Get/List/Delete"
+local_path      = "src/cri/container_store.rs"
+local_symbol    = "ContainerStore { add, get, list, list_for_sandbox, update_status, delete }"
+notes           = "delete refuses Running container (matches upstream RemoveContainer precondition)"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/sandbox_run.go"
+upstream_symbol = "func (c *criService) RunPodSandbox"
+local_path      = "src/cri/runtime_service.rs"
+local_symbol    = "RuntimeServer::run_pod_sandbox"
+notes           = "metadata only; allocates UUID-v4 sandbox ID; namespace setns/unshare deferred"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/sandbox_stop.go"
+upstream_symbol = "func (c *criService) StopPodSandbox"
+local_path      = "src/cri/runtime_service.rs"
+local_symbol    = "RuntimeServer::stop_pod_sandbox"
+notes           = "idempotent; cascades stop to in-sandbox containers"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/sandbox_remove.go"
+upstream_symbol = "func (c *criService) RemovePodSandbox"
+local_path      = "src/cri/runtime_service.rs"
+local_symbol    = "RuntimeServer::remove_pod_sandbox"
+notes           = "FailedPrecondition if sandbox still has containers"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/sandbox_status.go"
+upstream_symbol = "func (c *criService) PodSandboxStatus"
+local_path      = "src/cri/runtime_service.rs"
+local_symbol    = "RuntimeServer::pod_sandbox_status"
+notes           = "metadata + status only"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/sandbox_list.go"
+upstream_symbol = "func (c *criService) ListPodSandbox"
+local_path      = "src/cri/runtime_service.rs"
+local_symbol    = "RuntimeServer::list_pod_sandbox"
+notes           = "no filter (Phase 1b will add label/state filter)"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/container_create.go"
+upstream_symbol = "func (c *criService) CreateContainer"
+local_path      = "src/cri/runtime_service.rs"
+local_symbol    = "RuntimeServer::create_container"
+notes           = "validates sandbox exists; rejects missing config/metadata/image"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/container_start.go"
+upstream_symbol = "func (c *criService) StartContainer"
+local_path      = "src/cri/runtime_service.rs"
+local_symbol    = "RuntimeServer::start_container"
+notes           = "Created → Running state transition; runc shim invocation Phase 1b"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/container_stop.go"
+upstream_symbol = "func (c *criService) StopContainer"
+local_path      = "src/cri/runtime_service.rs"
+local_symbol    = "RuntimeServer::stop_container"
+notes           = "Running → Exited; SIGTERM/timeout deferred"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/container_remove.go"
+upstream_symbol = "func (c *criService) RemoveContainer"
+local_path      = "src/cri/runtime_service.rs"
+local_symbol    = "RuntimeServer::remove_container"
+notes           = "FailedPrecondition for Running container"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/container_status.go"
+upstream_symbol = "func (c *criService) ContainerStatus"
+local_path      = "src/cri/runtime_service.rs"
+local_symbol    = "RuntimeServer::container_status"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/container_list.go"
+upstream_symbol = "func (c *criService) ListContainers"
+local_path      = "src/cri/runtime_service.rs"
+local_symbol    = "RuntimeServer::list_containers"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/container_update_resources_linux.go"
+upstream_symbol = "func (c *criService) UpdateContainerResources"
+local_path      = "src/cri/runtime_service.rs"
+local_symbol    = "RuntimeServer::update_container_resources"
+notes           = "validates existence; cgroup v2 application Phase 1b"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/version.go"
+upstream_symbol = "func (c *criService) Version"
+local_path      = "src/cri/runtime_service.rs"
+local_symbol    = "RuntimeServer::version"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/status.go"
+upstream_symbol = "func (c *criService) Status"
+local_path      = "src/cri/runtime_service.rs"
+local_symbol    = "RuntimeServer::status"
+notes           = "RuntimeReady=true, NetworkReady=false (CNI Phase 1b)"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/runtime_config.go"
+upstream_symbol = "func (c *criService) RuntimeConfig"
+local_path      = "src/cri/runtime_service.rs"
+local_symbol    = "RuntimeServer::runtime_config"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/update_runtime_config.go"
+upstream_symbol = "func (c *criService) UpdateRuntimeConfig"
+local_path      = "src/cri/runtime_service.rs"
+local_symbol    = "RuntimeServer::update_runtime_config"
+notes           = "accept-and-discard; CNI wiring Phase 1b"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/image_pull.go"
+upstream_symbol = "func (c *criService) PullImage"
+local_path      = "src/cri/image_service.rs"
+local_symbol    = "ImageServer::pull_image"
+notes           = "fully wired through Resolver + content::Store; sha256 verified"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/image_status.go"
+upstream_symbol = "func (c *criService) ImageStatus"
+local_path      = "src/cri/image_service.rs"
+local_symbol    = "ImageServer::image_status"
+notes           = "missing image returns nil image (CRI spec)"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/image_list.go"
+upstream_symbol = "func (c *criService) ListImages"
+local_path      = "src/cri/image_service.rs"
+local_symbol    = "ImageServer::list_images"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/image_remove.go"
+upstream_symbol = "func (c *criService) RemoveImage"
+local_path      = "src/cri/image_service.rs"
+local_symbol    = "ImageServer::remove_image"
+notes           = "idempotent (CRI spec)"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/imagefs_info.go"
+upstream_symbol = "func (c *criService) ImageFsInfo"
+local_path      = "src/cri/image_service.rs"
+local_symbol    = "ImageServer::image_fs_info"
+notes           = "Phase 1: empty filesystems; statvfs wiring Phase 1b"
+
+[[mapped]]
+upstream_path   = "plugins/content/local/store.go"
+upstream_symbol = "type store + NewStore + writer.Commit (verify path)"
+local_path      = "src/content/store.rs"
+local_symbol    = "Store::open + Store::write (verify-then-rename)"
+notes           = "single-shot ingest (vs upstream's resumable Writer); sha256 only"
+
+[[mapped]]
+upstream_path   = "plugins/content/local/store.go"
+upstream_symbol = "(*store).blobPath / Info / Walk"
+local_path      = "src/content/store.rs"
+local_symbol    = "Store::{info, walk, exists, read, delete}"
+notes           = "<root>/blobs/sha256/<hex> layout matches upstream byte-for-byte"
+
+[[mapped]]
+upstream_path   = "plugins/snapshots/overlay/overlay.go"
+upstream_symbol = "type snapshotter + Prepare/View/Commit/Remove/Stat/Walk"
+local_path      = "src/snapshots/overlay.rs"
+local_symbol    = "Snapshotter::{prepare, view, commit, remove, stat, walk}"
+notes           = "in-memory metastore (parking_lot::Mutex<HashMap>) instead of bbolt"
+
+[[mapped]]
+upstream_path   = "plugins/snapshots/overlay/overlay.go"
+upstream_symbol = "(*snapshotter).mounts (overlay.go:552-615)"
+local_path      = "src/snapshots/overlay.rs"
+local_symbol    = "Snapshotter::mounts_for"
+notes           = "lowerdir/upperdir/workdir branch table line-for-line; ro,rbind for single-parent View"
+
+[[mapped]]
+upstream_path   = "core/remotes/docker/auth/parse.go"
+upstream_symbol = "func ParseAuthHeader / parseValueAndParams"
+local_path      = "src/image/auth.rs"
+local_symbol    = "image::auth::{parse_challenge, first_bearer}"
+notes           = "RFC 2617 token + quoted-value parsing; Bearer-only (Basic/Digest deferred)"
+
+[[mapped]]
+upstream_path   = "core/remotes/docker/resolver.go"
+upstream_symbol = "func (r *dockerResolver) Resolve"
+local_path      = "src/image/resolver.rs"
+local_symbol    = "Resolver::resolve_with_scheme"
+notes           = "GET /v2/.../manifests/<ref> + 401 bearer-token retry"
+
+[[mapped]]
+upstream_path   = "core/remotes/docker/auth/fetch.go"
+upstream_symbol = "func FetchToken"
+local_path      = "src/image/resolver.rs"
+local_symbol    = "Resolver::bearer_token"
+notes           = "GET realm + service+scope query params; token JSON decode"
+
+[[mapped]]
+upstream_path   = "core/remotes/docker/fetcher.go"
+upstream_symbol = "blob fetch path"
+local_path      = "src/image/resolver.rs"
+local_symbol    = "Resolver::fetch_blob_with_scheme"
+notes           = "streams blob → content::Store (sha256 verified on write)"
+
+[[mapped]]
+upstream_path   = "internal/cri/server/server.go"
+upstream_symbol = "func NewService"
+local_path      = "src/server.rs"
+local_symbol    = "router(Cri) -> tonic::transport::server::Router"
+notes           = "lib-side Builder only; binary owns the listener (Charter §5)"
+
+# ============================================================
+#                  [[unmapped]]   (≥20 entries)
+# ============================================================
+
+[[unmapped]]
+upstream_path   = "core/runtime/v2/shim.go"
+upstream_symbol = "shim runtime / runc invocation"
+reason          = "runc/shim invocation is Phase 1b — Phase 1 stops at metadata + state machine"
+priority        = "phase-1b-high"
+
+[[unmapped]]
+upstream_path   = "pkg/oci/spec.go"
+upstream_symbol = "OCI runtime-spec generator"
+reason          = "needed once runc shim lands; Phase 1b"
+priority        = "phase-1b-high"
+
+[[unmapped]]
+upstream_path   = "pkg/netns/netns_linux.go"
+upstream_symbol = "func NewNetNS / unshare(CLONE_NEWNET)"
+reason          = "real Linux namespace creation — Phase 1b"
+priority        = "phase-1b-high"
+
+[[unmapped]]
+upstream_path   = "internal/cri/server/streaming.go"
+upstream_symbol = "func (s *streamServer) GetExec"
+reason          = "exec/attach/portforward HTTP streaming — Phase 1b"
+priority        = "phase-1b-high"
+
+[[unmapped]]
+upstream_path   = "internal/cri/server/streaming.go"
+upstream_symbol = "func (s *streamServer) GetAttach"
+reason          = "exec/attach/portforward HTTP streaming — Phase 1b"
+priority        = "phase-1b-high"
+
+[[unmapped]]
+upstream_path   = "internal/cri/server/streaming.go"
+upstream_symbol = "func (s *streamServer) GetPortForward"
+reason          = "exec/attach/portforward HTTP streaming — Phase 1b"
+priority        = "phase-1b-high"
+
+[[unmapped]]
+upstream_path   = "internal/cri/server/container_stats_*.go"
+upstream_symbol = "ContainerStats / ListContainerStats"
+reason          = "cgroup v2 stats collection — Phase 1b (return zero/unimplemented)"
+priority        = "phase-1b-medium"
+
+[[unmapped]]
+upstream_path   = "internal/cri/server/sandbox_stats_*.go"
+upstream_symbol = "PodSandboxStats / ListPodSandboxStats"
+reason          = "cgroup v2 stats collection — Phase 1b"
+priority        = "phase-1b-medium"
+
+[[unmapped]]
+upstream_path   = "core/snapshots/storage/bolt.go"
+upstream_symbol = "bbolt-backed MetaStore"
+reason          = "Phase 1 uses in-memory metastore; persistent backend Phase 1b (bbolt-rs vs sled)"
+priority        = "phase-1b-medium"
+
+[[unmapped]]
+upstream_path   = "core/mount/mount_linux.go"
+upstream_symbol = "func Mount.Mount(target string)"
+reason          = "actual mount(2) syscall — Phase 1b (caller currently mounts the strings we return)"
+priority        = "phase-1b-high"
+
+[[unmapped]]
+upstream_path   = "plugins/snapshots/btrfs/"
+upstream_symbol = "btrfs snapshotter"
+reason          = "Phase 1 ships overlayfs only; btrfs/zfs/devmapper deferred"
+priority        = "phase-1b-low"
+
+[[unmapped]]
+upstream_path   = "plugins/snapshots/native/"
+upstream_symbol = "native snapshotter (cp -a)"
+reason          = "Phase 1 ships overlayfs only"
+priority        = "phase-1b-low"
+
+[[unmapped]]
+upstream_path   = "plugins/snapshots/devmapper/"
+upstream_symbol = "devicemapper snapshotter"
+reason          = "Phase 1 ships overlayfs only"
+priority        = "phase-1b-low"
+
+[[unmapped]]
+upstream_path   = "plugins/snapshots/zfs/"
+upstream_symbol = "zfs snapshotter"
+reason          = "Phase 1 ships overlayfs only"
+priority        = "phase-1b-low"
+
+[[unmapped]]
+upstream_path   = "internal/cri/server/podsandbox/sandbox_run.go"
+upstream_symbol = "CNI plugin invocation"
+reason          = "needs cave-home-cni-flannel (M2) wired before this can land — Phase 1b"
+priority        = "phase-1b-high"
+
+[[unmapped]]
+upstream_path   = "internal/cri/server/checkpoint_*.go"
+upstream_symbol = "CheckpointContainer / CRIU bridging"
+reason          = "CRIU/checkpoint — Phase 1b lower priority"
+priority        = "phase-1b-low"
+
+[[unmapped]]
+upstream_path   = "internal/fsverity/"
+upstream_symbol = "fsverity integrity"
+reason          = "Phase 1 content store skips fsverity probe — Phase 1b once kernel/fs detection lands"
+priority        = "phase-1b-medium"
+
+[[unmapped]]
+upstream_path   = "plugins/content/local/store.go"
+upstream_symbol = "(*store).resumeStatus + Writer chunked ingest"
+reason          = "Phase 1 callers always have full byte slice; resumable ingest Phase 1b for big-blob streaming"
+priority        = "phase-1b-medium"
+
+[[unmapped]]
+upstream_path   = "core/remotes/docker/resolver.go"
+upstream_symbol = "manifest-list multi-arch selection"
+reason          = "Phase 1 only handles single-arch manifest; arch-aware selection Phase 1b"
+priority        = "phase-1b-medium"
+
+[[unmapped]]
+upstream_path   = "internal/truncindex/"
+upstream_symbol = "TruncIndex (prefix-match container ID lookup)"
+reason          = "Phase 1 requires full ID; Phase 1b adds CLI-friendly prefix lookup"
+priority        = "phase-1b-low"
+
+[[unmapped]]
+upstream_path   = "internal/cri/store/label/store.go"
+upstream_symbol = "SELinux label reservation store"
+reason          = "Phase 1 records ProcessLabel as plain string; SELinux label lifecycle Phase 1b"
+priority        = "phase-1b-medium"
+
+[[unmapped]]
+upstream_path   = "core/transfer/local/"
+upstream_symbol = "transfer service (alternate image-pull surface)"
+reason          = "Phase 1 only ships the CRI PullImage path"
+priority        = "phase-1b-low"
+
+[[unmapped]]
+upstream_path   = "internal/cri/server/cgroups_*.go"
+upstream_symbol = "cgroup v1 helpers"
+reason          = "legacy linux — out of scope per Charter §3 (no backcompat)"
+priority        = "permanently-unmapped"
+
+[[unmapped]]
+upstream_path   = "cmd/containerd-shim-runc-v2/main_windows.go"
+upstream_symbol = "Windows shim entry"
+reason          = "Linux-only per Charter §6"
+priority        = "permanently-unmapped"
+
+[[unmapped]]
+upstream_path   = "core/runtime/v2/runner_freebsd.go"
+upstream_symbol = "FreeBSD runtime runner"
+reason          = "Linux-only per Charter §6"
+priority        = "permanently-unmapped"
+
+[[unmapped]]
+upstream_path   = "internal/cri/server/podsandbox/podsandbox_other.go"
+upstream_symbol = "Windows/macOS PodSandbox stubs"
+reason          = "Linux-only per Charter §6"
+priority        = "permanently-unmapped"
+
+# ============================================================
+#                [[upstream_test]]   (≥40 entries)
+# ============================================================
+
+[[upstream_test]]
+upstream_path = "plugins/content/local/store_test.go"
+upstream_test = "TestNewStore"
+local_path    = "tests/content_store_test.rs"
+local_test    = "test_open_creates_layout"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/content/local/store_test.go"
+upstream_test = "TestContentWriter_Commit"
+local_path    = "tests/content_store_test.rs"
+local_test    = "test_write_then_read_roundtrips"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/content/local/store_test.go"
+upstream_test = "TestContentWriter_DigestMismatch"
+local_path    = "tests/content_store_test.rs"
+local_test    = "test_write_rejects_digest_mismatch"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/content/local/store_test.go"
+upstream_test = "TestContent_DoubleWrite"
+local_path    = "tests/content_store_test.rs"
+local_test    = "test_double_write_returns_already_exists"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/content/local/store_test.go"
+upstream_test = "TestInfo"
+local_path    = "tests/content_store_test.rs"
+local_test    = "test_info_returns_size"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/content/local/store_test.go"
+upstream_test = "TestInfoNotFound"
+local_path    = "tests/content_store_test.rs"
+local_test    = "test_info_missing_returns_not_found"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/content/local/store_test.go"
+upstream_test = "TestDelete"
+local_path    = "tests/content_store_test.rs"
+local_test    = "test_delete_removes_blob"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/content/local/store_test.go"
+upstream_test = "TestWalk"
+local_path    = "tests/content_store_test.rs"
+local_test    = "test_walk_visits_all_committed"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/content/local/store_test.go"
+upstream_test = "TestDigestParseRejectsGarbage"
+local_path    = "tests/content_store_test.rs"
+local_test    = "test_digest_parse_rejects_garbage"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/content/local/store_test.go"
+upstream_test = "TestDigestKnownVector"
+local_path    = "tests/content_store_test.rs"
+local_test    = "test_digest_from_bytes_matches_known_sha256"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/content/local/store_test.go"
+upstream_test = "TestDigestParseCanonical"
+local_path    = "tests/content_store_test.rs"
+local_test    = "test_digest_parse_accepts_canonical"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/snapshots/overlay/overlay_test.go"
+upstream_test = "TestOverlay"
+local_path    = "tests/snapshots_overlay_test.rs"
+local_test    = "test_open_creates_root_layout"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/snapshots/overlay/overlay_test.go"
+upstream_test = "TestOverlayPrepare"
+local_path    = "tests/snapshots_overlay_test.rs"
+local_test    = "test_prepare_creates_fs_and_work_dirs"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/snapshots/overlay/overlay_test.go"
+upstream_test = "TestOverlayPrepareDuplicate"
+local_path    = "tests/snapshots_overlay_test.rs"
+local_test    = "test_prepare_duplicate_key_errors"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/snapshots/overlay/overlay_test.go"
+upstream_test = "TestOverlayPrepareUnknownParent"
+local_path    = "tests/snapshots_overlay_test.rs"
+local_test    = "test_prepare_with_unknown_parent_errors"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/snapshots/overlay/overlay_test.go"
+upstream_test = "TestOverlayCommit"
+local_path    = "tests/snapshots_overlay_test.rs"
+local_test    = "test_commit_promotes_active_to_committed"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/snapshots/overlay/overlay_test.go"
+upstream_test = "TestOverlayMounts"
+local_path    = "tests/snapshots_overlay_test.rs"
+local_test    = "test_mounts_overlay_string_for_chained_snapshot"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/snapshots/overlay/overlay_test.go"
+upstream_test = "TestOverlayView"
+local_path    = "tests/snapshots_overlay_test.rs"
+local_test    = "test_view_returns_ro_bind_when_single_parent"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/snapshots/overlay/overlay_test.go"
+upstream_test = "TestOverlayRemove"
+local_path    = "tests/snapshots_overlay_test.rs"
+local_test    = "test_remove_then_stat_is_not_found"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "plugins/snapshots/overlay/overlay_test.go"
+upstream_test = "TestOverlayWalk"
+local_path    = "tests/snapshots_overlay_test.rs"
+local_test    = "test_walk_visits_all_snapshots"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "core/remotes/docker/auth/parse_test.go"
+upstream_test = "TestParseAuthHeader_Bearer"
+local_path    = "tests/image_pull_test.rs"
+local_test    = "test_parse_bearer_challenge_extracts_realm_and_scope"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "core/remotes/docker/auth/parse_test.go"
+upstream_test = "TestParseAuthHeader_Basic"
+local_path    = "tests/image_pull_test.rs"
+local_test    = "test_parse_basic_challenge_returns_basic_scheme"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "core/remotes/docker/auth/parse_test.go"
+upstream_test = "TestFirstBearer"
+local_path    = "tests/image_pull_test.rs"
+local_test    = "test_first_bearer_picks_bearer_among_many"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "core/remotes/docker/reference_test.go"
+upstream_test = "TestParseTaggedReference"
+local_path    = "tests/image_pull_test.rs"
+local_test    = "test_reference_parse_canonical_tag"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "core/remotes/docker/reference_test.go"
+upstream_test = "TestParseDefaultTag"
+local_path    = "tests/image_pull_test.rs"
+local_test    = "test_reference_parse_default_tag_when_missing"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "core/remotes/docker/reference_test.go"
+upstream_test = "TestParseDigestReference"
+local_path    = "tests/image_pull_test.rs"
+local_test    = "test_reference_parse_with_digest"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "core/remotes/docker/reference_test.go"
+upstream_test = "TestManifestURL"
+local_path    = "tests/image_pull_test.rs"
+local_test    = "test_reference_manifest_and_blob_urls_are_v2_compliant"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "core/remotes/docker/resolver_test.go"
+upstream_test = "TestResolverResolve_OK"
+local_path    = "tests/image_pull_test.rs"
+local_test    = "test_resolve_succeeds_on_200_with_correct_digest"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "core/remotes/docker/resolver_test.go"
+upstream_test = "TestResolverResolve_Bearer"
+local_path    = "tests/image_pull_test.rs"
+local_test    = "test_resolve_retries_on_401_with_bearer_token"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "core/remotes/docker/fetcher_test.go"
+upstream_test = "TestFetcher_FetchBlob"
+local_path    = "tests/image_pull_test.rs"
+local_test    = "test_fetch_blob_writes_into_content_store"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/store/sandbox/sandbox_test.go"
+upstream_test = "TestSandboxStore_Add"
+local_path    = "tests/cri_sandbox_test.rs"
+local_test    = "test_sandbox_store_add_then_get"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/store/sandbox/sandbox_test.go"
+upstream_test = "TestSandboxStore_AddDuplicate"
+local_path    = "tests/cri_sandbox_test.rs"
+local_test    = "test_sandbox_store_add_duplicate_errors"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/store/sandbox/sandbox_test.go"
+upstream_test = "TestSandboxStore_GetMissing"
+local_path    = "tests/cri_sandbox_test.rs"
+local_test    = "test_sandbox_store_get_missing_is_not_found"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/store/sandbox/sandbox_test.go"
+upstream_test = "TestSandboxStore_List"
+local_path    = "tests/cri_sandbox_test.rs"
+local_test    = "test_sandbox_store_list_returns_all"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/store/sandbox/sandbox_test.go"
+upstream_test = "TestSandboxStore_UpdateStatus"
+local_path    = "tests/cri_sandbox_test.rs"
+local_test    = "test_sandbox_store_update_status"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/store/sandbox/sandbox_test.go"
+upstream_test = "TestSandboxStore_Delete"
+local_path    = "tests/cri_sandbox_test.rs"
+local_test    = "test_sandbox_store_delete_is_silent_for_missing"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/server/sandbox_run_test.go"
+upstream_test = "TestRunPodSandbox"
+local_path    = "tests/cri_sandbox_test.rs"
+local_test    = "test_run_pod_sandbox_creates_record_and_returns_id"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/server/sandbox_run_test.go"
+upstream_test = "TestRunPodSandbox_MissingConfig"
+local_path    = "tests/cri_sandbox_test.rs"
+local_test    = "test_run_pod_sandbox_rejects_missing_config"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/server/sandbox_status_test.go"
+upstream_test = "TestPodSandboxStatus"
+local_path    = "tests/cri_sandbox_test.rs"
+local_test    = "test_pod_sandbox_status_round_trip"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/server/sandbox_stop_test.go"
+upstream_test = "TestStopPodSandbox_Idempotent"
+local_path    = "tests/cri_sandbox_test.rs"
+local_test    = "test_stop_pod_sandbox_marks_notready_and_is_idempotent"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/server/sandbox_remove_test.go"
+upstream_test = "TestRemovePodSandbox"
+local_path    = "tests/cri_sandbox_test.rs"
+local_test    = "test_remove_pod_sandbox_clears_record"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/server/sandbox_list_test.go"
+upstream_test = "TestListPodSandbox"
+local_path    = "tests/cri_sandbox_test.rs"
+local_test    = "test_list_pod_sandbox_returns_all_records"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/server/version_test.go"
+upstream_test = "TestVersion"
+local_path    = "tests/cri_sandbox_test.rs"
+local_test    = "test_version_returns_runtime_name"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/server/status_test.go"
+upstream_test = "TestStatus"
+local_path    = "tests/cri_sandbox_test.rs"
+local_test    = "test_status_reports_runtime_ready_and_network_phase1b"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/server/exec_test.go"
+upstream_test = "TestExec_Unimplemented"
+local_path    = "tests/cri_sandbox_test.rs"
+local_test    = "test_streaming_rpc_returns_unimplemented_grpc_status"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/store/container/container_test.go"
+upstream_test = "TestContainerStore_Add"
+local_path    = "tests/cri_container_test.rs"
+local_test    = "test_container_store_add_then_get"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/store/container/container_test.go"
+upstream_test = "TestContainerStore_AddDuplicate"
+local_path    = "tests/cri_container_test.rs"
+local_test    = "test_container_store_add_duplicate_errors"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/store/container/container_test.go"
+upstream_test = "TestContainerStore_ListForSandbox"
+local_path    = "tests/cri_container_test.rs"
+local_test    = "test_container_store_list_for_sandbox_filters"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/store/container/container_test.go"
+upstream_test = "TestContainerStore_DeleteRunning"
+local_path    = "tests/cri_container_test.rs"
+local_test    = "test_container_store_delete_refuses_running_container"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/server/container_create_test.go"
+upstream_test = "TestCreateContainer"
+local_path    = "tests/cri_container_test.rs"
+local_test    = "test_create_container_returns_id_and_records_state_created"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/server/container_create_test.go"
+upstream_test = "TestCreateContainer_UnknownSandbox"
+local_path    = "tests/cri_container_test.rs"
+local_test    = "test_create_container_rejects_unknown_sandbox"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/server/container_start_test.go"
+upstream_test = "TestStartContainer"
+local_path    = "tests/cri_container_test.rs"
+local_test    = "test_start_container_transitions_created_to_running"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/server/container_stop_test.go"
+upstream_test = "TestStopContainer"
+local_path    = "tests/cri_container_test.rs"
+local_test    = "test_stop_container_transitions_running_to_exited"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/server/container_remove_test.go"
+upstream_test = "TestRemoveContainer"
+local_path    = "tests/cri_container_test.rs"
+local_test    = "test_remove_container_after_stop_clears_record"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/server/container_remove_test.go"
+upstream_test = "TestRemoveContainer_Running"
+local_path    = "tests/cri_container_test.rs"
+local_test    = "test_remove_container_refuses_running"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/server/container_status_test.go"
+upstream_test = "TestContainerStatus"
+local_path    = "tests/cri_container_test.rs"
+local_test    = "test_container_status_returns_full_record"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/server/container_list_test.go"
+upstream_test = "TestListContainers"
+local_path    = "tests/cri_container_test.rs"
+local_test    = "test_list_containers_returns_all"
+status        = "ported"
+
+[[upstream_test]]
+upstream_path = "internal/cri/server/sandbox_remove_test.go"
+upstream_test = "TestRemovePodSandbox_HasContainers"
+local_path    = "tests/cri_container_test.rs"
+local_test    = "test_remove_pod_sandbox_refuses_when_containers_present"
+status        = "ported"

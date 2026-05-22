@@ -1,0 +1,36 @@
+[package]
+name              = "cave-home-free-home"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-free-home — Busch-Jaeger free@home SysAP local REST + WebSocket client. Line-by-line port of kingsleyadam/local-abbfreeathome (MIT). Sits on top of the cave-home-knx crate (KNX-IP carrier). ADR-011."
+
+[package.metadata.cave-home]
+upstream    = "kingsleyadam/local-abbfreeathome"
+port-method = "line-by-line"
+adr         = "ADR-011"
+
+[package.metadata.upstream]
+repo    = "kingsleyadam/local-abbfreeathome"
+release = "3.5.1"
+sha     = "1f6e3ebcf448a07ad53b9cc4dbe64d013ba4cfee"
+subpath = "src/abbfreeathome/"
+license = "MIT"
+
+[dependencies]
+async-trait      = "0.1"
+parking_lot      = "0.12"
+serde            = { version = "1", features = ["derive"] }
+serde_json       = "1"
+thiserror        = "2"
+tokio            = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
+tracing          = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "test-util"] }
+
+[lints]
+workspace = true

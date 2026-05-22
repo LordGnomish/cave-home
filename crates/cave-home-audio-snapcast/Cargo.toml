@@ -1,0 +1,18 @@
+[package]
+name              = "cave-home-audio-snapcast"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-audio-snapcast — multi-room audio synchronisation (Snapcast wire protocol); reference: badaix/snapcast (GPL-3.0, source NOT read); port method: CLEAN-ROOM from public protocol docs (ADR-020, Charter §6.1)"
+
+[package.metadata.cave-home]
+upstream    = "badaix/snapcast (GPL-3.0, reference only, source NOT read)"
+port-method = "clean-room"
+spec-source = "Snapcast public protocol documentation (docs/ tree of upstream repo, documentation files only — not source)"
+adr         = "ADR-020"
+
+[lints]
+workspace = true

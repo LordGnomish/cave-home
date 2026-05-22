@@ -1,0 +1,41 @@
+[package]
+name              = "cave-home-zwave"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-zwave — Z-Wave stack (upstream: zwave-js/node-zwave-js, port method: line-by-line, smart-home device pillar per Charter §3.7)"
+
+[package.metadata.cave-home]
+upstream    = "zwave-js/node-zwave-js"
+port-method = "line-by-line"
+phase       = "smart-home-phase-1"
+
+[package.metadata.upstream]
+repo    = "zwave-js/zwave-js"
+release = "v15.24.0"
+sha     = "5ffca2b38393f9eab0bffcdbd65b3020cbeda492"
+subpath = "packages/zwave-js"
+
+[dependencies]
+aes         = "0.8"
+aes-gcm     = "0.10"
+async-trait = "0.1"
+bytes       = "1"
+cmac        = "0.7"
+futures     = "0.3"
+hkdf        = "0.12"
+parking_lot = "0.12"
+serde       = { version = "1", features = ["derive"] }
+sha2        = "0.10"
+thiserror   = "2"
+tokio       = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "io-util"] }
+tracing     = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "io-util", "test-util"] }
+
+[lints]
+workspace = true

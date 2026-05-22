@@ -1,0 +1,1 @@
+{"_comment": "cave-home-knx panels — Phase 1. Real Grafana JSON lands here once observability M3 is live. Planned panels: routing multicast tx/rx rate, tunnel state + sequence counter lag, top noisy group addresses, DPT decode error rate, KNX/IP discovery scan results."}

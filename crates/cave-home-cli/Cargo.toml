@@ -1,0 +1,30 @@
+[package]
+name              = "cave-home-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-cli — cavehomectl command surface (first-party, no upstream port)"
+
+[package.metadata.cave-home]
+upstream    = "none"
+port-method = "first-party"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "cavehomectl"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive", "env"] }
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.1"
+
+[lints]
+workspace = true

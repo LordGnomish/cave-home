@@ -1,0 +1,40 @@
+[package]
+name              = "cave-home-automation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-automation — Home Assistant core port; the heart of cave-home (state machine, event bus, service registry, automation engine, scripts, scenes, templates, config entries) — upstream: home-assistant/core, port method: line-by-line"
+
+[package.metadata.cave-home]
+upstream    = "home-assistant/core"
+port-method = "line-by-line"
+phase       = "phase-1-mvp"
+
+[package.metadata.upstream]
+repo    = "home-assistant/core"
+release = "2026.5.2"
+sha     = "456202325ac48549bd3c895dc3e69ecd3e2ba6a4"
+subpath = "homeassistant"
+
+[dependencies]
+async-trait = "0.1"
+futures     = "0.3"
+minijinja   = { version = "2", features = ["builtins", "loader"] }
+parking_lot = "0.12"
+regex       = "1"
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+thiserror   = "2"
+time        = { version = "0.3", features = ["serde", "macros", "formatting", "parsing", "local-offset"] }
+tokio       = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
+tracing     = "0.1"
+ulid        = { version = "1", features = ["serde"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "test-util"] }
+
+[lints]
+workspace = true

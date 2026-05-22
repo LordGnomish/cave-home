@@ -1,0 +1,17 @@
+[package]
+name              = "cave-home-audio-mopidy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-audio-mopidy — local music server (Mopidy backend client + HA mopidy integration); upstream: mopidy/mopidy (Apache-2.0); port method: line-by-line (ADR-020)"
+
+[package.metadata.cave-home]
+upstream    = "mopidy/mopidy + home-assistant/core (mopidy integration)"
+port-method = "line-by-line"
+adr         = "ADR-020"
+
+[lints]
+workspace = true

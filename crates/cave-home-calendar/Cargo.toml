@@ -1,0 +1,18 @@
+[package]
+name              = "cave-home-calendar"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-calendar — CalDAV + CardDAV server (Radicale-class) + HA caldav client integration; reference: Kozea/Radicale (GPL-3.0, source NOT read); server: CLEAN-ROOM from RFC 4791 + 6352 + 5545 + 6350; client: line-by-line (ADR-027, Charter §6.1)"
+
+[package.metadata.cave-home]
+upstream    = "Kozea/Radicale (GPL-3.0, reference only, source NOT read) + home-assistant/core (caldav client)"
+port-method = "mixed"
+spec-source = "RFC 4791 (CalDAV) + RFC 6352 (CardDAV) + RFC 5545 (iCalendar) + RFC 6350 (vCard)"
+adr         = "ADR-027"
+
+[lints]
+workspace = true

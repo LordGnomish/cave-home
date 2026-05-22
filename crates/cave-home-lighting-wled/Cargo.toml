@@ -1,0 +1,18 @@
+[package]
+name              = "cave-home-lighting-wled"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-lighting-wled — WLED addressable-LED firmware client; reference: WLED upstream (treated as copyleft, source NOT read); port method: CLEAN-ROOM from WLED JSON API + UDP realtime public docs (ADR-014, Charter §6.1)"
+
+[package.metadata.cave-home]
+upstream    = "Aircoookie/WLED (treated as copyleft, source NOT read)"
+port-method = "clean-room"
+spec-source = "WLED JSON API public docs (kno.wled.ge) + UDP realtime protocol public spec + WS2812/SK6812 NeoPixel public timing diagrams"
+adr         = "ADR-014"
+
+[lints]
+workspace = true

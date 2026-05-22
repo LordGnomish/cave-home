@@ -1,0 +1,17 @@
+[package]
+name              = "cave-home-notify"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-notify — notification stack (ntfy embedded server + gotify + Apprise multi-destination router); upstreams: binwiederhier/ntfy (Apache-2.0) + gotify/server (MIT) + caronc/apprise (MIT); port method: line-by-line (ADR-021)"
+
+[package.metadata.cave-home]
+upstream    = "binwiederhier/ntfy + gotify/server + caronc/apprise"
+port-method = "line-by-line"
+adr         = "ADR-021"
+
+[lints]
+workspace = true

@@ -1,0 +1,20 @@
+[package]
+name              = "cave-home-binary"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home — unified Rust binary entry point linking every cave-home-* crate per Charter §5 (first-party, no upstream port)"
+
+[package.metadata.cave-home]
+upstream    = "none"
+port-method = "first-party"
+
+[[bin]]
+name = "cave-home"
+path = "src/main.rs"
+
+[lints]
+workspace = true

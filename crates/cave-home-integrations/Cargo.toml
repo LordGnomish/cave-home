@@ -1,0 +1,16 @@
+[package]
+name              = "cave-home-integrations"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-integrations — integrations port (upstream: home-assistant/core integrations, port method: hybrid — line-by-line for Apache/MIT integrations, clean-room for Tasmota MQTT command schema)"
+
+[package.metadata.cave-home]
+upstream    = "home-assistant/core (integrations) + arendst/Tasmota (MQTT command schema)"
+port-method = "hybrid"
+
+[lints]
+workspace = true

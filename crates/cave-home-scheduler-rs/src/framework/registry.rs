@@ -1,0 +1,124 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Plugin registry — holds the ordered Filter and Score plugin sets.
+//!
+//! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
+//!         pkg/scheduler/framework/runtime/registry.go
+//!         pkg/scheduler/framework/runtime/framework.go
+
+use std::sync::Arc;
+
+use super::{FilterPlugin, PostFilterPlugin, ScorePlugin};
+
+/// Upstream: `pkg/scheduler/framework/runtime/framework.go::frameworkImpl`.
+///
+/// We diverge from upstream's reflective `runtime.Registry` (a name->factory
+/// map) because Rust generics + traits give us static dispatch without the
+/// reflection ceremony. The behavioural contract — ordered execution of
+/// each extension point — is preserved 1:1.
+#[derive(Clone, Default)]
+pub struct PluginRegistry {
+    filters: Vec<Arc<dyn FilterPlugin>>,
+    scores: Vec<Arc<dyn ScorePlugin>>,
+    post_filters: Vec<Arc<dyn PostFilterPlugin>>,
+}
+
+impl PluginRegistry {
+    #[must_use]
+    pub fn builder() -> RegistryBuilder {
+        RegistryBuilder::default()
+    }
+
+    #[must_use]
+    pub fn filters(&self) -> &[Arc<dyn FilterPlugin>] {
+        &self.filters
+    }
+
+    #[must_use]
+    pub fn scores(&self) -> &[Arc<dyn ScorePlugin>] {
+        &self.scores
+    }
+
+    #[must_use]
+    pub fn post_filters(&self) -> &[Arc<dyn PostFilterPlugin>] {
+        &self.post_filters
+    }
+}
+
+/// Builder for [`PluginRegistry`].
+#[derive(Default)]
+pub struct RegistryBuilder {
+    filters: Vec<Arc<dyn FilterPlugin>>,
+    scores: Vec<Arc<dyn ScorePlugin>>,
+    post_filters: Vec<Arc<dyn PostFilterPlugin>>,
+}
+
+impl RegistryBuilder {
+    #[must_use]
+    pub fn with_filter(mut self, p: Arc<dyn FilterPlugin>) -> Self {
+        self.filters.push(p);
+        self
+    }
+
+    #[must_use]
+    pub fn with_score(mut self, p: Arc<dyn ScorePlugin>) -> Self {
+        self.scores.push(p);
+        self
+    }
+
+    #[must_use]
+    pub fn with_post_filter(mut self, p: Arc<dyn PostFilterPlugin>) -> Self {
+        self.post_filters.push(p);
+        self
+    }
+
+    #[must_use]
+    pub fn build(self) -> PluginRegistry {
+        PluginRegistry {
+            filters: self.filters,
+            scores: self.scores,
+            post_filters: self.post_filters,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::cache::NodeInfo;
+    use crate::framework::{CycleState, Status};
+    use crate::types::Pod;
+
+    struct PassFilter;
+    impl FilterPlugin for PassFilter {
+        fn name(&self) -> &'static str {
+            "PassFilter"
+        }
+        fn filter(&self, _: &mut CycleState, _: &Pod, _: &NodeInfo) -> Status {
+            Status::success()
+        }
+    }
+
+    struct ZeroScore;
+    impl ScorePlugin for ZeroScore {
+        fn name(&self) -> &'static str {
+            "ZeroScore"
+        }
+        fn score(&self, _: &mut CycleState, _: &Pod, _: &NodeInfo) -> (i64, Status) {
+            (0, Status::success())
+        }
+    }
+
+    #[test]
+    fn registry_records_filter_and_score_plugins_in_order() {
+        let reg = PluginRegistry::builder()
+            .with_filter(Arc::new(PassFilter))
+            .with_score(Arc::new(ZeroScore))
+            .build();
+        assert_eq!(reg.filters().len(), 1);
+        assert_eq!(reg.scores().len(), 1);
+        assert_eq!(reg.filters()[0].name(), "PassFilter");
+        assert_eq!(reg.scores()[0].name(), "ZeroScore");
+    }
+}

@@ -1,0 +1,17 @@
+[package]
+name              = "cave-home-history"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-history — time-series sensor-history store (InfluxDB 2.0 embedded default + TimescaleDB + VictoriaMetrics opt-in); port method: line-by-line (ADR-023)"
+
+[package.metadata.cave-home]
+upstream    = "influxdata/influxdb (MIT, embedded default) + timescale/timescaledb (Apache, opt-in) + VictoriaMetrics/VictoriaMetrics (Apache, opt-in)"
+port-method = "line-by-line"
+adr         = "ADR-023"
+
+[lints]
+workspace = true

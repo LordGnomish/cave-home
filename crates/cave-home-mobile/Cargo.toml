@@ -1,0 +1,17 @@
+[package]
+name              = "cave-home-mobile"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-mobile — companion-app shared core: state sync, push-notification routing, geofencing logic, Portal API client. Mobile stack (Tauri / Flutter / RN / KMM) finalised in ADR-006."
+
+[package.metadata.cave-home]
+upstream    = "none (first-party)"
+port-method = "first-party"
+role        = "mobile companion shared core"
+
+[lints]
+workspace = true

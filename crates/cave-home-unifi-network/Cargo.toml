@@ -1,0 +1,35 @@
+[package]
+name              = "cave-home-unifi-network"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-unifi-network — UniFi Network port (switches, APs, port telemetry, client tracking); upstream: home-assistant/core unifi integration + Ubiquiti public REST/WebSocket API; port method: line-by-line (ADR-009)"
+
+[package.metadata.cave-home]
+upstream    = "home-assistant/core (unifi integration) + Ubiquiti public REST/WebSocket"
+port-method = "line-by-line"
+adr         = "ADR-009"
+
+[package.metadata.upstream]
+repo    = "home-assistant/core"
+release = "2026.5.2"
+sha     = "456202325ac48549bd3c895dc3e69ecd3e2ba6a4"
+subpath = "homeassistant/components/unifi"
+
+[dependencies]
+async-trait  = "0.1"
+parking_lot  = "0.12"
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"
+thiserror    = "2"
+tokio        = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "net", "io-util"] }
+tracing      = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "net", "test-util"] }
+
+[lints]
+workspace = true

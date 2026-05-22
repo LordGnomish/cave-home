@@ -1,0 +1,136 @@
+# cave-home solar Tier 1 alert rules (Prometheus)
+#
+# Crates: cave-home-solar-evcc, cave-home-solar-sunspec, cave-home-solar-forecast.
+# Charter §6.3 grandma-friendly UX: the `summary` field is rendered to
+# the headline persona; the `description` field carries the developer
+# detail (Modbus model IDs, Watt thresholds, etc.) and only shows up
+# in the Portal Developer view.
+
+groups:
+  - name: cave-home-solar-evcc
+    interval: 30s
+    rules:
+      - alert: SolarSurplusLoopStalled
+        expr: increase(cave_home_solar_evcc_tick_total[5m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+          pillar: solar
+        annotations:
+          summary: "Surplus loop has not ticked for 5 minutes"
+          description: |
+            cave-home-solar-evcc tick rate is zero. Either the surplus
+            loop task has stalled or a meter source is failing every
+            tick. Check `meter_read_error_total` and the tokio runtime.
+
+      - alert: LoadpointStuckAboveMax
+        expr: cave_home_solar_evcc_loadpoint_current_a > on(loadpoint) cave_home_solar_evcc_loadpoint_max_a
+        for: 2m
+        labels:
+          severity: critical
+          pillar: solar
+        annotations:
+          summary: "EV charger drawing more current than its rated limit"
+          description: |
+            Loadpoint {{ $labels.loadpoint }} reports
+            {{ $value | humanize }}A above its configured `MaxCurrent`.
+            Pause this loadpoint and inspect the charger firmware.
+
+      - alert: PlanInfeasibleRecurring
+        expr: rate(cave_home_solar_evcc_plan_infeasible_total[15m]) > 0.05
+        for: 15m
+        labels:
+          severity: warning
+          pillar: solar
+        annotations:
+          summary: "Cheap-electricity plan has been failing repeatedly"
+          description: |
+            The planner is failing to land a feasible plan
+            ({{ $value | humanize }} failures / second over 15 min).
+            Likely cause: tariff samples expired or `MaxKw` too low for
+            the requested `target_kwh`.
+
+  - name: cave-home-solar-sunspec
+    interval: 30s
+    rules:
+      - alert: SunSpecModbusReadErrors
+        expr: rate(cave_home_solar_sunspec_modbus_error_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          pillar: solar
+        annotations:
+          summary: "Solar inverter is not responding reliably"
+          description: |
+            cave-home-solar-sunspec Modbus error rate
+            ({{ $value | humanize }} errors / second over 5 min)
+            exceeds threshold. Verify the inverter's network /
+            Modbus TCP port (model_id={{ $labels.model_id }}).
+
+      - alert: SunSpecMarkerNotFound
+        expr: cave_home_solar_sunspec_marker_present == 0
+        for: 10m
+        labels:
+          severity: warning
+          pillar: solar
+        annotations:
+          summary: "Solar inverter does not advertise SunSpec data"
+          description: |
+            Marker probe failed at 40000 / 50000 / 0. The inverter may
+            need its Modbus-TCP feature explicitly enabled, or the host
+            firewall is blocking port 502.
+
+      - alert: BatterySocLow
+        expr: cave_home_solar_sunspec_battery_soc_percent < 10
+        for: 2h
+        labels:
+          severity: warning
+          pillar: solar
+        annotations:
+          summary: "Home battery has been below 10% for over 2 hours"
+          description: |
+            Battery SoC = {{ $value | humanize }}%. Either the battery
+            has stopped charging (PV / inverter fault) or the surplus
+            loop is over-discharging — review BatteryMode and SoC floor.
+
+  - name: cave-home-solar-forecast
+    interval: 1m
+    rules:
+      - alert: ForecastSolarQuotaExhausted
+        expr: increase(cave_home_solar_forecast_quota_exhausted_total[1h]) > 3
+        for: 1h
+        labels:
+          severity: warning
+          pillar: solar
+        annotations:
+          summary: "Solar forecast updates are being rate-limited"
+          description: |
+            Forecast.Solar returned HTTP 429 more than three times in
+            the last hour. Upgrade tier or back off the polling cadence.
+
+      - alert: ForecastStale
+        expr: time() - cave_home_solar_forecast_last_success_timestamp > 6 * 3600
+        for: 15m
+        labels:
+          severity: warning
+          pillar: solar
+        annotations:
+          summary: "Solar forecast has been stale for 6 hours"
+          description: |
+            Last successful forecast fetch was
+            {{ $value | humanizeDuration }} ago. Surplus planner is now
+            operating on a stale forecast — check both Forecast.Solar
+            and PVGIS reachability.
+
+      - alert: PvGisEmptyResponses
+        expr: increase(cave_home_solar_forecast_pvgis_empty_total[24h]) > 0
+        for: 24h
+        labels:
+          severity: info
+          pillar: solar
+        annotations:
+          summary: "PVGIS returned empty monthly data"
+          description: |
+            PVGIS responded with an empty monthly array — verify the
+            site coordinates and selected radiation database
+            (current: PVGIS-SARAH2 / SARAH3 / ERA5).

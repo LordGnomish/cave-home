@@ -1,0 +1,378 @@
+# cave-home-scheduler-rs — line-by-line port manifest (Phase 2 MVP).
+#
+# Honest scoping: pkg/scheduler is ~25 kLOC of production Go across
+# framework, plugins, queue, cache, profile, preemption, and the
+# scheduleOne driver. Phase 2 ships the default-profile slice only
+# (filters + scores + priority-based preemption). The fill_ratio
+# reflects Rust src LOC against that upstream baseline.
+
+[crate]
+name             = "cave-home-scheduler-rs"
+upstream_repo    = "kubernetes/kubernetes"
+upstream_release = "v1.36.1"
+upstream_sha     = "756939600b9a7180fc2df6550a4585b638875e67"
+upstream_subpath = "pkg/scheduler"
+ported_at        = "2026-05-15"
+linux_min_kernel = "7.1"
+
+[ratios]
+# Production-only src LOC (~2.37 kLOC, measured by stripping each module
+# at the first `#[cfg(test)]` boundary) divided by the upstream
+# pkg/scheduler production baseline (~25 kLOC of Go, excluding _test.go)
+# = 0.095. Hand-ported tests live inline in each src module and add
+# ~1.49 kLOC; counting those into a separate test ratio gives a
+# test_port_ratio of ~0.06.
+fill_ratio      = 0.095
+test_port_ratio = 0.06
+
+# ---- mapped (line-by-line port present in this crate) -----------------------
+
+[[mapped]]
+upstream = "pkg/scheduler/scheduler.go::Scheduler"
+ours     = "src/scheduler.rs::Scheduler"
+
+[[mapped]]
+upstream = "pkg/scheduler/schedule_one.go::Scheduler.scheduleOne"
+ours     = "src/schedule_one.rs::schedule_one"
+
+[[mapped]]
+upstream = "pkg/scheduler/schedule_one.go::ScheduleResult"
+ours     = "src/schedule_one.rs::ScheduleResult"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/interface.go::FilterPlugin"
+ours     = "src/framework/mod.rs::FilterPlugin"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/interface.go::ScorePlugin"
+ours     = "src/framework/mod.rs::ScorePlugin"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/interface.go::PostFilterPlugin"
+ours     = "src/framework/mod.rs::PostFilterPlugin"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/types.go::Status"
+ours     = "src/framework/mod.rs::Status"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/types.go::Code"
+ours     = "src/framework/mod.rs::Code"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/cycle_state.go::CycleState"
+ours     = "src/framework/cycle_state.rs::CycleState"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/runtime/registry.go::Registry"
+ours     = "src/framework/registry.rs::PluginRegistry"
+
+[[mapped]]
+upstream = "pkg/scheduler/apis/config/v1/default_plugins.go::getDefaultPlugins"
+ours     = "src/plugins/mod.rs::default_registry"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/plugins/noderesources/fit.go::Filter"
+ours     = "src/plugins/node_resources_fit.rs::NodeResourcesFit"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/plugins/nodename/node_name.go::Filter"
+ours     = "src/plugins/node_name.rs::NodeName"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/plugins/nodeunschedulable/node_unschedulable.go::Filter"
+ours     = "src/plugins/node_unschedulable.rs::NodeUnschedulable"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/plugins/nodeports/node_ports.go::Filter"
+ours     = "src/plugins/node_ports.rs::NodePorts"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/plugins/volumerestrictions/volume_restrictions.go::Filter"
+ours     = "src/plugins/volume_restrictions.rs::VolumeRestrictions"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/plugins/tainttoleration/taint_toleration.go::Filter"
+ours     = "src/plugins/taint_toleration.rs::TaintToleration"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/plugins/nodeaffinity/node_affinity.go::Filter"
+ours     = "src/plugins/mod.rs::NodeAffinityFilter"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/plugins/noderesources/balanced_allocation.go::Score"
+ours     = "src/plugins/node_resources_balanced.rs::NodeResourcesBalancedAllocation"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/plugins/noderesources/least_allocated.go::Score"
+ours     = "src/plugins/least_requested.rs::LeastRequested"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/plugins/imagelocality/image_locality.go::Score"
+ours     = "src/plugins/image_locality.rs::ImageLocality"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/plugins/defaultpreemption/default_preemption.go::PostFilter"
+ours     = "src/preemption.rs::DefaultPreemption"
+
+[[mapped]]
+upstream = "pkg/scheduler/backend/queue/scheduling_queue.go::SchedulingQueue"
+ours     = "src/queue/mod.rs::SchedulingQueue"
+
+[[mapped]]
+upstream = "pkg/scheduler/backend/queue/scheduling_queue.go::PriorityQueue"
+ours     = "src/queue/priority_queue.rs::PriorityQueue"
+
+[[mapped]]
+upstream = "pkg/scheduler/backend/queue/scheduling_queue.go::QueuedPodInfo"
+ours     = "src/queue/priority_queue.rs::QueuedPodInfo"
+
+[[mapped]]
+upstream = "pkg/scheduler/backend/cache/interface.go::Cache"
+ours     = "src/cache/mod.rs::SchedulerCache"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/types.go::NodeInfo"
+ours     = "src/cache/node_info.rs::NodeInfo"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/types.go::HostPortInfo"
+ours     = "src/cache/node_info.rs::HostPortUse"
+
+[[mapped]]
+upstream = "pkg/scheduler/backend/cache/cache.go::Cache.assumedPods"
+ours     = "src/cache/assumed_pods.rs::AssumedPodTracker"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::Pod"
+ours     = "src/types.rs::Pod"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::Node"
+ours     = "src/types.rs::Node"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::Taint"
+ours     = "src/types.rs::Taint"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::Toleration"
+ours     = "src/types.rs::Toleration"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::NodeSelector"
+ours     = "src/types.rs::NodeSelector"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::NodeSelectorRequirement"
+ours     = "src/types.rs::NodeSelectorRequirement"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::Affinity"
+ours     = "src/types.rs::Affinity"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::ContainerPort"
+ours     = "src/types.rs::ContainerPort"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::Volume"
+ours     = "src/types.rs::Volume"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::PersistentVolumeClaimVolumeSource"
+ours     = "src/types.rs::PvcSource"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::HostPathVolumeSource"
+ours     = "src/types.rs::HostPathSource"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::ResourceRequirements"
+ours     = "src/types.rs::ResourceRequirements"
+
+[[mapped]]
+upstream = "k8s.io/apimachinery/pkg/api/resource.Quantity"
+ours     = "src/types.rs::Quantity"
+
+# ---- unmapped (NOT in this crate; tagged for follow-up) ---------------------
+
+[[unmapped]]
+area     = "pkg/scheduler/framework/plugins/podtopologyspread"
+priority = "phase-2b"
+note     = "PodTopologySpreadConstraints — needs Pod/Node label indexing across the whole snapshot."
+
+[[unmapped]]
+area     = "pkg/scheduler/framework/plugins/interpodaffinity"
+priority = "phase-2b"
+note     = "Inter-pod affinity / anti-affinity (required and preferred)."
+
+[[unmapped]]
+area     = "pkg/scheduler/framework/plugins/nodeaffinity (preferred)"
+priority = "phase-2b"
+note     = "PreferredDuringSchedulingIgnoredDuringExecution — score contribution only."
+
+[[unmapped]]
+area     = "pkg/scheduler/framework/plugins/volumebinding"
+priority = "phase-2b"
+note     = "Statically and dynamically provisioned PV binding (PV/PVC bind cycle, BindCompleted)."
+
+[[unmapped]]
+area     = "pkg/scheduler/framework/plugins/volumezone"
+priority = "phase-2b"
+note     = "Zone-aware volume scheduling."
+
+[[unmapped]]
+area     = "pkg/scheduler/framework/plugins/nodevolumelimits"
+priority = "phase-2b"
+note     = "Per-node CSI / EBS / GCE-PD attach limits."
+
+[[unmapped]]
+area     = "pkg/scheduler/framework/plugins/dynamicresources"
+priority = "phase-2b"
+note     = "Dynamic Resource Allocation (DRA) — beta in v1.32+."
+
+[[unmapped]]
+area     = "pkg/scheduler/framework/runtime (Reserve/Permit/PreBind extension points)"
+priority = "phase-2b"
+note     = "Phase 2 uses only Filter/Score/PostFilter."
+
+[[unmapped]]
+area     = "pkg/scheduler/apis/config (multi-profile, custom plugin registry)"
+priority = "phase-2b"
+note     = "Single hard-coded default-scheduler profile in Phase 2."
+
+[[unmapped]]
+area     = "pkg/scheduler/framework/plugins/imagelocality (image-size weighting)"
+priority = "phase-2b"
+note     = "Phase 2 scores by image-presence count only; image size and node coverage are deferred."
+
+[[unmapped]]
+area     = "pkg/scheduler/framework/plugins/defaultpreemption (lower-priority victim minimisation)"
+priority = "phase-2b"
+note     = "Phase 2 picks the cheapest first-fit victim set; upstream tries to minimise disruption cost."
+
+[[unmapped]]
+area     = "pkg/scheduler/extender (out-of-tree HTTP extenders)"
+priority = "phase-2b"
+note     = "Legacy extension mechanism; superseded by the framework plugin model."
+
+[[unmapped]]
+area     = "pkg/scheduler/eventhandlers.go (informer wiring)"
+priority = "phase-2b"
+note     = "Replaced by the SchedulerSource trait + in-process drivers in Phase 2."
+
+[[unmapped]]
+area     = "pkg/scheduler/profile (multi-profile registry)"
+priority = "phase-2b"
+note     = "Phase 2 ships a single profile."
+
+[[unmapped]]
+area     = "pkg/scheduler/metrics"
+priority = "phase-2b"
+note     = "Prometheus metric registration (scheduler_e2e_scheduling_duration_seconds etc.)."
+
+[[unmapped]]
+area     = "pkg/scheduler/backend/queue (QueueingHints)"
+priority = "phase-2b"
+note     = "Hint-driven re-queue introduced in v1.31; Phase 2 uses plain backoff only."
+
+[[unmapped]]
+area     = "Windows-only scheduler code"
+priority = "permanent"
+note     = "Linux 7.1+ only per Charter §3."
+
+[[unmapped]]
+area     = "pre-Linux 5.0 kernel fallbacks"
+priority = "permanent"
+note     = "Charter §3 mandates Linux 7.1+ baseline."
+
+# ---- upstream_test (Go tests we conceptually re-port) -----------------------
+
+[[upstream_test]]
+file = "pkg/scheduler/framework/plugins/noderesources/fit_test.go::TestEnoughRequests"
+ours = "src/plugins/node_resources_fit.rs::tests::fits_when_request_below_allocatable"
+
+[[upstream_test]]
+file = "pkg/scheduler/framework/plugins/noderesources/fit_test.go::TestInsufficientResource"
+ours = "src/plugins/node_resources_fit.rs::tests::does_not_fit_when_cpu_exceeds_free"
+
+[[upstream_test]]
+file = "pkg/scheduler/framework/plugins/noderesources/fit_test.go::TestExistingPodResource"
+ours = "src/plugins/node_resources_fit.rs::tests::accounts_for_already_requested_pods"
+
+[[upstream_test]]
+file = "pkg/scheduler/framework/plugins/nodename/node_name_test.go::TestNodeName"
+ours = "src/plugins/node_name.rs::tests::matching_node_name_passes"
+
+[[upstream_test]]
+file = "pkg/scheduler/framework/plugins/nodeunschedulable/node_unschedulable_test.go::TestNodeUnschedulable"
+ours = "src/plugins/node_unschedulable.rs::tests::unschedulable_node_fails_without_toleration"
+
+[[upstream_test]]
+file = "pkg/scheduler/framework/plugins/nodeports/node_ports_test.go::TestNodePorts"
+ours = "src/plugins/node_ports.rs::tests::same_port_on_any_ip_conflicts"
+
+[[upstream_test]]
+file = "pkg/scheduler/framework/plugins/volumerestrictions/volume_restrictions_test.go::TestSingleWriterPVC"
+ours = "src/plugins/volume_restrictions.rs::tests::rwo_pvc_already_in_use_blocks_node"
+
+[[upstream_test]]
+file = "pkg/scheduler/framework/plugins/tainttoleration/taint_toleration_test.go::TestTaintTolerationPredicate"
+ours = "src/plugins/taint_toleration.rs::tests::no_schedule_taint_blocks_pod_without_toleration"
+
+[[upstream_test]]
+file = "pkg/scheduler/framework/plugins/nodeaffinity/node_affinity_test.go::TestNodeAffinity"
+ours = "src/plugins/mod.rs::tests::node_affinity_matches_required_terms"
+
+[[upstream_test]]
+file = "pkg/scheduler/framework/plugins/noderesources/least_allocated_test.go::TestLeastRequested"
+ours = "src/plugins/least_requested.rs::tests::empty_node_scores_at_max"
+
+[[upstream_test]]
+file = "pkg/scheduler/framework/plugins/noderesources/balanced_allocation_test.go::TestBalancedResourceAllocation"
+ours = "src/plugins/node_resources_balanced.rs::tests::balanced_usage_scores_near_max"
+
+[[upstream_test]]
+file = "pkg/scheduler/framework/plugins/imagelocality/image_locality_test.go::TestImageLocalityPriority"
+ours = "src/plugins/image_locality.rs::tests::node_with_all_images_scores_max"
+
+[[upstream_test]]
+file = "pkg/scheduler/framework/plugins/defaultpreemption/default_preemption_test.go::TestPostFilter"
+ours = "src/preemption.rs::tests::preemption_picks_node_after_evicting_lower_priority"
+
+[[upstream_test]]
+file = "pkg/scheduler/backend/queue/scheduling_queue_test.go::TestPriorityQueueOrder"
+ours = "src/queue/priority_queue.rs::tests::pop_returns_higher_priority_first"
+
+[[upstream_test]]
+file = "pkg/scheduler/backend/queue/scheduling_queue_test.go::TestBackoff"
+ours = "src/queue/priority_queue.rs::tests::backoff_grows_exponentially_then_caps"
+
+[[upstream_test]]
+file = "pkg/scheduler/backend/cache/cache_test.go::TestExpireAssumedPod"
+ours = "src/cache/mod.rs::tests::forget_pod_releases_resources"
+
+[[upstream_test]]
+file = "pkg/scheduler/backend/cache/cache_test.go::TestAddPodWillConfirm"
+ours = "src/cache/mod.rs::tests::add_pod_updates_requested_resources"
+
+[[upstream_test]]
+file = "pkg/scheduler/schedule_one_test.go::TestScheduleOne"
+ours = "src/schedule_one.rs::tests::schedules_onto_only_fitting_node"
+
+[[upstream_test]]
+file = "pkg/scheduler/schedule_one_test.go::TestSchedulerNoPhantomBind"
+ours = "src/scheduler.rs::tests::end_to_end_schedule_and_bind"
+
+[[upstream_test]]
+file = "pkg/scheduler/schedule_one_test.go::TestSchedulerErrorWithLongBackoff"
+ours = "src/scheduler.rs::tests::unschedulable_pod_is_requeued"
+
+[[upstream_test]]
+file = "pkg/scheduler/scheduler_test.go::TestSchedulerWithPriority"
+ours = "src/scheduler.rs::tests::higher_priority_pod_pops_first"
+
+[[upstream_test]]
+file = "pkg/scheduler/scheduler_test.go::TestSchedulerWithTaints"
+ours = "src/scheduler.rs::tests::binds_only_to_node_passing_taint"

@@ -1,0 +1,18 @@
+[package]
+name              = "cave-home-wearable"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-wearable — sleep-system actuators (Eight Sleep, Sleep Number) + dedicated sleep wearables beyond ADR-025 wellness sensors; DEFERRED to M11+, scaffold only (ADR-031)"
+
+[package.metadata.cave-home]
+upstream    = "home-assistant/core (eight_sleep, sleep_number) — implementation deferred"
+port-method = "line-by-line (when implemented)"
+adr         = "ADR-031"
+status      = "deferred-scaffold-only"
+
+[lints]
+workspace = true

@@ -1,0 +1,18 @@
+[package]
+name              = "cave-home-dns-adguard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-dns-adguard — DNS ad-blocking + parental controls (AdGuard Home-class); reference: AdguardTeam/AdGuardHome (GPL, source NOT read); port method: CLEAN-ROOM from AdGuard admin-API public docs + OpenAPI spec (ADR-022, Charter §6.1)"
+
+[package.metadata.cave-home]
+upstream    = "AdguardTeam/AdGuardHome (GPL, reference only, source NOT read)"
+port-method = "clean-room"
+spec-source = "AdGuard Home admin-API public docs (github.com/AdguardTeam/AdGuardHome/wiki) + OpenAPI spec"
+adr         = "ADR-022"
+
+[lints]
+workspace = true

@@ -1,0 +1,11 @@
+# cave-home-knx alerts — Phase 1
+#
+# Planned alert rules (real Prometheus expressions land here once the
+# observability crate ships in M3):
+#   - KnxRoutingLost:         rate(knx_routing_lost_message_total[5m]) > 0
+#   - KnxRoutingBusy:         rate(knx_routing_busy_total[5m]) > 0.1/s
+#   - KnxTunnelDown:          knx_tunnel_connected == 0 for 1m
+#   - KnxTunnelSeqErrors:     rate(knx_tunnel_seq_mismatch_total[5m]) > 0
+#   - KnxHeartbeatMiss:       (time() - knx_tunnel_last_heartbeat_ts) > 60
+#   - KnxCemiParseErrors:     rate(knx_cemi_parse_errors_total[5m]) > 0
+#   - KnxBusFloodWrites:      rate(knx_group_write_total[1m]) > 50/s

@@ -1,0 +1,13 @@
+{
+    "@@locale": "tr",
+    "appTitle": "cave-home",
+    "welcome": "Eve hoş geldin",
+    "username": "Kullanıcı adı",
+    "password": "Şifre",
+    "login": "Giriş yap",
+    "biometric": "Parmak izi / Face ID",
+    "devices": "Cihazlar",
+    "automations": "Otomasyonlar",
+    "scenes": "Senaryolar",
+    "settings": "Ayarlar"
+}

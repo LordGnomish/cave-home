@@ -1,0 +1,17 @@
+[package]
+name              = "cave-home-orchestration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-orchestration — umbrella for the in-binary K3s line-by-line Rust port (ADR-004 Accepted 2026-05-14); re-exports Phase 1–4 sub-crates (containerd, kubelet, kube-proxy, cni, apiserver, scheduler, controller-manager, kine, helm-controller, klipper-lb, traefik)"
+
+[package.metadata.cave-home]
+upstream    = "k3s-io/k3s"
+port-method = "line-by-line"
+role        = "umbrella"
+
+[lints]
+workspace = true

@@ -1,0 +1,86 @@
+[package]
+name              = "cave-home-voice"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-voice — local STT (whisper.cpp) + TTS (piper) + wake-word (openWakeWord) + intent routing (OVOS Adapt/Padatious) + dialog management; upstreams: ggerganov/whisper.cpp + rhasspy/piper + dscripka/openWakeWord + OpenVoiceOS/ovos-core; port method: line-by-line (ADR-024)"
+
+[package.metadata.cave-home]
+upstream    = "ggerganov/whisper.cpp + rhasspy/piper + dscripka/openWakeWord + OpenVoiceOS/ovos-core (+ ovos-workshop + ovos-bus-client + adapt)"
+port-method = "line-by-line"
+adr         = "Charter §3 + ADR-024"
+phase       = "voice-phase-1"
+
+[package.metadata.upstream.whisper_cpp]
+repo    = "ggerganov/whisper.cpp"
+release = "v1.7.4"
+sha     = "6ad0bb0f57bbb6f1ce14dcd55c64c9c4d5dffeb6"
+subpath = "whisper.cpp + examples/"
+
+[package.metadata.upstream.piper]
+repo    = "rhasspy/piper"
+release = "v1.2.0"
+sha     = "23dee2ec1bf4c44321de27dec57ec0ec2a4174f0"
+subpath = "src/cpp"
+
+[package.metadata.upstream.openwakeword]
+repo    = "dscripka/openWakeWord"
+release = "v0.6.0"
+sha     = "ed7f5b9bc9eb09b0e8f0fb6f5d33d40b9c5b08a3"
+subpath = "openwakeword/"
+
+[package.metadata.upstream.ovos_core]
+repo    = "OpenVoiceOS/ovos-core"
+release = "0.0.8"
+sha     = "5a8f64ad4dd0c7c92eaa4a8e3e7c12c5f5f29a3a"
+subpath = "ovos_core/intent_services + ovos_core/dialog"
+
+[package.metadata.upstream.ovos_workshop]
+repo    = "OpenVoiceOS/ovos-workshop"
+release = "0.0.16"
+sha     = "9ddd6f8fbf9c1b6f04b9e3d8a2c7c4e1f6d2c1a0"
+subpath = "ovos_workshop/skills"
+
+[package.metadata.upstream.adapt]
+repo    = "MycroftAI/adapt"
+release = "0.5.1"
+sha     = "d3c2c2f9e4d4c7d8f3b1e2a4c5d6e7f8a9b0c1d2"
+subpath = "adapt/"
+
+[features]
+default = []
+# Real whisper.cpp FFI binding. Off by default so unit + integration tests
+# can run without the C library present; production builds (and the
+# integration ladder) enable it.
+stt-whisper = ["dep:whisper-rs"]
+# Real piper-rs binding. Off by default for the same reason as stt-whisper.
+tts-piper = ["dep:piper-rs"]
+# Real ONNX runtime for openWakeWord inference.
+wake-ort = ["dep:ort"]
+
+[dependencies]
+async-trait = "0.1"
+bytes       = "1"
+hound       = "3.5"
+parking_lot = "0.12"
+regex       = "1"
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+thiserror   = "2"
+tokio       = { version = "1", features = ["rt-multi-thread", "sync", "macros", "fs", "time", "io-util"] }
+tracing     = "0.1"
+
+# Optional ML bindings — see [features] above.
+whisper-rs  = { version = "0.16", optional = true }
+piper-rs    = { version = "0.1", optional = true }
+ort         = { version = "2.0.0-rc.12", optional = true, default-features = false, features = ["ndarray"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio    = { version = "1", features = ["rt-multi-thread", "sync", "macros", "fs", "time", "test-util"] }
+
+[lints]
+workspace = true

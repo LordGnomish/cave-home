@@ -1,0 +1,17 @@
+[package]
+name              = "cave-home-doorbell"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-doorbell — Reolink + DoorBird + Ring (RTSP-only) doorbells/intercoms; upstream: HA doorbell integrations + vendor public REST/RTSP; port method: line-by-line (ADR-018)"
+
+[package.metadata.cave-home]
+upstream    = "home-assistant/core (reolink, doorbird, ring RTSP-only)"
+port-method = "line-by-line"
+adr         = "ADR-018"
+
+[lints]
+workspace = true

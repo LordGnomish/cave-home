@@ -1,0 +1,18 @@
+[package]
+name              = "cave-home-pool"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-pool — pool/spa integrations (Hayward, Pentair, Jandy, Intex Spa); DEFERRED to M11+, scaffold only (ADR-030)"
+
+[package.metadata.cave-home]
+upstream    = "home-assistant/core (hayward_omnilogic, pentair_intellicenter) — implementation deferred"
+port-method = "line-by-line (when implemented)"
+adr         = "ADR-030"
+status      = "deferred-scaffold-only"
+
+[lints]
+workspace = true

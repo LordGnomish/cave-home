@@ -1,0 +1,33 @@
+[package]
+name              = "cave-home-controller-manager-rs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-controller-manager-rs — Kubernetes controller-manager; upstream: kubernetes/kubernetes (K3s-vendored); port method: line-by-line (Orchestration Phase 2, ADR-004)"
+
+[package.metadata.cave-home]
+upstream    = "kubernetes/kubernetes (K3s-vendored)"
+port-method = "line-by-line"
+phase       = "orchestration-phase-2"
+
+[package.metadata.upstream]
+repo    = "kubernetes/kubernetes"
+release = "v1.36.1"
+sha     = "756939600b9a7180fc2df6550a4585b638875e67"
+subpath = "pkg/controller"
+
+[dependencies]
+async-trait = "0.1"
+parking_lot = "0.12"
+thiserror   = "2"
+tokio       = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
+tracing     = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "test-util"] }
+
+[lints]
+workspace = true

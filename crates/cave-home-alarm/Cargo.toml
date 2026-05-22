@@ -1,0 +1,17 @@
+[package]
+name              = "cave-home-alarm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-alarm — alarm panels (AlarmDecoder for Honeywell/DSC + Bosch + ELK-M1 + HA alarm_control_panel domain); port method: line-by-line (ADR-018)"
+
+[package.metadata.cave-home]
+upstream    = "home-assistant/core (alarmdecoder, alarm_control_panel domain, vendor panel integrations)"
+port-method = "line-by-line"
+adr         = "ADR-018"
+
+[lints]
+workspace = true

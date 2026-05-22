@@ -1,0 +1,8 @@
+[toolchain]
+channel    = "stable"
+components = ["rustfmt", "clippy"]
+profile    = "default"
+
+# Charter rule 6 (always-latest mandate): we track the latest stable Rust.
+# If you need to pin a specific version locally, do it in your shell, not
+# here.

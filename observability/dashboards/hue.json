@@ -1,0 +1,154 @@
+{
+  "_comment": "cave-home-hue + cave-home-hue-bridge-emu Grafana dashboard — Phase 1 MVP (ADR-010). Per ADR-007 grandma-friendly UX, this dashboard lives on the developer-view Portal page; the default user never sees raw bridge IPs or app keys.",
+  "title": "Hue — integration + bridge emulator",
+  "uid": "cave-home-hue",
+  "tags": ["cave-home", "hue", "adr-010"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Hue Bridge — durum",
+      "type": "stat",
+      "datasource": "prometheus",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "cave_home_hue_bridge_up", "legendFormat": "{{bridge_id}}" }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 2,
+      "title": "EventStream bağlı mı",
+      "type": "stat",
+      "datasource": "prometheus",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "cave_home_hue_eventstream_connected", "legendFormat": "{{bridge_id}}" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Lambalar (toplam)",
+      "type": "stat",
+      "datasource": "prometheus",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "cave_home_hue_lights_total" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Sahneler (toplam)",
+      "type": "stat",
+      "datasource": "prometheus",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        { "expr": "cave_home_hue_scenes_total" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Hue Bridge istek gecikmesi (p50 / p95 / p99)",
+      "type": "timeseries",
+      "datasource": "prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, bridge_id) (rate(cave_home_hue_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50 {{bridge_id}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, bridge_id) (rate(cave_home_hue_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{bridge_id}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, bridge_id) (rate(cave_home_hue_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99 {{bridge_id}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 6,
+      "title": "BridgeBusy + Unauthorized + LinkButton geri dönüşleri",
+      "type": "timeseries",
+      "datasource": "prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "expr": "rate(cave_home_hue_bridge_busy_total[5m])", "legendFormat": "BridgeBusy {{bridge_id}}" },
+        { "expr": "rate(cave_home_hue_unauthorized_total[5m])", "legendFormat": "Unauthorized {{bridge_id}}" },
+        { "expr": "rate(cave_home_hue_link_button_pending_total[5m])", "legendFormat": "LinkButtonNotPressed {{bridge_id}}" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "EventStream olayları (saniye başı)",
+      "type": "timeseries",
+      "datasource": "prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "rate(cave_home_hue_eventstream_events_total{kind=\"add\"}[1m])", "legendFormat": "add" },
+        { "expr": "rate(cave_home_hue_eventstream_events_total{kind=\"update\"}[1m])", "legendFormat": "update" },
+        { "expr": "rate(cave_home_hue_eventstream_events_total{kind=\"delete\"}[1m])", "legendFormat": "delete" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Hue Bridge emülatör — durum",
+      "type": "stat",
+      "datasource": "prometheus",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 12 },
+      "targets": [
+        { "expr": "cave_home_hue_emu_on_air", "legendFormat": "Yayında (Gelişmiş)" }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Emülatör — eşleşmiş uygulamalar",
+      "type": "stat",
+      "datasource": "prometheus",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 12 },
+      "targets": [
+        { "expr": "cave_home_hue_emu_paired_apps", "legendFormat": "Eşleşmiş uygulamalar" }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Emülatör — eşleşme denemeleri (saniye başı)",
+      "type": "timeseries",
+      "datasource": "prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        { "expr": "rate(cave_home_hue_emu_pair_attempts_total[5m])", "legendFormat": "denemeler" },
+        { "expr": "rate(cave_home_hue_emu_pair_success_total[5m])", "legendFormat": "başarılı" }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Emülatör — SSDP / mDNS keşif yanıtları",
+      "type": "timeseries",
+      "datasource": "prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        { "expr": "rate(cave_home_hue_emu_ssdp_responses_total[5m])", "legendFormat": "SSDP" },
+        { "expr": "rate(cave_home_hue_emu_mdns_responses_total[5m])", "legendFormat": "mDNS" }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Emülatör — EventStream aboneleri",
+      "type": "stat",
+      "datasource": "prometheus",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 20 },
+      "targets": [
+        { "expr": "cave_home_hue_emu_eventstream_subscribers", "legendFormat": "aboneler" }
+      ]
+    }
+  ]
+}

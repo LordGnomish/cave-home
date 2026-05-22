@@ -1,0 +1,277 @@
+# cave-home-apiserver-rs — line-by-line port manifest (Phase 2 MVP).
+#
+# Honest scoping: cmd/kube-apiserver + staging/src/k8s.io/apiserver
+# together are ~80 kLOC of production Go (the generic server + the
+# storage/registry abstractions + the admission framework + RBAC +
+# authentication chain + REST endpoints). Phase 2 ships the MVP slice
+# only: in-memory storage backend (etcd-real lands via cave-home-kine-rs
+# in Phase 3), Authenticator/Authorizer traits with ClientCert + SA
+# token + RBAC impls, two admission plugins (NamespaceLifecycle +
+# ServiceAccount), and an HTTP REST surface over core/v1 + apps/v1 +
+# batch/v1 resource families. The fill_ratio is honest against the full
+# upstream baseline, not a cherry-picked sub-package.
+
+[crate]
+name             = "cave-home-apiserver-rs"
+upstream_repo    = "kubernetes/kubernetes"
+upstream_release = "v1.36.1"
+upstream_sha     = "756939600b9a7180fc2df6550a4585b638875e67"
+upstream_subpath = "cmd/kube-apiserver + staging/src/k8s.io/apiserver"
+ported_at        = "2026-05-16"
+linux_min_kernel = "7.1"
+
+[ratios]
+# Production-only src LOC (~2.63 kLOC, measured by stripping each
+# module at the first `#[cfg(test)]` boundary) against the upstream
+# cmd/kube-apiserver + staging/apiserver production baseline
+# (~80 kLOC of Go) = 0.033. Inline tests add ~0.83 kLOC, giving a
+# test_port_ratio of ~0.010. fill_ratio sits at the low end of the
+# 0.03-0.10 honest range because the apiserver upstream is the
+# largest Phase-2 component and Phase 2 deliberately defers webhook
+# admission, CRDs, aggregated API, and full OpenAPI v3.
+fill_ratio      = 0.033
+test_port_ratio = 0.010
+
+# ---- mapped (line-by-line port present in this crate) -----------------------
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/server/genericapiserver.go::GenericAPIServer"
+ours     = "src/server.rs::ApiServer"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/endpoints/installer.go::install"
+ours     = "src/server.rs::install_routes"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/storage/interfaces.go::Interface"
+ours     = "src/storage/mod.rs::Storage"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/storage/cacher/cacher.go::Cacher"
+ours     = "src/storage/memory.rs::InMemoryStorage"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/storage/etcd3/store.go::store"
+ours     = "src/storage/etcd.rs::EtcdStoragePlaceholder"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/storage/watch.go::Event"
+ours     = "src/storage/mod.rs::WatchEvent"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/authentication/authenticator/interfaces.go::Request"
+ours     = "src/auth/authn.rs::Authenticator"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/plugin/pkg/authenticator/request/x509/x509.go::Authenticator"
+ours     = "src/auth/authn.rs::ClientCertAuthenticator"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/plugin/pkg/authenticator/token/tokenfile/tokenfile.go::TokenAuthenticator"
+ours     = "src/auth/authn.rs::ServiceAccountTokenAuthenticator"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/authorization/authorizer/interfaces.go::Authorizer"
+ours     = "src/auth/authz.rs::Authorizer"
+
+[[mapped]]
+upstream = "plugin/pkg/auth/authorizer/rbac/rbac.go::RBACAuthorizer"
+ours     = "src/auth/authz.rs::RbacAuthorizer"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/admission/interfaces.go::Interface"
+ours     = "src/admission/mod.rs::AdmissionPlugin"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/admission/chain.go::chainAdmissionHandler"
+ours     = "src/admission/mod.rs::AdmissionChain"
+
+[[mapped]]
+upstream = "plugin/pkg/admission/namespace/lifecycle/admission.go::Lifecycle"
+ours     = "src/admission/namespace_lifecycle.rs::NamespaceLifecycle"
+
+[[mapped]]
+upstream = "plugin/pkg/admission/serviceaccount/admission.go::Plugin"
+ours     = "src/admission/service_account.rs::ServiceAccountAdmission"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/endpoints/handlers/rest.go::serveHTTP"
+ours     = "src/server.rs::ApiServer::handle_request"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/endpoints/handlers/get.go::ListResource"
+ours     = "src/server.rs::ApiServer::handle_list"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/endpoints/handlers/get.go::GetResource"
+ours     = "src/server.rs::ApiServer::handle_get"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/endpoints/handlers/create.go::CreateResource"
+ours     = "src/server.rs::ApiServer::handle_create"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/endpoints/handlers/update.go::UpdateResource"
+ours     = "src/server.rs::ApiServer::handle_update"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/endpoints/handlers/patch.go::PatchResource"
+ours     = "src/server.rs::ApiServer::handle_patch"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/endpoints/handlers/delete.go::DeleteResource"
+ours     = "src/server.rs::ApiServer::handle_delete"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/endpoints/handlers/watch.go::WatchServer"
+ours     = "src/server.rs::ApiServer::handle_watch"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/endpoints/request/requestinfo.go::RequestInfo"
+ours     = "src/server.rs::RequestInfo"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/authentication/user/user.go::Info"
+ours     = "src/types.rs::UserInfo"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/authorization/authorizer/interfaces.go::Attributes"
+ours     = "src/auth/authz.rs::ResourceAttributes"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/api/rbac/v1/types.go::Role"
+ours     = "src/auth/authz.rs::Role"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/api/rbac/v1/types.go::ClusterRole"
+ours     = "src/auth/authz.rs::ClusterRole"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/api/rbac/v1/types.go::RoleBinding"
+ours     = "src/auth/authz.rs::RoleBinding"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/api/rbac/v1/types.go::ClusterRoleBinding"
+ours     = "src/auth/authz.rs::ClusterRoleBinding"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/api/rbac/v1/types.go::PolicyRule"
+ours     = "src/auth/authz.rs::PolicyRule"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::Pod"
+ours     = "src/api/core_v1.rs::Pod"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::Service"
+ours     = "src/api/core_v1.rs::Service"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::Namespace"
+ours     = "src/api/core_v1.rs::Namespace"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::ConfigMap"
+ours     = "src/api/core_v1.rs::ConfigMap"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::Secret"
+ours     = "src/api/core_v1.rs::Secret"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::ServiceAccount"
+ours     = "src/api/core_v1.rs::ServiceAccount"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::Node"
+ours     = "src/api/core_v1.rs::Node"
+
+[[mapped]]
+upstream = "k8s.io/api/core/v1/types.go::Endpoints"
+ours     = "src/api/core_v1.rs::Endpoints"
+
+[[mapped]]
+upstream = "k8s.io/api/apps/v1/types.go::Deployment"
+ours     = "src/api/apps_v1.rs::Deployment"
+
+[[mapped]]
+upstream = "k8s.io/api/apps/v1/types.go::ReplicaSet"
+ours     = "src/api/apps_v1.rs::ReplicaSet"
+
+[[mapped]]
+upstream = "k8s.io/api/apps/v1/types.go::StatefulSet"
+ours     = "src/api/apps_v1.rs::StatefulSet"
+
+[[mapped]]
+upstream = "k8s.io/api/apps/v1/types.go::DaemonSet"
+ours     = "src/api/apps_v1.rs::DaemonSet"
+
+[[mapped]]
+upstream = "k8s.io/api/batch/v1/types.go::Job"
+ours     = "src/api/batch_v1.rs::Job"
+
+[[mapped]]
+upstream = "k8s.io/api/batch/v1/types.go::CronJob"
+ours     = "src/api/batch_v1.rs::CronJob"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apimachinery/pkg/runtime/serializer/json/json.go::Serializer"
+ours     = "src/serialization.rs::JsonCodec"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apimachinery/pkg/runtime/serializer/yaml/yaml.go::Serializer"
+ours     = "src/serialization.rs::YamlCodec"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/registry/rest/rest.go::StandardStorage"
+ours     = "src/client_trait.rs::ApiClient"
+
+[[mapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/registry/generic/registry/store.go::Store"
+ours     = "src/storage/memory.rs::InMemoryStorage (per-resource Stores)"
+
+# ---- unmapped (deferred to Phase 2b / Phase 3) ------------------------------
+
+[[unmapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/"
+reason   = "Webhook admission — deferred to Phase 2b"
+
+[[unmapped]]
+upstream = "staging/src/k8s.io/apiextensions-apiserver/"
+reason   = "CustomResourceDefinitions — deferred to Phase 2b"
+
+[[unmapped]]
+upstream = "staging/src/k8s.io/kube-aggregator/"
+reason   = "Aggregated API layer — deferred to Phase 2b"
+
+[[unmapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/endpoints/openapi/"
+reason   = "Full OpenAPI v3 generation — Phase 2 emits minimal discovery only"
+
+[[unmapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/storage/etcd3/"
+reason   = "Real etcd v3 grpc client — Phase 3 via cave-home-kine-rs (Phase 2 ships EtcdStoragePlaceholder backed by InMemoryStorage)"
+
+[[unmapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/admission/plugin/resourcequota/"
+reason   = "ResourceQuota admission — deferred to Phase 2b (ResourceQuotaController is also deferred)"
+
+[[unmapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/admission/plugin/limitranger/"
+reason   = "LimitRange admission — deferred to Phase 2b"
+
+[[unmapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/audit/"
+reason   = "Audit log subsystem — deferred to Phase 2b"
+
+[[unmapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/server/egressselector/"
+reason   = "EgressSelector (Konnectivity tunnels) — out of scope for home cluster"
+
+[[unmapped]]
+upstream = "staging/src/k8s.io/apiserver/pkg/server/options/encryptionconfig/"
+reason   = "EncryptionConfig at-rest — Phase 3 alongside real etcd"
+
+[[unmapped]]
+upstream = "Windows + pre-Linux 5.0 paths"
+reason   = "Out of scope (ADR-003 no-backcompat, Linux 7.1+ kernel 5.0+ only)"

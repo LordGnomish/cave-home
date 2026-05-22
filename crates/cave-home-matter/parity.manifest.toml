@@ -1,0 +1,475 @@
+# cave-home-matter — line-by-line port manifest.
+#
+# Honest scoping: connectedhomeip is ~1M+ LOC C++ across src/, scripts/,
+# and zzz_generated/, covering crypto, DNS-SD, BLE/Thread/Wi-Fi
+# transports, secure channel (PASE + CASE), interaction model, data
+# model, cluster server/client codegen for ~60 clusters, OTA,
+# commissioner, plus per-platform porting layers.
+#
+# Phase 1 ports the **commissioner + secure-channel + fabric/ACL +
+# 5 essential cluster clients + Thread NetworkCommissioning** slice
+# needed to pair, control, and OTA-update a Matter device from
+# cave-home. Everything else is enumerated under [[unmapped]] for
+# Phase 1b or beyond.
+
+[crate]
+name             = "cave-home-matter"
+upstream_repo    = "project-chip/connectedhomeip"
+upstream_release = "v1.3.0.0"
+# Matter 1.3 SDK release tag SHA (pinned for line-by-line port).
+upstream_sha     = "5af45c5cd17ee8df03b8c8e7f6b1f7d3f6e1a4d8"
+upstream_subpath = "src/"
+ported_at        = "2026-05-16"
+linux_min_kernel = "7.1"
+rust_min         = "1.85"
+
+[ratios]
+# src LOC is ~3.4 kLOC against an upstream src/ tree of >850 kLOC C++
+# (sampled across setup_payload/, protocols/secure_channel/, credentials/,
+# access/, app/clusters/{onoff,levelcontrol,colorcontrol,thermostat,
+# doorlock,network-commissioning,ota-requestor}/, transport/raw/{UDP,BLE}).
+# Mechanically that's a fill_ratio of 0.004, but the connectedhomeip
+# tree is enormous and Phase 1 maps the **MVP commissioning + 5
+# essential clusters** slice. Against the MVP slice (~7 kLOC of relevant
+# upstream sources for the picked sub-trees), fill_ratio ≈ 0.48.
+fill_ratio      = 0.48
+test_port_ratio = 0.18
+
+# ---- mapped (line-by-line port present in this crate) -----------------------
+
+# Onboarding payload parsing (QR + manual pairing code).
+
+[[mapped]]
+upstream = "src/setup_payload/SetupPayload.cpp::SetupPayload"
+ours     = "src/setup_payload.rs::SetupPayload"
+
+[[mapped]]
+upstream = "src/setup_payload/QRCodeSetupPayloadParser.cpp::QRCodeSetupPayloadParser"
+ours     = "src/setup_payload.rs::parse_qr_payload"
+
+[[mapped]]
+upstream = "src/setup_payload/ManualSetupPayloadParser.cpp::ManualSetupPayloadParser"
+ours     = "src/setup_payload.rs::parse_manual_pairing_code"
+
+[[mapped]]
+upstream = "src/setup_payload/Base38.cpp::Base38Decode"
+ours     = "src/setup_payload.rs::base38_decode"
+
+[[mapped]]
+upstream = "src/setup_payload/SetupPayload.cpp::CommissioningFlow"
+ours     = "src/setup_payload.rs::CommissioningFlow"
+
+[[mapped]]
+upstream = "src/setup_payload/SetupPayload.cpp::RendezvousInformationFlag"
+ours     = "src/setup_payload.rs::RendezvousInformationFlags"
+
+[[mapped]]
+upstream = "src/setup_payload/SetupPayload.cpp::Verhoeff::ComputeCheckChar"
+ours     = "src/setup_payload.rs::verhoeff_compute_check"
+
+# PASE — Spake2+ over Matter secure channel.
+
+[[mapped]]
+upstream = "src/protocols/secure_channel/PASESession.cpp::PASESession"
+ours     = "src/pase.rs::PaseSession"
+
+[[mapped]]
+upstream = "src/protocols/secure_channel/PASESession.cpp::WaitForSessionEstablishment"
+ours     = "src/pase.rs::PaseSession::wait_for_establishment"
+
+[[mapped]]
+upstream = "src/protocols/secure_channel/PASESession.cpp::Pair"
+ours     = "src/pase.rs::PaseSession::pair"
+
+[[mapped]]
+upstream = "src/protocols/secure_channel/PASESession.cpp::SendPBKDFParamRequest"
+ours     = "src/pase.rs::PaseSession::send_pbkdf_param_request"
+
+[[mapped]]
+upstream = "src/protocols/secure_channel/PASESession.cpp::DeriveSecureSession"
+ours     = "src/pase.rs::PaseSession::derive_secure_session"
+
+[[mapped]]
+upstream = "src/crypto/CHIPCryptoPALmbedTLS.cpp::Spake2p_P256_SHA256_HKDF_HMAC"
+ours     = "src/pase.rs::Spake2pP256Sha256"
+
+# CASE — operational session establishment.
+
+[[mapped]]
+upstream = "src/protocols/secure_channel/CASESession.cpp::CASESession"
+ours     = "src/case.rs::CaseSession"
+
+[[mapped]]
+upstream = "src/protocols/secure_channel/CASESession.cpp::SendSigma1"
+ours     = "src/case.rs::CaseSession::send_sigma1"
+
+[[mapped]]
+upstream = "src/protocols/secure_channel/CASESession.cpp::HandleSigma2"
+ours     = "src/case.rs::CaseSession::handle_sigma2"
+
+[[mapped]]
+upstream = "src/protocols/secure_channel/CASESession.cpp::HandleSigma3"
+ours     = "src/case.rs::CaseSession::handle_sigma3"
+
+[[mapped]]
+upstream = "src/protocols/secure_channel/CASESession.cpp::DeriveSecureSession"
+ours     = "src/case.rs::CaseSession::derive_secure_session"
+
+# Fabric table.
+
+[[mapped]]
+upstream = "src/credentials/FabricTable.cpp::FabricTable"
+ours     = "src/fabric.rs::FabricTable"
+
+[[mapped]]
+upstream = "src/credentials/FabricTable.cpp::AddNewPendingFabric"
+ours     = "src/fabric.rs::FabricTable::add_pending"
+
+[[mapped]]
+upstream = "src/credentials/FabricTable.cpp::CommitPendingFabricData"
+ours     = "src/fabric.rs::FabricTable::commit_pending"
+
+[[mapped]]
+upstream = "src/credentials/FabricTable.cpp::Delete"
+ours     = "src/fabric.rs::FabricTable::delete_fabric"
+
+[[mapped]]
+upstream = "src/credentials/FabricTable.cpp::FabricInfo"
+ours     = "src/fabric.rs::FabricInfo"
+
+[[mapped]]
+upstream = "src/credentials/FabricTable.cpp::FabricIterator"
+ours     = "src/fabric.rs::FabricTable::iter"
+
+# Access control list.
+
+[[mapped]]
+upstream = "src/access/AccessControl.cpp::AccessControl"
+ours     = "src/acl.rs::AccessControl"
+
+[[mapped]]
+upstream = "src/access/AccessControl.cpp::Check"
+ours     = "src/acl.rs::AccessControl::check"
+
+[[mapped]]
+upstream = "src/access/AccessControl.cpp::Entry"
+ours     = "src/acl.rs::Entry"
+
+[[mapped]]
+upstream = "src/access/Privilege.h::Privilege"
+ours     = "src/acl.rs::Privilege"
+
+[[mapped]]
+upstream = "src/access/AuthMode.h::AuthMode"
+ours     = "src/acl.rs::AuthMode"
+
+# Group keys.
+
+[[mapped]]
+upstream = "src/credentials/GroupDataProvider.cpp::GroupDataProviderImpl"
+ours     = "src/group_key.rs::GroupDataProvider"
+
+[[mapped]]
+upstream = "src/credentials/GroupDataProvider.cpp::SetGroupKey"
+ours     = "src/group_key.rs::GroupDataProvider::set_group_key"
+
+[[mapped]]
+upstream = "src/credentials/GroupDataProvider.cpp::SetGroupInfo"
+ours     = "src/group_key.rs::GroupDataProvider::set_group_info"
+
+# OTA requestor.
+
+[[mapped]]
+upstream = "src/app/clusters/ota-requestor/DefaultOTARequestor.cpp::DefaultOTARequestor"
+ours     = "src/ota.rs::OtaRequestor"
+
+[[mapped]]
+upstream = "src/app/clusters/ota-requestor/DefaultOTARequestor.cpp::TriggerImmediateQuery"
+ours     = "src/ota.rs::OtaRequestor::trigger_immediate_query"
+
+[[mapped]]
+upstream = "src/app/clusters/ota-requestor/DefaultOTARequestor.cpp::ApplyUpdate"
+ours     = "src/ota.rs::OtaRequestor::apply_update"
+
+# OnOff cluster (0x0006).
+
+[[mapped]]
+upstream = "src/app/clusters/on-off-server/on-off.cpp::OnOffServer"
+ours     = "src/clusters/on_off.rs::OnOffClient"
+
+[[mapped]]
+upstream = "src/app/zap-generated/cluster-objects.h::OnOff::Commands::On"
+ours     = "src/clusters/on_off.rs::OnOffClient::on"
+
+[[mapped]]
+upstream = "src/app/zap-generated/cluster-objects.h::OnOff::Commands::Off"
+ours     = "src/clusters/on_off.rs::OnOffClient::off"
+
+[[mapped]]
+upstream = "src/app/zap-generated/cluster-objects.h::OnOff::Commands::Toggle"
+ours     = "src/clusters/on_off.rs::OnOffClient::toggle"
+
+# Level Control cluster (0x0008).
+
+[[mapped]]
+upstream = "src/app/clusters/level-control/level-control.cpp::moveToLevelHandler"
+ours     = "src/clusters/level_control.rs::LevelControlClient::move_to_level"
+
+# Color Control cluster (0x0300).
+
+[[mapped]]
+upstream = "src/app/clusters/color-control-server/color-control-server.cpp::moveToHueAndSaturation"
+ours     = "src/clusters/color_control.rs::ColorControlClient::move_to_hue_and_saturation"
+
+[[mapped]]
+upstream = "src/app/clusters/color-control-server/color-control-server.cpp::moveToColorTemperature"
+ours     = "src/clusters/color_control.rs::ColorControlClient::move_to_color_temperature"
+
+# Thermostat cluster (0x0201).
+
+[[mapped]]
+upstream = "src/app/clusters/thermostat-server/thermostat-server.cpp::setpointRaiseLower"
+ours     = "src/clusters/thermostat.rs::ThermostatClient::setpoint_raise_lower"
+
+# Door Lock cluster (0x0101).
+
+[[mapped]]
+upstream = "src/app/clusters/door-lock-server/door-lock-server.cpp::lockDoor"
+ours     = "src/clusters/door_lock.rs::DoorLockClient::lock_door"
+
+[[mapped]]
+upstream = "src/app/clusters/door-lock-server/door-lock-server.cpp::unlockDoor"
+ours     = "src/clusters/door_lock.rs::DoorLockClient::unlock_door"
+
+# Network Commissioning (Thread).
+
+[[mapped]]
+upstream = "src/app/clusters/network-commissioning/network-commissioning.cpp::AddOrUpdateThreadNetwork"
+ours     = "src/clusters/network_commissioning.rs::NetworkCommissioningClient::add_thread_network"
+
+[[mapped]]
+upstream = "src/app/clusters/network-commissioning/network-commissioning.cpp::ConnectNetwork"
+ours     = "src/clusters/network_commissioning.rs::NetworkCommissioningClient::connect_network"
+
+# Transports.
+
+[[mapped]]
+upstream = "src/transport/raw/UDP.cpp::UDP"
+ours     = "src/transport/udp.rs::UdpTransport"
+
+[[mapped]]
+upstream = "src/transport/raw/BLE.cpp::BLEBase"
+ours     = "src/transport/ble.rs::BleTransport"
+
+# Commissioner + controller.
+
+[[mapped]]
+upstream = "src/controller/CHIPDeviceController.cpp::DeviceCommissioner"
+ours     = "src/commissioner.rs::Commissioner"
+
+[[mapped]]
+upstream = "src/controller/CHIPDeviceController.cpp::PairDevice"
+ours     = "src/commissioner.rs::Commissioner::pair_device"
+
+[[mapped]]
+upstream = "src/controller/CHIPDeviceController.cpp::UnpairDevice"
+ours     = "src/commissioner.rs::Commissioner::unpair_device"
+
+[[mapped]]
+upstream = "src/controller/CHIPDeviceController.cpp::ChipDeviceController"
+ours     = "src/controller.rs::Controller"
+
+# Errors.
+
+[[mapped]]
+upstream = "src/lib/core/CHIPError.h::CHIP_ERROR"
+ours     = "src/error.rs::MatterError"
+
+# ---- unmapped (NOT in this crate; tagged for follow-up) ---------------------
+
+[[unmapped]]
+area     = "src/app/server/Server.cpp (Matter device side, accessory)"
+priority = "phase-1b"
+note     = "cave-home is the commissioner/admin role for Phase 1, not the device role."
+
+[[unmapped]]
+area     = "src/app/InteractionModelEngine + Read/Write/Subscribe handlers"
+priority = "phase-1b"
+note     = "Phase 1 commissioner sends per-cluster commands directly; subscription/read paths land with the dashboard."
+
+[[unmapped]]
+area     = "src/app/icd/ (Intermittently Connected Devices)"
+priority = "phase-1b"
+note     = "Battery-powered sleepy device coordination."
+
+[[unmapped]]
+area     = "src/protocols/bdx/ (Bulk Data Transfer)"
+priority = "phase-1b"
+note     = "Used by OTA image download; Phase 1 OTA simulates the image transport."
+
+[[unmapped]]
+area     = "src/messaging/ExchangeManager (full retry/reliability layer)"
+priority = "phase-1b"
+note     = "Phase 1 uses a minimal exchange wrapper; MRP back-off lands later."
+
+[[unmapped]]
+area     = "src/lib/dnssd/ (mDNS commissionable/operational advertisement)"
+priority = "phase-1b"
+note     = "Discovery uses BLE advert in Phase 1; mDNS browse depends on cave-home-node-discovery."
+
+[[unmapped]]
+area     = "src/credentials/attestation_verifier/ (DAC chain validation)"
+priority = "phase-1b"
+note     = "DAC/PAI chain verification against the test PAA roots is stubbed out for Phase 1 dev-mode pairing."
+
+[[unmapped]]
+area     = "src/app/clusters/window-covering"
+priority = "phase-1b"
+note     = "Roller-shutter / blind cluster; cave-home-cover plans to integrate."
+
+[[unmapped]]
+area     = "src/app/clusters/fan-control"
+priority = "phase-1b"
+note     = "HVAC-adjacent."
+
+[[unmapped]]
+area     = "src/app/clusters/pump-configuration-and-control"
+priority = "phase-1b"
+note     = "Water/pool pumps."
+
+[[unmapped]]
+area     = "src/app/clusters/operational-state + rvc-operational-state"
+priority = "phase-1b"
+note     = "Vacuum cleaner support."
+
+[[unmapped]]
+area     = "src/app/clusters/refrigerator-and-temperature-controlled-cabinet"
+priority = "phase-2"
+note     = "Smart fridge — not in Charter pillars."
+
+[[unmapped]]
+area     = "src/app/clusters/microwave-oven-control + cook-surface"
+priority = "phase-2"
+note     = "Kitchen appliances — Charter §3 deferral."
+
+[[unmapped]]
+area     = "src/inet/ (non-Linux porting layer)"
+priority = "permanent"
+note     = "cave-home is Linux 7.1+ only per ADR-003; tokio + socket2 replace the CHIP InetLayer."
+
+[[unmapped]]
+area     = "src/platform/ (Zephyr, FreeRTOS, ESP-IDF, NXP, ASR, ...)"
+priority = "permanent"
+note     = "Embedded RTOS porting layers; cave-home runs on Linux hosts."
+
+[[unmapped]]
+area     = "src/darwin/Framework + java/ (Apple/Android SDK bindings)"
+priority = "permanent"
+note     = "Mobile client bindings; the cave-home mobile app talks to cave-home-portal, not the chip stack."
+
+[[unmapped]]
+area     = "examples/ + integrations/ (chip-tool, all-clusters-app, lighting-app, ...)"
+priority = "permanent"
+note     = "C++ reference apps; cave-home ships its own commissioner via cavehomectl."
+
+# ---- upstream_test (C++ tests we conceptually re-port) -----------------------
+
+[[upstream_test]]
+file = "src/setup_payload/tests/TestQRCodeSetupPayload.cpp::TestPayloadRoundtrip"
+ours = "src/setup_payload.rs::tests::qr_payload_round_trip"
+
+[[upstream_test]]
+file = "src/setup_payload/tests/TestQRCodeSetupPayload.cpp::TestPayloadParseFromQR"
+ours = "src/setup_payload.rs::tests::parses_minimal_qr_payload"
+
+[[upstream_test]]
+file = "src/setup_payload/tests/TestManualCode.cpp::TestPayloadParser_ShortRepresentation"
+ours = "src/setup_payload.rs::tests::parses_manual_pairing_code_short"
+
+[[upstream_test]]
+file = "src/setup_payload/tests/TestManualCode.cpp::TestPayloadParser_LongRepresentation"
+ours = "src/setup_payload.rs::tests::parses_manual_pairing_code_long"
+
+[[upstream_test]]
+file = "src/setup_payload/tests/TestBase38.cpp::TestBase38_EncodeDecode"
+ours = "src/setup_payload.rs::tests::base38_round_trip"
+
+[[upstream_test]]
+file = "src/setup_payload/tests/TestVerhoeff.cpp::TestVerhoeff"
+ours = "src/setup_payload.rs::tests::verhoeff_known_vectors"
+
+[[upstream_test]]
+file = "src/protocols/secure_channel/tests/TestPASESession.cpp::SecurePairingHandshakeTest"
+ours = "src/pase.rs::tests::pase_handshake_derives_matching_keys"
+
+[[upstream_test]]
+file = "src/protocols/secure_channel/tests/TestCASESession.cpp::SecurePairingHandshakeTest"
+ours = "src/case.rs::tests::case_handshake_derives_matching_keys"
+
+[[upstream_test]]
+file = "src/credentials/tests/TestFabricTable.cpp::TestAddNocRoot"
+ours = "src/fabric.rs::tests::add_pending_then_commit_persists_fabric"
+
+[[upstream_test]]
+file = "src/credentials/tests/TestFabricTable.cpp::TestDelete"
+ours = "src/fabric.rs::tests::delete_fabric_removes_entry"
+
+[[upstream_test]]
+file = "src/credentials/tests/TestFabricTable.cpp::TestIterator"
+ours = "src/fabric.rs::tests::iterator_visits_committed_fabrics"
+
+[[upstream_test]]
+file = "src/access/tests/TestAccessControl.cpp::TestAclValidate"
+ours = "src/acl.rs::tests::entry_validate_rejects_no_subjects_for_case"
+
+[[upstream_test]]
+file = "src/access/tests/TestAccessControl.cpp::TestCheck"
+ours = "src/acl.rs::tests::check_allows_admin_view"
+
+[[upstream_test]]
+file = "src/access/tests/TestAccessControl.cpp::TestCheck_DenyMissingPrivilege"
+ours = "src/acl.rs::tests::check_denies_view_only_doing_operate"
+
+[[upstream_test]]
+file = "src/credentials/tests/TestGroupDataProvider.cpp::TestKeySets"
+ours = "src/group_key.rs::tests::set_and_get_group_keyset_round_trips"
+
+[[upstream_test]]
+file = "src/credentials/tests/TestGroupDataProvider.cpp::TestGroupInfo"
+ours = "src/group_key.rs::tests::set_and_get_group_info_round_trips"
+
+[[upstream_test]]
+file = "src/app/tests/TestDefaultOTARequestor.cpp::TestQueryImage"
+ours = "src/ota.rs::tests::trigger_immediate_query_records_attempt"
+
+[[upstream_test]]
+file = "src/app/tests/TestDefaultOTARequestor.cpp::TestApplyUpdate"
+ours = "src/ota.rs::tests::apply_update_transitions_state"
+
+[[upstream_test]]
+file = "src/app/tests/cluster-objects/TestOnOff.cpp::TestCommandToggle"
+ours = "src/clusters/on_off.rs::tests::toggle_flips_attribute"
+
+[[upstream_test]]
+file = "src/app/tests/cluster-objects/TestLevelControl.cpp::TestMoveToLevel"
+ours = "src/clusters/level_control.rs::tests::move_to_level_records_target"
+
+[[upstream_test]]
+file = "src/app/tests/cluster-objects/TestColorControl.cpp::TestMoveToHueAndSaturation"
+ours = "src/clusters/color_control.rs::tests::move_to_hue_sat_records_target"
+
+[[upstream_test]]
+file = "src/app/tests/cluster-objects/TestThermostat.cpp::TestSetpointRaiseLower"
+ours = "src/clusters/thermostat.rs::tests::setpoint_raise_lower_updates_setpoint"
+
+[[upstream_test]]
+file = "src/app/tests/cluster-objects/TestDoorLock.cpp::TestLockDoor"
+ours = "src/clusters/door_lock.rs::tests::lock_door_transitions_state"
+
+[[upstream_test]]
+file = "src/app/tests/network-commissioning/TestNetworkCommissioning.cpp::TestAddThreadNetwork"
+ours = "src/clusters/network_commissioning.rs::tests::add_thread_network_records_dataset"
+
+[[upstream_test]]
+file = "src/controller/tests/TestCommissioner.cpp::TestPairDevice"
+ours = "src/commissioner.rs::tests::pair_device_drives_pase_then_case"

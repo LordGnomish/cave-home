@@ -1,0 +1,48 @@
+{
+  "_comment": "cave-home UniFi ecosystem dashboard (ADR-009). Phase 1 placeholder — real Grafana JSON lands once observability M3 ships. The panel catalogue below is the contract.",
+  "title": "cave-home — UniFi (Network / Protect / Access / Talk)",
+  "uid": "cave-home-unifi",
+  "tags": ["cave-home", "unifi", "adr-009"],
+  "schemaVersion": 39,
+  "version": 0,
+  "rows": [
+    {
+      "title": "Wi-Fi & ev ağı",
+      "panels": [
+        {"title": "Cihaz durumu (switch / Wi-Fi noktası)", "type": "stat", "datasource": "Prometheus", "phase": "M3"},
+        {"title": "Bağlı cihaz sayısı", "type": "stat", "datasource": "Prometheus", "phase": "M3"},
+        {"title": "Port trafiği (rx/tx)", "type": "timeseries", "datasource": "Prometheus", "phase": "M3"},
+        {"title": "PoE aktif port sayısı", "type": "stat", "datasource": "Prometheus", "phase": "M3"}
+      ]
+    },
+    {
+      "title": "Kameralar (Protect)",
+      "panels": [
+        {"title": "NVR sağlık durumu", "type": "stat", "datasource": "Prometheus", "phase": "M3"},
+        {"title": "Adopt edilmiş kamera sayısı", "type": "stat", "datasource": "Prometheus", "phase": "M3"},
+        {"title": "Son hareket olayları (24s)", "type": "table", "datasource": "Prometheus", "phase": "M3"},
+        {"title": "Smart-detect skoru dağılımı", "type": "heatmap", "datasource": "Prometheus", "phase": "M3"},
+        {"title": "Frigate seam dağılımı (Native vs FrigateMl vs FrigateOnly)", "type": "piechart", "datasource": "Prometheus", "phase": "M3"}
+      ]
+    },
+    {
+      "title": "Kapılar (Access)",
+      "panels": [
+        {"title": "Hub sağlık durumu", "type": "stat", "datasource": "Prometheus", "phase": "M3"},
+        {"title": "Kapı sayısı (kilitli / açık)", "type": "stat", "datasource": "Prometheus", "phase": "M3"},
+        {"title": "Geçiş olayları (granted / denied)", "type": "timeseries", "datasource": "Prometheus", "phase": "M3"},
+        {"title": "Acil durum bayrakları (lockdown / evacuation)", "type": "stat", "datasource": "Prometheus", "phase": "M3"},
+        {"title": "Aktif lock-rule sayısı", "type": "stat", "datasource": "Prometheus", "phase": "M3"}
+      ]
+    },
+    {
+      "title": "İnterkomlar (Talk)",
+      "panels": [
+        {"title": "Hub sağlık durumu", "type": "stat", "datasource": "Prometheus", "phase": "M3"},
+        {"title": "Telefon sayısı (idle / busy)", "type": "stat", "datasource": "Prometheus", "phase": "M3"},
+        {"title": "Çağrı yaşam-döngüsü (incoming / answered / declined / missed)", "type": "timeseries", "datasource": "Prometheus", "phase": "M3"},
+        {"title": "Ortalama çağrı süresi", "type": "stat", "datasource": "Prometheus", "phase": "M3"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+[package]
+name              = "cave-home-portal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-portal — Lovelace-class web dashboard (upstream: home-assistant/core (frontend) + koush/scrypted, port method: line-by-line)"
+
+[package.metadata.cave-home]
+upstream    = "home-assistant/core (frontend) + koush/scrypted"
+port-method = "line-by-line"
+
+[lints]
+workspace = true

@@ -1,0 +1,40 @@
+[package]
+name              = "cave-home-knx"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-knx — KNX/IP stack: xknx line-by-line port (transport, telegrams, DPTs) + clean-room KNXd-equivalent gateway daemon (KNX Association public spec only; KNXd GPL-3.0 source NOT read)"
+
+[package.metadata.cave-home]
+upstream    = "XKNX/xknx (MIT) + KNXd (GPL-3.0, NOT read — clean-room recusal)"
+port-method = "mixed (xknx line-by-line; knxd-equivalent clean-room)"
+adr         = "ADR-011"
+
+[package.metadata.upstream]
+repo    = "XKNX/xknx"
+release = "3.15.0"
+sha     = "50fdf8af8e29b84b96de4487f5bd4f060f7c502c"
+subpath = "xknx/"
+
+[package.metadata.clean-room]
+component        = "gateway (knxd-equivalent)"
+reason           = "KNXd is GPL-3.0 — license-incompatible with cave-home Apache-2.0"
+spec-source      = "KNX Association public service-code table + KNX/IP framing (header, HPAI)"
+prohibited-source = ["KNXd (selfbus/knxd)", "Wireshark KNX dissector"]
+attestation      = "No KNXd or Wireshark KNX dissector source consulted at any point."
+
+[dependencies]
+bytes       = "1"
+parking_lot = "0.12"
+thiserror   = "2"
+tokio       = { version = "1", features = ["rt-multi-thread", "sync", "macros", "net", "time", "io-util"] }
+tracing     = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "net", "time", "io-util", "test-util"] }
+
+[lints]
+workspace = true

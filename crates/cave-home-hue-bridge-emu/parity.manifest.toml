@@ -1,0 +1,199 @@
+# cave-home-hue-bridge-emu — CLEAN-ROOM reimplementation manifest.
+#
+# Per ADR-010 + Charter §6.1: the conceptual upstream `diyhue/diyHue` is
+# GPL-3.0, so cave-home-hue-bridge-emu is implemented strictly from
+# Philips Hue developer-portal v1 + v2 public documentation. **diyHue
+# source has not been read.** Contributor recusal applies (CONTRIBUTING.md)
+# and every `.rs` file under this crate carries the clean-room banner:
+#   // CLEAN-ROOM: Philips Hue CLIP API v1+v2 public docs reference only.
+#   // Upstream diyHue source NOT consulted. GPL contamination prevented by design.
+#
+# Honest scoping: a full feature-parity Hue Bridge emulation (rule engine,
+# schedules, behaviour scripts, Entertainment DTLS streaming, the v2
+# resource long-tail of behavior_instance / smart_scene / motion-area /
+# bell_button / camera_motion) is comparable in size to ~25 kLOC of
+# production logic. Phase 1 MVP ships the slice the headline persona
+# actually needs to retire a physical Hue Bridge — pairing, lights,
+# groups, scenes (recall), rooms/zones, grouped_light, the EventStream,
+# UPnP SSDP discovery, mDNS payload. The longer tail is enumerated in
+# `[[unmapped]]` for Phase 1b / 2.
+
+[crate]
+name             = "cave-home-hue-bridge-emu"
+port_method      = "clean-room"
+ported_at        = "2026-05-17"
+linux_min_kernel = "7.1"
+adr              = "ADR-010"
+gpl_quarantine   = "diyhue/diyHue (GPL-3.0) — REFERENCE ONLY (concept); source NOT read"
+
+[spec_sources]
+hue_api_v1     = "https://developers.meethue.com/develop/hue-api/"
+hue_api_v2     = "https://developers.meethue.com/develop/hue-api-v2/"
+discovery      = "https://developers.meethue.com/develop/application-design-guidance/hue-bridge-discovery/"
+error_messages = "https://developers.meethue.com/documentation/error-messages"
+eventstream    = "https://developers.meethue.com/develop/hue-api-v2/core-concepts/#eventstream"
+clip_schema    = "https://developers.meethue.com/develop/hue-api-v2/api-reference/ (clip-api.schema.json definitions)"
+
+[ratios]
+# Production src LOC: ~1.65 kLOC (everything outside `#[cfg(test)]`).
+# Honest scope baseline = ~3.3 kLOC of "Phase 1 emulator surface" by
+# our own accounting (the published v1 endpoint set + v2 light + scene
+# + room/zone + grouped_light + bridge + eventstream + SSDP + mDNS).
+# fill_ratio is the headline production-port ratio against that baseline.
+# Against a *full* Hue Bridge feature parity baseline (~25 kLOC), the
+# fill ratio is ~0.07 — Phase 1 is deliberately the most-used surfaces.
+fill_ratio              = 0.50
+fill_ratio_basis        = "phase-1 MVP scope (pairing + v1 lights/groups/scenes/sensors/config + v2 lights/scenes/rooms/zones/grouped_light/bridge + eventstream + UPnP SSDP + mDNS)"
+fill_ratio_full_stack   = 0.07
+test_port_ratio         = 0.0     # clean-room: tests are designed from spec, NOT ported
+
+# ---- spec_section (clean-room reimpl present in this crate) ----------------
+
+[[spec_section]]
+spec = "Hue API v1 §7.1 Create user (POST /api) — link-button window"
+ours = "src/pairing.rs::PairingService::try_pair"
+
+[[spec_section]]
+spec = "Hue API v1 §7.2 Configuration GET — short + full forms"
+ours = "src/api/v1/views.rs::short_config + full_config"
+
+[[spec_section]]
+spec = "Hue API v1 §1 Lights — list / get / set state"
+ours = "src/api/v1/mod.rs::{get_lights, get_light, put_light_state}"
+
+[[spec_section]]
+spec = "Hue API v1 §4 Groups — list + group action / scene recall"
+ours = "src/api/v1/mod.rs::{get_groups, put_group_action}"
+
+[[spec_section]]
+spec = "Hue API v1 §5 Scenes — list"
+ours = "src/api/v1/mod.rs::get_scenes"
+
+[[spec_section]]
+spec = "Hue API v1 §2 Sensors — list"
+ours = "src/api/v1/mod.rs::get_sensors"
+
+[[spec_section]]
+spec = "Hue API v2 envelope `{errors, data}` (developer-portal global)"
+ours = "src/api/v2/mod.rs::Envelope"
+
+[[spec_section]]
+spec = "Hue API v2 #resource_light_get / _put — light JSON schema"
+ours = "src/api/v2/views.rs::light_view + src/api/v2/mod.rs::put_light"
+
+[[spec_section]]
+spec = "Hue API v2 #resource_scene + recall"
+ours = "src/api/v2/mod.rs::{get_scenes, put_scene}"
+
+[[spec_section]]
+spec = "Hue API v2 #resource_room / #resource_zone"
+ours = "src/api/v2/views.rs::room_or_zone_view + src/api/v2/mod.rs::{get_rooms, get_zones}"
+
+[[spec_section]]
+spec = "Hue API v2 #resource_grouped_light"
+ours = "src/api/v2/views.rs::grouped_light_for_group"
+
+[[spec_section]]
+spec = "Hue API v2 #resource_bridge — singleton bridge resource"
+ours = "src/api/v2/views.rs::bridge_view + src/api/v2/mod.rs::get_bridge"
+
+[[spec_section]]
+spec = "Hue API v2 Core Concepts — EventStream / SSE format"
+ours = "src/api/v2/eventstream.rs::render_event + src/registry.rs::StreamEvent broadcaster"
+
+[[spec_section]]
+spec = "Hue developer-portal — Bridge discovery → SSDP description.xml"
+ours = "src/discovery/ssdp.rs::build_description_xml + build_ssdp_response_root"
+
+[[spec_section]]
+spec = "Hue developer-portal — Bridge discovery → mDNS _hue._tcp advertisement"
+ours = "src/discovery/mdns.rs::build_advertisement"
+
+[[spec_section]]
+spec = "Hue developer-portal — Error messages (type codes 1, 2, 3, 5, 6, 7, 8, 11, 101, 901)"
+ours = "src/errors.rs::HueProtocolError + error_type::*"
+
+[[spec_section]]
+spec = "Hue bridge identity (bridgeid, mac, UDN) — developer-portal discovery"
+ours = "src/config.rs::BridgeIdentity"
+
+# ---- unmapped (NOT in this crate; tagged for follow-up) --------------------
+
+[[unmapped]]
+area     = "Hue Entertainment / DTLS streaming"
+priority = "phase-2"
+note     = "v2 entertainment_configuration + DTLS realtime stream; ADR-010 §Open Questions §1."
+
+[[unmapped]]
+area     = "Rule engine + schedules + resourcelinks (v1) / behavior_instance + smart_scene (v2)"
+priority = "phase-2"
+note     = "ADR-010 §Open Questions §2 — emulator targets the control surface only."
+
+[[unmapped]]
+area     = "v2 long-tail resources (motion_area_configuration, bell_button, contact, tamper, camera_motion, security_area_motion, convenience_area_motion, grouped_motion, grouped_light_level, geofence_client, behavior_instance, behavior_script, smart_scene)"
+priority = "phase-1b"
+note     = "Models will land alongside their controllers as we extend coverage."
+
+[[unmapped]]
+area     = "HomeKit / Matter pass-through emulation"
+priority = "phase-2"
+note     = "Bridge can expose itself as a HomeKit / Matter accessory; cave-home does that via its own Matter crate, so this v2-side surface is informational."
+
+[[unmapped]]
+area     = "Persistent storage of emulator state across restarts"
+priority = "phase-1b"
+note     = "Phase 1 uses in-memory registry; cave-home binary wires its shared storage layer next."
+
+[[unmapped]]
+area     = "TLS / certificate provisioning for the v2 /clip/v2/* surface"
+priority = "phase-1b"
+note     = "Phase 1 surfaces HTTP-only payloads; the cave-home binary will wire its TLS terminator."
+
+[[unmapped]]
+area     = "Round-bridge SSDP UDP listener / mDNS responder"
+priority = "phase-1b"
+note     = "Payload builders are clean; the UDP / multicast machinery sits behind a trait the binary supplies."
+
+[[unmapped]]
+area     = "32-bit ARM / pre-Linux 7.1 kernels"
+priority = "permanent"
+note     = "ADR-003 — Linux 7.1+ only."
+
+[[unmapped]]
+area     = "diyHue feature parity (rule scripting language, sensor adapters)"
+priority = "permanent"
+note     = "Charter §6.1 — diyHue is GPL-3.0, source NOT consulted. cave-home provides equivalent behaviour through its own automation crate."
+
+# ---- spec_test (clean-room: tests designed from spec, NOT ported) ----------
+
+[[spec_test]]
+designed_for = "v1 §7.1 link-button-not-pressed -> error code 101"
+ours         = "src/pairing.rs::tests + src/api/v1/mod.rs::tests::pair_without_button_returns_link_button_error"
+
+[[spec_test]]
+designed_for = "v1 §7.1 successful POST /api after button press returns username"
+ours         = "tests/fake_hue_app.rs::fake_hue_app_pairs_then_toggles_light_and_observes_eventstream"
+
+[[spec_test]]
+designed_for = "v1 §1 PUT light state round-trip via app_key"
+ours         = "src/api/v1/mod.rs::tests::round_trip_pair_then_create_light_then_set_state + tests/fake_hue_app.rs"
+
+[[spec_test]]
+designed_for = "v1 §4 group action with scene recall"
+ours         = "src/registry.rs::tests::scene_recall_propagates_action_to_member_lights"
+
+[[spec_test]]
+designed_for = "v2 EventStream — add/update/delete event production"
+ours         = "src/registry.rs::tests + src/api/v2/eventstream.rs::tests"
+
+[[spec_test]]
+designed_for = "v2 full resource dump GET /clip/v2/resource"
+ours         = "src/api/v2/mod.rs::tests::get_all_resources_includes_bridge_lights_rooms_scenes + tests/fake_hue_app.rs::v2_full_resource_dump_includes_documented_types"
+
+[[spec_test]]
+designed_for = "Discovery — SSDP description.xml UDN format"
+ours         = "src/discovery/ssdp.rs::tests + src/config.rs::tests::ssdp_udn_matches_documented_format"
+
+[[spec_test]]
+designed_for = "Discovery — mDNS service type + TXT keys"
+ours         = "src/discovery/mdns.rs::tests"
