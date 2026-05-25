@@ -1,0 +1,89 @@
+# cave-home-core — line-by-line port manifest (Phase 1 skeleton).
+#
+# Upstream `homeassistant.core` is ~3.5 kLOC of Python. Phase 1 ports
+# the four domain primitives + the state machine — the bottom of the
+# dependency graph. ServiceRegistry, HomeAssistant runtime, Component
+# lifecycle land in Phase 1b alongside the integrations crate.
+
+[crate]
+name             = "cave-home-core"
+upstream_repo    = "home-assistant/core"
+upstream_subpath = "homeassistant/core.py"
+port_method      = "line-by-line"
+upstream_license = "Apache-2.0"
+ported_at        = "2026-05-25"
+linux_min_kernel = "7.1"
+
+[ratios]
+fill_ratio              = 0.44
+fill_ratio_basis        = "phase-1 skeleton (Context + Event + EventBus + State + StateMachine)"
+fill_ratio_full_module  = 0.18
+test_port_ratio         = 0.20
+
+[[mapped]]
+upstream = "homeassistant/core.py::Context"
+ours     = "src/context.rs::Context"
+
+[[mapped]]
+upstream = "homeassistant/core.py::Event + EventOrigin"
+ours     = "src/event.rs::Event + EventOrigin"
+
+[[mapped]]
+upstream = "homeassistant/core.py::State"
+ours     = "src/state.rs::State"
+
+[[mapped]]
+upstream = "homeassistant/core.py::valid_entity_id + split_entity_id"
+ours     = "src/state.rs::EntityId"
+
+[[mapped]]
+upstream = "homeassistant/core.py::EventBus + listen + listen_once + async_fire"
+ours     = "src/event_bus.rs::EventBus"
+
+[[mapped]]
+upstream = "homeassistant/core.py::EventBus.MATCH_ALL"
+ours     = "src/event_bus.rs::MATCH_ALL"
+
+[[mapped]]
+upstream = "homeassistant/core.py::StateMachine + async_set + async_remove + get"
+ours     = "src/state_machine.rs::StateMachine"
+
+[[mapped]]
+upstream = "homeassistant/core.py::EVENT_STATE_CHANGED"
+ours     = "src/state_machine.rs::EVENT_STATE_CHANGED"
+
+[[unmapped]]
+upstream = "homeassistant/core.py::HomeAssistant + bootstrap"
+reason   = "Top-level runtime + executor — Phase 1b once components can register"
+
+[[unmapped]]
+upstream = "homeassistant/core.py::ServiceRegistry"
+reason   = "Service call dispatch — Phase 1b alongside integrations crate"
+
+[[unmapped]]
+upstream = "homeassistant/core.py::Component lifecycle (async_setup / async_unload)"
+reason   = "Phase 1b — needs integrations crate to host components"
+
+[[unmapped]]
+upstream = "homeassistant/core.py::Config + config_entries"
+reason   = "Config layer — Phase 1b"
+
+[[test_port]]
+upstream = "tests/test_core.py::test_event_origin"
+ours     = "src/event.rs::tests::local_event_origin_and_round_trip"
+
+[[test_port]]
+upstream = "tests/test_core.py::test_state_machine_set_emit_event + no_change"
+ours     = "src/state_machine.rs::tests::set_emits_and_short_circuits"
+
+[[test_port]]
+upstream = "tests/test_core.py::test_state_machine_attribute_change_keeps_last_changed"
+ours     = "src/state_machine.rs::tests::attribute_only_change_keeps_last_changed"
+
+[[test_port]]
+upstream = "tests/test_core.py::test_event_bus_listen_once"
+ours     = "src/event_bus.rs::tests::listen_once_fires_then_drops"
+
+[[test_port]]
+upstream = "tests/test_core.py::test_event_bus_match_all"
+ours     = "src/event_bus.rs::tests::listener_and_wildcard_routing"
