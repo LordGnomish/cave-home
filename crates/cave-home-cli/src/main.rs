@@ -11,7 +11,9 @@
 use clap::{Arg, ArgAction, Command};
 
 use cave_home_cli::commands::{
-    automation, destroy, device, free_home, hue, init, join, knx, room, scene, solar, status, unifi,
+    alarm, automation, calendar, camera, cover, destroy, device, display, doorbell, free_home,
+    garden, history, household, hue, hvac, init, join, knx, lights, lock, matter, mobile, music,
+    notify, pool, room, scene, solar, status, unifi, vacuum, voice, water, wellness, zigbee, zwave,
 };
 
 fn build_cli() -> Command {
@@ -41,6 +43,30 @@ fn build_cli() -> Command {
         .subcommand(hue::cmd())
         .subcommand(knx::cmd())
         .subcommand(free_home::cmd())
+        // G8 stubs (Phase 1 4-track completeness) — backend not yet attached.
+        .subcommand(lights::cmd())
+        .subcommand(cover::cmd())
+        .subcommand(lock::cmd())
+        .subcommand(vacuum::cmd())
+        .subcommand(hvac::cmd())
+        .subcommand(camera::cmd())
+        .subcommand(doorbell::cmd())
+        .subcommand(alarm::cmd())
+        .subcommand(water::cmd())
+        .subcommand(garden::cmd())
+        .subcommand(pool::cmd())
+        .subcommand(voice::cmd())
+        .subcommand(music::cmd())
+        .subcommand(notify::cmd())
+        .subcommand(display::cmd())
+        .subcommand(history::cmd())
+        .subcommand(wellness::cmd())
+        .subcommand(calendar::cmd())
+        .subcommand(household::cmd())
+        .subcommand(matter::cmd())
+        .subcommand(zigbee::cmd())
+        .subcommand(zwave::cmd())
+        .subcommand(mobile::cmd())
 }
 
 fn main() {
@@ -72,6 +98,30 @@ where
         Some(("hue", _)) => hue::run(),
         Some(("knx", _)) => knx::run(),
         Some(("free-home", _)) => free_home::run(),
+        // G8 stubs (Phase 1 4-track completeness) — see commands/*.rs.
+        Some(("lights", _)) => lights::run(),
+        Some(("cover", _)) => cover::run(),
+        Some(("lock", _)) => lock::run(),
+        Some(("vacuum", _)) => vacuum::run(),
+        Some(("hvac", _)) => hvac::run(),
+        Some(("camera", _)) => camera::run(),
+        Some(("doorbell", _)) => doorbell::run(),
+        Some(("alarm", _)) => alarm::run(),
+        Some(("water", _)) => water::run(),
+        Some(("garden", _)) => garden::run(),
+        Some(("pool", _)) => pool::run(),
+        Some(("voice", _)) => voice::run(),
+        Some(("music", _)) => music::run(),
+        Some(("notify", _)) => notify::run(),
+        Some(("display", _)) => display::run(),
+        Some(("history", _)) => history::run(),
+        Some(("wellness", _)) => wellness::run(),
+        Some(("calendar", _)) => calendar::run(),
+        Some(("household", _)) => household::run(),
+        Some(("matter", _)) => matter::run(),
+        Some(("zigbee", _)) => zigbee::run(),
+        Some(("zwave", _)) => zwave::run(),
+        Some(("mobile", _)) => mobile::run(),
         _ => {
             eprintln!("Use 'cavehomectl --help' to see what's available.");
             2
@@ -88,19 +138,12 @@ mod tests {
         let cli = build_cli();
         let names: Vec<_> = cli.get_subcommands().map(|s| s.get_name()).collect();
         for required in [
-            "init",
-            "join",
-            "status",
-            "destroy",
-            "device",
-            "room",
-            "automation",
-            "scene",
-            "solar",
-            "unifi",
-            "hue",
-            "knx",
-            "free-home",
+            "init", "join", "status", "destroy", "device", "room", "automation", "scene",
+            "solar", "unifi", "hue", "knx", "free-home",
+            // G8 stubs:
+            "lights", "cover", "lock", "vacuum", "hvac", "camera", "doorbell", "alarm",
+            "water", "garden", "pool", "voice", "music", "notify", "display", "history",
+            "wellness", "calendar", "household", "matter", "zigbee", "zwave", "mobile",
         ] {
             assert!(
                 names.iter().any(|n| *n == required),

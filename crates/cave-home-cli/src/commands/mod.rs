@@ -30,3 +30,30 @@ pub mod unifi;
 pub mod hue;
 pub mod knx;
 pub mod free_home;
+
+// Phase 1 G8 (4-track) stubs — one verb per user-facing crate. Each
+// module exposes `cmd()` for the clap surface and `run()` returning an
+// exit code; the dispatcher in `main.rs` wires them to top-level verbs.
+pub mod lights;
+pub mod cover;
+pub mod lock;
+pub mod vacuum;
+pub mod hvac;
+pub mod camera;
+pub mod doorbell;
+pub mod alarm;
+pub mod water;
+pub mod garden;
+pub mod pool;
+pub mod voice;
+pub mod music;
+pub mod notify;
+pub mod display;
+pub mod history;
+pub mod wellness;
+pub mod calendar;
+pub mod household;
+pub mod matter;
+pub mod zigbee;
+pub mod zwave;
+pub mod mobile;
