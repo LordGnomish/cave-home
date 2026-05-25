@@ -1,0 +1,119 @@
+# cave-home-mqtt — clean-room reimplementation manifest (Phase 1).
+#
+# Upstream `eclipse/mosquitto` is EPL-2.0/EDL-1.0 — incompatible with the
+# Apache-2.0 unified binary. cave-home-mqtt is reimplemented from the
+# OASIS MQTT 3.1.1 and MQTT 5.0 specifications without reading Mosquitto
+# source. Phase 1 ships the 3.1.1 fixed-header + var-int codec plus
+# CONNECT / CONNACK / PUBLISH (QoS 0 + QoS 1) round-trip; SUBSCRIBE /
+# UNSUBSCRIBE / PING / DISCONNECT, the session router, retained
+# messages, will / LWT, persistent sessions, and the TCP listener land
+# in Phase 1b. MQTT 5.0 properties land in Phase 2.
+
+[crate]
+name             = "cave-home-mqtt"
+upstream_repo    = "eclipse/mosquitto"
+upstream_license = "EPL-2.0 / EDL-1.0"
+port_method      = "clean-room"
+spec_sources     = [
+    "OASIS MQTT Version 3.1.1 (Plus Errata 01)",
+    "OASIS MQTT Version 5.0",
+]
+ported_at        = "2026-05-25"
+linux_min_kernel = "7.1"
+
+[ratios]
+# Phase 1 production LOC (~310: PacketType + QoS + Connect/ConnAck/
+# Publish models, var-int codec, fixed header, three packet codecs)
+# against the Phase 1 *target* slice of a 3.1.1 broker (fixed header
+# + var-int + the three packets needed for a CONNECT-ACK-PUBLISH
+# happy path, ~700 LOC equivalent of C in Mosquitto's net_mosq +
+# packet_mosq) = ~0.44. Against the full MQTT 3.1.1+5.0 spec surface
+# (broker + persistence + retained + LWT + bridge), Phase 1 is in the
+# low-percent range.
+fill_ratio              = 0.44
+fill_ratio_basis        = "phase-1 (3.1.1 fixed header + var-int + CONNECT/CONNACK/PUBLISH)"
+fill_ratio_full_spec    = 0.05
+test_port_ratio         = 0.0     # clean-room: tests are designed from spec, not ported
+
+[[spec_section]]
+spec = "MQTT 3.1.1 §2.2.1 Control packet type"
+ours = "src/packet.rs::PacketType"
+
+[[spec_section]]
+spec = "MQTT 3.1.1 §2.2.3 Remaining Length variable-byte integer"
+ours = "src/codec.rs::encode_var_int + decode_var_int"
+
+[[spec_section]]
+spec = "MQTT 3.1.1 §1.5.3 UTF-8 encoded string (2-byte length prefix)"
+ours = "src/codec.rs::encode_str + decode_str"
+
+[[spec_section]]
+spec = "MQTT 3.1.1 §3.1 CONNECT — variable header + payload"
+ours = "src/packet.rs::Connect + src/codec.rs::encode_connect + decode_connect"
+
+[[spec_section]]
+spec = "MQTT 3.1.1 §3.2 CONNACK — return codes §3.2.2.3"
+ours = "src/packet.rs::ConnAck + ConnAckReturnCode + src/codec.rs::{encode,decode}_connack"
+
+[[spec_section]]
+spec = "MQTT 3.1.1 §3.3 PUBLISH — dup/qos/retain header flags §3.3.1"
+ours = "src/packet.rs::Publish + src/codec.rs::{encode,decode}_publish"
+
+[[spec_section]]
+spec = "MQTT 3.1.1 §4.3 Quality of Service levels"
+ours = "src/packet.rs::QoS"
+
+[[unmapped]]
+area     = "SUBSCRIBE / SUBACK / UNSUBSCRIBE / UNSUBACK (§3.8-§3.11)"
+priority = "phase-1b"
+note     = "Lands with the topic router; requires topic-filter wildcard matcher."
+
+[[unmapped]]
+area     = "PINGREQ / PINGRESP / DISCONNECT (§3.12-§3.14)"
+priority = "phase-1b"
+note     = "Trivial codec-wise; lands with the session state machine."
+
+[[unmapped]]
+area     = "Retained messages (§3.3.1.3) + Last Will & Testament (§3.1.2.5)"
+priority = "phase-1b"
+note     = "Requires the broker session layer; Phase 1 is wire codec only."
+
+[[unmapped]]
+area     = "Username / Password / TLS / client cert auth (§3.1.2.8-§3.1.2.9)"
+priority = "phase-1b"
+note     = "Connect flags are decoded conservatively (clean-session only) in Phase 1."
+
+[[unmapped]]
+area     = "MQTT 5.0 properties + reason codes + shared subscriptions"
+priority = "phase-2"
+note     = "Phase 1 is 3.1.1 only; 5.0 lands as an opt-in upgrade path."
+
+[[unmapped]]
+area     = "Persistent session storage (in-flight QoS messages on reconnect)"
+priority = "phase-1b"
+note     = "Phase 1 is stateless wire codec."
+
+[[unmapped]]
+area     = "MQTT-over-WebSocket"
+priority = "phase-2"
+note     = "Spec-orthogonal transport wrapper; Phase 1 ships codec only, no TCP listener."
+
+[[spec_test]]
+designed_for = "MQTT 3.1.1 §2.2.3 var-int boundary values (0, 127, 128, 16383, 16384, 2_097_151, 2_097_152, 268_435_455)"
+ours         = "src/codec.rs::tests::var_int_round_trip_at_spec_boundaries"
+
+[[spec_test]]
+designed_for = "MQTT 3.1.1 §3.1 CONNECT round-trip"
+ours         = "src/codec.rs::tests::connect_round_trip"
+
+[[spec_test]]
+designed_for = "MQTT 3.1.1 §3.2 CONNACK round-trip"
+ours         = "src/codec.rs::tests::connack_round_trip"
+
+[[spec_test]]
+designed_for = "MQTT 3.1.1 §3.3 PUBLISH QoS 0 + QoS 1 round-trip (incl. packet id)"
+ours         = "src/codec.rs::tests::publish_qos0_and_qos1_round_trip"
+
+[[spec_test]]
+designed_for = "MQTT 3.1.1 §3.1.2.2 reject unsupported protocol level"
+ours         = "src/codec.rs::tests::decode_rejects_non_mqtt_3_1_1_protocol_level"
