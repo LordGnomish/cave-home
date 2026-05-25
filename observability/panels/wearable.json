@@ -1,0 +1,31 @@
+{
+  "_comment": "cave-home-wearable Grafana panels — Phase 1 stub. Real dashboard JSON lands when the observability M3 crate ships and this integration exports the named metrics. Domain: Fitness tracker / smartwatch.",
+  "_planned_panels": [
+    {
+      "title": "wearable — event/tick rate",
+      "expr": "rate(cave_home_wearable_tick_total[1m])"
+    },
+    {
+      "title": "wearable — error rate (5m)",
+      "expr": "rate(cave_home_wearable_error_total[5m])"
+    },
+    {
+      "title": "wearable — request latency p50/p95/p99",
+      "expr": "histogram_quantile(0.99, rate(cave_home_wearable_request_seconds_bucket[5m]))"
+    },
+    {
+      "title": "wearable — active entities / sessions",
+      "expr": "cave_home_wearable_active_total"
+    },
+    {
+      "title": "wearable — bytes in/out",
+      "expr": "rate(cave_home_wearable_bytes_in_total[1m]) + rate(cave_home_wearable_bytes_out_total[1m])"
+    },
+    {
+      "title": "wearable — last-success age (s)",
+      "expr": "time() - cave_home_wearable_last_success_timestamp_seconds"
+    }
+  ],
+  "_charter_track": "observability",
+  "_grandma_friendly": "A wearable stopped syncing"
+}

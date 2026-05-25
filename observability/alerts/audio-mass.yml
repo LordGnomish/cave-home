@@ -1,0 +1,70 @@
+# cave-home-audio-mass alerts — Phase 1 scaffold.
+#
+# Real Prometheus expressions land once cave-home-audio-mass exports metrics
+# through the observability M3 crate. The four planned rules below cover
+# the universal failure modes every integration shares: liveness, error
+# burst, latency regression, and stale data. Per-domain rules layer on
+# top in a separate file once we ship the metrics.
+#
+# Charter §6.3: `summary` is the grandma-persona one-liner shown in the
+# Portal headline; `description` is the developer detail.
+
+groups:
+  - name: cave-home-audio-mass
+    interval: 30s
+    rules:
+      - alert: AudioMassStalled
+        expr: increase(cave_home_audio_mass_tick_total[5m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+          pillar: integration
+          crate: cave-home-audio-mass
+        annotations:
+          summary: "Music playback stalled"
+          description: |
+            cave-home-audio-mass has not advanced its
+            main tick counter for 5 minutes. Either the background task has
+            panicked or its upstream source (device / bus / external API) is
+            unreachable.
+
+      - alert: AudioMassErrorBurst
+        expr: rate(cave_home_audio_mass_error_total[5m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          pillar: integration
+          crate: cave-home-audio-mass
+        annotations:
+          summary: "Music playback stalled (errors spiking)"
+          description: |
+            cave-home-audio-mass error rate
+            {{ $value | humanize }}/sec over 5 min exceeds threshold.
+
+      - alert: AudioMassLatencyP99High
+        expr: histogram_quantile(0.99, rate(cave_home_audio_mass_request_seconds_bucket[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+          pillar: integration
+          crate: cave-home-audio-mass
+        annotations:
+          summary: "Music playback stalled (slow responses)"
+          description: |
+            p99 of cave-home-audio-mass request
+            seconds = {{ $value | humanize }}s; investigate the
+            integration's downstream dependency.
+
+      - alert: AudioMassLastSuccessStale
+        expr: time() - cave_home_audio_mass_last_success_timestamp_seconds > 900
+        for: 5m
+        labels:
+          severity: warning
+          pillar: integration
+          crate: cave-home-audio-mass
+        annotations:
+          summary: "Music playback stalled (no fresh data)"
+          description: |
+            cave-home-audio-mass has not reported a
+            successful round-trip for 15 min. Likely the integration is
+            partitioned from its source — check connectivity.

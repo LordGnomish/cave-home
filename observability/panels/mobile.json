@@ -1,0 +1,31 @@
+{
+  "_comment": "cave-home-mobile Grafana panels — Phase 1 stub. Real dashboard JSON lands when the observability M3 crate ships and this integration exports the named metrics. Domain: Mobile companion (FCM/APNs notify).",
+  "_planned_panels": [
+    {
+      "title": "mobile — event/tick rate",
+      "expr": "rate(cave_home_mobile_tick_total[1m])"
+    },
+    {
+      "title": "mobile — error rate (5m)",
+      "expr": "rate(cave_home_mobile_error_total[5m])"
+    },
+    {
+      "title": "mobile — request latency p50/p95/p99",
+      "expr": "histogram_quantile(0.99, rate(cave_home_mobile_request_seconds_bucket[5m]))"
+    },
+    {
+      "title": "mobile — active entities / sessions",
+      "expr": "cave_home_mobile_active_total"
+    },
+    {
+      "title": "mobile — bytes in/out",
+      "expr": "rate(cave_home_mobile_bytes_in_total[1m]) + rate(cave_home_mobile_bytes_out_total[1m])"
+    },
+    {
+      "title": "mobile — last-success age (s)",
+      "expr": "time() - cave_home_mobile_last_success_timestamp_seconds"
+    }
+  ],
+  "_charter_track": "observability",
+  "_grandma_friendly": "Phone notifications stopped"
+}

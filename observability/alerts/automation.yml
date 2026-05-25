@@ -1,0 +1,70 @@
+# cave-home-automation alerts — Phase 1 scaffold.
+#
+# Real Prometheus expressions land once cave-home-automation exports metrics
+# through the observability M3 crate. The four planned rules below cover
+# the universal failure modes every integration shares: liveness, error
+# burst, latency regression, and stale data. Per-domain rules layer on
+# top in a separate file once we ship the metrics.
+#
+# Charter §6.3: `summary` is the grandma-persona one-liner shown in the
+# Portal headline; `description` is the developer detail.
+
+groups:
+  - name: cave-home-automation
+    interval: 30s
+    rules:
+      - alert: AutomationStalled
+        expr: increase(cave_home_automation_tick_total[5m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+          pillar: integration
+          crate: cave-home-automation
+        annotations:
+          summary: "An automation stopped running"
+          description: |
+            cave-home-automation has not advanced its
+            main tick counter for 5 minutes. Either the background task has
+            panicked or its upstream source (device / bus / external API) is
+            unreachable.
+
+      - alert: AutomationErrorBurst
+        expr: rate(cave_home_automation_error_total[5m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          pillar: integration
+          crate: cave-home-automation
+        annotations:
+          summary: "An automation stopped running (errors spiking)"
+          description: |
+            cave-home-automation error rate
+            {{ $value | humanize }}/sec over 5 min exceeds threshold.
+
+      - alert: AutomationLatencyP99High
+        expr: histogram_quantile(0.99, rate(cave_home_automation_request_seconds_bucket[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+          pillar: integration
+          crate: cave-home-automation
+        annotations:
+          summary: "An automation stopped running (slow responses)"
+          description: |
+            p99 of cave-home-automation request
+            seconds = {{ $value | humanize }}s; investigate the
+            integration's downstream dependency.
+
+      - alert: AutomationLastSuccessStale
+        expr: time() - cave_home_automation_last_success_timestamp_seconds > 900
+        for: 5m
+        labels:
+          severity: warning
+          pillar: integration
+          crate: cave-home-automation
+        annotations:
+          summary: "An automation stopped running (no fresh data)"
+          description: |
+            cave-home-automation has not reported a
+            successful round-trip for 15 min. Likely the integration is
+            partitioned from its source — check connectivity.

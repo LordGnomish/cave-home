@@ -1,0 +1,31 @@
+{
+  "_comment": "cave-home-audio-snapcast Grafana panels — Phase 1 stub. Real dashboard JSON lands when the observability M3 crate ships and this integration exports the named metrics. Domain: Snapcast multi-room audio.",
+  "_planned_panels": [
+    {
+      "title": "audio-snapcast — event/tick rate",
+      "expr": "rate(cave_home_audio_snapcast_tick_total[1m])"
+    },
+    {
+      "title": "audio-snapcast — error rate (5m)",
+      "expr": "rate(cave_home_audio_snapcast_error_total[5m])"
+    },
+    {
+      "title": "audio-snapcast — request latency p50/p95/p99",
+      "expr": "histogram_quantile(0.99, rate(cave_home_audio_snapcast_request_seconds_bucket[5m]))"
+    },
+    {
+      "title": "audio-snapcast — active entities / sessions",
+      "expr": "cave_home_audio_snapcast_active_total"
+    },
+    {
+      "title": "audio-snapcast — bytes in/out",
+      "expr": "rate(cave_home_audio_snapcast_bytes_in_total[1m]) + rate(cave_home_audio_snapcast_bytes_out_total[1m])"
+    },
+    {
+      "title": "audio-snapcast — last-success age (s)",
+      "expr": "time() - cave_home_audio_snapcast_last_success_timestamp_seconds"
+    }
+  ],
+  "_charter_track": "observability",
+  "_grandma_friendly": "Multi-room audio is out of sync"
+}

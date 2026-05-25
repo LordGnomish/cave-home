@@ -1,0 +1,31 @@
+{
+  "_comment": "cave-home-zigbee Grafana panels — Phase 1 stub. Real dashboard JSON lands when the observability M3 crate ships and this integration exports the named metrics. Domain: Zigbee Coordinator (clean-room Z2M reimpl).",
+  "_planned_panels": [
+    {
+      "title": "zigbee — event/tick rate",
+      "expr": "rate(cave_home_zigbee_tick_total[1m])"
+    },
+    {
+      "title": "zigbee — error rate (5m)",
+      "expr": "rate(cave_home_zigbee_error_total[5m])"
+    },
+    {
+      "title": "zigbee — request latency p50/p95/p99",
+      "expr": "histogram_quantile(0.99, rate(cave_home_zigbee_request_seconds_bucket[5m]))"
+    },
+    {
+      "title": "zigbee — active entities / sessions",
+      "expr": "cave_home_zigbee_active_total"
+    },
+    {
+      "title": "zigbee — bytes in/out",
+      "expr": "rate(cave_home_zigbee_bytes_in_total[1m]) + rate(cave_home_zigbee_bytes_out_total[1m])"
+    },
+    {
+      "title": "zigbee — last-success age (s)",
+      "expr": "time() - cave_home_zigbee_last_success_timestamp_seconds"
+    }
+  ],
+  "_charter_track": "observability",
+  "_grandma_friendly": "Zigbee devices stopped responding"
+}

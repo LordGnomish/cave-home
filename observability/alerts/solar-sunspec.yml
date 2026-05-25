@@ -1,0 +1,70 @@
+# cave-home-solar-sunspec alerts — Phase 1 scaffold.
+#
+# Real Prometheus expressions land once cave-home-solar-sunspec exports metrics
+# through the observability M3 crate. The four planned rules below cover
+# the universal failure modes every integration shares: liveness, error
+# burst, latency regression, and stale data. Per-domain rules layer on
+# top in a separate file once we ship the metrics.
+#
+# Charter §6.3: `summary` is the grandma-persona one-liner shown in the
+# Portal headline; `description` is the developer detail.
+
+groups:
+  - name: cave-home-solar-sunspec
+    interval: 30s
+    rules:
+      - alert: SolarSunspecStalled
+        expr: increase(cave_home_solar_sunspec_tick_total[5m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+          pillar: integration
+          crate: cave-home-solar-sunspec
+        annotations:
+          summary: "Solar inverter stopped responding"
+          description: |
+            cave-home-solar-sunspec has not advanced its
+            main tick counter for 5 minutes. Either the background task has
+            panicked or its upstream source (device / bus / external API) is
+            unreachable.
+
+      - alert: SolarSunspecErrorBurst
+        expr: rate(cave_home_solar_sunspec_error_total[5m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          pillar: integration
+          crate: cave-home-solar-sunspec
+        annotations:
+          summary: "Solar inverter stopped responding (errors spiking)"
+          description: |
+            cave-home-solar-sunspec error rate
+            {{ $value | humanize }}/sec over 5 min exceeds threshold.
+
+      - alert: SolarSunspecLatencyP99High
+        expr: histogram_quantile(0.99, rate(cave_home_solar_sunspec_request_seconds_bucket[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+          pillar: integration
+          crate: cave-home-solar-sunspec
+        annotations:
+          summary: "Solar inverter stopped responding (slow responses)"
+          description: |
+            p99 of cave-home-solar-sunspec request
+            seconds = {{ $value | humanize }}s; investigate the
+            integration's downstream dependency.
+
+      - alert: SolarSunspecLastSuccessStale
+        expr: time() - cave_home_solar_sunspec_last_success_timestamp_seconds > 900
+        for: 5m
+        labels:
+          severity: warning
+          pillar: integration
+          crate: cave-home-solar-sunspec
+        annotations:
+          summary: "Solar inverter stopped responding (no fresh data)"
+          description: |
+            cave-home-solar-sunspec has not reported a
+            successful round-trip for 15 min. Likely the integration is
+            partitioned from its source — check connectivity.

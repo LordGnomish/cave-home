@@ -1,0 +1,31 @@
+{
+  "_comment": "cave-home-integrations Grafana panels — Phase 1 stub. Real dashboard JSON lands when the observability M3 crate ships and this integration exports the named metrics. Domain: Component lifecycle + config flows.",
+  "_planned_panels": [
+    {
+      "title": "integrations — event/tick rate",
+      "expr": "rate(cave_home_integrations_tick_total[1m])"
+    },
+    {
+      "title": "integrations — error rate (5m)",
+      "expr": "rate(cave_home_integrations_error_total[5m])"
+    },
+    {
+      "title": "integrations — request latency p50/p95/p99",
+      "expr": "histogram_quantile(0.99, rate(cave_home_integrations_request_seconds_bucket[5m]))"
+    },
+    {
+      "title": "integrations — active entities / sessions",
+      "expr": "cave_home_integrations_active_total"
+    },
+    {
+      "title": "integrations — bytes in/out",
+      "expr": "rate(cave_home_integrations_bytes_in_total[1m]) + rate(cave_home_integrations_bytes_out_total[1m])"
+    },
+    {
+      "title": "integrations — last-success age (s)",
+      "expr": "time() - cave_home_integrations_last_success_timestamp_seconds"
+    }
+  ],
+  "_charter_track": "observability",
+  "_grandma_friendly": null
+}

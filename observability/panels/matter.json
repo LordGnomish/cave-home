@@ -1,0 +1,31 @@
+{
+  "_comment": "cave-home-matter Grafana panels — Phase 1 stub. Real dashboard JSON lands when the observability M3 crate ships and this integration exports the named metrics. Domain: Matter Fabric + Commissioner.",
+  "_planned_panels": [
+    {
+      "title": "matter — event/tick rate",
+      "expr": "rate(cave_home_matter_tick_total[1m])"
+    },
+    {
+      "title": "matter — error rate (5m)",
+      "expr": "rate(cave_home_matter_error_total[5m])"
+    },
+    {
+      "title": "matter — request latency p50/p95/p99",
+      "expr": "histogram_quantile(0.99, rate(cave_home_matter_request_seconds_bucket[5m]))"
+    },
+    {
+      "title": "matter — active entities / sessions",
+      "expr": "cave_home_matter_active_total"
+    },
+    {
+      "title": "matter — bytes in/out",
+      "expr": "rate(cave_home_matter_bytes_in_total[1m]) + rate(cave_home_matter_bytes_out_total[1m])"
+    },
+    {
+      "title": "matter — last-success age (s)",
+      "expr": "time() - cave_home_matter_last_success_timestamp_seconds"
+    }
+  ],
+  "_charter_track": "observability",
+  "_grandma_friendly": "Matter devices stopped responding"
+}

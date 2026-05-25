@@ -1,0 +1,31 @@
+{
+  "_comment": "cave-home-orchestration Grafana panels — Phase 1 stub. Real dashboard JSON lands when the observability M3 crate ships and this integration exports the named metrics. Domain: Workload orchestration.",
+  "_planned_panels": [
+    {
+      "title": "orchestration — event/tick rate",
+      "expr": "rate(cave_home_orchestration_tick_total[1m])"
+    },
+    {
+      "title": "orchestration — error rate (5m)",
+      "expr": "rate(cave_home_orchestration_error_total[5m])"
+    },
+    {
+      "title": "orchestration — request latency p50/p95/p99",
+      "expr": "histogram_quantile(0.99, rate(cave_home_orchestration_request_seconds_bucket[5m]))"
+    },
+    {
+      "title": "orchestration — active entities / sessions",
+      "expr": "cave_home_orchestration_active_total"
+    },
+    {
+      "title": "orchestration — bytes in/out",
+      "expr": "rate(cave_home_orchestration_bytes_in_total[1m]) + rate(cave_home_orchestration_bytes_out_total[1m])"
+    },
+    {
+      "title": "orchestration — last-success age (s)",
+      "expr": "time() - cave_home_orchestration_last_success_timestamp_seconds"
+    }
+  ],
+  "_charter_track": "observability",
+  "_grandma_friendly": null
+}

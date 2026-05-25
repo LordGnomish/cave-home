@@ -1,0 +1,31 @@
+{
+  "_comment": "cave-home-notify Grafana panels — Phase 1 stub. Real dashboard JSON lands when the observability M3 crate ships and this integration exports the named metrics. Domain: Notification fan-out.",
+  "_planned_panels": [
+    {
+      "title": "notify — event/tick rate",
+      "expr": "rate(cave_home_notify_tick_total[1m])"
+    },
+    {
+      "title": "notify — error rate (5m)",
+      "expr": "rate(cave_home_notify_error_total[5m])"
+    },
+    {
+      "title": "notify — request latency p50/p95/p99",
+      "expr": "histogram_quantile(0.99, rate(cave_home_notify_request_seconds_bucket[5m]))"
+    },
+    {
+      "title": "notify — active entities / sessions",
+      "expr": "cave_home_notify_active_total"
+    },
+    {
+      "title": "notify — bytes in/out",
+      "expr": "rate(cave_home_notify_bytes_in_total[1m]) + rate(cave_home_notify_bytes_out_total[1m])"
+    },
+    {
+      "title": "notify — last-success age (s)",
+      "expr": "time() - cave_home_notify_last_success_timestamp_seconds"
+    }
+  ],
+  "_charter_track": "observability",
+  "_grandma_friendly": "Notifications stopped being delivered"
+}

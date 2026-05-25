@@ -1,0 +1,31 @@
+{
+  "_comment": "cave-home-cave-home-scheduler-rs Grafana panels — Phase 1 stub. Real dashboard JSON lands when the observability M3 crate ships and this integration exports the named metrics. Domain: scheduler-extra integration.",
+  "_planned_panels": [
+    {
+      "title": "scheduler-extra — event/tick rate",
+      "expr": "rate(cave_home_scheduler_rs_tick_total[1m])"
+    },
+    {
+      "title": "scheduler-extra — error rate (5m)",
+      "expr": "rate(cave_home_scheduler_rs_error_total[5m])"
+    },
+    {
+      "title": "scheduler-extra — request latency p50/p95/p99",
+      "expr": "histogram_quantile(0.99, rate(cave_home_scheduler_rs_request_seconds_bucket[5m]))"
+    },
+    {
+      "title": "scheduler-extra — active entities / sessions",
+      "expr": "cave_home_scheduler_rs_active_total"
+    },
+    {
+      "title": "scheduler-extra — bytes in/out",
+      "expr": "rate(cave_home_scheduler_rs_bytes_in_total[1m]) + rate(cave_home_scheduler_rs_bytes_out_total[1m])"
+    },
+    {
+      "title": "scheduler-extra — last-success age (s)",
+      "expr": "time() - cave_home_scheduler_rs_last_success_timestamp_seconds"
+    }
+  ],
+  "_charter_track": "observability",
+  "_grandma_friendly": "scheduler-extra integration"
+}

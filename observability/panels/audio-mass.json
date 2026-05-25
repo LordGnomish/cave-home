@@ -1,0 +1,31 @@
+{
+  "_comment": "cave-home-audio-mass Grafana panels — Phase 1 stub. Real dashboard JSON lands when the observability M3 crate ships and this integration exports the named metrics. Domain: Music Assistant.",
+  "_planned_panels": [
+    {
+      "title": "audio-mass — event/tick rate",
+      "expr": "rate(cave_home_audio_mass_tick_total[1m])"
+    },
+    {
+      "title": "audio-mass — error rate (5m)",
+      "expr": "rate(cave_home_audio_mass_error_total[5m])"
+    },
+    {
+      "title": "audio-mass — request latency p50/p95/p99",
+      "expr": "histogram_quantile(0.99, rate(cave_home_audio_mass_request_seconds_bucket[5m]))"
+    },
+    {
+      "title": "audio-mass — active entities / sessions",
+      "expr": "cave_home_audio_mass_active_total"
+    },
+    {
+      "title": "audio-mass — bytes in/out",
+      "expr": "rate(cave_home_audio_mass_bytes_in_total[1m]) + rate(cave_home_audio_mass_bytes_out_total[1m])"
+    },
+    {
+      "title": "audio-mass — last-success age (s)",
+      "expr": "time() - cave_home_audio_mass_last_success_timestamp_seconds"
+    }
+  ],
+  "_charter_track": "observability",
+  "_grandma_friendly": "Music playback stalled"
+}

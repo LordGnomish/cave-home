@@ -1,0 +1,31 @@
+{
+  "_comment": "cave-home-hue Grafana panels — Phase 1 stub. Real dashboard JSON lands when the observability M3 crate ships and this integration exports the named metrics. Domain: Philips Hue bridge.",
+  "_planned_panels": [
+    {
+      "title": "hue — event/tick rate",
+      "expr": "rate(cave_home_hue_tick_total[1m])"
+    },
+    {
+      "title": "hue — error rate (5m)",
+      "expr": "rate(cave_home_hue_error_total[5m])"
+    },
+    {
+      "title": "hue — request latency p50/p95/p99",
+      "expr": "histogram_quantile(0.99, rate(cave_home_hue_request_seconds_bucket[5m]))"
+    },
+    {
+      "title": "hue — active entities / sessions",
+      "expr": "cave_home_hue_active_total"
+    },
+    {
+      "title": "hue — bytes in/out",
+      "expr": "rate(cave_home_hue_bytes_in_total[1m]) + rate(cave_home_hue_bytes_out_total[1m])"
+    },
+    {
+      "title": "hue — last-success age (s)",
+      "expr": "time() - cave_home_hue_last_success_timestamp_seconds"
+    }
+  ],
+  "_charter_track": "observability",
+  "_grandma_friendly": "Hue bridge went offline"
+}

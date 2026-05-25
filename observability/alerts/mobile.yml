@@ -1,0 +1,70 @@
+# cave-home-mobile alerts — Phase 1 scaffold.
+#
+# Real Prometheus expressions land once cave-home-mobile exports metrics
+# through the observability M3 crate. The four planned rules below cover
+# the universal failure modes every integration shares: liveness, error
+# burst, latency regression, and stale data. Per-domain rules layer on
+# top in a separate file once we ship the metrics.
+#
+# Charter §6.3: `summary` is the grandma-persona one-liner shown in the
+# Portal headline; `description` is the developer detail.
+
+groups:
+  - name: cave-home-mobile
+    interval: 30s
+    rules:
+      - alert: MobileStalled
+        expr: increase(cave_home_mobile_tick_total[5m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+          pillar: integration
+          crate: cave-home-mobile
+        annotations:
+          summary: "Phone notifications stopped"
+          description: |
+            cave-home-mobile has not advanced its
+            main tick counter for 5 minutes. Either the background task has
+            panicked or its upstream source (device / bus / external API) is
+            unreachable.
+
+      - alert: MobileErrorBurst
+        expr: rate(cave_home_mobile_error_total[5m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          pillar: integration
+          crate: cave-home-mobile
+        annotations:
+          summary: "Phone notifications stopped (errors spiking)"
+          description: |
+            cave-home-mobile error rate
+            {{ $value | humanize }}/sec over 5 min exceeds threshold.
+
+      - alert: MobileLatencyP99High
+        expr: histogram_quantile(0.99, rate(cave_home_mobile_request_seconds_bucket[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+          pillar: integration
+          crate: cave-home-mobile
+        annotations:
+          summary: "Phone notifications stopped (slow responses)"
+          description: |
+            p99 of cave-home-mobile request
+            seconds = {{ $value | humanize }}s; investigate the
+            integration's downstream dependency.
+
+      - alert: MobileLastSuccessStale
+        expr: time() - cave_home_mobile_last_success_timestamp_seconds > 900
+        for: 5m
+        labels:
+          severity: warning
+          pillar: integration
+          crate: cave-home-mobile
+        annotations:
+          summary: "Phone notifications stopped (no fresh data)"
+          description: |
+            cave-home-mobile has not reported a
+            successful round-trip for 15 min. Likely the integration is
+            partitioned from its source — check connectivity.

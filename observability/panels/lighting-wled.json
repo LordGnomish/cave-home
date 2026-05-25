@@ -1,0 +1,31 @@
+{
+  "_comment": "cave-home-lighting-wled Grafana panels — Phase 1 stub. Real dashboard JSON lands when the observability M3 crate ships and this integration exports the named metrics. Domain: WLED LED strips.",
+  "_planned_panels": [
+    {
+      "title": "lighting-wled — event/tick rate",
+      "expr": "rate(cave_home_lighting_wled_tick_total[1m])"
+    },
+    {
+      "title": "lighting-wled — error rate (5m)",
+      "expr": "rate(cave_home_lighting_wled_error_total[5m])"
+    },
+    {
+      "title": "lighting-wled — request latency p50/p95/p99",
+      "expr": "histogram_quantile(0.99, rate(cave_home_lighting_wled_request_seconds_bucket[5m]))"
+    },
+    {
+      "title": "lighting-wled — active entities / sessions",
+      "expr": "cave_home_lighting_wled_active_total"
+    },
+    {
+      "title": "lighting-wled — bytes in/out",
+      "expr": "rate(cave_home_lighting_wled_bytes_in_total[1m]) + rate(cave_home_lighting_wled_bytes_out_total[1m])"
+    },
+    {
+      "title": "lighting-wled — last-success age (s)",
+      "expr": "time() - cave_home_lighting_wled_last_success_timestamp_seconds"
+    }
+  ],
+  "_charter_track": "observability",
+  "_grandma_friendly": "Some lights stopped responding"
+}

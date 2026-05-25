@@ -1,0 +1,31 @@
+{
+  "_comment": "cave-home-solar-forecast Grafana panels — Phase 1 stub. Real dashboard JSON lands when the observability M3 crate ships and this integration exports the named metrics. Domain: PV yield forecast.",
+  "_planned_panels": [
+    {
+      "title": "solar-forecast — event/tick rate",
+      "expr": "rate(cave_home_solar_forecast_tick_total[1m])"
+    },
+    {
+      "title": "solar-forecast — error rate (5m)",
+      "expr": "rate(cave_home_solar_forecast_error_total[5m])"
+    },
+    {
+      "title": "solar-forecast — request latency p50/p95/p99",
+      "expr": "histogram_quantile(0.99, rate(cave_home_solar_forecast_request_seconds_bucket[5m]))"
+    },
+    {
+      "title": "solar-forecast — active entities / sessions",
+      "expr": "cave_home_solar_forecast_active_total"
+    },
+    {
+      "title": "solar-forecast — bytes in/out",
+      "expr": "rate(cave_home_solar_forecast_bytes_in_total[1m]) + rate(cave_home_solar_forecast_bytes_out_total[1m])"
+    },
+    {
+      "title": "solar-forecast — last-success age (s)",
+      "expr": "time() - cave_home_solar_forecast_last_success_timestamp_seconds"
+    }
+  ],
+  "_charter_track": "observability",
+  "_grandma_friendly": "Solar forecast feed stopped updating"
+}

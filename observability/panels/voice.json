@@ -1,0 +1,31 @@
+{
+  "_comment": "cave-home-voice Grafana panels — Phase 1 stub. Real dashboard JSON lands when the observability M3 crate ships and this integration exports the named metrics. Domain: Wyoming + Whisper/Piper voice pipeline.",
+  "_planned_panels": [
+    {
+      "title": "voice — event/tick rate",
+      "expr": "rate(cave_home_voice_tick_total[1m])"
+    },
+    {
+      "title": "voice — error rate (5m)",
+      "expr": "rate(cave_home_voice_error_total[5m])"
+    },
+    {
+      "title": "voice — request latency p50/p95/p99",
+      "expr": "histogram_quantile(0.99, rate(cave_home_voice_request_seconds_bucket[5m]))"
+    },
+    {
+      "title": "voice — active entities / sessions",
+      "expr": "cave_home_voice_active_total"
+    },
+    {
+      "title": "voice — bytes in/out",
+      "expr": "rate(cave_home_voice_bytes_in_total[1m]) + rate(cave_home_voice_bytes_out_total[1m])"
+    },
+    {
+      "title": "voice — last-success age (s)",
+      "expr": "time() - cave_home_voice_last_success_timestamp_seconds"
+    }
+  ],
+  "_charter_track": "observability",
+  "_grandma_friendly": "Voice commands stopped working"
+}

@@ -1,0 +1,31 @@
+{
+  "_comment": "cave-home-display Grafana panels — Phase 1 stub. Real dashboard JSON lands when the observability M3 crate ships and this integration exports the named metrics. Domain: E-ink dashboards + TV cast.",
+  "_planned_panels": [
+    {
+      "title": "display — event/tick rate",
+      "expr": "rate(cave_home_display_tick_total[1m])"
+    },
+    {
+      "title": "display — error rate (5m)",
+      "expr": "rate(cave_home_display_error_total[5m])"
+    },
+    {
+      "title": "display — request latency p50/p95/p99",
+      "expr": "histogram_quantile(0.99, rate(cave_home_display_request_seconds_bucket[5m]))"
+    },
+    {
+      "title": "display — active entities / sessions",
+      "expr": "cave_home_display_active_total"
+    },
+    {
+      "title": "display — bytes in/out",
+      "expr": "rate(cave_home_display_bytes_in_total[1m]) + rate(cave_home_display_bytes_out_total[1m])"
+    },
+    {
+      "title": "display — last-success age (s)",
+      "expr": "time() - cave_home_display_last_success_timestamp_seconds"
+    }
+  ],
+  "_charter_track": "observability",
+  "_grandma_friendly": "A dashboard display went offline"
+}
