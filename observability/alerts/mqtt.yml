@@ -1,0 +1,40 @@
+# cave-home-mqtt alerts — Phase 1
+#
+# Planned alert rules (real Prometheus expressions land here once the
+# observability crate ships in M3). The metric names below match what
+# the cave-home-mqtt Phase 1 wire codec + Phase 1b broker session
+# layer will instrument:
+#
+#   - MqttVarIntDecodeErrors:
+#       rate(mqtt_codec_var_int_too_long_total[5m]) > 0
+#       — clients are sending Remaining-Length integers > 4 bytes;
+#         malformed traffic or attempted abuse.
+#
+#   - MqttUnsupportedPacketRejects:
+#       rate(mqtt_codec_unsupported_in_phase1_total[5m]) > 0.1
+#       — Phase 1 only decodes CONNECT/CONNACK/PUBLISH; this counts
+#         every SUBSCRIBE/PING/DISCONNECT/etc. clients try to send
+#         before Phase 1b ships the rest of the codec.
+#
+#   - MqttBadProtocolLevel:
+#       rate(mqtt_codec_bad_protocol_level_total[10m]) > 0
+#       — clients connecting with non-3.1.1 protocol levels (typically
+#         MQTT 5.0 — supported from Phase 2).
+#
+#   - MqttPublishMissingPacketId:
+#       rate(mqtt_codec_missing_packet_id_total[5m]) > 0
+#       — QoS ≥ 1 PUBLISH without a packet id (codec rejects, but
+#         worth alerting: a client is broken).
+#
+#   - MqttBadConnAckCode:
+#       rate(mqtt_codec_bad_connack_code_total[5m]) > 0
+#       — broker on the other end sent an unknown CONNACK return code.
+#
+#   - MqttBadUtf8InString:
+#       rate(mqtt_codec_bad_utf8_total[5m]) > 0
+#       — UTF-8 length-prefixed strings (§1.5.3) failed to decode.
+#
+#   - MqttConnectFloodPerSource:
+#       topk(10, rate(mqtt_connect_total{result="accepted"}[1m])) > 30
+#       — single client_id reconnecting > 30/min; likely a flapping
+#         device (Phase 1b session layer lands the metric).

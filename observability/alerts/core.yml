@@ -1,0 +1,33 @@
+# cave-home-core alerts — Phase 1
+#
+# Planned alert rules (real Prometheus expressions land here once the
+# observability crate ships in M3). The metric names below match what
+# the cave-home-core Phase 1 skeleton will instrument when it grows a
+# `tracing` → `metrics` bridge:
+#
+#   - CoreEventBusListenerLeak:
+#       core_event_bus_listeners > 5000
+#       — A non-once listener is being created in a loop without being
+#         unsubscribed. The Phase 1 skeleton already supports
+#         listen()/listen_once() reaping for `once`; this catches the
+#         missing-unsubscribe case.
+#
+#   - CoreEventFireLatencyHigh:
+#       histogram_quantile(0.99, rate(core_event_fire_seconds_bucket[5m])) > 0.05
+#       — p99 of EventBus::fire exceeds 50 ms; suggests a slow
+#         listener is blocking the bus (would need to move to a
+#         task-spawn dispatch model — tracked separately).
+#
+#   - CoreStateChangedFloodPerEntity:
+#       topk(10, rate(core_state_changed_total[1m])) > 50
+#       — a single entity is reporting > 50 state changes per second;
+#         likely a misbehaving integration.
+#
+#   - CoreStateMachineGrowthAnomaly:
+#       delta(core_state_machine_entities[1h]) > 100
+#       — sudden burst of new entities (e.g. a Zigbee join storm).
+#
+#   - CoreEntityIdValidationErrors:
+#       rate(core_entity_id_invalid_total[5m]) > 0
+#       — somebody is feeding the state machine malformed entity ids;
+#         typically an integration bug.
