@@ -11,7 +11,7 @@
 use clap::{Arg, ArgAction, Command};
 
 use cave_home_cli::commands::{
-    automation, destroy, device, free_home, hue, init, join, knx, scene, solar, status, unifi,
+    automation, destroy, device, free_home, hue, init, join, knx, room, scene, solar, status, unifi,
 };
 
 fn build_cli() -> Command {
@@ -32,6 +32,7 @@ fn build_cli() -> Command {
         .subcommand(status::cmd())
         .subcommand(destroy::cmd())
         .subcommand(device::cmd())
+        .subcommand(room::cmd())
         .subcommand(automation::cmd())
         .subcommand(scene::cmd())
         // Cross-agent stubs — F1-F4 fill these:
@@ -62,6 +63,7 @@ where
         Some(("status", sub)) => status::run(sub, verbose),
         Some(("destroy", sub)) => destroy::run(sub, verbose),
         Some(("device", sub)) => device::run(sub, verbose),
+        Some(("room", sub)) => room::run(sub, verbose),
         Some(("automation", sub)) => automation::run(sub, verbose),
         Some(("scene", sub)) => scene::run(sub, verbose),
         // Cross-agent stubs use the simpler signature.
@@ -91,6 +93,7 @@ mod tests {
             "status",
             "destroy",
             "device",
+            "room",
             "automation",
             "scene",
             "solar",

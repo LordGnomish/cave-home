@@ -26,6 +26,7 @@ fn root_help_lists_every_subcommand() {
         .stdout(contains("status"))
         .stdout(contains("destroy"))
         .stdout(contains("device"))
+        .stdout(contains("room"))
         .stdout(contains("automation"))
         .stdout(contains("scene"))
         .stdout(contains("solar"))
@@ -81,6 +82,36 @@ fn automation_list_hides_entity_id() {
         .assert()
         .success()
         .stdout(predicates::str::contains("automation.evening_scene").not());
+}
+
+#[test]
+fn room_list_groups_devices_per_room() {
+    cavehomectl()
+        .args(["room", "list"])
+        .assert()
+        .success()
+        .stdout(contains("Your rooms"))
+        .stdout(contains("Salon"))
+        .stdout(contains("device"));
+}
+
+#[test]
+fn room_show_returns_devices_in_one_room_case_insensitive() {
+    cavehomectl()
+        .args(["room", "show", "salon"])
+        .assert()
+        .success()
+        .stdout(contains("Salon lambası"))
+        .stdout(predicates::str::contains("Mutfak hareket sensörü").not());
+}
+
+#[test]
+fn room_show_missing_room_exits_one() {
+    cavehomectl()
+        .args(["room", "show", "Pavyon"])
+        .assert()
+        .failure()
+        .stdout(contains("No room called"));
 }
 
 #[test]

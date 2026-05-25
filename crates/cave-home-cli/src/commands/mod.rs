@@ -21,6 +21,7 @@ pub mod join;
 pub mod status;
 pub mod destroy;
 pub mod device;
+pub mod room;
 pub mod automation;
 pub mod scene;
 

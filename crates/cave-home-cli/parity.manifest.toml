@@ -1,0 +1,97 @@
+# cave-home-cli — first-party manifest (no upstream port).
+#
+# `cavehomectl` is the advanced power-user CLI mandated by ADR-005 §2
+# and the only sanctioned written-text surface that surfaces the
+# cluster underneath the home-world UX (ADR-007). It has no upstream
+# port — it is shaped by the cave-home Portal commands one-for-one
+# so the OS image, Portal "Add node" wizard, and `cavehomectl` all
+# call the same primitives.
+#
+# `port_method = "first-party"` therefore. `fill_ratio` and
+# `test_port_ratio` are not meaningful (no upstream baseline); we
+# emit a separate `subcommand_coverage` table that tracks how much
+# of the documented surface is implemented vs. stubbed.
+
+[crate]
+name             = "cave-home-cli"
+upstream_repo    = "none"
+port_method      = "first-party"
+upstream_license = "n/a"
+ported_at        = "2026-05-25"
+linux_min_kernel = "7.1"
+
+[ratios]
+# Not applicable; first-party. Reported as 1.0 by convention so the
+# crate is not flagged as "incomplete" against the upstream-port
+# pipeline.
+fill_ratio              = 1.0
+fill_ratio_basis        = "first-party — no upstream port; coverage tracked via subcommand_coverage"
+test_port_ratio         = 1.0
+
+# ---- subcommand_coverage — implementation status per top-level verb ---------
+
+[[subcommand_coverage]]
+verb   = "init"
+status = "implemented"
+owner  = "F5"
+
+[[subcommand_coverage]]
+verb   = "join"
+status = "implemented"
+owner  = "F5"
+
+[[subcommand_coverage]]
+verb   = "status"
+status = "implemented"
+owner  = "F5"
+
+[[subcommand_coverage]]
+verb   = "destroy"
+status = "implemented"
+owner  = "F5"
+
+[[subcommand_coverage]]
+verb   = "device"
+status = "implemented"
+owner  = "F5"
+
+[[subcommand_coverage]]
+verb   = "room"
+status = "implemented"
+owner  = "F5"
+note   = "Added 2026-05-25 — `room list` + `room show <name>` (case-insensitive)."
+
+[[subcommand_coverage]]
+verb   = "automation"
+status = "implemented"
+owner  = "F5"
+
+[[subcommand_coverage]]
+verb   = "scene"
+status = "implemented"
+owner  = "F5"
+
+[[subcommand_coverage]]
+verb   = "solar"
+status = "stub"
+owner  = "F1"
+
+[[subcommand_coverage]]
+verb   = "unifi"
+status = "stub"
+owner  = "F2"
+
+[[subcommand_coverage]]
+verb   = "hue"
+status = "stub"
+owner  = "F3"
+
+[[subcommand_coverage]]
+verb   = "knx"
+status = "stub"
+owner  = "F4"
+
+[[subcommand_coverage]]
+verb   = "free-home"
+status = "stub"
+owner  = "F4"
