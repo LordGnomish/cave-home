@@ -1,0 +1,24 @@
+# cave-home-water — parity manifest scaffold.
+#
+# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
+# scaffold form — fill_ratio is bumped as the line-by-line port lands.
+# cave-home-water — irrigation + leak detection + smart water-meter; upstream: HA OpenSprinkler integration + HA M-Bus/Modbus water-meter integrations; port method: line-by-line (ADR-013)
+
+[crate]
+name             = "cave-home-water"
+upstream_repo    = "home-assistant/core (opensprinkler, mbus, modbus integrations)"
+upstream_subpath = ""  # TODO: pin once line-by-line port begins
+port_method      = "line-by-line"
+upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
+ported_at        = "2026-05-25"
+linux_min_kernel = "7.1"
+
+[ratios]
+fill_ratio              = 0.00
+fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
+fill_ratio_full_module  = 0.00
+test_port_ratio         = 0.00
+
+# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
+# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+

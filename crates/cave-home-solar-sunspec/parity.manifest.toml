@@ -1,0 +1,25 @@
+# cave-home-solar-sunspec — parity manifest scaffold.
+#
+# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
+# scaffold form — fill_ratio is bumped as the line-by-line port lands.
+# cave-home-solar-sunspec — SunSpec Modbus models for vendor-agnostic inverter monitoring (SMA / Fronius / SolarEdge / Huawei / Goodwe / Kostal); spec: SunSpec Alliance public, port method: spec-based
+
+[crate]
+name             = "cave-home-solar-sunspec"
+upstream_repo    = "SunSpec Alliance public model spec"
+port_method      = "spec-based"
+spec_sources     = [
+    "SunSpec Alliance — public model definitions (1, 101-103, 120-124, 160-161, etc.)",
+]
+ported_at        = "2026-05-25"
+linux_min_kernel = "7.1"
+
+[ratios]
+fill_ratio              = 0.00
+fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
+fill_ratio_full_module  = 0.00
+test_port_ratio         = 0.00
+
+# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
+# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+

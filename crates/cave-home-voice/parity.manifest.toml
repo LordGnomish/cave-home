@@ -1,0 +1,24 @@
+# cave-home-voice — parity manifest scaffold.
+#
+# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
+# scaffold form — fill_ratio is bumped as the line-by-line port lands.
+# cave-home-voice — local STT (whisper.cpp) + TTS (piper) + wake-word (openWakeWord) + intent routing (OVOS Adapt/Padatious) + dialog management; upstreams: ggerganov/whisper.cpp + rhasspy/piper + dscripka/openWakeWord + OpenVoiceOS/ovos-core; port method: line-by-line (ADR-024)
+
+[crate]
+name             = "cave-home-voice"
+upstream_repo    = "ggerganov/whisper.cpp + rhasspy/piper + dscripka/openWakeWord + OpenVoiceOS/ovos-core (+ ovos-workshop + ovos-bus-client + adapt)"
+upstream_subpath = ""  # TODO: pin once line-by-line port begins
+port_method      = "line-by-line"
+upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
+ported_at        = "2026-05-25"
+linux_min_kernel = "7.1"
+
+[ratios]
+fill_ratio              = 0.00
+fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
+fill_ratio_full_module  = 0.00
+test_port_ratio         = 0.00
+
+# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
+# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+

@@ -1,0 +1,22 @@
+# cave-home-cluster — parity manifest scaffold.
+#
+# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
+# scaffold form — fill_ratio is bumped as the line-by-line port lands.
+# cave-home-cluster — multi-node cluster lifecycle (init / join / status / destroy), K3s join-token coordination, active-passive failover; first-party, no upstream port (Charter §5 deployment-topology). Shape gated by ADR-005.
+
+[crate]
+name             = "cave-home-cluster"
+upstream_repo    = "none (first-party)"
+port_method      = "first-party"
+ported_at        = "2026-05-25"
+linux_min_kernel = "7.1"
+
+[ratios]
+fill_ratio              = 0.00
+fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
+fill_ratio_full_module  = 0.00
+test_port_ratio         = 0.00
+
+# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
+# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+
