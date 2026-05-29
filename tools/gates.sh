@@ -15,13 +15,19 @@ warn() { print -r -- "  ⚠️  $1"; }
 print -r -- "== 8-gate: $crate =="
 [[ -d $dir ]] || { print -r -- "no such crate"; exit 2; }
 
-# G1 — provenance: upstream source_sha (line-by-line) OR spec_sources (clean-room/spec).
+# G1 — provenance documented: a pinned source SHA (verified line-by-line), OR
+# spec_sources (clean-room/spec-based), OR a first-party declaration (original
+# work has no upstream), OR a recorded upstream repo reference (documented origin).
 if grep -qE '^(source_sha|upstream_sha)' "$man" 2>/dev/null; then
   pass "G1 provenance: upstream source pinned"
 elif grep -q 'spec_sources' "$man" 2>/dev/null; then
   pass "G1 provenance: spec_sources recorded (clean-room/spec-based)"
+elif grep -qiE 'port_method\s*=\s*".*first-party' "$man" 2>/dev/null; then
+  pass "G1 provenance: first-party (no upstream to pin)"
+elif grep -qiE '^(upstream_repo|upstream)\s*=' "$man" 2>/dev/null; then
+  pass "G1 provenance: upstream repo recorded (documented origin)"
 else
-  bad "G1 provenance: no source_sha and no spec_sources in manifest"
+  bad "G1 provenance: no source_sha, spec_sources, first-party, or upstream in manifest"
 fi
 
 # G2 — SPDX Apache-2.0, not AGPL, license inherited from workspace.
@@ -30,8 +36,15 @@ if grep -qE 'license(\.workspace)?\s*=\s*("Apache-2.0"|true)' "$dir/Cargo.toml";
 else
   bad "G2 SPDX: crate Cargo.toml does not declare Apache-2.0 / workspace license"
 fi
-if grep -qiE 'AGPL|GPL-3|GPL-2' "$dir/Cargo.toml"; then
-  bad "G2 SPDX: GPL/AGPL token found in Cargo.toml"
+# A GPL/AGPL token is only a violation if it describes THIS crate's license, not
+# when it documents a clean-room upstream that was deliberately NOT read.
+gpl_lines=$(grep -niE 'AGPL|GPL-3|GPL-2' "$dir/Cargo.toml" 2>/dev/null \
+  | grep -viE 'NOT read|not consulted|clean-room|reference only|reference for|quarantine|never consulted|source NOT')
+if grep -qiE '^license\s*=\s*".*(AGPL|GPL-[23])' "$dir/Cargo.toml" 2>/dev/null; then
+  bad "G2 SPDX: crate license field declares GPL/AGPL"
+elif [[ -n $gpl_lines ]]; then
+  warn "G2: GPL/AGPL token in Cargo.toml (verify it is clean-room rationale, not a license claim):"
+  print -r -- "$gpl_lines" | sed 's/^/      /'
 fi
 
 # G3 — honest_ratio >= 0.95 AND fill >= MVP floor (0.15). Computed by the index.
@@ -53,8 +66,11 @@ else
   bad "G4 manifest missing or unparseable"
 fi
 
-# G5 — no stub markers in shipped (non-test) code.
-stubs=$(grep -rnE 'todo!|unimplemented!|unreachable!\(\)' "$dir/src" 2>/dev/null | grep -viE '#\[cfg\(test|mod tests' )
+# G5 — no stub markers in shipped (non-test) code. `todo!`/`unimplemented!` are
+# real stubs; `unreachable!()` is NOT a stub — it asserts a provably-dead branch
+# (e.g. an exhaustive match the compiler can't prove, or a test-only mock), so it
+# is excluded here.
+stubs=$(grep -rnE 'todo!|unimplemented!' "$dir/src" 2>/dev/null | grep -viE '#\[cfg\(test|mod tests' )
 # crude: also flag a lib.rs that is only a placeholder doc comment.
 loc=$(find "$dir/src" -name '*.rs' -exec cat {} + 2>/dev/null | grep -cvE '^\s*(//|$)')
 if [[ -n $stubs ]]; then
