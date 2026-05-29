@@ -1,24 +1,166 @@
-# cave-home-doorbell — parity manifest scaffold.
+# cave-home-doorbell — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-doorbell — Reolink + DoorBird + Ring (RTSP-only) doorbells/intercoms; upstream: HA doorbell integrations + vendor public REST/RTSP; port method: line-by-line (ADR-018)
+# Phase 1 ships the doorbell/intercom *call engine*: the front-door call-state
+# machine (press/motion → ringing → answered / declined / missed, answered →
+# ended) with a caller-supplied ring timeout, the indoor chime policy
+# (do-not-disturb, midnight-wrapping quiet hours, per-event tones), pure
+# motion/ring de-duplication, the snapshot-vs-clip media-request model the
+# camera pillar fulfils, a bounded visitor log, and grandma-friendly EN/DE/TR
+# notification lines. This is the brain every doorbell automation, Portal tile
+# and notification consumes. The vendor I/O adapters (Reolink / DoorBird /
+# Amcrest / UniFi / Ring-RTSP / Aqara), two-way SIP/WebRTC audio, the camera
+# capture itself, and core event-bus glue are network/hardware-bound and
+# deferred to Phase 1b — each is enumerated below with an ADR-018 disposition.
+#
+# Port method: the call/chime/cooldown/media logic is a clean-room model of
+# doorbell-interaction semantics (button press, ring timeout, quiet hours,
+# de-dup) — std-only, no vendor source ported. No GPL/AGPL source was read.
 
 [crate]
 name             = "cave-home-doorbell"
 upstream_repo    = "home-assistant/core (reolink, doorbird, ring RTSP-only)"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+port_method      = "spec-based (call engine) + line-by-line (vendor adapters, phase-1b)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "ADR-018 — doorbell / intercom + alarm panel (cave-home, accepted 2026-05-15)",
+    "Charter §6.3 grandma-friendly UX + ADR-007 (EN/DE/TR labels, no protocol jargon)",
+    "Charter §9 privacy posture (Ring RTSP-only; no Ring cloud-account relay)",
+    "Doorbell-interaction model: press/motion → ring → answer/decline/miss; quiet hours; ring/motion de-dup",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (call engine + 6 vendor adapters +
+# two-way audio + camera-pillar capture + core glue). The engine is implemented
+# and tested in full; the I/O adapters, audio, capture and core glue remain and
+# are all ADR-justified Phase 1b — listed in [[unmapped]] below.
+fill_ratio              = 0.30
+fill_ratio_basis        = "call state machine + ring timeout + chime/quiet-hours policy + ring/motion de-dup + media-request model + visitor log + EN/DE/TR UX, fully implemented & tested; vendor I/O adapters, SIP/WebRTC audio, camera capture & core glue deferred"
+test_port_ratio         = 0.0   # tests designed from the interaction model, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-018 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Call states Idle/Ringing/Answered/Missed/Declined/Ended + active/terminal predicates"
+ours = "src/event.rs::CallState"
+
+[[mapped]]
+spec = "Doorbell event vocabulary (button/motion/answer/decline/end/timeout)"
+ours = "src/event.rs::DoorbellEvent"
+
+[[mapped]]
+spec = "Call state machine: press/motion→ringing, answer→answered, decline→declined, answered+end→ended; illegal-transition rejection"
+ours = "src/machine.rs::CallMachine::apply"
+
+[[mapped]]
+spec = "Ring timeout → Missed at the caller-supplied boundary (clock-free tick)"
+ours = "src/machine.rs::CallMachine::tick"
+
+[[mapped]]
+spec = "Indoor chime tone selection + do-not-disturb + per-event enable"
+ours = "src/chime.rs::ChimePolicy::decide"
+
+[[mapped]]
+spec = "Quiet-hours gating with midnight-wrapping half-open [start,end) window"
+ours = "src/chime.rs::ChimePolicy::in_quiet_hours"
+
+[[mapped]]
+spec = "Motion/ring de-dup + cooldown collapse over a caller-supplied last-accepted tick"
+ours = "src/cooldown.rs::dedup"
+
+[[mapped]]
+spec = "Snapshot-vs-clip media request model (kind + reason + tick) for the camera pillar"
+ours = "src/media.rs::MediaRequest::for_event"
+
+[[mapped]]
+spec = "Visitor-log entry model (event + tick + outcome) + bounded history"
+ours = "src/log.rs::VisitorLog"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR front-door notification lines (Charter §6.3, ADR-007)"
+ours = "src/label.rs"
+
+# ---- unmapped (NOT in this crate; ADR-018 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "Reolink doorbell adapter"
+priority = "phase-1b"
+note     = "ADR-018: Reolink exposes a local HTTP API + RTSP stream and a button-press webhook. Network-bound; maps its press/motion edges onto event::DoorbellEvent and reuses this engine. I/O adapter only, no new call logic."
+
+[[unmapped]]
+area     = "DoorBird intercom adapter"
+priority = "phase-1b"
+note     = "ADR-018: DoorBird HTTP/REST + RTSP public API. Network-bound; surfaces press/motion into this engine and renders the two-way audio session separately. I/O + media-transport adapter."
+
+[[unmapped]]
+area     = "Amcrest doorbell adapter"
+priority = "phase-1b"
+note     = "ADR-018: Amcrest local HTTP/RTSP. Network-bound button/motion source feeding event::DoorbellEvent. I/O adapter only."
+
+[[unmapped]]
+area     = "UniFi Talk-class intercom adapter"
+priority = "phase-1b"
+note     = "ADR-018 (composes with ADR-009 camera pillar): UniFi Protect/Talk intercom. Network-bound; press/motion events route into this engine, video via the camera pillar."
+
+[[unmapped]]
+area     = "Ring doorbell adapter (RTSP-only)"
+priority = "phase-1b"
+note     = "ADR-018 + Charter §9: Ring is intentionally RTSP-only — NO Ring cloud-account integration, no third-party relay. Local-stream-bound adapter feeding press/motion into this engine."
+
+[[unmapped]]
+area     = "Aqara doorbell adapter"
+priority = "phase-1b"
+note     = "ADR-018: Aqara doorbell over its hub/Zigbee bridge. Hardware-bound; routes a press/motion edge into event::DoorbellEvent. I/O adapter only."
+
+[[unmapped]]
+area     = "Two-way SIP/WebRTC intercom audio"
+priority = "phase-1b"
+note     = "ADR-018: the live two-way audio an Answered call carries is a SIP/WebRTC media session. Network/codec-bound; orthogonal to the call-state engine, which only tracks that a call is live."
+
+[[unmapped]]
+area     = "Camera-pillar snapshot/clip capture"
+priority = "phase-1b"
+note     = "ADR-018 (composes with ADR-009): this crate emits a media::MediaRequest (snapshot vs clip + reason); the actual frame grab over the camera stream is the camera pillar's job. Stream/transport-bound; deliberately decoupled here."
+
+[[unmapped]]
+area     = "cave-home-core event-bus integration"
+priority = "phase-1b"
+note     = "ADR-018: surfacing call states + media requests as core events/automation triggers lands once cave-home-core's entity/event API stabilises. The engine is already core-agnostic (no cave-home-core dependency)."
+
+[[unmapped]]
+area     = "Legacy/vendor-snapshot doorbell compatibility modes"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home ships the current interaction model only; no historical-firmware compatibility shims."
+
+# ---- spec_test (designed from the interaction model / ADR-018) -------------
+
+[[spec_test]]
+designed_for = "Full ring→answer→end and ring→decline cycles + motion-started ring"
+ours         = "src/machine.rs::tests"
+
+[[spec_test]]
+designed_for = "Ring-timeout boundary → Missed (exact tick, zero-timeout, non-monotonic clock)"
+ours         = "src/machine.rs::tests::{unanswered_ring_times_out_to_missed_at_boundary,zero_timeout_misses_on_first_tick,tick_before_ring_start_does_not_underflow_or_miss}"
+
+[[spec_test]]
+designed_for = "Illegal call-state transitions are rejected"
+ours         = "src/machine.rs::tests::{answering_when_idle_is_illegal,ending_a_call_that_never_started_is_illegal,declining_an_answered_call_is_illegal,timing_out_a_non_ring_is_illegal}"
+
+[[spec_test]]
+designed_for = "Quiet-hours gating incl. midnight wrap + half-open boundary; do-not-disturb; per-event chime"
+ours         = "src/chime.rs::tests"
+
+[[spec_test]]
+designed_for = "Motion/ring de-dup cooldown boundary (inclusive) + burst collapse"
+ours         = "src/cooldown.rs::tests"
+
+[[spec_test]]
+designed_for = "Snapshot-vs-clip media-request decision per event"
+ours         = "src/media.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

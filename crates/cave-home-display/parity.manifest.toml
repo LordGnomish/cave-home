@@ -1,24 +1,145 @@
-# cave-home-display — parity manifest scaffold.
+# cave-home-display — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-display — TV/display integration (LG webOS, Samsung Tizen, Android TV/Cast) + Portal wall-panel render mode; upstream: HA TV integrations (Apache-2.0); port method: line-by-line + first-party wall-panel mode (ADR-028)
+# Phase 1 ships the display *control engine*: the power model, the playback
+# state machine (Home Assistant `media_player` domain semantics), the volume
+# value object (0..=100 clamp + parental cap + mute-restore), the input-source
+# and installed-app catalog with validation + capability gating, the command
+# state machine (power-gated, playback transitions, source/app validation,
+# volume clamping), and the grandma-friendly EN/DE/TR status sentence. This is
+# the brain every TV automation, Portal tile and voice reply consumes. The
+# vendor I/O adapters (LG webOS / Samsung Tizen / Android TV+Cast / Apple TV /
+# Roku / HDMI-CEC / DLNA), now-playing metadata/artwork fetch, and the core
+# entity/state glue are network/hardware-bound and deferred to Phase 1b — each
+# is enumerated below with an ADR-028 disposition.
+#
+# Port method: the control model is implemented clean-room from the *public*
+# Home Assistant `media_player` domain semantics (Apache-2.0). No vendor source
+# was ported; the vendor adapters that will be line-by-line ported are deferred.
 
 [crate]
 name             = "cave-home-display"
-upstream_repo    = "home-assistant/core (webostv, samsungtv, androidtv, cast) + first-party Portal wall-panel mode"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line + first-party"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "home-assistant/core (webostv, samsungtv, androidtv, cast)"
+port_method      = "spec-based (control engine) + line-by-line (vendor adapters, deferred)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "Home Assistant `media_player` entity domain — public service/state semantics (power, play/pause/stop, next/previous, volume_set/mute, select_source, play_media, media_seek; Apache-2.0)",
+    "Home Assistant MediaPlayerState public state set (playing/paused/idle/off/standby/buffering)",
+    "ADR-028 — TV / display integration (cave-home)",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (engine + vendor adapters +
+# now-playing metadata + core-state integration). The control engine is
+# implemented and tested in full; the vendor I/O adapters, metadata fetch and
+# core glue remain and are all ADR-justified Phase 1b.
+fill_ratio              = 0.30
+fill_ratio_basis        = "power + playback + volume + source/app catalog + command state machine + EN/DE/TR UX, fully implemented & tested; vendor I/O adapters + metadata + core glue deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-028 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "media_player power model (on / off / standby) with active/visible queries"
+ours = "src/power.rs::PowerState"
+
+[[mapped]]
+spec = "MediaPlayerState playback set + play/pause/stop transition rules"
+ours = "src/playback.rs::PlaybackState"
+
+[[mapped]]
+spec = "volume_set/volume_mute as a validated value object: 0..=100 clamp, parental max cap, volume-up/down steps, mute preserving level for unmute restore"
+ours = "src/volume.rs::Volume"
+
+[[mapped]]
+spec = "select_source / play_media (app launch): known-input list + installed-app list with validation and app-capability gating"
+ours = "src/source.rs::{Source,App,SourceCatalog,AppCapability}"
+
+[[mapped]]
+spec = "media_player service command surface as a power-gated state machine (most commands rejected while off/standby; transport needs content; source/app validated; volume clamped to cap)"
+ours = "src/machine.rs::{Display,MediaCommand,CommandError}"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR status sentence (ADR-028, Charter §6.3)"
+ours = "src/label.rs::{Lang,Display::status_sentence}"
+
+# ---- unmapped (NOT in this crate; ADR-028 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "LG webOS TV adapter (SSAP websocket)"
+priority = "phase-1b"
+note     = "ADR-028: webOS control is over its SSAP websocket with a paired client key. Network-bound; maps webOS commands/state onto machine::MediaCommand + Display. Line-by-line port of HA `webostv`; no new control logic."
+
+[[unmapped]]
+area     = "Samsung Tizen TV adapter (websocket + WoWLAN wake)"
+priority = "phase-1b"
+note     = "ADR-028: Samsung control is over its websocket remote API with token pairing, plus Wake-on-WLAN to power on. Network-bound I/O adapter; routes onto this engine. Line-by-line port of HA `samsungtv`."
+
+[[unmapped]]
+area     = "Android TV / Google Cast adapter (ADB + Cast protocol)"
+priority = "phase-1b"
+note     = "ADR-028: Android TV uses ADB; Cast uses the Google Cast protocol over the LAN. Network-bound; both surface as MediaCommand/Display. Line-by-line port of HA `androidtv` + `cast`."
+
+[[unmapped]]
+area     = "Apple TV adapter (MRP / Companion)"
+priority = "phase-1b"
+note     = "ADR-028: Apple TV control is over the MediaRemote/Companion protocols with pairing. Network-bound I/O adapter onto this engine."
+
+[[unmapped]]
+area     = "Roku adapter (ECP HTTP)"
+priority = "phase-1b"
+note     = "ADR-028: Roku exposes the External Control Protocol over HTTP on the LAN. Network-bound; a thin poller/sender onto MediaCommand."
+
+[[unmapped]]
+area     = "HDMI-CEC bridge"
+priority = "phase-1b"
+note     = "ADR-028: CEC lets a hub power and switch inputs on plain HDMI displays over the HDMI bus. Hardware-bound (needs a CEC adapter); maps onto PowerOn/PowerOff/SelectSource. No new model."
+
+[[unmapped]]
+area     = "DLNA / UPnP media-renderer adapter"
+priority = "phase-1b"
+note     = "ADR-028: DLNA renderers accept play_media over UPnP/SOAP. Network-bound I/O adapter; routes onto this engine's playback verbs."
+
+[[unmapped]]
+area     = "Now-playing metadata + artwork fetch"
+priority = "phase-1b"
+note     = "ADR-028: title/artist/artwork come from the vendor session APIs over the network. The control engine is metadata-agnostic; this is an additive read path layered onto Display once an adapter is connected."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration"
+priority = "phase-1b"
+note     = "ADR-028: surfacing the Display as a core `media_player` State entity + automation triggers lands once cave-home-core's entity API stabilises. The engine is already core-agnostic."
+
+[[unmapped]]
+area     = "Pre-existing vendor API version shims / legacy auth models"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home targets the current vendor APIs only; no historical-API or legacy-auth compatibility mode is carried."
+
+# ---- spec_test (designed from spec / Home Assistant media_player semantics) -
+
+[[spec_test]]
+designed_for = "Power model: only On is active; off/standby both read as off"
+ours         = "src/power.rs::tests"
+
+[[spec_test]]
+designed_for = "Playback transitions (play from paused/stopped/idle/buffering, pause only from playing/buffering, stop always stops, idle has no content)"
+ours         = "src/playback.rs::tests"
+
+[[spec_test]]
+designed_for = "Volume clamp / parental cap / boundaries / step saturation / mute-restore"
+ours         = "src/volume.rs::tests"
+
+[[spec_test]]
+designed_for = "Source validation, app gating, capability gating"
+ours         = "src/source.rs::tests"
+
+[[spec_test]]
+designed_for = "Power-gated command rejection, playback transitions, source/app rejection, volume cap, rejected-command-is-no-op"
+ours         = "src/machine.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3, ADR-028)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"
