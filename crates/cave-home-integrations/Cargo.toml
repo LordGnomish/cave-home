@@ -6,11 +6,11 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-integrations — integrations port (upstream: home-assistant/core integrations, port method: hybrid — line-by-line for Apache/MIT integrations, clean-room for Tasmota MQTT command schema)"
+description = "cave-home-integrations — the integration registry & lifecycle engine: the pure-logic core behind 'add a device or service' (descriptor model, config-entry lifecycle, setup-order resolver, discovery matcher, capability aggregation). Spec-based on the Home Assistant integrations/config-entries architecture (Apache-2.0, clean-room)."
 
 [package.metadata.cave-home]
-upstream    = "home-assistant/core (integrations) + arendst/Tasmota (MQTT command schema)"
-port-method = "hybrid"
+upstream    = "home-assistant/core (config_entries, loader, setup, discovery_flow)"
+port-method = "spec-based"
 
 [lints]
 workspace = true

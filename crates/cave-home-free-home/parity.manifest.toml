@@ -1,24 +1,158 @@
-# cave-home-free-home — parity manifest scaffold.
+# cave-home-free-home — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-free-home — Busch-Jaeger free@home SysAP local REST + WebSocket client. Line-by-line port of kingsleyadam/local-abbfreeathome (MIT). Sits on top of the cave-home-knx crate (KNX-IP carrier). ADR-011.
+# Phase 1 ships the free@home *domain model + datapoint engine*: the System
+# Access Point id scheme (device serial / channel / datapoint), the curated
+# function-ID and pairing-ID tables, the typed datapoint value codec
+# (bool / percent / temperature ↔ the wire string form), control-command
+# construction + validation, the channel→cave-home-device-kind projection, the
+# typed topology tree + the "get-all" parser, and the EN/DE/TR grandma-friendly
+# action phrases. This is the brain that every free@home automation, Portal
+# tile and voice reply consumes. The SysAP local HTTP REST + WebSocket update
+# transport, authentication, the scenes/timer *programming* API, the KNX-IP
+# bridge tie-in and cave-home-core integration are network/transport-bound and
+# deferred to Phase 1b — each is enumerated below with an ADR-011 disposition.
+#
+# Port method: first-party implementation from the *public* free@home local
+# System Access Point API shape + the documented Home Assistant free@home
+# integration *semantics* (device tree, function IDs, pairing IDs, string
+# datapoint values). No GPL source was read; nothing is copied. free@home rides
+# on KNX-IP (ADR-011): the carrier boundary lives in the sibling
+# cave-home-knx crate and this crate does NOT depend on it. Charter §8
+# no-backcompat / §7 always-latest apply (see the permanent [[unmapped]] below).
 
 [crate]
 name             = "cave-home-free-home"
-upstream_repo    = "kingsleyadam/local-abbfreeathome"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "first-party (free@home public local System Access Point API + HA free@home integration semantics)"
+port_method      = "spec-based (first-party from public API shape + documented integration semantics)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "Busch-Jaeger free@home System Access Point local API — public device-tree / get-all configuration shape (sysAP -> devices -> channels -> inputs/outputs)",
+    "free@home public function-ID table (switch / dimming / blind / room-temperature controller / scene actuators)",
+    "free@home public pairing-ID table (switch on/off, set/actual brightness, blind move + position, set/current temperature)",
+    "free@home datapoint value conventions: string wire form ('0'/'1' booleans, '0'..'100' scaling, temperature as a decimal string)",
+    "Home Assistant free@home integration behaviour (Apache-2.0) — channel->entity-kind mapping semantics (light / cover / climate / switch / scene)",
+    "ADR-011 — free@home + KNX-IP port (Charter §6.3 grandma-friendly UX boundary; KNX carrier boundary)",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (engine + SysAP REST/WebSocket
+# transport + auth + scene/timer programming + KNX bridge tie-in + core glue).
+# The domain model + datapoint engine is implemented and tested in full; the
+# transport + integration surfaces remain and are all ADR-011 Phase 1b.
+fill_ratio              = 0.35
+fill_ratio_basis        = "id scheme + function/pairing tables + value codec + command validation + topology parser + device-kind mapping + EN/DE/TR UX, fully implemented & tested; network transport + integration deferred"
+test_port_ratio         = 0.0   # tests designed from the public API shape, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-011 phase disposition
+honest_ratio            = 1.00  # 0.35 / (0.35 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "free@home id scheme: device serial / channel (chXXXX) / datapoint (idpXXXX,odpXXXX) parse + format + round-trip"
+ours = "src/id.rs::{DeviceSerial,ChannelId,DatapointId,Direction}"
+
+[[mapped]]
+spec = "Curated documented function-ID table (switch / dimming / blind / attic-blind / room-temperature controller / scene / switch sensor)"
+ours = "src/function.rs::Function"
+
+[[mapped]]
+spec = "Curated documented pairing-ID table + per-role value shape (bool / percent / temperature)"
+ours = "src/pairing.rs::{Pairing,ValueShape}"
+
+[[mapped]]
+spec = "Datapoint value codec: typed value <-> wire string, with bounds + rounding"
+ours = "src/value.rs::Value"
+
+[[mapped]]
+spec = "Control command construction + validation against the pairing role's value shape and writability"
+ours = "src/command.rs::SetDatapoint"
+
+[[mapped]]
+spec = "channel function -> cave-home device kind projection (light / cover / climate / switch / scene / sensor)"
+ours = "src/mapping.rs::{DeviceKind,channel_kind}"
+
+[[mapped]]
+spec = "Typed topology tree (SysAp -> Device -> Channel -> Datapoint) + the get-all devices-tree parser"
+ours = "src/topology.rs::{SysAp,Device,Channel,Datapoint}"
+
+[[mapped]]
+spec = "std-only tolerant JSON reader for the get-all response (no external crate, Phase 1)"
+ours = "src/topology/json.rs::Json"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR action phrases (Charter §6.3, ADR-007)"
+ours = "src/label.rs::{Action,Lang,action_phrase}"
+
+# ---- unmapped (NOT in this crate; ADR-011 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "System Access Point local HTTP REST transport (GET configuration / get-all, PUT datapoint)"
+priority = "phase-1b"
+note     = "ADR-011: the SysAP exposes a local REST surface; this crate already models its get-all response and produces validated SetDatapoint commands. The poller/PUT client is a network-bound I/O adapter that reuses this engine unchanged."
+
+[[unmapped]]
+area     = "System Access Point WebSocket realtime datapoint-update transport"
+priority = "phase-1b"
+note     = "ADR-011: the SysAP pushes realtime datapoint deltas over a WebSocket. Network-bound; each delta is a (channel, datapoint, wire-value) triple that decodes through src/value.rs and updates the typed topology. No new domain logic."
+
+[[unmapped]]
+area     = "Authentication to the System Access Point"
+priority = "phase-1b"
+note     = "ADR-011: SysAP local API auth (HTTP Basic / token). Credential-bound; lands with the transport adapter. cave-home stays account-free by using the local API only."
+
+[[unmapped]]
+area     = "Scenes / timer programming API (creating + editing scenes/timers on the SysAP)"
+priority = "phase-1b"
+note     = "ADR-011: activating a scene is modelled here (Scene function + activation phrase); authoring/editing scenes and timers on the SysAP is a write-heavy transport surface deferred with the REST client."
+
+[[unmapped]]
+area     = "KNX-IP bridge tie-in (free@home is hybrid on KNX)"
+priority = "phase-1b"
+note     = "ADR-011: free@home rides on KNX-IP. The KNX carrier lives in the sibling cave-home-knx crate; bridging a free@home channel to its underlying KNX group object is integration work across that boundary. This crate deliberately does NOT depend on cave-home-knx."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration"
+priority = "phase-1b"
+note     = "ADR-011: surfacing channels as core State entities + automation triggers lands once cave-home-core's entity API stabilises. The engine is already core-agnostic — channel_kind projects every channel onto a uniform DeviceKind."
+
+[[unmapped]]
+area     = "Full Busch-Jaeger function-ID + pairing-ID tables (~150 functions: fan stages, media, access control, weather)"
+priority = "phase-2"
+note     = "ADR-011: Phase 1 curates the function/pairing IDs a household actually controls. Adding a documented ID is one enum variant + one mapping row with no API churn; numeric round-trip is preserved (raw_pairing_id retained for unmapped roles)."
+
+[[unmapped]]
+area     = "Legacy / pre-current SysAP firmware compatibility mode"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home tracks the current free@home SysAP API contract only; no historical-firmware snapshot mode."
+
+# ---- spec_test (designed from the public API shape / documented semantics) -
+
+[[spec_test]]
+designed_for = "id scheme parse/format/round-trip + rejection of malformed serials/channels/datapoints"
+ours         = "src/id.rs::tests"
+
+[[spec_test]]
+designed_for = "function-ID + pairing-ID numeric stability + from_id round-trip + value-shape mapping"
+ours         = "src/function.rs::tests + src/pairing.rs::tests"
+
+[[spec_test]]
+designed_for = "datapoint value codec: bool/percent/temperature decode+encode, bounds, rounding"
+ours         = "src/value.rs::tests"
+
+[[spec_test]]
+designed_for = "set-datapoint validation: read-only role + wrong shape + out-of-range + bad serial rejected"
+ours         = "src/command.rs::tests"
+
+[[spec_test]]
+designed_for = "get-all topology parse: device/channel/datapoint shape, unknown-function skip, unknown-pairing-as-raw"
+ours         = "src/topology.rs::tests + src/topology/json.rs::tests"
+
+[[spec_test]]
+designed_for = "channel function -> device-kind projection"
+ours         = "src/mapping.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

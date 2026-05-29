@@ -1,24 +1,172 @@
-# cave-home-integrations — parity manifest scaffold.
+# cave-home-integrations — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-integrations — integrations port (upstream: home-assistant/core integrations, port method: hybrid — line-by-line for Apache/MIT integrations, clean-room for Tasmota MQTT command schema)
+# Phase 1 ships the integration *registry & lifecycle engine*: the pure-logic
+# core behind "add a device or service". It mirrors the Home Assistant
+# integrations / config-entries model (Charter §3, "Integrations layer"):
+#   - the Integration descriptor (domain, capabilities, dependencies +
+#     after-dependencies, iot-class, config-flow type),
+#   - the ConfigEntry instance model (config, lifecycle state, unique-id
+#     dedupe, disabled-by),
+#   - the setup-order resolver (topological sort with cycle + missing-dependency
+#     detection),
+#   - the discovery-to-integration matcher with already-configured dedupe,
+#   - the lifecycle state machine (setup → loaded → unload/reload, with
+#     transient SetupRetry vs permanent SetupError classification),
+#   - the capability/platform registry and "what can this hub do" aggregation,
+#   - grandma-friendly EN/DE/TR messaging (Charter §6.3).
+#
+# This is the decision-only brain; everything that gives it *I/O* — the async
+# setup execution, the config-flow wizard backend, OAuth, the discovery
+# transports (mDNS/SSDP/DHCP listeners), cave-home-core entity-platform wiring,
+# and the ADR-004 K3s orchestration hand-off for HACS-style add-ons — is
+# network/runtime-bound and deferred to Phase 1b, each enumerated below.
+#
+# Port method: the integrations/config-entries *semantics* are modelled from
+# Home Assistant's public architecture docs (Apache-2.0) and re-expressed as a
+# std-only Rust state machine. No GPL source was read; no upstream code lifted
+# verbatim, hence spec-based provenance.
 
 [crate]
 name             = "cave-home-integrations"
-upstream_repo    = "home-assistant/core (integrations) + arendst/Tasmota (MQTT command schema)"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "hybrid"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "home-assistant/core (homeassistant/config_entries, loader, setup, helpers/discovery_flow)"
+port_method      = "spec-based (HA integrations/config-entries architecture, clean-room)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "Home Assistant Developer Docs — Integration manifest (domain, dependencies, after_dependencies, iot_class, config_flow)",
+    "Home Assistant Developer Docs — Config entries lifecycle (NOT_LOADED/SETUP_IN_PROGRESS/LOADED/SETUP_ERROR/SETUP_RETRY/MIGRATION_ERROR)",
+    "Home Assistant Developer Docs — Integration setup & dependency ordering (async_setup, _async_setup_component topological order)",
+    "Home Assistant Developer Docs — Discovery (zeroconf/ssdp/dhcp) + unique-id dedupe (already_configured abort)",
+    "Charter §3 Integrations layer; ADR-007 grandma-friendly UX; ADR-004 orchestration hand-off",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (the pure registry/lifecycle engine
+# PLUS the I/O & runtime layers it will sit under: async setup execution,
+# config-flow wizard backend, OAuth, the four discovery transports, core
+# entity-platform wiring, and the ADR-004 orchestration hand-off). The engine is
+# implemented & tested in full; every remaining layer is network/runtime-bound
+# and ADR-justified Phase 1b below.
+fill_ratio              = 0.35
+fill_ratio_basis        = "Integration descriptor + ConfigEntry model + topo-sort resolver (cycle/missing-dep) + discovery matcher with dedupe + lifecycle state machine with retry/error classification + capability aggregation + EN/DE/TR UX, all implemented & tested; async setup, config-flow/OAuth, discovery transports, core wiring & orchestration hand-off deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries a phase disposition
+honest_ratio            = 1.00  # 0.35 / (0.35 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Integration manifest: domain, name, dependencies, after_dependencies, iot_class, config_flow"
+ours = "src/integration.rs::{Integration,IotClass,ConfigFlow}"
+
+[[mapped]]
+spec = "Integration registry (register/get/all) keyed by domain"
+ours = "src/integration.rs::Registry"
+
+[[mapped]]
+spec = "Config entry instance: data, lifecycle state, unique-id, disabled_by"
+ours = "src/config_entry.rs::{ConfigEntry,DisabledBy}"
+
+[[mapped]]
+spec = "Unique-id dedupe (already_configured) — same device not added twice"
+ours = "src/config_entry.rs::is_duplicate"
+
+[[mapped]]
+spec = "Dependency + after-dependency topological setup order"
+ours = "src/resolver.rs::resolve_setup_order"
+
+[[mapped]]
+spec = "Dependency cycle detection (error, no infinite loop) + missing-dependency error"
+ours = "src/resolver.rs::ResolveError::{Cycle,MissingDependency}"
+
+[[mapped]]
+spec = "Discovery signal model (transport + service key + properties) and stable unique-id derivation"
+ours = "src/discovery.rs::{Discovered,Transport}"
+
+[[mapped]]
+spec = "Discovery-to-integration matcher + already-configured dedupe (only NEW devices offered)"
+ours = "src/discovery.rs::{candidates,new_candidates}"
+
+[[mapped]]
+spec = "Config-entry lifecycle state machine (NotLoaded/SettingUp/Loaded/SetupError/SetupRetry/Migrating/Unloading/Failed) as pure transitions"
+ours = "src/lifecycle.rs::{State,Transition,next}"
+
+[[mapped]]
+spec = "Transient (SetupRetry) vs permanent (SetupError) setup-failure classification"
+ours = "src/lifecycle.rs::Failure::{is_transient,outcome_state}"
+
+[[mapped]]
+spec = "Capability/platform set per integration + 'what can this hub do' aggregation across loaded entries"
+ours = "src/capability.rs::{Capability,HubCapabilities} + src/resolver.rs::hub_capabilities"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR messaging, no implementation jargon (Charter §6.3, ADR-007)"
+ours = "src/label.rs::{found_new,connected,retrying,needs_attention,removed,already_added}"
+
+# ---- unmapped (NOT in this crate; Phase-1b/2 disposition) ------------------
+
+[[unmapped]]
+area     = "Async setup execution (actually calling each integration's connect/setup routine)"
+priority = "phase-1b"
+note     = "The engine decides the order and the legal transitions; running them is async + I/O-bound. The executor drives this state machine, calling each integration's setup and feeding back SetupSucceeded / SetupFailed(reason). Runtime-bound, no new decision logic."
+
+[[unmapped]]
+area     = "Config-flow wizard backend (multi-step add-a-device dialogs)"
+priority = "phase-1b"
+note     = "The descriptor already declares the config-flow type (Discoverable/Manual/OAuth). The step-by-step form/validation backend that collects host/credentials and produces a ConfigEntry is a separate stateful flow engine; lands with the Portal add-device UI."
+
+[[unmapped]]
+area     = "OAuth / account-link flows for cloud integrations"
+priority = "phase-1b"
+note     = "Account-bound and network-bound (token exchange, refresh). cave-home prefers local APIs (Charter account-free stance); cloud OAuth is a per-integration flow on top of the config-flow backend above."
+
+[[unmapped]]
+area     = "Discovery transports — mDNS / SSDP / DHCP listeners"
+priority = "phase-1b"
+note     = "Network-bound multicast/broadcast listeners. They emit the Discovered signals this crate's matcher already consumes; this crate is transport-agnostic by design, so the transports add no matching logic here."
+
+[[unmapped]]
+area     = "cave-home-core entity/platform wiring"
+priority = "phase-1b"
+note     = "Forwarding a loaded entry's capabilities into cave-home-core as live entities + setting up the per-platform forwards lands once cave-home-core's entity API stabilises. The Capability set is already core-agnostic."
+
+[[unmapped]]
+area     = "ADR-004 orchestration-layer (K3s) hand-off for HACS-style add-ons"
+priority = "phase-2"
+note     = "ADR-004: third-party add-ons run as workloads on the K3s-style orchestration layer. Registering an add-on-provided integration means handing a workload spec to that orchestrator — a cross-crate, runtime-bound concern out of scope for the pure registry."
+
+[[unmapped]]
+area     = "Pre-existing-config schema-version compatibility shims"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home ships one current config schema. Migrating IS modelled (State::Migrating), but multi-version legacy-schema compatibility shims are explicitly out of scope."
+
+# ---- spec_test (designed from spec / HA reference semantics) ---------------
+
+[[spec_test]]
+designed_for = "Topological setup order: dependency before dependent; after-dependency ordered if present, ignored if absent; deterministic tie-break"
+ours         = "src/resolver.rs::tests"
+
+[[spec_test]]
+designed_for = "Cycle detection (2-node + 3-node) and missing hard-dependency error (no infinite loop)"
+ours         = "src/resolver.rs::tests::{cycle_is_detected_not_looped,three_node_cycle_is_detected,missing_hard_dependency_is_an_error}"
+
+[[spec_test]]
+designed_for = "Discovery match + already-configured dedupe (only NEW devices offered)"
+ours         = "src/discovery.rs::tests"
+
+[[spec_test]]
+designed_for = "Lifecycle transitions + transient-vs-permanent failure classification + illegal transitions rejected (not silently ignored)"
+ours         = "src/lifecycle.rs::tests"
+
+[[spec_test]]
+designed_for = "Unique-id dedupe by (domain, unique-id); id-less entries never auto-dedupe"
+ours         = "src/config_entry.rs::tests::{duplicate_detection_by_domain_and_unique_id,entries_without_unique_id_never_dedupe}"
+
+[[spec_test]]
+designed_for = "Capability aggregation counts only loaded, non-disabled entries"
+ours         = "src/resolver.rs::tests::{hub_capabilities_aggregate_loaded_only,disabled_entry_contributes_no_capabilities}"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

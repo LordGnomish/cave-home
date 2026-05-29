@@ -1,48 +1,89 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
-//! cave-home-free-home — Busch-Jaeger free@home local-API client.
+//! `cave-home-free-home` — Busch-Jaeger free@home domain model + datapoint
+//! engine (ADR-011).
 //!
-//! Line-by-line port of `kingsleyadam/local-abbfreeathome` v3.5.1
-//! (SHA `1f6e3ebcf448a07ad53b9cc4dbe64d013ba4cfee`, MIT-licensed). The
-//! upstream is the actively-maintained Python library used by the Home
-//! Assistant `freeathome` integration; the older Apache-2.0-implied
-//! `Busch-Jaeger/free-at-home` org repository referenced by ADR-011 has
-//! been superseded — `kingsleyadam/local-abbfreeathome` is the
-//! community-maintained replacement, MIT-licensed and permissive
-//! enough for line-by-line porting per Charter §6.1 + ADR-002.
+//! free@home is Busch-Jaeger's residential building-automation brand. It is a
+//! *hybrid* system: a friendly device/room/scene surface exposed by the
+//! System Access Point, riding on top of the KNX-IP building bus
+//! (cave-home-knx is the sibling carrier crate; this crate does **not** depend
+//! on it — see ADR-011 for the boundary).
 //!
-//! ## Architecture
+//! This crate is the **brain**: it models the free@home topology, decodes and
+//! encodes the string datapoint values the System Access Point speaks, maps a
+//! channel's *function* + a datapoint's *pairing role* to a typed meaning,
+//! validates control commands, and projects every channel onto one of a small
+//! set of grandma-friendly device kinds (light / blind / climate / switch /
+//! scene) so the rest of the hub treats a free@home blind exactly like a
+//! Zigbee one.
 //!
-//! free@home is a residential REST/WebSocket facade on top of the KNX-IP
-//! bus. The System Access Point (SysAP) exposes:
+//! # Scope (Phase 1 MVP — pure logic, std-only, no network)
 //!
-//! 1. **REST endpoints** (`api`) — `GET /api/rest/configuration`,
-//!    `PUT /api/rest/datapoint/<serial>/<channel>/<datapoint>`,
-//!    `GET /api/rest/sysap`. Authentication is HTTP Basic; HTTPS is
-//!    optional for SysAP firmware ≥ 2.6.
-//! 2. **WebSocket endpoint** `wss://<sysap>/fhapi/v1/api/ws` — receives
-//!    realtime datapoint deltas as JSON envelopes
-//!    `{ "datapoints": { "ABB...../ch0001/odp0000": "1" } }`.
+//! Implemented, real and tested here:
+//! - [`id`] — the free@home id scheme: device serial, channel id (`ch0003`),
+//!   datapoint id (`odp0000` / `idp0001`) — parse, format, round-trip.
+//! - [`function`] — the curated set of documented function IDs (switch,
+//!   dimmer, blind, room-temperature controller, scene, …).
+//! - [`pairing`] — the datapoint *roles* (switch on/off, set/actual brightness,
+//!   set/current temperature, move up/down) + a typed value-shape per role.
+//! - [`value`] — the datapoint value codec: typed values
+//!   (bool / percent 0..=100 / temperature) ↔ the wire string form, with
+//!   bounds + rounding.
+//! - [`command`] — building and validating a [`command::SetDatapoint`] against
+//!   the pairing's expected value shape.
+//! - [`topology`] — the typed [`topology::SysAp`] → [`topology::Device`] →
+//!   [`topology::Channel`] → [`topology::Datapoint`] tree, and parsing the
+//!   "get-all" devices response into it.
+//! - [`mapping`] — projecting a channel's function onto a cave-home
+//!   [`mapping::DeviceKind`].
+//! - [`label`] — localised, jargon-free EN / DE / TR phrases for the actions a
+//!   household actually takes (Charter §6.3, ADR-007).
 //!
-//! 3. **Channel model** — devices contain channels, channels carry
-//!    inputs/outputs/parameters, each input/output is identified by an
-//!    integer "pairing ID" from the public free@home pairing table.
+//! Deferred to Phase 1b (network/transport bound; see `parity.manifest.toml`
+//! `[[unmapped]]`): the System Access Point local HTTP REST + WebSocket update
+//! transport, authentication, the scenes/timer *programming* API, the KNX-IP
+//! bridge tie-in, and cave-home-core integration.
 //!
-//! ## Charter v6 / ADR-007 grandma-friendly UX
+//! # Example
 //!
-//! Nothing here is grandma-facing. Device serials ("ABB7F500BCFB"),
-//! channel ids ("ch0000"), datapoint ids ("idp0000") and pairing IDs
-//! never leak past the Portal developer view. Grandma-facing labels
-//! ("Mutfak Tavan Işığı") live in `cave-home-portal::admin::free_home`.
+//! ```
+//! use cave_home_free_home::{
+//!     ChannelId, Function, DeviceKind, SetDatapoint, Pairing, Lang, action_phrase, Action,
+//! };
+//!
+//! // A dimmable living-room light, addressed by serial + channel.
+//! let channel = ChannelId::parse("ch0003").unwrap();
+//! assert_eq!(channel.index(), 3);
+//! assert_eq!(Function::DimmingActuator.device_kind(), DeviceKind::Light);
+//!
+//! // Turn it to 50 %: validated against the "set brightness" pairing role.
+//! let cmd = SetDatapoint::percent("ABB700C12345", channel, Pairing::SetBrightness, 50).unwrap();
+//! assert_eq!(cmd.wire_value(), "50");
+//!
+//! // What grandma sees, in German:
+//! let phrase = action_phrase(Lang::De, "Wohnzimmer", Action::Brightness(50));
+//! assert_eq!(phrase, "Wohnzimmer auf 50 %");
+//! ```
 
+#![forbid(unsafe_code)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::must_use_candidate)]
 
-pub mod api;
-pub mod channels;
-pub mod device;
-pub mod error;
-pub mod freeathome;
+pub mod command;
+pub mod function;
+pub mod id;
+pub mod label;
+pub mod mapping;
 pub mod pairing;
-pub mod ws;
+pub mod topology;
+pub mod value;
+
+pub use command::{CommandError, SetDatapoint};
+pub use function::Function;
+pub use id::{ChannelId, DatapointId, DeviceSerial, Direction, IdError};
+pub use label::{action_phrase, Action, Lang};
+pub use mapping::DeviceKind;
+pub use pairing::{Pairing, ValueShape};
+pub use topology::{Channel, Datapoint, Device, ParseError, SysAp};
+pub use value::{Value, ValueError};
