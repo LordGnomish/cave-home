@@ -1,700 +1,157 @@
 // SPDX-License-Identifier: Apache-2.0
-// Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
-//         staging/src/k8s.io/api/{apps,batch,core}/v1/types.go
-//
-//! Kubernetes API type subset consumed by the Phase 2 controllers.
+//! Minimal, vendor-neutral object model shared by the controllers.
 //!
-//! Phase 2 deliberately stays away from `k8s-openapi` / `kube-rs`; only the
-//! fields the controllers actually read or write are modelled. Anything not
-//! present here is recorded in `parity.manifest.toml` as `[[unmapped]]`.
+//! This is a deliberately small subset of the Kubernetes apimachinery
+//! `ObjectMeta` / `OwnerReference` shape — only the fields the pure decision
+//! logic in this crate actually reads. The full typed API surface (versioned
+//! `apps/v1`, `batch/v1`, etc.) and serde wire formats are deferred to the
+//! apiserver-client phase (see `parity.manifest.toml`).
+//!
+//! Everything here is plain `std`: `String`, `BTreeMap`, no async, no I/O.
 
 use std::collections::BTreeMap;
 
-/// Opaque resource UID (`k8s.io/apimachinery/pkg/types.UID`).
-#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Uid(pub String);
+/// A stable, cluster-unique identity for an object (apimachinery `UID`).
+///
+/// Controllers reason about ownership and identity over `Uid`, never over the
+/// mutable `(namespace, name)` pair, mirroring the apiserver contract that a
+/// name can be reused after deletion but a UID never is.
+pub type Uid = String;
 
-impl Uid {
-    pub fn new<S: Into<String>>(uid: S) -> Self {
-        Self(uid.into())
-    }
-
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-/// `metav1.OwnerReference`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+/// A reference from a dependent object to one of its owners.
+///
+/// Behavioural subset of apimachinery `OwnerReference`. The garbage collector
+/// reads [`OwnerReference::uid`], [`OwnerReference::controller`] and
+/// [`OwnerReference::block_owner_deletion`].
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OwnerReference {
-    pub api_version: String,
+    /// `kind` of the owner (e.g. `"ReplicaSet"`).
     pub kind: String,
+    /// `name` of the owner.
     pub name: String,
+    /// `uid` of the owner — the field ownership is actually keyed on.
     pub uid: Uid,
-    /// Whether this owner manages the dependent (`metav1.OwnerReference.Controller`).
+    /// Whether the owner is the managing controller of this object.
     pub controller: bool,
-    /// `BlockOwnerDeletion` — if true, deletion of the owner is blocked until
-    /// the dependent's finalizers run.
+    /// Whether foreground deletion of this dependent must block the owner's
+    /// deletion until the dependent is gone.
     pub block_owner_deletion: bool,
 }
 
-/// `metav1.LabelSelector` — Phase 2 supports `matchLabels` only. `matchExpressions`
-/// is recorded as `[[unmapped]]`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct LabelSelector {
-    pub match_labels: BTreeMap<String, String>,
-}
-
-impl LabelSelector {
-    /// Returns true if every label in `match_labels` is present and equal in
-    /// `labels`.
+impl OwnerReference {
+    /// A non-controller, non-blocking owner reference to `uid`.
     #[must_use]
-    pub fn matches(&self, labels: &BTreeMap<String, String>) -> bool {
-        self.match_labels
-            .iter()
-            .all(|(k, v)| labels.get(k).map_or(false, |actual| actual == v))
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.match_labels.is_empty()
-    }
-}
-
-/// `metav1.ObjectMeta` subset.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct ObjectMeta {
-    pub name: String,
-    pub namespace: String,
-    pub uid: Uid,
-    pub labels: BTreeMap<String, String>,
-    pub annotations: BTreeMap<String, String>,
-    pub owner_references: Vec<OwnerReference>,
-    pub finalizers: Vec<String>,
-    /// `DeletionTimestamp` as unix-millis; `None` means object is not being
-    /// deleted.
-    pub deletion_timestamp_ms: Option<u64>,
-    /// Monotonic resource version (controllers compare for stale writes).
-    pub resource_version: u64,
-    /// Monotonic generation (incremented when `spec` changes).
-    pub generation: u64,
-}
-
-/// A namespaced or cluster-scoped k8s API object as seen by a controller.
-///
-/// Mirrors the `metav1.Object` interface (the small subset every controller
-/// actually consults) plus a `kind()` so the [`crate::api_client::ControllerApiClient`]
-/// can route generic CRUD without trait-object juggling.
-pub trait KubeResource: Clone + Send + Sync + 'static {
-    /// `metav1.TypeMeta.Kind`.
-    fn kind() -> &'static str;
-
-    fn meta(&self) -> &ObjectMeta;
-    fn meta_mut(&mut self) -> &mut ObjectMeta;
-
-    fn name(&self) -> &str {
-        &self.meta().name
-    }
-    fn namespace(&self) -> &str {
-        &self.meta().namespace
-    }
-    fn uid(&self) -> &Uid {
-        &self.meta().uid
-    }
-    fn labels(&self) -> &BTreeMap<String, String> {
-        &self.meta().labels
-    }
-}
-
-// ---------------------------------------------------------------------------
-// core/v1 — Pod, Container, Volume
-// ---------------------------------------------------------------------------
-
-/// `core/v1.RestartPolicy`.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum RestartPolicy {
-    #[default]
-    Always,
-    OnFailure,
-    Never,
-}
-
-/// `core/v1.Container` subset.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Container {
-    pub name: String,
-    pub image: String,
-    pub command: Vec<String>,
-    pub args: Vec<String>,
-}
-
-/// `core/v1.PodTemplateSpec`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct PodTemplateSpec {
-    pub metadata: ObjectMeta,
-    pub spec: PodSpec,
-}
-
-/// `core/v1.PodSpec` subset.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct PodSpec {
-    pub containers: Vec<Container>,
-    pub restart_policy: RestartPolicy,
-    pub node_name: String,
-    /// Phase 2 stores a single named-PVC volume mapping per pod (used by
-    /// StatefulSet). `[[unmapped]]` covers the rest.
-    pub volume_claims: Vec<String>,
-}
-
-/// `core/v1.PodPhase`.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum PodPhase {
-    #[default]
-    Pending,
-    Running,
-    Succeeded,
-    Failed,
-    Unknown,
-}
-
-/// `core/v1.PodStatus` subset.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct PodStatus {
-    pub phase: PodPhase,
-    pub message: String,
-    pub reason: String,
-}
-
-/// `core/v1.Pod`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Pod {
-    pub metadata: ObjectMeta,
-    pub spec: PodSpec,
-    pub status: PodStatus,
-}
-
-impl KubeResource for Pod {
-    fn kind() -> &'static str {
-        "Pod"
-    }
-    fn meta(&self) -> &ObjectMeta {
-        &self.metadata
-    }
-    fn meta_mut(&mut self) -> &mut ObjectMeta {
-        &mut self.metadata
-    }
-}
-
-// ---------------------------------------------------------------------------
-// apps/v1 — Deployment, ReplicaSet, DaemonSet, StatefulSet
-// ---------------------------------------------------------------------------
-
-/// `apps/v1.DeploymentStrategyType`.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum DeploymentStrategyType {
-    Recreate,
-    #[default]
-    RollingUpdate,
-}
-
-/// `apps/v1.RollingUpdateDeployment` — Phase 2 honours absolute integers only
-/// (the percentage form is `[[unmapped]]`).
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RollingUpdateDeployment {
-    pub max_unavailable: i32,
-    pub max_surge: i32,
-}
-
-impl Default for RollingUpdateDeployment {
-    fn default() -> Self {
-        // Upstream defaults — 25 % each, rounded to integers when replicas <= 4.
-        // Phase 2 picks 1/1 which mirrors the small-cluster behaviour the
-        // controllers see.
+    pub fn to(kind: &str, name: &str, uid: &str) -> Self {
         Self {
-            max_unavailable: 1,
-            max_surge: 1,
+            kind: kind.to_owned(),
+            name: name.to_owned(),
+            uid: uid.to_owned(),
+            controller: false,
+            block_owner_deletion: false,
+        }
+    }
+
+    /// Mark this reference as the managing controller.
+    #[must_use]
+    pub const fn controller(mut self) -> Self {
+        self.controller = true;
+        self
+    }
+
+    /// Mark this reference as blocking foreground owner deletion.
+    #[must_use]
+    pub const fn blocking(mut self) -> Self {
+        self.block_owner_deletion = true;
+        self
+    }
+}
+
+/// The metadata every object carries (apimachinery `ObjectMeta` subset).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ObjectMeta {
+    /// Object name, unique within a namespace.
+    pub name: String,
+    /// Namespace, empty for cluster-scoped objects.
+    pub namespace: String,
+    /// Stable identity. Empty means "not yet persisted" in this model.
+    pub uid: Uid,
+    /// Key/value labels used by selector-based indexing.
+    pub labels: BTreeMap<String, String>,
+    /// Active finalizers. While non-empty, an object with a deletion timestamp
+    /// is retained (apimachinery finalizer contract).
+    pub finalizers: Vec<String>,
+    /// Owners of this object.
+    pub owner_references: Vec<OwnerReference>,
+    /// Logical deletion time, in caller-supplied epoch seconds. `Some` means
+    /// the object is in the "terminating" state.
+    pub deletion_timestamp: Option<i64>,
+}
+
+impl ObjectMeta {
+    /// Construct metadata with a name, namespace and UID.
+    #[must_use]
+    pub fn new(name: &str, namespace: &str, uid: &str) -> Self {
+        Self {
+            name: name.to_owned(),
+            namespace: namespace.to_owned(),
+            uid: uid.to_owned(),
+            ..Self::default()
+        }
+    }
+
+    /// Attach a label, builder-style.
+    #[must_use]
+    pub fn with_label(mut self, key: &str, value: &str) -> Self {
+        self.labels.insert(key.to_owned(), value.to_owned());
+        self
+    }
+
+    /// Attach an owner reference, builder-style.
+    #[must_use]
+    pub fn with_owner(mut self, owner: OwnerReference) -> Self {
+        self.owner_references.push(owner);
+        self
+    }
+
+    /// Attach a finalizer, builder-style.
+    #[must_use]
+    pub fn with_finalizer(mut self, finalizer: &str) -> Self {
+        self.finalizers.push(finalizer.to_owned());
+        self
+    }
+
+    /// `true` if this object has a deletion timestamp set.
+    #[must_use]
+    pub const fn is_terminating(&self) -> bool {
+        self.deletion_timestamp.is_some()
+    }
+}
+
+/// Anything stored in the indexer / reconciled by a controller.
+///
+/// A trait rather than a concrete enum so the framework code (`Store`,
+/// `DeltaFifo`, `Reconciler`) stays generic over object kind without any
+/// dependency on a particular typed API.
+pub trait Object: Clone {
+    /// Borrow this object's metadata.
+    fn meta(&self) -> &ObjectMeta;
+
+    /// The namespace/name key used by the store (`"<ns>/<name>"`, or just
+    /// `"<name>"` for cluster-scoped objects).
+    fn key(&self) -> String {
+        let m = self.meta();
+        if m.namespace.is_empty() {
+            m.name.clone()
+        } else {
+            format!("{}/{}", m.namespace, m.name)
         }
     }
 }
 
-/// `apps/v1.DeploymentStrategy`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct DeploymentStrategy {
-    pub kind: DeploymentStrategyType,
-    pub rolling_update: RollingUpdateDeployment,
-}
-
-/// `apps/v1.DeploymentSpec`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct DeploymentSpec {
-    pub replicas: i32,
-    pub selector: LabelSelector,
-    pub template: PodTemplateSpec,
-    pub strategy: DeploymentStrategy,
-    /// `revisionHistoryLimit` (default 10 upstream).
-    pub revision_history_limit: i32,
-}
-
-/// `apps/v1.DeploymentStatus`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct DeploymentStatus {
-    pub observed_generation: u64,
-    pub replicas: i32,
-    pub updated_replicas: i32,
-    pub ready_replicas: i32,
-    pub available_replicas: i32,
-    pub unavailable_replicas: i32,
-}
-
-/// `apps/v1.Deployment`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Deployment {
-    pub metadata: ObjectMeta,
-    pub spec: DeploymentSpec,
-    pub status: DeploymentStatus,
-}
-
-impl KubeResource for Deployment {
-    fn kind() -> &'static str {
-        "Deployment"
-    }
+impl Object for ObjectMeta {
     fn meta(&self) -> &ObjectMeta {
-        &self.metadata
+        self
     }
-    fn meta_mut(&mut self) -> &mut ObjectMeta {
-        &mut self.metadata
-    }
-}
-
-/// `apps/v1.ReplicaSetSpec`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct ReplicaSetSpec {
-    pub replicas: i32,
-    pub selector: LabelSelector,
-    pub template: PodTemplateSpec,
-}
-
-/// `apps/v1.ReplicaSetStatus`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct ReplicaSetStatus {
-    pub observed_generation: u64,
-    pub replicas: i32,
-    pub ready_replicas: i32,
-    pub available_replicas: i32,
-}
-
-/// `apps/v1.ReplicaSet`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct ReplicaSet {
-    pub metadata: ObjectMeta,
-    pub spec: ReplicaSetSpec,
-    pub status: ReplicaSetStatus,
-}
-
-impl KubeResource for ReplicaSet {
-    fn kind() -> &'static str {
-        "ReplicaSet"
-    }
-    fn meta(&self) -> &ObjectMeta {
-        &self.metadata
-    }
-    fn meta_mut(&mut self) -> &mut ObjectMeta {
-        &mut self.metadata
-    }
-}
-
-/// `apps/v1.DaemonSetSpec`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct DaemonSetSpec {
-    pub selector: LabelSelector,
-    pub template: PodTemplateSpec,
-}
-
-/// `apps/v1.DaemonSetStatus`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct DaemonSetStatus {
-    pub observed_generation: u64,
-    pub current_number_scheduled: i32,
-    pub desired_number_scheduled: i32,
-    pub number_ready: i32,
-}
-
-/// `apps/v1.DaemonSet`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct DaemonSet {
-    pub metadata: ObjectMeta,
-    pub spec: DaemonSetSpec,
-    pub status: DaemonSetStatus,
-}
-
-impl KubeResource for DaemonSet {
-    fn kind() -> &'static str {
-        "DaemonSet"
-    }
-    fn meta(&self) -> &ObjectMeta {
-        &self.metadata
-    }
-    fn meta_mut(&mut self) -> &mut ObjectMeta {
-        &mut self.metadata
-    }
-}
-
-/// `apps/v1.StatefulSetSpec`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct StatefulSetSpec {
-    pub replicas: i32,
-    pub selector: LabelSelector,
-    pub template: PodTemplateSpec,
-    pub service_name: String,
-    /// `volumeClaimTemplates` — each PVC name is templated as
-    /// `<vct>-<sts>-<ordinal>` per upstream `getPersistentVolumeClaimName`.
-    pub volume_claim_templates: Vec<String>,
-}
-
-/// `apps/v1.StatefulSetStatus`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct StatefulSetStatus {
-    pub observed_generation: u64,
-    pub replicas: i32,
-    pub ready_replicas: i32,
-    pub current_replicas: i32,
-}
-
-/// `apps/v1.StatefulSet`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct StatefulSet {
-    pub metadata: ObjectMeta,
-    pub spec: StatefulSetSpec,
-    pub status: StatefulSetStatus,
-}
-
-impl KubeResource for StatefulSet {
-    fn kind() -> &'static str {
-        "StatefulSet"
-    }
-    fn meta(&self) -> &ObjectMeta {
-        &self.metadata
-    }
-    fn meta_mut(&mut self) -> &mut ObjectMeta {
-        &mut self.metadata
-    }
-}
-
-// ---------------------------------------------------------------------------
-// batch/v1 — Job, CronJob
-// ---------------------------------------------------------------------------
-
-/// `batch/v1.JobSpec`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct JobSpec {
-    pub parallelism: i32,
-    pub completions: i32,
-    pub backoff_limit: i32,
-    pub selector: LabelSelector,
-    pub template: PodTemplateSpec,
-}
-
-/// `batch/v1.JobStatus`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct JobStatus {
-    pub active: i32,
-    pub succeeded: i32,
-    pub failed: i32,
-    pub completed: bool,
-}
-
-/// `batch/v1.Job`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Job {
-    pub metadata: ObjectMeta,
-    pub spec: JobSpec,
-    pub status: JobStatus,
-}
-
-impl KubeResource for Job {
-    fn kind() -> &'static str {
-        "Job"
-    }
-    fn meta(&self) -> &ObjectMeta {
-        &self.metadata
-    }
-    fn meta_mut(&mut self) -> &mut ObjectMeta {
-        &mut self.metadata
-    }
-}
-
-/// `batch/v1.ConcurrencyPolicy`.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum ConcurrencyPolicy {
-    #[default]
-    Allow,
-    Forbid,
-    Replace,
-}
-
-/// `batch/v1.CronJobSpec`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct CronJobSpec {
-    /// Standard 5-field cron expression: `minute hour day-of-month month day-of-week`.
-    pub schedule: String,
-    pub concurrency_policy: ConcurrencyPolicy,
-    pub job_template: JobSpec,
-    pub successful_jobs_history_limit: i32,
-    pub failed_jobs_history_limit: i32,
-}
-
-/// `batch/v1.CronJobStatus`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct CronJobStatus {
-    pub last_schedule_time_ms: Option<u64>,
-    pub active_jobs: Vec<String>,
-}
-
-/// `batch/v1.CronJob`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct CronJob {
-    pub metadata: ObjectMeta,
-    pub spec: CronJobSpec,
-    pub status: CronJobStatus,
-}
-
-impl KubeResource for CronJob {
-    fn kind() -> &'static str {
-        "CronJob"
-    }
-    fn meta(&self) -> &ObjectMeta {
-        &self.metadata
-    }
-    fn meta_mut(&mut self) -> &mut ObjectMeta {
-        &mut self.metadata
-    }
-}
-
-// ---------------------------------------------------------------------------
-// core/v1 — Namespace, Node, ServiceAccount, Secret (token), PVC
-// ---------------------------------------------------------------------------
-
-/// `core/v1.NamespacePhase`.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum NamespacePhase {
-    #[default]
-    Active,
-    Terminating,
-}
-
-/// `core/v1.NamespaceStatus`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct NamespaceStatus {
-    pub phase: NamespacePhase,
-}
-
-/// `core/v1.Namespace`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Namespace {
-    pub metadata: ObjectMeta,
-    pub status: NamespaceStatus,
-}
-
-impl KubeResource for Namespace {
-    fn kind() -> &'static str {
-        "Namespace"
-    }
-    fn meta(&self) -> &ObjectMeta {
-        &self.metadata
-    }
-    fn meta_mut(&mut self) -> &mut ObjectMeta {
-        &mut self.metadata
-    }
-}
-
-/// `core/v1.NodeConditionType`.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum NodeConditionType {
-    Ready,
-    MemoryPressure,
-    DiskPressure,
-    PIDPressure,
-    NetworkUnavailable,
-}
-
-/// `core/v1.ConditionStatus`.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum ConditionStatus {
-    True,
-    False,
-    #[default]
-    Unknown,
-}
-
-/// `core/v1.NodeCondition`.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NodeCondition {
-    pub kind: NodeConditionType,
-    pub status: ConditionStatus,
-    pub reason: String,
-    pub message: String,
-    /// Unix-millis when the condition was last transitioned.
-    pub last_transition_ms: u64,
-    /// Unix-millis when the kubelet last heart-beated this condition.
-    pub last_heartbeat_ms: u64,
-}
-
-/// `core/v1.Taint.Effect`.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub enum TaintEffect {
-    #[default]
-    NoSchedule,
-    PreferNoSchedule,
-    NoExecute,
-}
-
-/// `core/v1.Taint`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Taint {
-    pub key: String,
-    pub value: String,
-    pub effect: TaintEffect,
-}
-
-/// `core/v1.NodeSpec`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct NodeSpec {
-    pub unschedulable: bool,
-    pub taints: Vec<Taint>,
-}
-
-/// `core/v1.NodeStatus`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct NodeStatus {
-    pub conditions: Vec<NodeCondition>,
-}
-
-impl NodeStatus {
-    /// Find a condition by type.
-    #[must_use]
-    pub fn condition(&self, kind: NodeConditionType) -> Option<&NodeCondition> {
-        self.conditions.iter().find(|c| c.kind == kind)
-    }
-}
-
-/// `core/v1.Node`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Node {
-    pub metadata: ObjectMeta,
-    pub spec: NodeSpec,
-    pub status: NodeStatus,
-}
-
-impl KubeResource for Node {
-    fn kind() -> &'static str {
-        "Node"
-    }
-    fn meta(&self) -> &ObjectMeta {
-        &self.metadata
-    }
-    fn meta_mut(&mut self) -> &mut ObjectMeta {
-        &mut self.metadata
-    }
-}
-
-/// `core/v1.ObjectReference` (truncated — the controllers consult
-/// `name + namespace + uid`).
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct ObjectReference {
-    pub kind: String,
-    pub namespace: String,
-    pub name: String,
-    pub uid: Uid,
-}
-
-/// `core/v1.ServiceAccount`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct ServiceAccount {
-    pub metadata: ObjectMeta,
-    pub secrets: Vec<ObjectReference>,
-}
-
-impl KubeResource for ServiceAccount {
-    fn kind() -> &'static str {
-        "ServiceAccount"
-    }
-    fn meta(&self) -> &ObjectMeta {
-        &self.metadata
-    }
-    fn meta_mut(&mut self) -> &mut ObjectMeta {
-        &mut self.metadata
-    }
-}
-
-/// `core/v1.Secret` subset (the TokenController only handles
-/// `kubernetes.io/service-account-token`-typed secrets).
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Secret {
-    pub metadata: ObjectMeta,
-    /// Phase 2 stores the well-known token payload as opaque bytes.
-    pub data: BTreeMap<String, Vec<u8>>,
-    pub secret_type: String,
-}
-
-impl KubeResource for Secret {
-    fn kind() -> &'static str {
-        "Secret"
-    }
-    fn meta(&self) -> &ObjectMeta {
-        &self.metadata
-    }
-    fn meta_mut(&mut self) -> &mut ObjectMeta {
-        &mut self.metadata
-    }
-}
-
-/// `core/v1.PersistentVolumeClaim` — Phase 2 only models the StatefulSet-owned
-/// flavour, so just metadata and the requested storage class is recorded.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct PersistentVolumeClaim {
-    pub metadata: ObjectMeta,
-    pub storage_class: String,
-}
-
-impl KubeResource for PersistentVolumeClaim {
-    fn kind() -> &'static str {
-        "PersistentVolumeClaim"
-    }
-    fn meta(&self) -> &ObjectMeta {
-        &self.metadata
-    }
-    fn meta_mut(&mut self) -> &mut ObjectMeta {
-        &mut self.metadata
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Helpers shared by controllers
-// ---------------------------------------------------------------------------
-
-/// Make an [`OwnerReference`] pointing at `owner`. Sets `controller=true`.
-///
-/// Mirrors `metav1.NewControllerRef`.
-#[must_use]
-pub fn new_controller_ref<R: KubeResource>(owner: &R, api_version: &str) -> OwnerReference {
-    OwnerReference {
-        api_version: api_version.to_string(),
-        kind: R::kind().to_string(),
-        name: owner.name().to_string(),
-        uid: owner.uid().clone(),
-        controller: true,
-        block_owner_deletion: true,
-    }
-}
-
-/// Is `dependent` controlled by `owner`? Mirrors `metav1.IsControlledBy`.
-#[must_use]
-pub fn is_controlled_by(dependent: &ObjectMeta, owner: &Uid) -> bool {
-    dependent
-        .owner_references
-        .iter()
-        .any(|r| r.controller && &r.uid == owner)
 }
 
 #[cfg(test)]
@@ -702,51 +159,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn label_selector_matches_when_subset() {
-        let mut sel = LabelSelector::default();
-        sel.match_labels.insert("app".into(), "nginx".into());
-        let mut labels = BTreeMap::new();
-        labels.insert("app".into(), "nginx".into());
-        labels.insert("tier".into(), "frontend".into());
-        assert!(sel.matches(&labels));
+    fn key_is_namespaced_for_namespaced_objects() {
+        let m = ObjectMeta::new("web", "prod", "u1");
+        assert_eq!(m.key(), "prod/web");
     }
 
     #[test]
-    fn label_selector_does_not_match_when_value_differs() {
-        let mut sel = LabelSelector::default();
-        sel.match_labels.insert("app".into(), "nginx".into());
-        let mut labels = BTreeMap::new();
-        labels.insert("app".into(), "redis".into());
-        assert!(!sel.matches(&labels));
+    fn key_is_bare_name_for_cluster_scoped_objects() {
+        let m = ObjectMeta::new("node-a", "", "u2");
+        assert_eq!(m.key(), "node-a");
     }
 
     #[test]
-    fn empty_selector_is_empty() {
-        let sel = LabelSelector::default();
-        assert!(sel.is_empty());
+    fn owner_reference_builders_set_flags() {
+        let owner = OwnerReference::to("ReplicaSet", "rs", "rsuid")
+            .controller()
+            .blocking();
+        assert!(owner.controller);
+        assert!(owner.block_owner_deletion);
+        assert_eq!(owner.uid, "rsuid");
     }
 
     #[test]
-    fn is_controlled_by_finds_controller_ref() {
-        let owner = Uid::new("u1");
-        let mut meta = ObjectMeta::default();
-        meta.owner_references.push(OwnerReference {
-            uid: owner.clone(),
-            controller: true,
-            ..Default::default()
-        });
-        assert!(is_controlled_by(&meta, &owner));
+    fn terminating_reflects_deletion_timestamp() {
+        let mut m = ObjectMeta::new("x", "ns", "u");
+        assert!(!m.is_terminating());
+        m.deletion_timestamp = Some(100);
+        assert!(m.is_terminating());
     }
 
     #[test]
-    fn is_controlled_by_ignores_non_controller_refs() {
-        let owner = Uid::new("u1");
-        let mut meta = ObjectMeta::default();
-        meta.owner_references.push(OwnerReference {
-            uid: owner.clone(),
-            controller: false,
-            ..Default::default()
-        });
-        assert!(!is_controlled_by(&meta, &owner));
+    fn label_and_finalizer_builders_accumulate() {
+        let m = ObjectMeta::new("x", "ns", "u")
+            .with_label("app", "web")
+            .with_finalizer("kubernetes");
+        assert_eq!(m.labels.get("app").map(String::as_str), Some("web"));
+        assert_eq!(m.finalizers, vec!["kubernetes".to_owned()]);
     }
 }

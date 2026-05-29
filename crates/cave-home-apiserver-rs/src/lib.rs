@@ -1,38 +1,88 @@
 // SPDX-License-Identifier: Apache-2.0
-//! cave-home-apiserver-rs — Kubernetes API server (control-plane).
+//! cave-home-apiserver-rs — the Kubernetes API-server *decision core*.
 //!
-//! Line-by-line port of `staging/src/k8s.io/apiserver/` and the relevant
-//! slices of `pkg/registry/` from `kubernetes/kubernetes` v1.36.1
-//! (SHA `756939600b9a7180fc2df6550a4585b638875e67`).
+//! INFRASTRUCTURE (ADR-004 orchestration layer). This crate is **hidden from
+//! end users** (Charter §6.3): it produces no user-facing strings, carries no
+//! i18n, and has no Portal/mobile UI. Correctness is the only product.
 //!
-//! Phase 2 MVP scope (per ADR-004, ROADMAP M3):
-//! - [`api`]            — k8s API type subset (core/v1, apps/v1, batch/v1).
-//! - [`storage`]        — `Storage` trait + in-memory + etcd-placeholder.
-//! - [`auth`]           — `Authenticator` (cert + SA token) + `Authorizer` (RBAC).
-//! - [`admission`]      — chain executor + NamespaceLifecycle + ServiceAccount.
-//! - [`serialization`]  — JSON / YAML codec.
-//! - [`client_trait`]   — `ApiClient` trait re-exported for downstream crates.
-//! - [`server`]         — HTTP layer (axum) wiring registry + auth + admission.
+//! ## What this is
 //!
-//! Out of Phase 2 scope (see `parity.manifest.toml` `[[unmapped]]` entries):
-//! webhook admission, CRDs, aggregated API, full OpenAPI v3, real etcd
-//! (lands as `cave-home-kine-rs` integration in Phase 3).
+//! A std-only, dependency-free reimplementation of the REST resource-handling
+//! semantics of a Kubernetes API server — the *brain* that decides what a verb
+//! does, not the wire plumbing:
+//!
+//! - [`gvk`]      — `GroupVersionKind` / `GroupVersionResource` + RESTMapper.
+//! - [`path`]     — the REST URL grammar (parse + build, namespaced/cluster).
+//! - [`meta`]     — `ObjectMeta`: resourceVersion, generation, finalizers,
+//!   `deletionTimestamp`, ownerReferences.
+//! - [`selector`] — label + field selector parsing and matching.
+//! - [`patch`]    — JSON Merge Patch (RFC 7396) + JSON Patch (RFC 6902).
+//! - [`registry`] — the in-memory store with full verb semantics: create
+//!   (AlreadyExists), get (NotFound), list (selectors + pagination),
+//!   update/patch (optimistic concurrency → Conflict), finalizer-aware delete,
+//!   watch replay.
+//! - [`admission`]— two-phase (mutating → validating) admission pipeline with a
+//!   couple of built-in rules.
+//! - [`status`]   — the `metav1.Status` error model (code / reason / message).
+//! - [`json`]     — a small std-only JSON value tree the above operate on.
+//!
+//! ## Honest port method
+//!
+//! This is a **behavioural reimplementation of the documented Kubernetes REST
+//! semantics** (the public API conventions, label/field selector docs, RFC
+//! 7396 / RFC 6902, the admission-controller phase contract). It is **not** a
+//! verbatim line-by-line transcription of any pinned `kubernetes/kubernetes`
+//! revision. The HTTP/2 server, etcd/kine storage backend, TLS + authn + authz
+//! (RBAC), admission webhooks, CRDs, and API aggregation are deferred and
+//! enumerated in `parity.manifest.toml`.
+//!
+//! ## Example
+//!
+//! ```
+//! use cave_home_apiserver_rs::gvk::GroupVersionResource;
+//! use cave_home_apiserver_rs::json::{obj, Value};
+//! use cave_home_apiserver_rs::registry::Registry;
+//! use cave_home_apiserver_rs::status::StatusReason;
+//!
+//! let pods = GroupVersionResource::new("", "v1", "pods");
+//! let mut reg = Registry::new();
+//!
+//! let pod = obj([(
+//!     "metadata",
+//!     obj([("name", Value::from("nginx")), ("namespace", Value::from("default"))]),
+//! )]);
+//! let created = reg.create(&pods, pod).expect("create");
+//! assert_eq!(created.pointer("metadata.resourceVersion"), Some(&Value::from("1")));
+//!
+//! // A second create with the same name is rejected AlreadyExists (409).
+//! let dup = obj([(
+//!     "metadata",
+//!     obj([("name", Value::from("nginx")), ("namespace", Value::from("default"))]),
+//! )]);
+//! let err = reg.create(&pods, dup).unwrap_err();
+//! assert_eq!(err.reason, StatusReason::AlreadyExists);
+//! assert_eq!(err.code, 409);
+//! ```
 
 pub mod admission;
-pub mod api;
-pub mod auth;
-pub mod client_trait;
-pub mod serialization;
-pub mod server;
-pub mod storage;
-pub mod types;
+pub mod gvk;
+pub mod json;
+pub mod meta;
+pub mod patch;
+pub mod path;
+pub mod registry;
+pub mod selector;
+pub mod status;
 
 pub use admission::{
-    AdmissionChain, AdmissionController, AdmissionError, NamespaceLifecycle, ServiceAccount,
+    AdmissionChain, AdmissionRequest, DefaultFields, MutatingPlugin, NamespaceExists, Operation,
+    RequireName, ValidatingPlugin,
 };
-pub use auth::{Authenticator, Authorizer, AuthzDecision, RbacAuthorizer};
-pub use client_trait::{ApiClient, ApiClientError, ApiResult};
-pub use serialization::{decode as decode_object, encode as encode_object};
-pub use server::{ApiServer, InProcessClient};
-pub use storage::{Storage, StorageError, StorageResult};
-pub use types::{ResourceRef, UserInfo};
+pub use gvk::{GroupVersionKind, GroupVersionResource};
+pub use json::Value;
+pub use meta::{ObjectMeta, OwnerReference};
+pub use patch::PatchOp;
+pub use path::{parse as parse_path, ResourcePath};
+pub use registry::{ListOptions, ListResult, Registry, WatchEvent, WatchEventKind};
+pub use selector::{FieldSelector, LabelSelector, Requirement};
+pub use status::{Status, StatusReason};

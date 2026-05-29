@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-//! One module per Phase 2 controller.
+//! Concrete controllers — pure reconcile/decision logic, no apiserver I/O.
 //!
-//! Every module here ports the homonymous sub-package of
-//! `kubernetes/kubernetes` `pkg/controller/` (v1.36.1).
+//! Each controller computes *what should change* (a delete set, a taint
+//! decision, a finalizer sweep) over an in-memory view of objects. Performing
+//! those changes against a live apiserver is the deferred client phase (see
+//! `parity.manifest.toml`). The three shipped here are the smallest set that
+//! exercises the three distinct controller shapes: graph-based (GC),
+//! condition/heartbeat-based (node lifecycle), and finalizer/TTL-based
+//! (cleanup).
 
-pub mod cronjob;
-pub mod daemonset;
-pub mod deployment;
-pub mod garbage_collector;
-pub mod job;
-pub mod namespace;
-pub mod node;
-pub mod replicaset;
-pub mod serviceaccount;
-pub mod statefulset;
+pub mod cleanup;
+pub mod gc;
+pub mod node_lifecycle;

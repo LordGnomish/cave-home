@@ -1,23 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
-//! CRI v1 gRPC server — line-by-line port of containerd's
-//! `internal/cri/server` Go package, scoped to Phase 1 metadata-level
-//! parity. See `parity.manifest.toml` for the mapped RPC table.
+//! CRI (Container Runtime Interface) decision semantics.
+//!
+//! Behavioural reimplementation of the documented Kubernetes CRI v1 model:
+//! the `PodSandbox` + `Container` state model, the CRI status computation, the
+//! kubelet image-pull-policy decision, and unused-image garbage collection.
+//! Pure decision logic — the gRPC `RuntimeService`/`ImageService` server,
+//! the kubelet wiring and the runc exec are deferred (see
+//! `parity.manifest.toml`).
+//!
+//! Spec sources:
+//!   * Kubernetes CRI API `runtime/v1/api.proto` — `PodSandboxState`,
+//!     `ContainerState`, `PodSandboxStatus`, `ContainerStatus`.
+//!   * Kubernetes image-pull-policy semantics (`Always` / `IfNotPresent` /
+//!     `Never`) as documented for the kubelet image manager.
+//!   * containerd CRI image GC: images not referenced by any container are
+//!     eligible for removal.
 
-pub mod container_store;
-pub mod errors;
-pub mod image_service;
-pub mod image_store;
-pub mod runtime_service;
-pub mod sandbox_store;
-pub mod types;
+pub mod gc;
+pub mod pull_policy;
+pub mod status;
 
-pub use container_store::{Container, ContainerStore};
-pub use errors::CriError;
-pub use image_service::ImageServer;
-pub use image_store::{Image, ImageStore};
-pub use runtime_service::RuntimeServer;
-pub use sandbox_store::{Sandbox, SandboxStore};
-pub use types::{
-    ContainerMetadata, ContainerState, ContainerStatus, SandboxMetadata, SandboxState,
-    SandboxStatus,
+pub use gc::{ImageRecord, select_unused_images};
+pub use pull_policy::{PullDecision, PullPolicy, decide_pull};
+pub use status::{
+    Container, ContainerState, PodSandbox, SandboxState, container_status, sandbox_status,
 };

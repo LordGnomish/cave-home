@@ -6,18 +6,17 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-kubelet-rs — node-side agent; upstream: kubernetes/kubernetes (K3s-vendored copy, not vanilla); port method: line-by-line (Orchestration Phase 1, ADR-004)"
+description = "cave-home-kubelet-rs — node-side pod-lifecycle decision core; behavioural reimplementation of documented kubelet algorithms (Orchestration Phase 1, ADR-004)"
 
 [package.metadata.cave-home]
-upstream    = "kubernetes/kubernetes (K3s-vendored)"
-port-method = "line-by-line"
+upstream    = "kubernetes/kubernetes (K3s-vendored), public docs only"
+# Honest provenance: behavioural reimplementation of documented kubelet
+# algorithms (pod-lifecycle / probes / eviction / QoS / CRI). NOT a verbatim
+# line-by-line transcription — a prior pinned-SHA "line-by-line" claim was false
+# and was removed (see parity.manifest.toml provenance-correction note). The
+# verbatim k3s port is ADR-004 phase-1b deferred work.
+port-method = "behavioural-reimplementation"
 phase       = "orchestration-phase-1"
-
-[package.metadata.upstream]
-repo    = "kubernetes/kubernetes"
-release = "v1.36.1"
-sha     = "756939600b9a7180fc2df6550a4585b638875e67"
-subpath = "pkg/kubelet"
 
 [dependencies]
 async-trait = "0.1"
