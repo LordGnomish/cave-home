@@ -43,10 +43,12 @@ pub mod aqi;
 pub mod assessment;
 pub mod category;
 pub mod classify;
+pub mod nowcast;
 pub mod reading;
 
 pub use aqi::{sub_index, AqiOutcome};
 pub use assessment::{assess, grade, PollutantGrade, RoomAssessment};
 pub use category::{AirCategory, Lang};
 pub use classify::classify;
+pub use nowcast::now_cast;
 pub use reading::{Pollutant, Reading, ReadingError};

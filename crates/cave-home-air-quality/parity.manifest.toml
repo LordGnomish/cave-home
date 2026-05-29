@@ -31,8 +31,8 @@ linux_min_kernel = "7.1"
 # fill_ratio is against the FULL crate scope (engine + 4 vendor adapters +
 # core-state integration). The engine is implemented and tested in full; the
 # four I/O adapters + core glue remain and are all ADR-justified Phase 1b.
-fill_ratio              = 0.30
-fill_ratio_basis        = "AQI/classification engine + reading model + room aggregation + EN/DE/TR UX, fully implemented & tested; vendor I/O adapters deferred"
+fill_ratio              = 0.32
+fill_ratio_basis        = "AQI/classification engine + reading model + room aggregation + EN/DE/TR UX + EPA NowCast time-weighting, fully implemented & tested; vendor I/O adapters deferred"
 test_port_ratio         = 0.0   # tests designed from spec, not ported
 adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-019 phase disposition
 honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
@@ -72,6 +72,10 @@ spec = "Worst-of room aggregation with dominant-pollutant attribution"
 ours = "src/assessment.rs::assess"
 
 [[mapped]]
+spec = "EPA NowCast PM time-weighted average (weight=min/max floored 0.5; 12h window; 2-of-3 recent-hour validity)"
+ours = "src/nowcast.rs::now_cast"
+
+[[mapped]]
 spec = "Vendor-neutral validated reading model (rejects NaN/negative)"
 ours = "src/reading.rs::Reading"
 
@@ -103,11 +107,6 @@ priority = "phase-1b"
 note     = "ADR-019: surfacing assessments as core State entities + automation triggers lands once cave-home-core's entity API stabilises. The engine is already core-agnostic."
 
 [[unmapped]]
-area     = "NowCast time-weighted averaging for hourly→24h PM extrapolation"
-priority = "phase-2"
-note     = "ADR-019: instantaneous AQI is correct for the live tile; EPA NowCast (for reporting a daily index from sub-daily samples) is a Phase 2 refinement over the same breakpoint tables."
-
-[[unmapped]]
 area     = "Pre-2024 PM2.5 breakpoint compatibility mode"
 priority = "permanent"
 note     = "Charter §7 always-latest + §8 no-backcompat: cave-home ships the current EPA breakpoints only; no historical-snapshot mode."
@@ -137,3 +136,7 @@ ours         = "src/category.rs::tests::ui_strings_carry_no_implementation_jargo
 [[spec_test]]
 designed_for = "Worst-of room aggregation + dominant pollutant"
 ours         = "src/assessment.rs::tests"
+
+[[spec_test]]
+designed_for = "EPA NowCast weight floor, recent-hour validity, window cap, raw precision"
+ours         = "tests/nowcast.rs + src/nowcast.rs::tests"
