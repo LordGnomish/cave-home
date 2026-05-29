@@ -74,6 +74,7 @@ pub mod discovery;
 pub mod fault;
 pub mod inverter;
 pub mod label;
+pub mod meter;
 pub mod point;
 pub mod scale;
 
@@ -82,6 +83,7 @@ pub use discovery::{DiscoveredModel, SUNSPEC_END_MODEL_ID, SUNSPEC_MARKER, disco
 pub use fault::DecodeError;
 pub use inverter::{InverterPhase, InverterReading, OperatingState};
 pub use label::{Lang, SolarStatus, describe};
+pub use meter::{MeterReading, decode_meter};
 pub use scale::ScaleFactor;
 
 /// Decode any supported inverter model — integer (101/102/103) or float
