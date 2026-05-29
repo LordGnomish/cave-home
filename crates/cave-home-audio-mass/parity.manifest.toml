@@ -1,24 +1,146 @@
-# cave-home-audio-mass — parity manifest scaffold.
+# cave-home-audio-mass — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-audio-mass — Music Assistant orchestration; upstream: music-assistant/server (Apache-2.0); port method: line-by-line (ADR-020)
+# Phase 1 ships the multi-room audio *brain*: the music-library media model, the
+# deterministic seeded shuffle, the playback-queue engine (enqueue / play-next /
+# play-now / move / remove / next / previous under three repeat modes and
+# shuffle), the per-room player (play/pause/idle, elapsed, volume, crossfade /
+# gapless prefs, TTS-announcement save-restore), the multi-room group fan-out,
+# the in-memory library search, and the EN/DE/TR grandma-friendly status
+# sentences. This is the pure domain logic every automation, Portal tile and
+# voice reply consumes. The music-provider adapters, the streaming / playback
+# pipeline and the Snapcast hand-off, metadata/artwork fetch and core
+# integration are network / pipeline bound and deferred to Phase 1b — each is
+# enumerated below with an ADR-020 disposition.
+#
+# Port method: Music Assistant is Apache-2.0, but this engine is a first-party
+# implementation of the music-player problem domain (a Music-Assistant-*class*
+# library + queue model), not a line-by-line copy. The media model and queue
+# semantics are designed from the domain; no upstream source was transcribed.
+# Recorded as spec-based so the manifest reflects what actually happened.
 
 [crate]
 name             = "cave-home-audio-mass"
-upstream_repo    = "music-assistant/server"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "music-assistant/server (domain reference only; first-party implementation)"
+upstream_subpath = ""
+port_method      = "spec-based (first-party domain logic; Music-Assistant-class)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "Music-player domain model (Track / Album / Playlist / queue / repeat / shuffle) — common media-player semantics",
+    "Home Assistant media_player domain semantics (playing / paused / idle, volume, group) — permissive, behaviour-level",
+    "ADR-020 multi-room audio: Snapcast is the sync layer; this crate produces the resolved per-room queue and stays out of the real-time path",
+    "Charter §6.3 / ADR-007 grandma-friendly UX (EN/DE/TR household phrasing)",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (engine + provider adapters +
+# streaming/playback pipeline + Snapcast hand-off + metadata/artwork + core
+# glue). The engine — model, queue, shuffle, player, multi-room group, library
+# search and localized UX — is implemented and tested in full; the I/O- and
+# pipeline-bound remainder is all ADR-020-justified Phase 1b.
+fill_ratio              = 0.30
+fill_ratio_basis        = "media model + deterministic shuffle + queue engine (enqueue/next/play-now/move/remove + next/prev under repeat & shuffle) + per-room player (state/elapsed/volume/transition/announcement) + multi-room group fan-out + library search + EN/DE/TR UX, fully implemented & tested; provider/pipeline/Snapcast/metadata/core deferred"
+test_port_ratio         = 0.0   # tests designed from the domain, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-020 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Music-library media model: Track / Artist / Album / Playlist / MediaItem + ProviderId source abstraction (no network)"
+ours = "src/media.rs::{Track,Artist,Album,Playlist,MediaItem,ProviderId,TrackId}"
+
+[[mapped]]
+spec = "Deterministic seeded shuffle (std-only LCG + Fisher-Yates; reproducible per seed, full coverage)"
+ours = "src/shuffle.rs::{Lcg,shuffled_order}"
+
+[[mapped]]
+spec = "Playback-queue engine: enqueue / enqueue-next / play-now / clear / move / remove / current index"
+ours = "src/queue.rs::Queue::{enqueue,enqueue_next,play_now,clear,move_item,remove_item,current,current_index}"
+
+[[mapped]]
+spec = "Next / previous track computed from repeat mode (Off/One/All) and shuffle together"
+ours = "src/queue.rs::Queue::{next_index,previous_index,advance,go_back,set_repeat,set_shuffle}"
+
+[[mapped]]
+spec = "Per-room player state: playing/paused/idle, current track, elapsed, volume (delegated value object), active queue"
+ours = "src/player.rs::{Player,PlayState,Volume}"
+
+[[mapped]]
+spec = "Crossfade / gapless transition flags + TTS-announcement interrupt with save/restore of position & play state"
+ours = "src/player.rs::{TransitionPrefs,Player::begin_announcement,Player::end_announcement}"
+
+[[mapped]]
+spec = "Multi-room 'play on group' fan-out of a shared queue across players (sync itself is Snapcast's job, ADR-020)"
+ours = "src/player.rs::PlayerGroup::{join,leave,fan_out}"
+
+[[mapped]]
+spec = "In-memory library with case-insensitive substring search by title/artist/album"
+ours = "src/library.rs::{Library,SearchFields}"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR status sentences ('Playing your Morning playlist', 'Next: … by …', 'Music paused') (Charter §6.3, ADR-007)"
+ours = "src/label.rs::{Lang,Player::status_sentence}"
+
+# ---- unmapped (NOT in this crate; ADR-020 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "Music-provider adapters (local file scan, Spotify / Tidal / etc.)"
+priority = "phase-1b"
+note     = "ADR-020: provider adapters scan the disk or talk to a streaming service and map their catalog onto media::Track, then reuse this engine unchanged. Network/filesystem-bound I/O; no new queue logic."
+
+[[unmapped]]
+area     = "Streaming / playback pipeline + Snapcast hand-off"
+priority = "phase-1b"
+note     = "ADR-020: the actual audio stream and sample-aligned cross-room sync is Snapcast's job (cave-home-audio-snapcast, clean-room). This engine produces the resolved per-room queue (PlayerGroup::fan_out) and stays out of the real-time path."
+
+[[unmapped]]
+area     = "Metadata / artwork fetch"
+priority = "phase-1b"
+note     = "ADR-020: titles/artist/album/artwork enrichment is a network fetch that fills media::Track fields. Account/network-bound; the model already carries the fields, only the fetcher is deferred."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration"
+priority = "phase-1b"
+note     = "ADR-020: surfacing players and queues as core State entities + automation triggers lands once cave-home-core's entity API stabilises. The engine is already core-agnostic (no cave-home crate dependency)."
+
+[[unmapped]]
+area     = "MPD backend (vs Mopidy) support"
+priority = "permanent"
+note     = "ADR-020: MPD is GPL-only; cave-home prefers the Apache-2.0 Mopidy backend. A clean-room MPD path is explicitly out of scope unless a future ADR-020b revisits it. Charter §6.1 license-clean stance."
+
+[[unmapped]]
+area     = "Pre-revision / legacy queue-format compatibility mode"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home ships the current queue model only; no historical-snapshot or backward-compat mode."
+
+# ---- spec_test (designed from the domain / behaviour) -----------------------
+
+[[spec_test]]
+designed_for = "Queue mutations: enqueue / enqueue-next / play-now / clear / move / remove keep the right track current"
+ours         = "src/queue.rs::tests"
+
+[[spec_test]]
+designed_for = "Next / previous under each repeat mode (Off stops, One repeats, All wraps)"
+ours         = "src/queue.rs::tests::{next_off_stops_at_end,next_one_repeats_current,next_all_wraps_to_start,previous_off_stops_at_start,previous_all_wraps_to_end,previous_one_stays_put}"
+
+[[spec_test]]
+designed_for = "Shuffle determinism (same seed → same order) and full coverage (every track once)"
+ours         = "src/shuffle.rs::tests + src/queue.rs::tests::{shuffle_is_deterministic_for_a_seed,shuffle_covers_every_track_once,shuffle_keeps_current_track_current}"
+
+[[spec_test]]
+designed_for = "TTS-announcement save/restore (playing music resumes at the same position; paused music stays paused)"
+ours         = "src/player.rs::tests::{announcement_saves_and_restores_playing_music,announcement_does_not_start_paused_music,nested_announcement_preserves_original_save}"
+
+[[spec_test]]
+designed_for = "Multi-player independence + group fan-out of a shared queue"
+ours         = "src/player.rs::tests::{players_are_independent,group_join_and_fan_out,group_leave_drops_follower_not_leader}"
+
+[[spec_test]]
+designed_for = "In-memory library substring search by title/artist/album with field restriction"
+ours         = "src/library.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

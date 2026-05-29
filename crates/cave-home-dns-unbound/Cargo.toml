@@ -6,11 +6,11 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-dns-unbound — recursive DNS resolver (Unbound BSD line-by-line); upstream: NLnetLabs/unbound (BSD-3-Clause); port method: line-by-line (ADR-022)"
+description = "cave-home-dns-unbound — local DNS resolution-decision core (local-zone / forward / access-control / TTL cache); upstream: NLnetLabs/unbound (BSD-3-Clause); port method: spec-based from unbound.conf(5) + DNS RFCs (ADR-022)"
 
 [package.metadata.cave-home]
 upstream    = "NLnetLabs/unbound"
-port-method = "line-by-line"
+port-method = "spec-based"
 adr         = "ADR-022"
 
 [lints]
