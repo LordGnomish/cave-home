@@ -57,6 +57,8 @@ pub enum CommandClass {
     Meter,
     /// Thermostat Setpoint CC (0x43) — target temperatures.
     ThermostatSetpoint,
+    /// Thermostat Mode CC (0x40) — heating/cooling mode selection.
+    ThermostatMode,
 }
 
 impl CommandClass {
@@ -71,6 +73,7 @@ impl CommandClass {
             0x31 => Some(Self::MultilevelSensor),
             0x32 => Some(Self::Meter),
             0x33 => Some(Self::ColorSwitch),
+            0x40 => Some(Self::ThermostatMode),
             0x43 => Some(Self::ThermostatSetpoint),
             0x70 => Some(Self::Configuration),
             0x71 => Some(Self::Notification),
@@ -90,6 +93,7 @@ impl CommandClass {
             Self::MultilevelSensor => 0x31,
             Self::Meter => 0x32,
             Self::ColorSwitch => 0x33,
+            Self::ThermostatMode => 0x40,
             Self::ThermostatSetpoint => 0x43,
             Self::Configuration => 0x70,
             Self::Notification => 0x71,
@@ -105,6 +109,60 @@ pub enum LevelChange {
     Up,
     /// Dimming / closing.
     Down,
+}
+
+/// A Thermostat Mode CC (0x40) operating mode.
+///
+/// The wire byte carries the mode in its low 5 bits. cave-home models the
+/// common named modes plus the `ManufacturerSpecific` (0x1F) sentinel; any
+/// other (unassigned) byte is rejected as out-of-range rather than fabricated.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ThermostatMode {
+    /// Heating and cooling both off.
+    Off,
+    /// Heat to the heating setpoint.
+    Heat,
+    /// Cool to the cooling setpoint.
+    Cool,
+    /// Automatically heat or cool to maintain a target.
+    Auto,
+    /// Energy-saving heating mode.
+    EnergySaveHeat,
+    /// Energy-saving cooling mode.
+    EnergySaveCool,
+    /// A manufacturer-defined mode (0x1F sentinel).
+    ManufacturerSpecific,
+}
+
+impl ThermostatMode {
+    /// Map a mode byte to a [`ThermostatMode`], if cave-home models it.
+    #[must_use]
+    pub const fn from_u8(b: u8) -> Option<Self> {
+        match b {
+            0x00 => Some(Self::Off),
+            0x01 => Some(Self::Heat),
+            0x02 => Some(Self::Cool),
+            0x03 => Some(Self::Auto),
+            0x0B => Some(Self::EnergySaveHeat),
+            0x0C => Some(Self::EnergySaveCool),
+            0x1F => Some(Self::ManufacturerSpecific),
+            _ => None,
+        }
+    }
+
+    /// The mode byte for this [`ThermostatMode`].
+    #[must_use]
+    pub const fn to_u8(self) -> u8 {
+        match self {
+            Self::Off => 0x00,
+            Self::Heat => 0x01,
+            Self::Cool => 0x02,
+            Self::Auto => 0x03,
+            Self::EnergySaveHeat => 0x0B,
+            Self::EnergySaveCool => 0x0C,
+            Self::ManufacturerSpecific => 0x1F,
+        }
+    }
 }
 
 /// One decoded, typed Command Class command.
@@ -213,6 +271,14 @@ pub enum Command {
         value: FixedPoint,
     },
 
+    // ---- Thermostat Mode CC (0x40) -----------------------------------------
+    /// Set the thermostat operating mode.
+    ThermostatModeSet(ThermostatMode),
+    /// Ask for the current thermostat mode.
+    ThermostatModeGet,
+    /// The thermostat's current operating mode.
+    ThermostatModeReport(ThermostatMode),
+
     // ---- Configuration CC (0x70) -------------------------------------------
     /// Set a configuration parameter.
     ConfigurationSet {
@@ -302,6 +368,7 @@ impl Command {
             CommandClass::MultilevelSensor => Self::decode_multilevel_sensor(cmd, body),
             CommandClass::Meter => Self::decode_meter(cmd, body),
             CommandClass::ColorSwitch => Self::decode_color_switch(cmd, body),
+            CommandClass::ThermostatMode => Self::decode_thermostat_mode(cmd, body),
             CommandClass::ThermostatSetpoint => Self::decode_thermostat_setpoint(cmd, body),
             CommandClass::Configuration => Self::decode_configuration(cmd, body),
             CommandClass::Notification => Self::decode_notification(cmd, body),
@@ -381,6 +448,11 @@ impl Command {
                 push_fixed(&mut out, value);
                 out
             }
+
+            // Thermostat Mode CC.
+            Self::ThermostatModeSet(mode) => vec![0x40, cmd::SET, mode.to_u8()],
+            Self::ThermostatModeGet => vec![0x40, cmd::GET],
+            Self::ThermostatModeReport(mode) => vec![0x40, cmd::REPORT, mode.to_u8()],
 
             // Configuration CC.
             Self::ConfigurationSet { parameter, size, value } => {
@@ -553,6 +625,17 @@ impl Command {
         }
     }
 
+    fn decode_thermostat_mode(cmd: u8, body: &[u8]) -> ZwaveResult<Self> {
+        match cmd {
+            cmd::SET => Ok(Self::ThermostatModeSet(mode_from_byte(byte0(body, "thermostat_mode")?)?)),
+            cmd::GET => Ok(Self::ThermostatModeGet),
+            cmd::REPORT => {
+                Ok(Self::ThermostatModeReport(mode_from_byte(byte0(body, "thermostat_mode")?)?))
+            }
+            _ => Err(unknown(0x40, cmd)),
+        }
+    }
+
     fn decode_thermostat_setpoint(cmd: u8, body: &[u8]) -> ZwaveResult<Self> {
         match cmd {
             cmd::SET => {
@@ -644,6 +727,13 @@ fn byte0(body: &[u8], _field: &'static str) -> ZwaveResult<u8> {
     body.first()
         .copied()
         .ok_or(ZwaveError::Truncated { need: 3, got: 2 })
+}
+
+/// Map a Thermostat Mode byte to a modelled [`ThermostatMode`], rejecting
+/// unassigned values with `OutOfRange` per the crate's discrete-value convention.
+fn mode_from_byte(b: u8) -> ZwaveResult<ThermostatMode> {
+    ThermostatMode::from_u8(b)
+        .ok_or_else(|| ZwaveError::OutOfRange { field: "thermostat_mode", value: u32::from(b) })
 }
 
 const fn bool_to_switch(on: bool) -> u8 {

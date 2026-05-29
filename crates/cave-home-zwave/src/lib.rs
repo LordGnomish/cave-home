@@ -56,7 +56,7 @@ pub mod sensor_decode;
 pub mod value;
 
 pub use address::{Address, DeviceRole};
-pub use command_class::{Command, CommandClass, LevelChange};
+pub use command_class::{Command, CommandClass, LevelChange, ThermostatMode};
 pub use error::{ZwaveError, ZwaveResult};
 pub use label::{describe, Lang};
 pub use sensor_decode::FixedPoint;
