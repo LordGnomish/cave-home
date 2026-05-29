@@ -1,24 +1,152 @@
-# cave-home-klipper-lb-rs — parity manifest scaffold.
+# cave-home-klipper-lb-rs — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-klipper-lb-rs — ServiceLB / 'service-lb' (K3s default); upstream: rancher/klipper-lb; port method: line-by-line (Orchestration Phase 4, ADR-004)
+# Phase 1 ships the K3s ServiceLB ("svclb" / klipper-lb) *decision core*: the
+# host-port allocation + cross-Service conflict detection, the svclb DaemonSet
+# pod-spec construction (the SRC_PORT / DEST_PROTO / DEST_PORT / DEST_IPS env
+# contract entry.sh consumes), the node selection (ready + schedulable +
+# nodeSelector, recomputed on node add/remove), the Service/Node model +
+# structural validation, and the status.loadBalancer.ingress IP computation
+# honouring externalTrafficPolicy (Cluster vs Local). This is the brain the
+# ServiceLB controller drives. The cluster-side I/O — applying the DaemonSet,
+# the in-pod iptables the container programs from these env vars, the
+# Service/Node informer watch, and the reconcile loop — is network/cluster-bound
+# and deferred to Phase 1b, each enumerated below with an ADR-004 disposition.
+#
+# Port method: a behavioural reimplementation of the *documented* K3s ServiceLB
+# / klipper-lb behaviour and the public Kubernetes Service API — no verbatim
+# line-by-line transcription of any specific upstream source revision was made.
+# Both upstreams are Apache-2.0; no GPL/AGPL source was read.
+#
+# Charter §8 no-backcompat: this crate tracks current ServiceLB behaviour only;
+# there is no legacy klipper-lb env/spec compatibility mode (see [[unmapped]]).
 
 [crate]
 name             = "cave-home-klipper-lb-rs"
-upstream_repo    = "rancher/klipper-lb"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "k3s-io/k3s (pkg/cloudprovider ServiceLB) + rancher/klipper-lb"
+upstream_subpath = "pkg/cloudprovider (servicelb.go) + klipper-lb entry.sh"
+port_method      = "behavioral-reimplementation (spec-based)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "K3s ServiceLB / 'service-lb' documentation (docs.k3s.io networking — ServiceLB load balancer)",
+    "rancher/klipper-lb README — the SRC_PORT/SRC_RANGE/DEST_PROTO/DEST_PORT/DEST_IPS entry.sh env contract",
+    "Kubernetes Service API (k8s.io/api/core/v1.Service / ServicePort / ServiceExternalTrafficPolicy)",
+    "Kubernetes documentation — type: LoadBalancer, nodePort allocation, externalTrafficPolicy (Cluster vs Local)",
+    "Kubernetes DaemonSet concept docs (one svclb pod per scheduled node)",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (decision core + cluster I/O:
+# DaemonSet apply, in-pod iptables, informer watch, controller loop). The
+# decision core is implemented and tested in full; the cluster-bound I/O remains
+# and is entirely ADR-justified Phase 1b.
+fill_ratio              = 0.30
+fill_ratio_basis        = "host-port allocation + conflict detection, svclb pod-spec/env construction, node selection, Service/Node model + validation, status ingress-IP computation (Cluster/Local ETP) fully implemented & tested; cluster-side I/O deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-004 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "LoadBalancer Service model (type/ports/loadBalancerIPs/externalTrafficPolicy/nodeSelector)"
+ours = "src/service.rs::LoadBalancerService"
+
+[[mapped]]
+spec = "Service structural validation (reject empty identity / no ports / port 0 / nodePort 0 / dup port / dup name)"
+ours = "src/service.rs::validate_service"
+
+[[mapped]]
+spec = "Protocol parse/format restricted to TCP/UDP (svclb forwards no SCTP)"
+ours = "src/service.rs::Protocol"
+
+[[mapped]]
+spec = "Cluster Node model (internal/external IP, ready, schedulable, labels)"
+ours = "src/node.rs::Node"
+
+[[mapped]]
+spec = "svclb node-selection: ready + schedulable + nodeSelector match; recompute on node add/remove"
+ours = "src/node.rs::{select_nodes,selected_node_names}"
+
+[[mapped]]
+spec = "Host-port allocation + cross-Service (protocol,port) conflict detection (second LB service left pending)"
+ours = "src/port_alloc.rs::HostPortAllocator"
+
+[[mapped]]
+spec = "First-come admission ordering across a batch of Services"
+ours = "src/port_alloc.rs::allocate_all"
+
+[[mapped]]
+spec = "svclb DaemonSet/pod spec construction: one lb-<proto>-<port> container per port"
+ours = "src/daemonset.rs::build_pod_spec"
+
+[[mapped]]
+spec = "klipper-lb entry.sh env contract (SRC_PORT/SRC_RANGE/DEST_PROTO/DEST_PORT/DEST_IPS)"
+ours = "src/daemonset.rs::container_env"
+
+[[mapped]]
+spec = "status.loadBalancer.ingress computation: explicit loadBalancerIP wins, else node advertise IPs"
+ours = "src/status.rs::compute_ingress_ips"
+
+[[mapped]]
+spec = "externalTrafficPolicy Local narrows publish set to nodes with a ready backing pod"
+ours = "src/status.rs::compute_ingress_ips"
+
+# ---- unmapped (NOT in this crate; ADR-004 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "svclb DaemonSet apply to the cluster (create/update/delete the svclb-<svc> DaemonSet)"
+priority = "phase-1b"
+note     = "ADR-004: this crate emits the pod spec as data; turning it into an applied DaemonSet object needs the apiserver client + owner-reference plumbing, which lands with the orchestration control-plane wiring. Pure I/O over an already-computed spec."
+
+[[unmapped]]
+area     = "In-pod iptables / packet forwarding programmed by the svclb container"
+priority = "phase-1b"
+note     = "ADR-004: entry.sh inside the svclb container programs DNAT/SNAT from the SRC_PORT/DEST_* env vars this crate generates. That is the container's runtime concern (mirrors cave-home-kube-proxy-rs's iptables module); the decision core only computes the env contract."
+
+[[unmapped]]
+area     = "Service / Node informer watch (event source feeding the allocator + node selector)"
+priority = "phase-1b"
+note     = "ADR-004: the watch/cache that delivers Service and Node add/update/delete events is the controller-runtime layer; this crate is event-source-agnostic and recomputes deterministically from a snapshot, so the informer is pure glue."
+
+[[unmapped]]
+area     = "ServiceLB controller reconcile loop (drive allocate -> apply -> patch status on each event)"
+priority = "phase-1b"
+note     = "ADR-004: the loop that sequences allocation, DaemonSet apply, and status.loadBalancer.ingress patch-back is the orchestration controller; it composes the pure functions here. Lands with the shared controller harness."
+
+[[unmapped]]
+area     = "loadBalancerSourceRanges -> per-container SRC_RANGE override"
+priority = "phase-2"
+note     = "ADR-004: svclb defaults SRC_RANGE to 0.0.0.0/0; honouring a Service's spec.loadBalancerSourceRanges is a Phase-2 refinement over the same env-construction path (the only change is the SRC_RANGE value)."
+
+[[unmapped]]
+area     = "Legacy klipper-lb env/spec compatibility mode"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home tracks current K3s ServiceLB behaviour only; no historical klipper-lb env-name/spec compatibility shim is shipped."
+
+# ---- spec_test (designed from spec / documented svclb behaviour) -----------
+
+[[spec_test]]
+designed_for = "Host-port conflict: two LB Services wanting the same (protocol,port); same port different protocol does NOT conflict; all-or-nothing claim"
+ours         = "src/port_alloc.rs::tests"
+
+[[spec_test]]
+designed_for = "First-come admission ordering + release/reuse of freed host ports"
+ours         = "src/port_alloc.rs::tests::{allocate_all_first_come_first_served,release_frees_ports_for_reuse}"
+
+[[spec_test]]
+designed_for = "svclb env-var generation (SRC_PORT/SRC_RANGE/DEST_PROTO/DEST_PORT/DEST_IPS) + per-port container + dual-stack DEST_IPS"
+ours         = "src/daemonset.rs::tests"
+
+[[spec_test]]
+designed_for = "status ingress-IP computation: Cluster publishes all eligible nodes; Local only nodes with a ready backing pod; explicit loadBalancerIP wins"
+ours         = "src/status.rs::tests"
+
+[[spec_test]]
+designed_for = "Node selection: ready/schedulable/selector filtering + node add/remove/cordon recompute"
+ours         = "src/node.rs::tests"
+
+[[spec_test]]
+designed_for = "Service validation: bad port/nodePort/protocol rejected with no panic; multi-port + same-port-different-proto accepted"
+ours         = "src/service.rs::tests"

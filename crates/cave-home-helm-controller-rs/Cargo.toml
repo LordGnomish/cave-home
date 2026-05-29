@@ -6,11 +6,11 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-helm-controller-rs — Helm chart reconciler (K3s default); upstream: k3s-io/helm-controller; port method: line-by-line (Orchestration Phase 4, ADR-004)"
+description = "cave-home-helm-controller-rs — Helm chart reconciler decision core (K3s default); upstream: k3s-io/helm-controller; port method: behavioural reimplementation from public docs (Orchestration Phase 4, ADR-004)"
 
 [package.metadata.cave-home]
 upstream    = "k3s-io/helm-controller"
-port-method = "line-by-line"
+port-method = "behavioural-reimplementation"
 phase       = "orchestration-phase-4"
 
 [lints]

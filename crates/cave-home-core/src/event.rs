@@ -63,4 +63,26 @@ mod tests {
         assert_eq!(back.event_type, "state_changed");
         assert_eq!(back.origin, EventOrigin::Local);
     }
+
+    #[test]
+    fn new_preserves_explicit_context_and_origin() {
+        let ctx = Context::with_user("alice");
+        let evt = Event::new("call_service", json!({"domain": "light"}), EventOrigin::Remote, ctx.clone());
+        assert_eq!(evt.origin, EventOrigin::Remote);
+        assert_eq!(evt.context, ctx);
+        assert_eq!(evt.data["domain"], "light");
+    }
+
+    #[test]
+    fn origin_serializes_to_lowercase_tokens() {
+        // upstream wire form uses lowercase "local"/"remote"
+        assert_eq!(
+            serde_json::to_string(&EventOrigin::Local).expect("ser"),
+            "\"local\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EventOrigin::Remote).expect("ser"),
+            "\"remote\""
+        );
+    }
 }

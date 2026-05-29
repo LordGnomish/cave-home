@@ -69,4 +69,35 @@ mod tests {
         assert_eq!(child.parent_id.as_ref(), Some(&root.id));
         assert_ne!(child.id, root.id);
     }
+
+    #[test]
+    fn default_has_no_user_or_parent() {
+        let c = Context::default();
+        assert!(c.user_id.is_none());
+        assert!(c.parent_id.is_none());
+        assert!(!c.id.is_empty());
+    }
+
+    #[test]
+    fn grandchild_chains_to_root_user_but_unique_ids() {
+        // Two-deep causality chain: an automation (root) fires a service
+        // call (child) that triggers another (grandchild).
+        let root = Context::with_user("alice");
+        let child = Context::child_of(&root);
+        let grandchild = Context::child_of(&child);
+        assert_eq!(grandchild.user_id.as_deref(), Some("alice"));
+        assert_eq!(grandchild.parent_id.as_ref(), Some(&child.id));
+        // every link in the chain has a distinct id
+        assert_ne!(grandchild.id, child.id);
+        assert_ne!(grandchild.id, root.id);
+    }
+
+    #[test]
+    fn serde_round_trip_preserves_chain() {
+        let root = Context::with_user("bob");
+        let child = Context::child_of(&root);
+        let s = serde_json::to_string(&child).expect("serialise");
+        let back: Context = serde_json::from_str(&s).expect("deserialise");
+        assert_eq!(back, child);
+    }
 }

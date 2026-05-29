@@ -156,23 +156,61 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn attribute_only_change_keeps_last_changed() {
+    async fn attribute_only_change_keeps_last_changed_but_updates_last_updated() {
         let m = StateMachine::new(EventBus::new());
         let first = m.set(light_kitchen(), "on", StateAttributes::new(), Context::new()).expect("emit");
         let lc = first.new_state.last_changed;
         let mut attrs = StateAttributes::new();
         attrs.insert("brightness".into(), json!(128));
         let second = m.set(light_kitchen(), "on", attrs, Context::new()).expect("attr emit");
+        // last_changed carries forward (value did not change) ...
         assert_eq!(second.new_state.last_changed, lc);
+        // ... but last_updated is at least the carried last_changed (it was
+        // stamped at the report time, which is >= the original change time).
+        assert!(second.new_state.last_updated >= lc);
+        // attribute is now reflected
+        assert_eq!(second.new_state.attributes["brightness"], 128);
+    }
+
+    #[tokio::test]
+    async fn value_change_resets_last_changed_and_carries_context() {
+        let m = StateMachine::new(EventBus::new());
+        let on = m.set(light_kitchen(), "on", StateAttributes::new(), Context::new()).expect("on");
+        let lc_on = on.new_state.last_changed;
+        let ctx = Context::with_user("alice");
+        let off = m.set(light_kitchen(), "off", StateAttributes::new(), ctx.clone()).expect("off");
+        // a real value change advances last_changed beyond the previous one
+        assert!(off.new_state.last_changed >= lc_on);
+        assert_eq!(off.old_state.as_ref().map(|s| s.state.as_str()), Some("on"));
+        // the supplied context rides into the new State
+        assert_eq!(off.new_state.context.user_id.as_deref(), Some("alice"));
+    }
+
+    #[test]
+    fn get_is_state_and_remove() {
+        let m = StateMachine::new(EventBus::new());
+        let id = light_kitchen();
+        assert!(m.get(&id).is_none());
+        assert!(!m.is_state(&id, "on"));
+
+        m.set(id.clone(), "on", StateAttributes::new(), Context::new()).expect("set");
+        assert!(m.is_state(&id, "on"));
+        assert!(!m.is_state(&id, "off"));
+        assert_eq!(m.get(&id).map(|s| s.state), Some("on".to_owned()));
+
+        let removed = m.remove(&id).expect("removed state");
+        assert_eq!(removed.state, "on");
+        assert!(m.get(&id).is_none());
+        assert!(m.remove(&id).is_none());
     }
 
     #[test]
     fn entity_ids_all_and_domain_query() {
         let m = StateMachine::new(EventBus::new());
         let ctx = Context::new();
-        m.set(EntityId::new("light", "kitchen").unwrap(), "on", StateAttributes::new(), ctx.clone());
-        m.set(EntityId::new("light", "hall").unwrap(), "off", StateAttributes::new(), ctx.clone());
-        m.set(EntityId::new("lock", "front").unwrap(), "locked", StateAttributes::new(), ctx);
+        m.set(EntityId::new("light", "kitchen").expect("id"), "on", StateAttributes::new(), ctx.clone());
+        m.set(EntityId::new("light", "hall").expect("id"), "off", StateAttributes::new(), ctx.clone());
+        m.set(EntityId::new("lock", "front").expect("id"), "locked", StateAttributes::new(), ctx);
 
         // entity_ids() returns every tracked id (order-independent).
         let mut all_ids = m.entity_ids();
@@ -180,9 +218,9 @@ mod tests {
         assert_eq!(
             all_ids,
             vec![
-                EntityId::new("light", "hall").unwrap(),
-                EntityId::new("light", "kitchen").unwrap(),
-                EntityId::new("lock", "front").unwrap(),
+                EntityId::new("light", "hall").expect("id"),
+                EntityId::new("light", "kitchen").expect("id"),
+                EntityId::new("lock", "front").expect("id"),
             ]
         );
 
@@ -192,8 +230,8 @@ mod tests {
         assert_eq!(
             lights,
             vec![
-                EntityId::new("light", "hall").unwrap(),
-                EntityId::new("light", "kitchen").unwrap(),
+                EntityId::new("light", "hall").expect("id"),
+                EntityId::new("light", "kitchen").expect("id"),
             ]
         );
         assert!(m.entity_ids_by_domain("does_not_exist").is_empty());
