@@ -6,11 +6,11 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-history — time-series sensor-history store (InfluxDB 2.0 embedded default + TimescaleDB + VictoriaMetrics opt-in); port method: line-by-line (ADR-023)"
+description = "cave-home-history — time-series history processing engine (aggregation, statistics, retention/roll-up, chart decimation, state-history); on-disk storage engine deferred to phase-1b (ADR-023)"
 
 [package.metadata.cave-home]
 upstream    = "influxdata/influxdb (MIT, embedded default) + timescale/timescaledb (Apache, opt-in) + VictoriaMetrics/VictoriaMetrics (Apache, opt-in)"
-port-method = "line-by-line"
+port-method = "spec-based (analytics engine) + line-by-line (storage layer, deferred)"
 adr         = "ADR-023"
 
 [lints]

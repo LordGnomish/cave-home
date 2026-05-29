@@ -1,25 +1,182 @@
-# cave-home-lighting-wled — parity manifest scaffold.
+# cave-home-lighting-wled — clean-room reimplementation manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-lighting-wled — WLED addressable-LED firmware client; reference: WLED upstream (treated as copyleft, source NOT read); port method: CLEAN-ROOM from WLED JSON API + UDP realtime public docs (ADR-014, Charter §6.1)
+# Per ADR-014 + Charter §6.1: WLED is treated as copyleft for cave-home
+# licensing purposes, so this crate is implemented strictly from the PUBLIC
+# WLED JSON API documentation (the `state` object shape, the segment/colour/
+# effect/palette/nightlight fields, and the documented value ranges). The WLED
+# firmware source has NOT been read or ported.
+#
+# Honest scoping: the full WLED pillar is the *control brain* (implemented &
+# tested here) PLUS the device transports (HTTP/JSON request path, the
+# WebSocket live-state channel, and the UDP realtime protocols DDP / E1.31 /
+# DRGB), mDNS device discovery, the full 100+ built-in effect/palette
+# enumeration, and the cave-home-core entity integration. Everything
+# network/hardware-bound is deferred to Phase 1b (ROADMAP M8) and enumerated in
+# [[unmapped]] below.
 
 [crate]
 name             = "cave-home-lighting-wled"
 upstream_repo    = "Aircoookie/WLED (treated as copyleft, source NOT read)"
+upstream_license = "EUPL-1.2 / copyleft (per ADR-014 conservative default)"
 port_method      = "clean-room"
 spec_sources     = [
-    "WLED JSON API public docs (kno.wled.ge) + UDP realtime protocol public spec + WS2812/SK6812 NeoPixel public timing diagrams",
+    "WLED JSON API public documentation (kno.wled.ge) — `state` object shape: on / bri / transition / ps / seg / nl",
+    "WLED JSON API public documentation — segment fields: id / start / stop / col (primary/secondary/tertiary) / fx / pal / sx / ix / bri / on / rev / mir",
+    "WLED JSON API public documentation — nightlight fields: on / dur / tbri / mode",
+    "WLED public effect & palette index — built-in effect/palette ids and names (curated subset)",
+    "Tanner Helland public colour-temperature → RGB polynomial approximation (1000 K..40000 K)",
+    "Standard textbook HSV↔RGB sextant conversion (public algorithm)",
 ]
-ported_at        = "2026-05-25"
+# Clean-room declaration (Charter §6.1 / ADR-014, mirrors cave-home-zigbee +
+# cave-home-solar-hoymiles): implemented from the public JSON API description;
+# upstream firmware source not read.
+clean_room_note  = "Implemented from public WLED JSON API docs; WLED firmware source was NOT read or ported. Per ADR-014, contributors who have read WLED source are recused from this crate."
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (control brain + HTTP/WS/UDP
+# transports + mDNS discovery + full effect/palette enumeration + core glue).
+# The control brain — colour model (RGB/RGBW, HSV↔RGB, Kelvin→RGB), the segment
+# model, the device state object with std-only JSON round-trip, the nightlight
+# model, the curated effect/palette registries, the pure validated command
+# layer, and the grandma-friendly EN/DE/TR wording — is implemented and tested
+# in full. The transport/discovery halves are all ADR-014 Phase 1b deferrals.
+fill_ratio              = 0.30
+fill_ratio_basis        = "colour model (RGB/RGBW + HSV↔RGB + Kelvin→RGB) + segment model + state object + std-only JSON round-trip + nightlight + curated effect/palette registries + pure validated command layer + EN/DE/TR UX, fully implemented & tested; HTTP/WS/UDP transports + mDNS discovery + full effect enum + core glue deferred"
+test_port_ratio         = 0.0   # clean-room: tests designed from the public JSON API description, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries a phase disposition + note
+honest_ratio            = 1.00  # 0.30 / (0.30 + (1-0.30)*(1-1.00)) = 1.00
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- spec_section (clean-room reimpl present in this crate) -----------------
 
+[[spec_section]]
+spec = "Colour byte model: RGB / RGBW slots as carried in the WLED segment `col` array"
+ours = "src/color.rs::{Rgb,Rgbw}"
+
+[[spec_section]]
+spec = "HSV↔RGB conversion (gesture colour space → WLED bytes) + Kelvin colour-temperature → RGB approximation"
+ours = "src/color.rs::{Hsv,kelvin_to_rgb}"
+
+[[spec_section]]
+spec = "WLED segment model — id / start / stop / three colour slots / fx / pal / sx / ix / bri / on / rev / mir"
+ours = "src/segment.rs::Segment"
+
+[[spec_section]]
+spec = "WLED `state` object — on / bri / transition / ps (preset, -1 → none) / seg / nl"
+ours = "src/state.rs::State"
+
+[[spec_section]]
+spec = "WLED nightlight block — on / dur / tbri / mode"
+ours = "src/state.rs::Nightlight"
+
+[[spec_section]]
+spec = "WLED `state` JSON round-trip (std-only encode/decode, lenient partial-state parse, byte-clamping of untrusted device values)"
+ours = "src/state.rs::{State::to_json,State::from_json}"
+
+[[spec_section]]
+spec = "Minimal std-only JSON value model + parser + serializer (objects/arrays/strings/ints/bools)"
+ours = "src/json.rs::Json"
+
+[[spec_section]]
+spec = "Curated built-in effect & palette registries (documented ids + friendly localised names) with validation bounds"
+ours = "src/effect.rs::{EFFECTS,PALETTES,effect,palette,effect_name,MAX_EFFECT_ID,MAX_PALETTE_ID}"
+
+[[spec_section]]
+spec = "Pure validated control layer — brightness / toggle / power / segment colour / effect / palette / preset / nightlight, each bounds-checked, producing a new state"
+ours = "src/command.rs::{Command,CommandError}"
+
+[[spec_section]]
+spec = "Grandma-friendly EN/DE/TR wording — colour word, brightness percent, one-line headline (Charter §6.3, ADR-007)"
+ours = "src/{label.rs,command.rs::headline}"
+
+# ---- unmapped (NOT in this crate; ADR-014 / ROADMAP M8 disposition) ---------
+
+[[unmapped]]
+area     = "HTTP/JSON request transport to a real WLED device (POST /json/state, GET /json/info)"
+priority = "phase-1b"
+note     = "ADR-014 / ROADMAP M8: the control brain produces/consumes the `state` JSON already (state.rs); the HTTP poller/poster is pure network I/O on top. Clean-room from the public JSON API endpoint description."
+
+[[unmapped]]
+area     = "WebSocket live-state channel (ws://<device>/ws push updates)"
+priority = "phase-1b"
+note     = "ADR-014 / ROADMAP M8: the documented WebSocket channel pushes `state` deltas; it decodes through the same State::from_json path. Async/socket-bound; no new decode logic."
+
+[[unmapped]]
+area     = "UDP realtime protocols (DDP / E1.31 sACN / DRGB / WARLS) for per-LED streaming"
+priority = "phase-1b"
+note     = "ADR-014 / ROADMAP M8: the realtime per-pixel streaming transports are network/timing-bound and only matter for music-reactive / video bias-lighting (ADR-020 audio pillar). Clean-room from the public UDP realtime spec; not needed for the Phase-1 control MVP."
+
+[[unmapped]]
+area     = "mDNS device discovery (_wled._tcp)"
+priority = "phase-1b"
+note     = "ADR-014 / ROADMAP M8: discovering WLED devices on the LAN is a network-service-discovery concern shared with other pillars; the control brain is addressed by IP/host and needs no discovery to function."
+
+[[unmapped]]
+area     = "Full 100+ built-in effect & palette enumeration"
+priority = "phase-1b"
+note     = "ADR-014: a curated, useful subset (26 effects + 14 palettes) ships now with friendly names; the device also reports its own effect/palette name list over the JSON API, so the full enumeration is a data-population task once the HTTP transport lands. effect_name() already falls back to a friendly phrase for any uncurated id."
+
+[[unmapped]]
+area     = "RGBW / CCT white-channel auto-calculation from RGB (and per-strip colour-order remap)"
+priority = "phase-1b"
+note     = "ADR-014: the Rgbw type + Kelvin→RGB exist; deriving the dedicated white channel from an RGB target (and per-strip GRB/RGBW channel-order remap) is a refinement tied to the live device's reported capabilities."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration + automation triggers"
+priority = "phase-1b"
+note     = "ADR-014 / ROADMAP M8: surfacing a light as a core State entity + automation target lands once cave-home-core's entity API stabilises. The control brain is already core-agnostic (no cave-home-* dependency)."
+
+[[unmapped]]
+area     = "WLED preset & playlist *definitions* (storing/editing the preset slots themselves)"
+priority = "phase-2"
+note     = "ADR-014: Phase 1 can *apply* a preset by id (Command::ApplyPreset); authoring/persisting the preset and playlist definitions is a Phase 2 management feature on top of the transport."
+
+[[unmapped]]
+area     = "Pre-0.14 / legacy WLED JSON API field compatibility"
+priority = "permanent"
+note     = "Charter §8 no-backcompat + §7 always-latest: cave-home targets the current WLED JSON API shape only; no historical-API compatibility mode."
+
+[[unmapped]]
+area     = "WLED firmware source reuse"
+priority = "permanent"
+note     = "Charter §6.1 / ADR-014: WLED is treated as copyleft and may not be read or ported. This crate is clean-room from the public JSON API documentation only — this gap is intentional and permanent."
+
+[[unmapped]]
+area     = "32-bit ARM / pre-Linux 7.1 kernels"
+priority = "permanent"
+note     = "Charter §6.2 / ADR-003 — Linux 7.1+ only."
+
+# ---- spec_test (clean-room: tests designed from the public JSON API description) ----
+
+[[spec_test]]
+designed_for = "HSV↔RGB round-trip + known primaries/secondaries/white/grey + Kelvin→RGB warm/cool ranges + clamping"
+ours         = "src/color.rs::tests"
+
+[[spec_test]]
+designed_for = "Segment construction/validation (empty/reversed LED range rejected) + saturating length"
+ours         = "src/segment.rs::tests"
+
+[[spec_test]]
+designed_for = "State JSON round-trip + partial-state defaults + preset -1↔None + byte-clamping untrusted values + nightlight round-trip + non-object rejection"
+ours         = "src/state.rs::tests"
+
+[[spec_test]]
+designed_for = "Minimal JSON parse/serialize: scalars, nesting, whitespace, escapes, unicode escape, malformed-input rejection, deterministic key order"
+ours         = "src/json.rs::tests"
+
+[[spec_test]]
+designed_for = "Effect/palette registry: non-trivial size, ascending unique ids, known/unknown lookup, friendly (non-raw) fallback names, all three languages present"
+ours         = "src/effect.rs::tests"
+
+[[spec_test]]
+designed_for = "Command application is pure & bounds-checked: brightness/toggle/power, segment colour by id, effect/palette id rejection, preset apply, nightlight zero-duration rejection"
+ours         = "src/command.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly headline (off / colour+brightness / effect-led) + localised colour words + brightness percent endpoints"
+ours         = "src/{command.rs::tests,label.rs::tests}"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/command.rs::tests::ui_strings_carry_no_implementation_jargon"
