@@ -1,62 +1,50 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //
-//! SunSpec Models 101 / 102 / 103 — Single-, Split-, and Three-phase
-//! inverter (integer scale factor variant).
+//! SunSpec inverter models — integer (101/102/103) and float (111/112/113).
 //!
-//! Source: SunSpec Inverter Model Specification (1.7), models 101-103.
+//! Source: SunSpec Information Model Specification, inverter models.
 //!
-//! Common register layout (payload offsets):
+//! The integer models 101/102/103 (single / split / three phase) and the
+//! float models 111/112/113 share the same point *layout* — the only
+//! difference is whether each measurement is an integer-with-scale-factor or
+//! an IEEE-754 `float32`. This module decodes both into one
+//! [`InverterReading`].
+//!
+//! Integer-model payload layout (register offsets):
 //! ```text
-//!   0  A          AC current (sum of phases)              uint16
-//!   1  AphA       AC current phase A                       uint16
-//!   2  AphB       AC current phase B                       uint16 (102/103)
-//!   3  AphC       AC current phase C                       uint16 (103)
-//!   4  A_SF       AC current scale factor                  sunssf
-//!   5  PPVphAB    Phase voltage AB                         uint16 (102/103)
-//!   6  PPVphBC    Phase voltage BC                         uint16 (103)
-//!   7  PPVphCA    Phase voltage CA                         uint16 (103)
-//!   8  PhVphA     Phase A line-neutral voltage             uint16
-//!   9  PhVphB     Phase B line-neutral voltage             uint16
-//!  10  PhVphC     Phase C line-neutral voltage             uint16
-//!  11  V_SF       Voltage scale factor                     sunssf
-//!  12  W          AC power                                 int16
-//!  13  W_SF       AC power scale factor                    sunssf
-//!  14  Hz         Grid frequency                           uint16
-//!  15  Hz_SF      Frequency scale factor                   sunssf
-//!  16  VA         Apparent power                           int16
-//!  17  VA_SF                                               sunssf
-//!  18  VAr        Reactive power                           int16
-//!  19  VAr_SF                                              sunssf
-//!  20  PF         Power factor                             int16
-//!  21  PF_SF                                               sunssf
-//!  22  WH         AC lifetime production                   acc32 (2 regs)
-//!  24  WH_SF                                               sunssf
-//!  25  DCA        DC current                               uint16
-//!  26  DCA_SF                                              sunssf
-//!  27  DCV        DC voltage                               uint16
-//!  28  DCV_SF                                              sunssf
-//!  29  DCW        DC power                                 int16
-//!  30  DCW_SF                                              sunssf
-//!  31  TmpCab     Cabinet temperature                      int16
-//!  32  TmpSnk     Heatsink temperature                     int16
-//!  33  TmpTrns    Transformer temperature                  int16
-//!  34  TmpOt      Other temperature                        int16
-//!  35  Tmp_SF                                              sunssf
-//!  36  St         Operating state                          enum16
-//!  37  StVnd                                               enum16
-//!  38  Evt1       Event bitfield 1                         bitfield32
-//!  40  Evt2                                                bitfield32
-//!  42  EvtVnd1..  Vendor events                            bitfield32 ×4
+//!   0  A        AC current (sum of phases)   uint16
+//!   4  A_SF     AC current scale factor      sunssf
+//!   8  PhVphA   Phase-A line-neutral voltage uint16
+//!  11  V_SF     Voltage scale factor         sunssf
+//!  12  W        AC power                     int16
+//!  13  W_SF     AC power scale factor        sunssf
+//!  14  Hz       Grid frequency               uint16
+//!  15  Hz_SF    Frequency scale factor       sunssf
+//!  22  WH       Lifetime energy              acc32 (2 regs)
+//!  24  WH_SF    Energy scale factor          sunssf
+//!  25  DCA      DC current                   uint16
+//!  26  DCA_SF   DC current scale factor      sunssf
+//!  27  DCV      DC voltage                   uint16
+//!  28  DCV_SF   DC voltage scale factor      sunssf
+//!  29  DCW      DC power                     int16
+//!  30  DCW_SF   DC power scale factor        sunssf
+//!  31  TmpCab   Cabinet temperature          int16
+//!  35  Tmp_SF   Temperature scale factor     sunssf
+//!  36  St       Operating state              enum16
 //! ```
+//!
+//! The float models 111/112/113 widen every measurement to `float32`
+//! (2 registers each) and carry no scale-factor points; their `St` operating
+//! state sits at a different offset. cave-home decodes the float variant via
+//! [`InverterReading::decode_float`].
 
-use crate::error::Result;
-use crate::raw;
+use crate::fault::DecodeError;
+use crate::point;
 use crate::scale::ScaleFactor;
-use serde::{Deserialize, Serialize};
 
-/// Phase count of the parsed inverter model.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Phase topology of the decoded inverter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InverterPhase {
     Single,
     Split,
@@ -64,42 +52,46 @@ pub enum InverterPhase {
 }
 
 impl InverterPhase {
+    /// Map a model id to its phase topology, for both the integer (101-103)
+    /// and float (111-113) families.
     #[must_use]
     pub const fn from_model_id(id: u16) -> Option<Self> {
         match id {
-            101 => Some(Self::Single),
-            102 => Some(Self::Split),
-            103 => Some(Self::Three),
+            101 | 111 => Some(Self::Single),
+            102 | 112 => Some(Self::Split),
+            103 | 113 => Some(Self::Three),
             _ => None,
         }
     }
-
-    #[must_use]
-    pub const fn model_id(self) -> u16 {
-        match self {
-            Self::Single => 101,
-            Self::Split => 102,
-            Self::Three => 103,
-        }
-    }
 }
 
-/// Operating state. Source: SunSpec spec §C.5 enum16 table for `St`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum InverterStatus {
+/// SunSpec inverter operating state (`St`, enum16).
+///
+/// Source: SunSpec inverter model `St` enumeration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperatingState {
+    /// `1` OFF — inverter shut off.
     Off,
+    /// `2` SLEEPING — auto-shutdown, e.g. no sun.
     Sleeping,
+    /// `3` STARTING — coming online.
     Starting,
+    /// `4` MPPT — tracking maximum power point (producing normally).
     Mppt,
+    /// `5` THROTTLED — producing but power-limited.
     Throttled,
+    /// `6` SHUTTING_DOWN.
     ShuttingDown,
+    /// `7` FAULT — an error condition.
     Fault,
+    /// `8` STANDBY — held off, ready to start.
     Standby,
-    Unknown(u16),
+    /// A vendor / future state outside the standard enumeration.
+    Other(u16),
 }
 
-impl InverterStatus {
+impl OperatingState {
+    /// Decode the raw `St` register value.
     #[must_use]
     pub const fn from_register(raw: u16) -> Self {
         match raw {
@@ -111,91 +103,94 @@ impl InverterStatus {
             6 => Self::ShuttingDown,
             7 => Self::Fault,
             8 => Self::Standby,
-            other => Self::Unknown(other),
+            other => Self::Other(other),
         }
     }
 
-    /// Grandma-friendly label per Charter §6.3.
+    /// Whether the inverter is actively producing power.
     #[must_use]
-    pub const fn home_word(self) -> &'static str {
-        match self {
-            Self::Off => "off",
-            Self::Sleeping | Self::Standby => "standby",
-            Self::Starting => "starting",
-            Self::Mppt | Self::Throttled => "producing",
-            Self::ShuttingDown => "shutting_down",
-            Self::Fault => "fault",
-            Self::Unknown(_) => "unknown",
-        }
+    pub const fn is_producing(self) -> bool {
+        matches!(self, Self::Mppt | Self::Throttled)
+    }
+
+    /// Whether the inverter is in a fault condition needing attention.
+    #[must_use]
+    pub const fn is_fault(self) -> bool {
+        matches!(self, Self::Fault)
     }
 }
 
-/// Decoded inverter reading. All values converted to SI / physical units
-/// via their scale factors.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// A decoded inverter reading in physical units. All measurements have had
+/// their scale factors applied. `None` means the device did not implement
+/// that point (a SunSpec sentinel).
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InverterReading {
     pub phase: InverterPhase,
-    /// AC active power in watts (signed; negative ⇒ consuming).
-    pub ac_power_w: f64,
-    /// AC current in amps (sum of phases).
-    pub ac_current_a: f64,
-    /// AC voltage in volts (phase A nominal).
-    pub ac_voltage_v: f64,
-    /// Grid frequency in Hz.
-    pub frequency_hz: f64,
-    /// DC voltage from the inverter (string average).
-    pub dc_voltage_v: f64,
-    /// DC current from the inverter.
-    pub dc_current_a: f64,
-    /// DC power in watts.
-    pub dc_power_w: f64,
-    /// Lifetime production in kWh.
-    pub lifetime_kwh: f64,
-    /// Cabinet temperature in °C (or `None` if not implemented).
+    /// AC active power, watts (signed; negative ⇒ importing).
+    pub ac_power_w: Option<f64>,
+    /// AC current, amps (sum of phases).
+    pub ac_current_a: Option<f64>,
+    /// AC voltage, volts (phase A line-to-neutral).
+    pub ac_voltage_v: Option<f64>,
+    /// Grid frequency, hertz.
+    pub frequency_hz: Option<f64>,
+    /// DC power, watts.
+    pub dc_power_w: Option<f64>,
+    /// Lifetime energy produced, watt-hours.
+    pub lifetime_energy_wh: Option<f64>,
+    /// Cabinet temperature, degrees Celsius.
     pub temperature_c: Option<f64>,
-    pub status: InverterStatus,
+    /// Operating state.
+    pub state: OperatingState,
 }
 
 impl InverterReading {
-    /// Parse one of models 101 / 102 / 103.
+    /// Minimum payload length for the integer models (through `St` at 36).
+    const INT_MIN_LEN: usize = 37;
+    /// `St` register offset within the float models 111/112/113.
+    const FLOAT_ST_OFFSET: usize = 38;
+    /// Minimum payload length for the float models (through `St` at 38).
+    const FLOAT_MIN_LEN: usize = 39;
+
+    /// Decode an integer inverter model (101 / 102 / 103).
     ///
     /// # Errors
-    ///
-    /// Returns [`crate::Error::UnsupportedModel`] if `model_id` is not
-    /// 101–103, and [`crate::Error::ShortRead`] if the payload is too
-    /// short to hold the model.
-    pub fn parse(model_id: u16, regs: &[u16]) -> Result<Self> {
-        let phase = InverterPhase::from_model_id(model_id)
-            .ok_or(crate::Error::UnsupportedModel(model_id))?;
-        // 50 registers is the canonical length for 103 (largest of the three);
-        // we accept anything ≥ 36 since the offsets we need fit there.
-        if regs.len() < 36 {
-            return Err(crate::Error::ShortRead {
-                expected: 50,
-                actual: regs.len() as u16,
-            });
+    /// [`DecodeError::UnsupportedModel`] if `model_id` is not 101/102/103,
+    /// and [`DecodeError::OutOfBounds`] if the payload is too short.
+    pub fn decode_integer(model_id: u16, payload: &[u16]) -> Result<Self, DecodeError> {
+        let phase = match model_id {
+            101..=103 => InverterPhase::from_model_id(model_id),
+            _ => None,
+        }
+        .ok_or(DecodeError::UnsupportedModel { model_id })?;
+
+        if payload.len() < Self::INT_MIN_LEN {
+            return Err(DecodeError::OutOfBounds { offset: Self::INT_MIN_LEN, len: payload.len() });
         }
 
-        let a_sf = ScaleFactor::from_register(raw::read_i16(regs, 4).unwrap_or(0)).unwrap_or_default();
-        let v_sf = ScaleFactor::from_register(raw::read_i16(regs, 11).unwrap_or(0)).unwrap_or_default();
-        let w_sf = ScaleFactor::from_register(raw::read_i16(regs, 13).unwrap_or(0)).unwrap_or_default();
-        let hz_sf = ScaleFactor::from_register(raw::read_i16(regs, 15).unwrap_or(0)).unwrap_or_default();
-        let wh_sf = ScaleFactor::from_register(raw::read_i16(regs, 24).unwrap_or(0)).unwrap_or_default();
-        let dca_sf = ScaleFactor::from_register(raw::read_i16(regs, 26).unwrap_or(0)).unwrap_or_default();
-        let dcv_sf = ScaleFactor::from_register(raw::read_i16(regs, 28).unwrap_or(0)).unwrap_or_default();
-        let dcw_sf = ScaleFactor::from_register(raw::read_i16(regs, 30).unwrap_or(0)).unwrap_or_default();
-        let tmp_sf = ScaleFactor::from_register(raw::read_i16(regs, 35).unwrap_or(0)).unwrap_or_default();
+        let sf = |off| -> ScaleFactor {
+            point::sunssf(payload, off)
+                .ok()
+                .flatten()
+                .map_or_else(ScaleFactor::unity, ScaleFactor::new)
+        };
 
-        let ac_current_a = a_sf.apply_u16(raw::read_u16(regs, 0).unwrap_or(0));
-        let ac_voltage_v = v_sf.apply_u16(raw::read_u16(regs, 8).unwrap_or(0));
-        let ac_power_w = w_sf.apply_i16(raw::read_i16(regs, 12).unwrap_or(0));
-        let frequency_hz = hz_sf.apply_u16(raw::read_u16(regs, 14).unwrap_or(0));
-        let lifetime_kwh = wh_sf.apply_u32(raw::read_acc32(regs, 22).unwrap_or(0)) / 1000.0;
-        let dc_current_a = dca_sf.apply_u16(raw::read_u16(regs, 25).unwrap_or(0));
-        let dc_voltage_v = dcv_sf.apply_u16(raw::read_u16(regs, 27).unwrap_or(0));
-        let dc_power_w = dcw_sf.apply_i16(raw::read_i16(regs, 29).unwrap_or(0));
-        let temperature_c = raw::read_i16(regs, 31).map(|t| tmp_sf.apply_i16(t));
-        let status = InverterStatus::from_register(raw::read_u16(regs, 36).unwrap_or(0));
+        let a_sf = sf(4);
+        let v_sf = sf(11);
+        let w_sf = sf(13);
+        let hz_sf = sf(15);
+        let energy_sf = sf(24);
+        let dcw_sf = sf(30);
+        let tmp_sf = sf(35);
+
+        let ac_current_a = point::uint16(payload, 0)?.map(|v| a_sf.apply_u16(v));
+        let ac_voltage_v = point::uint16(payload, 8)?.map(|v| v_sf.apply_u16(v));
+        let ac_power_w = point::int16(payload, 12)?.map(|v| w_sf.apply_i16(v));
+        let frequency_hz = point::uint16(payload, 14)?.map(|v| hz_sf.apply_u16(v));
+        let lifetime_energy_wh = point::acc32(payload, 22)?.map(|v| energy_sf.apply_u32(v));
+        let dc_power_w = point::int16(payload, 29)?.map(|v| dcw_sf.apply_i16(v));
+        let temperature_c = point::int16(payload, 31)?.map(|v| tmp_sf.apply_i16(v));
+        let state = OperatingState::from_register(point::uint16(payload, 36)?.unwrap_or(0));
 
         Ok(Self {
             phase,
@@ -203,13 +198,68 @@ impl InverterReading {
             ac_current_a,
             ac_voltage_v,
             frequency_hz,
-            dc_voltage_v,
-            dc_current_a,
             dc_power_w,
-            lifetime_kwh,
+            lifetime_energy_wh,
             temperature_c,
-            status,
+            state,
         })
+    }
+
+    /// Decode a float inverter model (111 / 112 / 113). Every measurement is
+    /// an IEEE-754 `float32` already in physical units — no scale factors.
+    ///
+    /// # Errors
+    /// [`DecodeError::UnsupportedModel`] if `model_id` is not 111/112/113,
+    /// and [`DecodeError::OutOfBounds`] if the payload is too short.
+    pub fn decode_float(model_id: u16, payload: &[u16]) -> Result<Self, DecodeError> {
+        let phase = match model_id {
+            111..=113 => InverterPhase::from_model_id(model_id),
+            _ => None,
+        }
+        .ok_or(DecodeError::UnsupportedModel { model_id })?;
+
+        if payload.len() < Self::FLOAT_MIN_LEN {
+            return Err(DecodeError::OutOfBounds { offset: Self::FLOAT_MIN_LEN, len: payload.len() });
+        }
+
+        let f = |off| -> Result<Option<f64>, DecodeError> {
+            Ok(point::float32(payload, off)?.map(f64::from))
+        };
+
+        let ac_current_a = f(0)?;
+        let ac_voltage_v = f(8)?;
+        let ac_power_w = f(12)?;
+        let frequency_hz = f(14)?;
+        let lifetime_energy_wh = f(22)?;
+        let dc_power_w = f(29)?;
+        let temperature_c = f(31)?;
+        let state = OperatingState::from_register(
+            point::uint16(payload, Self::FLOAT_ST_OFFSET)?.unwrap_or(0),
+        );
+
+        Ok(Self {
+            phase,
+            ac_power_w,
+            ac_current_a,
+            ac_voltage_v,
+            frequency_hz,
+            dc_power_w,
+            lifetime_energy_wh,
+            temperature_c,
+            state,
+        })
+    }
+
+    /// Lifetime energy in kilowatt-hours, if implemented.
+    #[must_use]
+    pub fn lifetime_energy_kwh(&self) -> Option<f64> {
+        self.lifetime_energy_wh.map(|wh| wh / 1000.0)
+    }
+
+    /// AC power in kilowatts, if implemented.
+    #[must_use]
+    pub fn ac_power_kw(&self) -> Option<f64> {
+        self.ac_power_w.map(|w| w / 1000.0)
     }
 }
 
@@ -217,78 +267,166 @@ impl InverterReading {
 mod tests {
     use super::*;
 
-    fn build_model_103(power_w: i16, w_sf: i16, voltage_v: u16, v_sf: i16) -> Vec<u16> {
-        let mut regs = vec![0u16; 50];
-        regs[0] = 1500; // A
-        regs[4] = (-1i16) as u16; // A_SF -1 ⇒ × 0.1
-        regs[8] = voltage_v; // PhVphA
-        regs[11] = v_sf as u16; // V_SF
-        regs[12] = power_w as u16; // W
-        regs[13] = w_sf as u16; // W_SF
-        regs[14] = 5000; // Hz
-        regs[15] = (-2i16) as u16; // Hz_SF -2 ⇒ × 0.01 ⇒ 50.00 Hz
-        // WH (acc32) — 1_000_000 Wh = 1000 kWh @ SF 0
-        regs[22] = 0x000F;
-        regs[23] = 0x4240; // 0x000F4240 == 1_000_000
-        regs[24] = 0; // WH_SF
-        regs[25] = 80; // DCA
-        regs[26] = (-1i16) as u16; // DCA_SF -1
-        regs[27] = 4000; // DCV
-        regs[28] = (-1i16) as u16; // DCV_SF -1 ⇒ 400.0 V
-        regs[29] = power_w as u16; // DCW
-        regs[30] = w_sf as u16; // DCW_SF
-        regs[31] = 350; // TmpCab
-        regs[35] = (-1i16) as u16; // Tmp_SF -1 ⇒ 35.0 °C
-        regs[36] = 4; // St == MPPT
-        regs
+    /// Build a model-103 integer payload producing `power_w` watts at
+    /// `230.x` V, `50.00` Hz, with a lifetime counter and cabinet temp.
+    fn build_int_103() -> Vec<u16> {
+        let mut p = vec![0u16; 50];
+        p[0] = 326; // A raw
+        p[4] = (-1i16) as u16; // A_SF -1 ⇒ 32.6 A
+        p[8] = 2301; // PhVphA raw
+        p[11] = (-1i16) as u16; // V_SF -1 ⇒ 230.1 V
+        p[12] = 7500u16; // W raw
+        p[13] = 0; // W_SF 0 ⇒ 7500 W
+        p[14] = 5000; // Hz raw
+        p[15] = (-2i16) as u16; // Hz_SF -2 ⇒ 50.00 Hz
+        p[22] = 0x000F; // WH hi
+        p[23] = 0x4240; // WH lo ⇒ 1_000_000 Wh
+        p[24] = 0; // WH_SF 0
+        p[29] = 7700u16; // DCW raw
+        p[30] = 0; // DCW_SF 0 ⇒ 7700 W
+        p[31] = 350; // TmpCab raw
+        p[35] = (-1i16) as u16; // Tmp_SF -1 ⇒ 35.0 °C
+        p[36] = 4; // St == MPPT
+        p
     }
 
     #[test]
-    fn parse_three_phase_basic() {
-        let regs = build_model_103(7500, 0, 2300, -1); // 7500 W, 230.0 V
-        let r = InverterReading::parse(103, &regs).unwrap();
+    fn decode_three_phase_integer() {
+        let p = build_int_103();
+        let r = InverterReading::decode_integer(103, &p).unwrap();
         assert_eq!(r.phase, InverterPhase::Three);
-        assert!((r.ac_power_w - 7500.0).abs() < f64::EPSILON);
-        assert!((r.ac_voltage_v - 230.0).abs() < f64::EPSILON);
-        assert!((r.frequency_hz - 50.0).abs() < f64::EPSILON);
-        assert!((r.lifetime_kwh - 1000.0).abs() < f64::EPSILON);
-        assert_eq!(r.status, InverterStatus::Mppt);
+        assert!((r.ac_power_w.unwrap() - 7500.0).abs() < 1e-6);
+        assert!((r.ac_current_a.unwrap() - 32.6).abs() < 1e-6);
+        assert!((r.ac_voltage_v.unwrap() - 230.1).abs() < 1e-6);
+        assert!((r.frequency_hz.unwrap() - 50.0).abs() < 1e-6);
+        assert!((r.dc_power_w.unwrap() - 7700.0).abs() < 1e-6);
+        assert!((r.lifetime_energy_wh.unwrap() - 1_000_000.0).abs() < 1e-6);
+        assert!((r.lifetime_energy_kwh().unwrap() - 1000.0).abs() < 1e-6);
+        assert!((r.temperature_c.unwrap() - 35.0).abs() < 1e-6);
+        assert_eq!(r.state, OperatingState::Mppt);
+        assert!(r.state.is_producing());
     }
 
     #[test]
-    fn parse_single_phase_model_101() {
-        let regs = build_model_103(1500, 0, 2300, -1);
-        let r = InverterReading::parse(101, &regs).unwrap();
+    fn single_phase_model_101_topology() {
+        let p = build_int_103();
+        let r = InverterReading::decode_integer(101, &p).unwrap();
         assert_eq!(r.phase, InverterPhase::Single);
     }
 
     #[test]
-    fn parse_unsupported_model_id() {
-        let regs = vec![0u16; 50];
-        let r = InverterReading::parse(999, &regs);
-        assert!(matches!(r, Err(crate::Error::UnsupportedModel(999))));
+    fn split_phase_model_102_topology() {
+        let p = build_int_103();
+        let r = InverterReading::decode_integer(102, &p).unwrap();
+        assert_eq!(r.phase, InverterPhase::Split);
     }
 
     #[test]
-    fn parse_short_payload_errs() {
-        let regs = vec![0u16; 10];
-        let r = InverterReading::parse(103, &regs);
-        assert!(matches!(r, Err(crate::Error::ShortRead { .. })));
+    fn unsupported_model_id_rejected() {
+        let p = vec![0u16; 50];
+        assert!(matches!(
+            InverterReading::decode_integer(124, &p),
+            Err(DecodeError::UnsupportedModel { model_id: 124 })
+        ));
     }
 
     #[test]
-    fn status_home_word_mapping() {
-        assert_eq!(InverterStatus::Mppt.home_word(), "producing");
-        assert_eq!(InverterStatus::Off.home_word(), "off");
-        assert_eq!(InverterStatus::Fault.home_word(), "fault");
-        assert_eq!(InverterStatus::Sleeping.home_word(), "standby");
+    fn short_payload_rejected_not_panicked() {
+        let p = vec![0u16; 10];
+        assert!(matches!(
+            InverterReading::decode_integer(103, &p),
+            Err(DecodeError::OutOfBounds { .. })
+        ));
     }
 
     #[test]
-    fn temperature_optional() {
-        let mut regs = build_model_103(7500, 0, 2300, -1);
-        regs[31] = i16::MIN as u16; // sentinel
-        let r = InverterReading::parse(103, &regs).unwrap();
+    fn unimplemented_temperature_is_none() {
+        let mut p = build_int_103();
+        p[31] = point::INT16_NA; // sentinel
+        let r = InverterReading::decode_integer(103, &p).unwrap();
         assert!(r.temperature_c.is_none());
+    }
+
+    #[test]
+    fn never_accumulated_energy_is_none() {
+        let mut p = build_int_103();
+        p[22] = 0;
+        p[23] = 0;
+        let r = InverterReading::decode_integer(103, &p).unwrap();
+        assert!(r.lifetime_energy_wh.is_none());
+    }
+
+    #[test]
+    fn negative_power_means_importing() {
+        let mut p = build_int_103();
+        p[12] = (-200i16) as u16; // W raw
+        p[13] = 0;
+        let r = InverterReading::decode_integer(103, &p).unwrap();
+        assert!((r.ac_power_w.unwrap() + 200.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn state_mapping_covers_sleeping_and_fault() {
+        let mut p = build_int_103();
+        p[36] = 2; // sleeping
+        let r = InverterReading::decode_integer(103, &p).unwrap();
+        assert_eq!(r.state, OperatingState::Sleeping);
+        assert!(!r.state.is_producing());
+        p[36] = 7; // fault
+        let r = InverterReading::decode_integer(103, &p).unwrap();
+        assert!(r.state.is_fault());
+        p[36] = 99; // vendor / future
+        let r = InverterReading::decode_integer(103, &p).unwrap();
+        assert_eq!(r.state, OperatingState::Other(99));
+    }
+
+    /// Build a float model-111 payload (single phase) with float32 points.
+    fn build_float_111() -> Vec<u16> {
+        let mut p = vec![0u16; 60];
+        let put = |p: &mut Vec<u16>, off: usize, v: f32| {
+            let b = v.to_bits();
+            p[off] = (b >> 16) as u16;
+            p[off + 1] = (b & 0xFFFF) as u16;
+        };
+        put(&mut p, 0, 13.6); // A
+        put(&mut p, 8, 240.2); // PhVphA
+        put(&mut p, 12, 3200.0); // W
+        put(&mut p, 14, 60.01); // Hz
+        put(&mut p, 22, 250_000.0); // WH
+        put(&mut p, 29, 3300.0); // DCW
+        put(&mut p, 31, 41.5); // TmpCab
+        p[38] = 4; // St == MPPT
+        p
+    }
+
+    #[test]
+    fn decode_float_model_111() {
+        let p = build_float_111();
+        let r = InverterReading::decode_float(111, &p).unwrap();
+        assert_eq!(r.phase, InverterPhase::Single);
+        assert!((r.ac_power_w.unwrap() - 3200.0).abs() < 1e-3);
+        assert!((r.ac_voltage_v.unwrap() - 240.2).abs() < 1e-3);
+        assert!((r.frequency_hz.unwrap() - 60.01).abs() < 1e-3);
+        assert!((r.lifetime_energy_kwh().unwrap() - 250.0).abs() < 1e-3);
+        assert_eq!(r.state, OperatingState::Mppt);
+    }
+
+    #[test]
+    fn float_model_unimplemented_point_is_none() {
+        let mut p = build_float_111();
+        let nan = f32::NAN.to_bits();
+        p[31] = (nan >> 16) as u16;
+        p[32] = (nan & 0xFFFF) as u16;
+        let r = InverterReading::decode_float(111, &p).unwrap();
+        assert!(r.temperature_c.is_none());
+    }
+
+    #[test]
+    fn float_model_wrong_id_rejected() {
+        let p = build_float_111();
+        assert!(matches!(
+            InverterReading::decode_float(103, &p),
+            Err(DecodeError::UnsupportedModel { model_id: 103 })
+        ));
     }
 }

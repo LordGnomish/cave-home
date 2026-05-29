@@ -1,28 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //
-//! SunSpec Model 1 — Common.
+//! SunSpec Model 1 — Common (manufacturer, model, version, serial).
 //!
-//! Source: SunSpec Modbus Specification v1.7, model 1 definition.
+//! Source: SunSpec Information Model Specification, model 1 definition.
 //!
-//! Layout (offsets from model header):
+//! Payload layout (register offsets from the start of the model payload):
 //! ```text
-//!     0    Mn (manufacturer)         16 registers (32-byte ASCII)
-//!    16    Md (model)                16 registers
-//!    32    Opt (options)              8 registers
-//!    40    Vr (version)               8 registers
-//!    48    SN (serial number)        16 registers
-//!    64    DA (Modbus device address) 1 register
+//!     0    Mn  (manufacturer)            16 registers (32-byte ASCII)
+//!    16    Md  (model)                   16 registers
+//!    32    Opt (options)                  8 registers
+//!    40    Vr  (version)                  8 registers
+//!    48    SN  (serial number)           16 registers
+//!    64    DA  (Modbus device address)    1 register
 //! ```
+//! Canonical payload length is 66 registers (id 1, length 66). cave-home
+//! reads the first 65 it needs and tolerates the device-address word being
+//! absent.
 
-use crate::error::Result;
-use crate::raw;
-use serde::{Deserialize, Serialize};
+use crate::fault::DecodeError;
+use crate::point;
 
-/// Inverter family inferred from the Model 1 manufacturer string.
-/// cave-home uses this to pick vendor-specific quirks (e.g. SolarEdge
-/// reports power in W; SMA in W scaled by SF; Huawei sign convention).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Inverter family inferred from the Model 1 manufacturer string. cave-home
+/// uses this only for vendor labelling and quirk selection; it never reaches
+/// the end-user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InverterFamily {
     Sma,
     Fronius,
@@ -30,13 +32,14 @@ pub enum InverterFamily {
     Huawei,
     Goodwe,
     Kostal,
+    /// Any manufacturer not in the recognised set.
     Generic,
 }
 
 impl InverterFamily {
-    /// Map a manufacturer string from Model 1 to a family. Case-insensitive,
-    /// matches the prefix because manufacturer strings vary
-    /// ("SMA Solar Technology AG", "Fronius International GmbH", …).
+    /// Map a manufacturer string to a family. Case-insensitive substring
+    /// match because manufacturer strings vary ("SMA Solar Technology AG",
+    /// "Fronius International GmbH", …).
     #[must_use]
     pub fn from_manufacturer(mfr: &str) -> Self {
         let m = mfr.to_ascii_lowercase();
@@ -59,42 +62,41 @@ impl InverterFamily {
 }
 
 /// Decoded Model 1 (Common) block.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommonModel {
     pub manufacturer: String,
     pub model: String,
     pub options: String,
     pub version: String,
     pub serial_number: String,
-    pub modbus_device_address: u16,
+    /// Modbus device address (`0` if the device omits the field).
+    pub device_address: u16,
     pub family: InverterFamily,
 }
 
 impl CommonModel {
+    /// SunSpec model id for the common block.
     pub const MODEL_ID: u16 = 1;
-    pub const MODEL_LENGTH: u16 = 65;
+    /// Minimum payload length we require (through the version field at 48).
+    pub const MIN_LENGTH: usize = 64;
 
-    /// Parse from a register block that starts at the **payload**
-    /// (immediately after the model header).
+    /// Decode from a model payload slice (the registers after the 2-word
+    /// model header, i.e. [`crate::discovery::DiscoveredModel::payload`]).
     ///
     /// # Errors
-    ///
-    /// Returns [`crate::Error::ShortRead`] if `regs` is shorter than
-    /// `MODEL_LENGTH`. Returns [`crate::Error::InvalidString`] on
-    /// non-UTF-8 ASCII fields.
-    pub fn parse(regs: &[u16]) -> Result<Self> {
-        if regs.len() < Self::MODEL_LENGTH as usize {
-            return Err(crate::Error::ShortRead {
-                expected: Self::MODEL_LENGTH,
-                actual: regs.len() as u16,
-            });
+    /// [`DecodeError::OutOfBounds`] if the payload is too short to hold the
+    /// string fields, and [`DecodeError::InvalidString`] on non-UTF-8 text.
+    pub fn decode(payload: &[u16]) -> Result<Self, DecodeError> {
+        if payload.len() < Self::MIN_LENGTH {
+            return Err(DecodeError::OutOfBounds { offset: Self::MIN_LENGTH, len: payload.len() });
         }
-        let manufacturer = raw::read_string(regs, 0, 16, "Mn")?;
-        let model = raw::read_string(regs, 16, 16, "Md")?;
-        let options = raw::read_string(regs, 32, 8, "Opt")?;
-        let version = raw::read_string(regs, 40, 8, "Vr")?;
-        let serial_number = raw::read_string(regs, 48, 16, "SN")?;
-        let modbus_device_address = raw::read_u16(regs, 64).unwrap_or(0);
+        let manufacturer = point::string(payload, 0, 16)?;
+        let model = point::string(payload, 16, 16)?;
+        let options = point::string(payload, 32, 8)?;
+        let version = point::string(payload, 40, 8)?;
+        let serial_number = point::string(payload, 48, 16)?;
+        // Device address is optional in shorter implementations.
+        let device_address = point::uint16(payload, 64).ok().flatten().unwrap_or(0);
         let family = InverterFamily::from_manufacturer(&manufacturer);
         Ok(Self {
             manufacturer,
@@ -102,7 +104,7 @@ impl CommonModel {
             options,
             version,
             serial_number,
-            modbus_device_address,
+            device_address,
             family,
         })
     }
@@ -112,18 +114,43 @@ impl CommonModel {
 mod tests {
     use super::*;
 
-    fn pad_to(buf: &mut Vec<u16>, target: usize) {
-        while buf.len() < target {
-            buf.push(0);
-        }
+    /// Pack an ASCII string into `len_regs` registers, MSB-first, NUL-padded.
+    fn ascii_to_regs(s: &str, len_regs: usize) -> Vec<u16> {
+        let mut bytes: Vec<u8> = s.bytes().collect();
+        bytes.resize(len_regs * 2, 0);
+        bytes.chunks(2).map(|c| (u16::from(c[0]) << 8) | u16::from(c[1])).collect()
     }
 
-    fn ascii_to_regs(s: &str, register_words: usize) -> Vec<u16> {
-        let mut bytes: Vec<u8> = s.bytes().collect();
-        while bytes.len() < register_words * 2 {
-            bytes.push(0);
-        }
-        bytes.chunks(2).map(|c| (u16::from(c[0]) << 8) | u16::from(c[1])).collect()
+    fn build_common(mfr: &str, model: &str, ver: &str, sn: &str, addr: u16) -> Vec<u16> {
+        let mut regs = Vec::new();
+        regs.extend(ascii_to_regs(mfr, 16));
+        regs.extend(ascii_to_regs(model, 16));
+        regs.extend(ascii_to_regs("", 8)); // options
+        regs.extend(ascii_to_regs(ver, 8));
+        regs.extend(ascii_to_regs(sn, 16));
+        regs.push(addr);
+        regs
+    }
+
+    #[test]
+    fn decode_full_common_block() {
+        let regs = build_common("Fronius", "Symo 8.2-3-M", "3.18.7-1", "12345678", 126);
+        let m = CommonModel::decode(&regs).unwrap();
+        assert_eq!(m.manufacturer, "Fronius");
+        assert_eq!(m.model, "Symo 8.2-3-M");
+        assert_eq!(m.version, "3.18.7-1");
+        assert_eq!(m.serial_number, "12345678");
+        assert_eq!(m.device_address, 126);
+        assert_eq!(m.family, InverterFamily::Fronius);
+    }
+
+    #[test]
+    fn short_payload_is_error() {
+        let regs = [0u16; 10];
+        assert!(matches!(
+            CommonModel::decode(&regs),
+            Err(DecodeError::OutOfBounds { .. })
+        ));
     }
 
     #[test]
@@ -142,31 +169,11 @@ mod tests {
     }
 
     #[test]
-    fn parse_short_buffer_errs() {
-        let regs = vec![0u16; 10];
-        assert!(matches!(
-            CommonModel::parse(&regs),
-            Err(crate::Error::ShortRead { .. })
-        ));
-    }
-
-    #[test]
-    fn parse_full_block_roundtrip() {
-        let mut regs = Vec::new();
-        regs.extend(ascii_to_regs("Fronius", 16));
-        regs.extend(ascii_to_regs("Symo 8.2-3-M", 16));
-        regs.extend(ascii_to_regs("", 8));
-        regs.extend(ascii_to_regs("3.18.7-1", 8));
-        regs.extend(ascii_to_regs("12345678", 16));
-        regs.push(126); // Modbus device address
-        pad_to(&mut regs, CommonModel::MODEL_LENGTH as usize);
-
-        let m = CommonModel::parse(&regs).unwrap();
-        assert_eq!(m.manufacturer, "Fronius");
-        assert_eq!(m.model, "Symo 8.2-3-M");
-        assert_eq!(m.version, "3.18.7-1");
-        assert_eq!(m.serial_number, "12345678");
-        assert_eq!(m.modbus_device_address, 126);
-        assert_eq!(m.family, InverterFamily::Fronius);
+    fn device_address_optional_when_field_absent() {
+        let mut regs = build_common("SMA", "Sunny Boy", "1.0", "SN1", 0);
+        regs.pop(); // drop the device-address word
+        let m = CommonModel::decode(&regs).unwrap();
+        assert_eq!(m.device_address, 0);
+        assert_eq!(m.family, InverterFamily::Sma);
     }
 }

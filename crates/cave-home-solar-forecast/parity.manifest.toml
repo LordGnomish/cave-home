@@ -1,24 +1,190 @@
-# cave-home-solar-forecast — parity manifest scaffold.
+# cave-home-solar-forecast — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-solar-forecast — solar production forecasting via Forecast.Solar + PVGIS public APIs; port method: API client (no upstream port)
+# Phase 1 ships the solar *forecast engine*: a first-principles solar-position
+# model (NOAA / Spencer), a clear-sky irradiance model (extraterrestrial +
+# Kasten-Young air mass + broadband transmittance), the plane-of-array →
+# AC-power conversion for a validated panel array, a daily-energy integral, and
+# the three-band grandma-friendly EN/DE/TR summaries. This is the brain every
+# automation, Portal tile and voice reply consumes once a cloud-cover (or
+# clearness) fraction is supplied. The live weather/forecast feeds
+# (Forecast.Solar / Solcast / Open-Meteo / DWD), horizon/shading profiles, and
+# cave-home-core + cave-home-history integration are network-bound and deferred
+# to Phase 1b — each is enumerated below with a disposition.
+#
+# Port method: the astronomy and irradiance math are implemented from *public-
+# domain standards / textbook formulas* (NOAA Solar Calculator; Spencer 1971;
+# Kasten & Young 1989; Duffie & Beckman plane-of-array geometry), all
+# Apache-2.0-compatible. No GPL/AGPL solar library was read or ported (ADR-002,
+# Charter §9).
 
 [crate]
 name             = "cave-home-solar-forecast"
-upstream_repo    = "Forecast.Solar + PVGIS (public APIs)"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "api-client"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "none (clean-room from public-domain formulas)"
+port_method      = "spec-based (public-domain astronomy + clear-sky model)"
+upstream_license = "public-domain (formulas) / Apache-2.0 (target)"
+spec_sources     = [
+    "NOAA Solar Calculator equations (public-domain solar-position approximations)",
+    "Spencer (1971) Fourier series for solar declination + equation of time (via Iqbal, Introduction to Solar Radiation)",
+    "Spencer (1971) Earth-Sun-distance / orbital-eccentricity correction on the solar constant",
+    "Kasten & Young (1989) relative optical air-mass formula",
+    "WMO/ASTM solar constant ~1361 W/m^2; broadband clear-sky transmittance (Meinel/Laue form)",
+    "Duffie & Beckman, Solar Engineering of Thermal Processes — beam-on-tilted-surface (plane-of-array) angle-of-incidence relation",
+    "Kasten-Czeplak cloud-cover transmission model (diffuse-floor derate)",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (forecast engine + live weather/
+# forecast-feed adapters + horizon/shading + core/history integration). The
+# pure-logic engine is implemented and tested in full; the network-bound feeds,
+# shading profiles and integration glue remain and are all justified Phase 1b /
+# Phase 2 below.
+fill_ratio              = 0.45
+fill_ratio_basis        = "solar-position + clear-sky irradiance + plane-of-array AC power + daily-energy integral + input validation + EN/DE/TR UX, fully implemented & tested (61 unit tests + doctest, asserted against published reference values); live feeds + shading + core/history integration deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries a phase disposition + note
+honest_ratio            = 1.00  # 0.45 / (0.45 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Spencer (1971) solar declination Fourier series d(n)"
+ours = "src/sun_position.rs::declination_deg"
+
+[[mapped]]
+spec = "Spencer (1971) equation of time EoT(n)"
+ours = "src/sun_position.rs::equation_of_time_min"
+
+[[mapped]]
+spec = "Hour angle H = 15deg*(t-12) and UTC+longitude->true-solar-time conversion"
+ours = "src/sun_position.rs::{hour_angle_deg,true_solar_time_h}"
+
+[[mapped]]
+spec = "Solar elevation sin h = sinphi sindelta + cosphi cosdelta cosH and atan2 azimuth (from north)"
+ours = "src/sun_position.rs::position_from_angles"
+
+[[mapped]]
+spec = "Sunrise hour angle cos H0 = -tanphi tandelta (with polar-day/night handling) and daylight length"
+ours = "src/sun_position.rs::{sunrise_hour_angle_deg,daylight_hours}"
+
+[[mapped]]
+spec = "Earth-Sun-distance eccentricity correction on the solar constant (Spencer 1971)"
+ours = "src/irradiance.rs::extraterrestrial_normal_w_m2"
+
+[[mapped]]
+spec = "Kasten & Young (1989) relative optical air mass"
+ours = "src/irradiance.rs::air_mass"
+
+[[mapped]]
+spec = "Clear-sky beam (DNI) and global-horizontal (GHI) irradiance via transmittance^airmass"
+ours = "src/irradiance.rs::{clear_sky_dni_w_m2,clear_sky_ghi_w_m2}"
+
+[[mapped]]
+spec = "Kasten-Czeplak cloud-cover derate with diffuse floor"
+ours = "src/irradiance.rs::cloud_derate"
+
+[[mapped]]
+spec = "Plane-of-array angle-of-incidence cos(theta) on a tilted/oriented panel (Duffie & Beckman)"
+ours = "src/array.rs::{cos_incidence,plane_of_array_w_m2}"
+
+[[mapped]]
+spec = "PV AC power = kWp * (POA/1000 W/m^2 STC) * system derate, with cloud derate"
+ours = "src/array.rs::ac_power_kw"
+
+[[mapped]]
+spec = "Validated panel-array config (peak power >=0, tilt 0..90deg, azimuth 0..360deg, derate 0..1)"
+ours = "src/array.rs::PvArray::new"
+
+[[mapped]]
+spec = "Daily-energy midpoint-integral over solar time with caller-supplied step; peak power/time; daylight length"
+ours = "src/forecast.rs::forecast_day"
+
+[[mapped]]
+spec = "Site/forecast input validation (latitude <=90deg, longitude <=180deg, day-of-year 1..366, cloud 0..1, step >0)"
+ours = "src/forecast.rs::{Site::new,instant_at,forecast_day}"
+
+[[mapped]]
+spec = "Three-band grandma-friendly outlook + EN/DE/TR headlines, peak-time phrase and daily summary (Charter 6.3, ADR-007)"
+ours = "src/label.rs::{SolarOutlook,peak_time_phrase,daily_summary}"
+
+# ---- unmapped (NOT in this crate; phase-disposition) -----------------------
+
+[[unmapped]]
+area     = "Forecast.Solar live forecast API adapter"
+priority = "phase-1b"
+note     = "Solar ADR (ADR-012 Solar Tier-1 surplus logic; cave-home-solar-evcc neighbour): Forecast.Solar returns a day-ahead production curve. Network-bound; it supplies a clearness/cloud-cover fraction into forecast_day and otherwise reuses this engine unchanged."
+
+[[unmapped]]
+area     = "Solcast live forecast API adapter"
+priority = "phase-1b"
+note     = "Solar ADR: Solcast is an account-bound rooftop-PV forecast service. Cloud/account-bound I/O adapter only; maps its irradiance/cloud series onto this engine's inputs."
+
+[[unmapped]]
+area     = "Open-Meteo / DWD weather-feed adapter"
+priority = "phase-1b"
+note     = "Solar ADR: Open-Meteo (and DWD for the German persona-1 home) provide free cloud-cover forecasts. Network-bound; the cloud-cover fraction is exactly the input parameter this engine already takes."
+
+[[unmapped]]
+area     = "Horizon / shading profile model"
+priority = "phase-1b"
+note     = "Solar ADR: terrain/building horizon masks and near-field shading clip the clear-sky beam at low sun. Geometry-only but needs a per-site horizon profile (survey or DEM-derived); layers on top of the existing sun-position output."
+
+[[unmapped]]
+area     = "cave-home-core entity/state + cave-home-history integration"
+priority = "phase-1b"
+note     = "Solar ADR / ADR-023: surfacing forecasts as core State entities, automation triggers (run loads on solar surplus) and persisting actuals to cave-home-history lands once those crates' APIs stabilise. The engine is already core-agnostic and clock-free."
+
+[[unmapped]]
+area     = "Machine-learning production correction from historical actuals"
+priority = "phase-2"
+note     = "Solar ADR / ADR-023: once cave-home-history holds real metered output, a learned correction (per-site bias, soiling, snow, inverter clipping) refines the physical clear-sky estimate. Depends on the history pillar and a meaningful actuals window."
+
+# ---- no-backcompat / always-latest stance ----------------------------------
+
+[[scope_cut]]
+area     = "Pre-computed irradiance lookup tables / frozen ephemeris snapshot"
+priority = "permanent"
+note     = "Charter 7 always-latest + 8 no-backcompat: the engine computes solar position and irradiance from the closed-form formulas at call time; no frozen table or historical-snapshot mode is shipped."
+
+# ---- spec_test (designed from spec / published reference values) -----------
+
+[[spec_test]]
+designed_for = "Solar declination ~0deg at equinox, +/-23.44deg at solstice, |delta|<=obliquity all year (Spencer reference)"
+ours         = "src/sun_position.rs::tests::{declination_is_near_zero_at_equinoxes,declination_peaks_at_solstices,declination_stays_within_obliquity}"
+
+[[spec_test]]
+designed_for = "Noon elevation ~ 90-|lat-delta| at equinox/solstice for known latitudes incl. equator overhead"
+ours         = "src/sun_position.rs::tests::{noon_elevation_equinox_known_latitudes,noon_elevation_solstice_known_latitudes,noon_elevation_matches_geometry_at_equator_equinox}"
+
+[[spec_test]]
+designed_for = "Azimuth due south at solar noon (N hemisphere); east in morning, west in afternoon; elevation~0 at sunrise/sunset; below horizon at night"
+ours         = "src/sun_position.rs::tests::{azimuth_is_due_south_at_solar_noon_northern_hemisphere,sun_rises_in_the_east_sets_in_the_west,elevation_is_near_zero_at_sunrise_and_sunset,sun_is_below_horizon_at_midnight}"
+
+[[spec_test]]
+designed_for = "Equation of time bounded <17 min; daylight longer in summer; polar day/night handled"
+ours         = "src/sun_position.rs::tests::{equation_of_time_is_small_and_bounded,daylight_is_longer_in_summer_than_winter_in_north,polar_day_and_night_are_handled}"
+
+[[spec_test]]
+designed_for = "Air mass =1 at zenith, ~2 at 30deg, grows toward horizon (Kasten-Young reference); irradiance zero at night; realistic clear-sky GHI range"
+ours         = "src/irradiance.rs::tests::{air_mass_is_one_at_zenith,air_mass_grows_toward_horizon,dni_is_zero_at_night,ghi_is_zero_at_night,high_sun_clear_sky_is_in_realistic_range}"
+
+[[spec_test]]
+designed_for = "Extraterrestrial irradiance tracks Earth-Sun distance (+/-3.4% perihelion/aphelion); cloud derate clear->overcast diffuse floor"
+ours         = "src/irradiance.rs::tests::{extraterrestrial_tracks_earth_sun_distance,cloud_derate_clear_sky_is_unchanged,cloud_derate_overcast_leaves_diffuse_floor}"
+
+[[spec_test]]
+designed_for = "PV power scales with kWp + system derate + cloud cover; south beats north; power zero at night; peak <= rated"
+ours         = "src/array.rs::tests::{power_scales_linearly_with_peak_power,power_scales_with_system_derate,cloud_cover_reduces_power,south_panel_beats_north_panel_in_north,power_is_zero_at_night,power_never_exceeds_peak_in_normal_conditions}"
+
+[[spec_test]]
+designed_for = "Array + forecast input validation (peak/tilt/azimuth/derate; latitude/longitude/day/cloud/step bounds)"
+ours         = "src/array.rs::tests + src/forecast.rs::tests::{rejects_impossible_latitude,rejects_impossible_longitude,rejects_bad_day_of_year,rejects_bad_cloud_cover,rejects_bad_step}"
+
+[[spec_test]]
+designed_for = "Daily energy plausible kWh range, summer>winter, clear>cloudy, scales with array size, step-convergent, peak around noon"
+ours         = "src/forecast.rs::tests::{daily_energy_is_in_plausible_kwh_range,summer_day_produces_more_than_winter_day,clear_day_produces_more_than_cloudy_day,energy_scales_with_array_size,finer_step_converges,peak_power_occurs_around_solar_noon}"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter 6.3); EN/DE/TR coverage"
+ours         = "src/label.rs::tests::{ui_strings_carry_no_implementation_jargon,all_outlooks_have_three_language_headlines,daily_summary_is_friendly_and_localized}"

@@ -1,25 +1,178 @@
-# cave-home-solar-hoymiles — parity manifest scaffold.
+# cave-home-solar-hoymiles — clean-room reimplementation manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-solar-hoymiles — Hoymiles microinverter support (HM/HMS/HMT series); upstream refs: lumapu/ahoy (AhoyDTU) + tbnobody/OpenDTU GPL-3.0, port method: clean-room (Hoymiles protocol spec + AhoyDTU public API docs; source not read)
+# Per ADR-002 + Charter §6.1: the Hoymiles microinverter references upstream
+# (lumapu/ahoy "AhoyDTU" and tbnobody/OpenDTU) are GPL-3.0, so this crate is
+# implemented strictly from the PUBLIC description of the Hoymiles NRF24 / CMT
+# radio protocol (inverter addressing, command opcodes, numbered-fragment
+# reassembly, the CRC-8 + CRC-16/Modbus checksums) and the public field layout
+# of the real-time data record. The upstream source has NOT been read.
+#
+# Honest scoping: the full Hoymiles pillar is the *decode brain* (implemented &
+# tested here) PLUS the hardware radio driver (NRF24L01 / CMT2300A over SPI),
+# the DTU poll loop, the power-limit transmit path, and the cave-home-core /
+# cave-home-history glue. Everything radio/SPI/hardware-bound is deferred to
+# Phase 1b (ROADMAP M5 Solar Tier 2) and enumerated in [[unmapped]] below.
 
 [crate]
 name             = "cave-home-solar-hoymiles"
 upstream_repo    = "lumapu/ahoy (AhoyDTU) + tbnobody/OpenDTU (reference only, GPL-3.0)"
+upstream_license = "GPL-3.0-only"
 port_method      = "clean-room"
 spec_sources     = [
-    "Hoymiles HM/HMS/HMT wire protocol (reverse-engineered, publicly documented) + AhoyDTU public API documentation",
+    "Hoymiles HM/HMS/HMT NRF24L01 / CMT2300A radio framing — public reverse-engineered protocol description (inverter-serial addressing, command opcodes, numbered multi-fragment responses)",
+    "Hoymiles real-time data record field layout — public field-layout documentation (big-endian u16 registers, per-field fixed-point divisors)",
+    "CRC-8/NRSC-5 parameters (poly 0x31, init 0xFF, no reflection) — public CRC parameter catalogue",
+    "CRC-16/Modbus parameters (poly 0x8005 reflected, init 0xFFFF) — public CRC parameter catalogue",
+    "Hoymiles HM-300/350/400/600/700/800/1200/1500 public product datasheets — panel (DC channel) counts per family",
+    "AhoyDTU public API documentation (endpoint/field semantics only — README + JSON shape, NOT source)",
 ]
-ported_at        = "2026-05-25"
+# Clean-room declaration (Charter §6.1, mirrors cave-home-zigbee):
+# implemented from the public protocol description; upstream source not read.
+clean_room_note  = "Implemented from public Hoymiles protocol description + public CRC/datasheet docs; GPL upstream source (AhoyDTU / OpenDTU) was NOT read or ported."
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (decode brain + radio SPI driver +
+# DTU poll loop + power-limit TX + core/history integration). The decode brain
+# — CRC-8/CRC-16, frame/address model, fragment reassembly, real-time decode
+# with fixed-point scaling, family channel counts, and the grandma-friendly
+# EN/DE/TR status — is implemented and tested in full. The hardware/radio
+# halves are all ADR-justified Phase 1b deferrals.
+fill_ratio              = 0.30
+fill_ratio_basis        = "CRC-8 + CRC-16/Modbus + frame/serial-address model + numbered-fragment reassembly + real-time fixed-point decode + family model + EN/DE/TR status, fully implemented & tested; radio SPI driver + DTU loop + TX + core glue deferred"
+test_port_ratio         = 0.0   # clean-room: tests designed from the protocol description, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries a phase disposition + note
+honest_ratio            = 1.00  # 0.30 / (0.30 + (1-0.30)*(1-1.00)) = 1.00
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- spec_section (clean-room reimpl present in this crate) -----------------
 
+[[spec_section]]
+spec = "Hoymiles radio CRC-8 (CRC-8/NRSC-5: poly 0x31, init 0xFF) over each fragment"
+ours = "src/crc.rs::crc8"
+
+[[spec_section]]
+spec = "Hoymiles assembled-payload CRC-16/Modbus (poly 0x8005 reflected, init 0xFFFF)"
+ours = "src/crc.rs::crc16_modbus"
+
+[[spec_section]]
+spec = "Inverter serial number + last-four-bytes radio address derivation"
+ours = "src/frame.rs::InverterSerial"
+
+[[spec_section]]
+spec = "Request command opcodes (real-time-data / device-info / alarm-data)"
+ours = "src/frame.rs::Command"
+
+[[spec_section]]
+spec = "Numbered multi-fragment response reassembly (in-order / out-of-order / missing-fragment detection)"
+ours = "src/reassembly.rs::Reassembler"
+
+[[spec_section]]
+spec = "Per-fragment CRC-8 validation on receive"
+ours = "src/reassembly.rs::Fragment::checksum_ok"
+
+[[spec_section]]
+spec = "Real-time data record decode — per-DC-channel PV V/I/P + grid V/Hz, AC power, today/total yield (Wh), temperature, with documented fixed-point divisors"
+ours = "src/telemetry.rs::decode"
+
+[[spec_section]]
+spec = "Assembled-payload CRC-16/Modbus verification + truncation rejection"
+ours = "src/telemetry.rs::decode"
+
+[[spec_section]]
+spec = "Inverter family model — HM one/two/four-panel channel counts"
+ours = "src/family.rs::Family"
+
+[[spec_section]]
+spec = "Operating/alarm-state model mapped to grandma-friendly status (Charter §6.3, ADR-007)"
+ours = "src/label.rs::SolarStatus"
+
+[[spec_section]]
+spec = "Localised EN/DE/TR status name + advice + one-line headline"
+ours = "src/label.rs::headline"
+
+# ---- unmapped (NOT in this crate; ADR-002 / ROADMAP M5 disposition) ---------
+
+[[unmapped]]
+area     = "NRF24L01 radio driver (SPI)"
+priority = "phase-1b"
+note     = "ROADMAP M5: the NRF24L01+ SPI driver (channel hopping, pipe addressing, ACK handling) is hardware-bound. The decode brain in this crate consumes already-received fragments, so the driver is pure I/O on top. Clean-room: built from the NRF24L01+ datasheet, not from AhoyDTU."
+
+[[unmapped]]
+area     = "CMT2300A radio driver (SPI) for HMS/HMT inverters"
+priority = "phase-1b"
+note     = "ROADMAP M5: the CMT2300A is the sub-GHz radio on newer Hoymiles units; same fragment/decode model, different SPI front-end. Hardware-bound; clean-room from the CMT2300A datasheet."
+
+[[unmapped]]
+area     = "DTU poll loop (request scheduling + response timeout/retry)"
+priority = "phase-1b"
+note     = "ROADMAP M5: the loop that periodically issues RealTimeData requests, drives the Reassembler, and retries on missing fragments. Async/timer-bound; sits directly on top of frame.rs + reassembly.rs."
+
+[[unmapped]]
+area     = "Power-limit command transmission (active-power throttle)"
+priority = "phase-1b"
+note     = "ROADMAP M5: encoding + transmitting the set-power-limit command is a write path requiring the live radio; the opcode/frame model here is read-focused for Phase 1. Clean-room from the public command description."
+
+[[unmapped]]
+area     = "Device-info + alarm-data payload decoders"
+priority = "phase-1b"
+note     = "ROADMAP M5: the Command opcodes are modelled, but only the real-time-data record is decoded in Phase 1 (the headline household value). Device-info (firmware/hw ids) and the full alarm-log decode are Phase 1b — same fragment/CRC plumbing, additional record layouts."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration"
+priority = "phase-1b"
+note     = "ROADMAP M5: surfacing telemetry as core State entities + automation triggers lands once cave-home-core's entity API stabilises. The decode brain is already core-agnostic (no cave-home-* dependency)."
+
+[[unmapped]]
+area     = "cave-home-history time-series persistence of yield/power"
+priority = "phase-1b"
+note     = "ADR-023: today/total yield and power belong in the history database for charts. Persistence is a downstream consumer of Telemetry; no new decode logic."
+
+[[unmapped]]
+area     = "Pre-Hoymiles-3.0 / non-HM legacy inverter framing"
+priority = "permanent"
+note     = "Charter §8 no-backcompat + §7 always-latest: cave-home targets current HM/HMS/HMT framing only; no historical-protocol compatibility mode."
+
+[[unmapped]]
+area     = "32-bit ARM / pre-Linux 7.1 kernels"
+priority = "permanent"
+note     = "Charter §6.2 / ADR-003 — Linux 7.1+ only."
+
+[[unmapped]]
+area     = "AhoyDTU / OpenDTU GPL source reuse"
+priority = "permanent"
+note     = "Charter §6.1 / ADR-002: the upstream is GPL-3.0 and may not be read or ported. This crate is clean-room from the public protocol description only — this gap is intentional and permanent."
+
+# ---- spec_test (clean-room: tests designed from the protocol description) ----
+
+[[spec_test]]
+designed_for = "CRC-8/NRSC-5 + CRC-16/Modbus published check vectors (123456789)"
+ours         = "src/crc.rs::tests"
+
+[[spec_test]]
+designed_for = "Inverter serial parse + last-four-bytes radio address + opcode round-trip"
+ours         = "src/frame.rs::tests"
+
+[[spec_test]]
+designed_for = "Fragment reassembly — in-order, out-of-order, missing, corrupt-CRC, duplicate, retransmit"
+ours         = "src/reassembly.rs::tests"
+
+[[spec_test]]
+designed_for = "Real-time decode field values + fixed-point scaling + efficiency + per-family channel counts"
+ours         = "src/telemetry.rs::tests"
+
+[[spec_test]]
+designed_for = "Truncated-payload + bad-CRC-16 rejection (never panics)"
+ours         = "src/telemetry.rs::tests::{rejects_truncated_payload,rejects_bad_checksum}"
+
+[[spec_test]]
+designed_for = "Family channel counts + rated-watt inference + unknown-rating rejection"
+ours         = "src/family.rs::tests"
+
+[[spec_test]]
+designed_for = "Alarm/operating-state mapping to grandma-friendly status + shaded-panel detection"
+ours         = "src/label.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

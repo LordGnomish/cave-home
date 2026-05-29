@@ -6,29 +6,11 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-solar-evcc — EVCC port: surplus management + EV charge + heat-pump load shifting; upstream: evcc-io/evcc Apache-2.0, port method: line-by-line"
+description = "cave-home-solar-evcc — solar-surplus EV charge-control decision engine (evcc-class semantics, first-party spec-based); port method: spec-based"
 
 [package.metadata.cave-home]
-upstream    = "evcc-io/evcc"
-port-method = "line-by-line"
-
-[package.metadata.upstream]
-repo    = "evcc-io/evcc"
-release = "0.306.3"
-sha     = "7303a5b476be7fa3da35807df899651f47b3d2f0"
-subpath = "core"
-
-[dependencies]
-thiserror   = "2"
-serde       = { version = "1", features = ["derive"] }
-serde_json  = "1"
-parking_lot = "0.12"
-async-trait = "0.1"
-tokio       = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros", "time"] }
-tracing     = "0.1"
-
-[dev-dependencies]
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros", "time", "test-util"] }
+upstream    = "evcc-io/evcc (semantics only — first-party clean-room implementation)"
+port-method = "spec-based"
 
 [lints]
 workspace = true

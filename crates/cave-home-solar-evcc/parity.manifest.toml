@@ -1,24 +1,170 @@
-# cave-home-solar-evcc — parity manifest scaffold.
+# cave-home-solar-evcc — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-solar-evcc — EVCC port: surplus management + EV charge + heat-pump load shifting; upstream: evcc-io/evcc Apache-2.0, port method: line-by-line
+# Phase 1 ships the solar-surplus EV *charge-control decision engine*: the four
+# charge modes, the power-balance / spare-sunshine computation (with a
+# home-battery policy), the surplus→current sizing with min/max clamp and the
+# PvOnly-pause / MinPlusPv-grid-floor rules, one-phase↔three-phase switching
+# with a hysteresis margin, the anti-flap dwell timer, the deadline charge
+# planner, and the EN/DE/TR grandma-friendly status surface. This is the brain
+# every charger adapter, Portal tile and voice reply consumes. The charger /
+# vehicle / meter I/O adapters and the core/history/tariff glue are
+# network/hardware/clock-bound and deferred to Phase 1b — each is enumerated
+# below with an ADR-001 disposition.
+#
+# Port method: the charging semantics (modes, PV-surplus tracking, phase
+# switching, anti-flap dwell, deadline planning) mirror the *documented*
+# evcc-class behaviour, but the logic is a first-party clean-room implementation
+# from those public semantics plus first-principles power electronics
+# (P = I·V·phases). No upstream (MIT) source was copied; cave-home ships
+# Apache-2.0 only (Charter §6.1, ADR-002).
 
 [crate]
 name             = "cave-home-solar-evcc"
-upstream_repo    = "evcc-io/evcc"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "evcc-io/evcc (semantics only — first-party clean-room implementation)"
+port_method      = "spec-based"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "evcc public documentation — charge modes (off / now / minpv / pv) and PV-surplus tracking semantics (behaviour reference only, no code)",
+    "evcc public documentation — automatic 1↔3 phase switching with a configurable surplus threshold and dwell to avoid flapping",
+    "IEC 61851 / common EVSE practice — 6 A minimum charge current; 16 A and 32 A common AC maxima",
+    "First-principles AC power: P = I · V · phase_count (single-phase ≈ 230 V; three-phase line-to-neutral)",
+    "Energy arithmetic for deadline planning: needed_kWh = (target − current)/100 · capacity; deliverable_kWh = power_kW · hours",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (decision engine + charger/vehicle/
+# meter I/O adapters + core/history integration + tariff charging). The engine
+# is implemented and tested in full; the I/O adapters + glue remain and are all
+# ADR-justified Phase 1b / Phase 2.
+fill_ratio              = 0.30
+fill_ratio_basis        = "charge modes + power-balance/surplus + current sizing & clamp + phase switching w/ hysteresis + anti-flap dwell + deadline planner + EN/DE/TR UX, fully implemented & tested; charger/vehicle/meter I/O + core/tariff glue deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries a phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# no-backcompat: Charter §8. cave-home ships the current charging model only; no
+# legacy evcc-config-compat or historical-snapshot mode (see [[unmapped]]
+# "pre-existing evcc YAML config compatibility", priority = "permanent").
 
+# ---- mapped (real implementation present in this crate) --------------------
+
+[[mapped]]
+spec = "Charge modes off / now / minpv (MinPlusPv) / pv (PvOnly)"
+ours = "src/mode.rs::ChargeMode"
+
+[[mapped]]
+spec = "Power balance: surplus = PV − house consumption (+ battery policy), car draw added back"
+ours = "src/balance.rs::PowerSnapshot::surplus_watts"
+
+[[mapped]]
+spec = "Home-battery discharge policy (hold for house vs assist car)"
+ours = "src/balance.rs::BatteryPolicy"
+
+[[mapped]]
+spec = "Surplus→current sizing I = surplus/(V·phases), clamped to charger min/max"
+ours = "src/current.rs::decide_current"
+
+[[mapped]]
+spec = "PvOnly pauses below single-phase 6 A minimum; MinPlusPv draws minimum from grid"
+ours = "src/current.rs::decide_current"
+
+[[mapped]]
+spec = "Charger current window (6..16 A, 6..32 A) with validation"
+ours = "src/current.rs::CurrentLimits"
+
+[[mapped]]
+spec = "Automatic 1↔3 phase switching with hysteresis margin to avoid flapping"
+ours = "src/phase.rs::decide_phases"
+
+[[mapped]]
+spec = "Anti-flap dwell timer (condition must hold N caller-supplied seconds)"
+ours = "src/antiflap.rs::AntiFlapTimer"
+
+[[mapped]]
+spec = "Deadline charge plan: sun-makes-it / needs-grid-topup / unreachable from target SoC, capacity, hours"
+ours = "src/plan.rs::plan"
+
+[[mapped]]
+spec = "Input validation (negative power/current, SoC>100, phases∉{1,3}, voltage≤0, capacity≤0)"
+ours = "src/error.rs::EvccError"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR charge status (Charter §6.3, ADR-007)"
+ours = "src/label.rs::ChargeStatus"
+
+[[mapped]]
+spec = "End-to-end decision (surplus → setpoint → friendly status)"
+ours = "src/lib.rs::decide"
+
+# ---- unmapped (NOT in this crate; Phase 1b/2 disposition) ------------------
+
+[[unmapped]]
+area     = "Charger / wallbox adapters (OCPP, go-eCharger, Wallbe, Easee, Tesla, KEBA, Modbus EVSE)"
+priority = "phase-1b"
+note     = "ADR-001: every wallbox speaks a different network/Modbus protocol. Network/hardware-bound; each adapter pushes the engine's chosen current/phase setpoint to the box and reads back actual charge power. No new decision logic."
+
+[[unmapped]]
+area     = "Vehicle state-of-charge adapters (manufacturer APIs / OBD)"
+priority = "phase-1b"
+note     = "ADR-001: vehicle SoC comes from cloud APIs or OBD dongles, account/network-bound. They feed current_soc into plan::PlanInputs; the planner is already SoC-source-agnostic."
+
+[[unmapped]]
+area     = "Meter / inverter adapters (grid / PV / home-battery power)"
+priority = "phase-1b"
+note     = "ADR-001: real PV/grid/battery watts come from SunSpec/Modbus/REST meters. Network/hardware-bound; they populate balance::PowerSnapshot. The engine takes watts as input by design."
+
+[[unmapped]]
+area     = "cave-home-core entity/state + cave-home-history integration"
+priority = "phase-1b"
+note     = "ADR-001: surfacing the charge decision as core State entities, automation triggers and a logged history lands once those crate APIs stabilise. The engine is already core-agnostic and does no I/O."
+
+[[unmapped]]
+area     = "Tariff / price- and CO₂-based charging (cheap-window scheduling)"
+priority = "phase-2"
+note     = "ADR-001: charging in the cheapest / greenest grid window is a refinement layered over the same surplus engine; it needs a price/CO₂ feed (network-bound) and a clock. Phase-1 charges from sun + deadline only."
+
+[[unmapped]]
+area     = "Heat-pump / generic SG-Ready surplus load shifting"
+priority = "phase-2"
+note     = "ADR-001: the same surplus signal can steer non-EV loads (heat-pump, water heater) via SG-Ready relays. A second consumer of balance::surplus_watts; out of scope for the Phase-1 EV MVP."
+
+[[unmapped]]
+area     = "Pre-existing evcc YAML config compatibility / import"
+priority = "permanent"
+note     = "Charter §8 no-backcompat + §7 always-latest: cave-home ships its own current charge model and config; it will not import or emulate upstream evcc's historical YAML schema."
+
+# ---- spec_test (designed from spec / first principles) ---------------------
+
+[[spec_test]]
+designed_for = "Surplus = PV − house (+ battery policy), car-draw added back, deficit clamps to 0"
+ours         = "src/balance.rs::tests"
+
+[[spec_test]]
+designed_for = "Current sizing P=I·V·phases + clamp at min/max; single/three-phase endpoints"
+ours         = "src/current.rs::tests"
+
+[[spec_test]]
+designed_for = "PvOnly pause below 6 A minimum; MinPlusPv grid-floor at 6 A"
+ours         = "src/current.rs::tests::{pv_only_pauses_below_single_phase_minimum,min_plus_pv_draws_minimum_from_grid_when_sun_is_short}"
+
+[[spec_test]]
+designed_for = "1↔3 phase boundary + hysteresis band holds current phase (no flapping)"
+ours         = "src/phase.rs::tests"
+
+[[spec_test]]
+designed_for = "Anti-flap dwell boundary + flip-resets-dwell"
+ours         = "src/antiflap.rs::tests"
+
+[[spec_test]]
+designed_for = "Deadline plan: already-met / sun-makes-it / needs-grid-topup / unreachable boundaries"
+ours         = "src/plan.rs::tests"
+
+[[spec_test]]
+designed_for = "Input validation rejects impossible numbers"
+ours         = "src/error.rs::tests + per-module rejects_* tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"
