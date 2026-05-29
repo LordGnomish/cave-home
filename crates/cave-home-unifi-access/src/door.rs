@@ -1,18 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //
-// Source: home-assistant/core@456202325ac48549bd3c895dc3e69ecd3e2ba6a4
-//         (tag 2026.5.2) :: homeassistant/components/unifi_access/coordinator.py
-//                            + unifi_access_api.{Door, DoorLockRule, DoorLockRuleStatus, ...}
+//! Door + hub domain model (ADR-009).
+//!
+//! A port of the `UniFi` Access door shape (HA `unifi_access` + the public Access
+//! API): a [`AccessDoor`] carries a lock state, a door-position sensor reading,
+//! a tamper flag and a relay state; an [`AccessHub`] groups the doors a single
+//! reader/controller serves. All of it is pure data — no wire, no hardware.
 
-use serde::{Deserialize, Serialize};
-
-use crate::const_table::{
-    DEFAULT_LOCK_RULE_INTERVAL, MAX_LOCK_RULE_INTERVAL, MIN_LOCK_RULE_INTERVAL,
-};
-
-/// Stable door identifier (HA: `door.id`).
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Stable door identifier. Opaque string the controller assigns; the household
+/// never sees it (they see [`AccessDoor::name`]).
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct DoorId(String);
 
 impl DoorId {
@@ -21,7 +19,8 @@ impl DoorId {
     pub fn new<S: Into<String>>(raw: S) -> Self {
         Self(raw.into())
     }
-    /// Borrow the underlying string.
+
+    /// Borrow the underlying identifier.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
@@ -34,222 +33,189 @@ impl std::fmt::Display for DoorId {
     }
 }
 
-/// Door-relay state (HA: `unifi_access_api.DoorLockRelayStatus`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum LockRelayStatus {
-    /// Relay closed; door is mechanically locked.
-    Lock,
-    /// Relay open; door is unlocked / can be opened.
-    Unlock,
-}
-
-impl LockRelayStatus {
-    /// Wire-form string.
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Lock => "locked",
-            Self::Unlock => "unlocked",
-        }
-    }
-
-    /// Parse the wire form.
-    #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "locked" => Some(Self::Lock),
-            "unlocked" => Some(Self::Unlock),
-            _ => None,
-        }
-    }
-}
-
-/// Door-position state (HA: `LocationUpdateState.dps`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum DoorPositionStatus {
-    /// Door is physically open.
-    Open,
-    /// Door is physically closed.
-    Close,
-    /// Position sensor unknown / unsupported.
+/// The lock state of a door's bolt/strike.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LockState {
+    /// The door is mechanically locked.
+    Locked,
+    /// The door is unlocked and may be opened.
+    Unlocked,
+    /// The controller has not yet reported a definite state.
     Unknown,
 }
 
-impl DoorPositionStatus {
-    /// Wire-form string.
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Open => "open",
-            Self::Close => "close",
-            Self::Unknown => "unknown",
-        }
-    }
-
-    /// Parse the wire form.
-    #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "open" => Some(Self::Open),
-            "close" => Some(Self::Close),
-            "unknown" => Some(Self::Unknown),
-            _ => None,
-        }
-    }
+/// The door-position sensor (DPS) reading: is the leaf physically open?
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DoorPosition {
+    /// The door leaf is physically open.
+    Open,
+    /// The door leaf is physically closed.
+    Closed,
+    /// No position sensor, or it has not reported.
+    Unknown,
 }
 
-/// Lock-rule type (HA: `unifi_access_api.DoorLockRuleType`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum DoorLockRuleType {
-    /// Temporarily keep the door locked for `interval` minutes.
-    Lock,
-    /// Temporarily keep the door unlocked for `interval` minutes.
-    Unlock,
-    /// Cancel any active temporary rule.
-    Reset,
-    /// No active rule (resting state).
-    None,
+/// The electrical relay that drives the strike. Modelled so a door whose relay
+/// is energised but whose bolt is reported locked can be reconciled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RelayState {
+    /// Relay is holding the strike engaged (door secured).
+    Engaged,
+    /// Relay is released (door can open).
+    Released,
 }
 
-impl DoorLockRuleType {
-    /// Wire-form string.
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Lock => "lock",
-            Self::Unlock => "unlock",
-            Self::Reset => "reset",
-            Self::None => "none",
-        }
-    }
-
-    /// Parse the wire form.
-    #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "lock" => Some(Self::Lock),
-            "unlock" => Some(Self::Unlock),
-            "reset" => Some(Self::Reset),
-            "none" => Some(Self::None),
-            _ => None,
-        }
-    }
-
-    /// Iterate every variant.
-    #[must_use]
-    pub fn all() -> [Self; 4] {
-        [Self::Lock, Self::Unlock, Self::Reset, Self::None]
-    }
+/// A single controllable door.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AccessDoor {
+    id: DoorId,
+    name: String,
+    lock: LockState,
+    position: DoorPosition,
+    relay: RelayState,
+    /// True if the position sensor reports it has been physically interfered
+    /// with (forced / removed cover).
+    tamper: bool,
+    /// Whether this door's controller can perform a temporary timed unlock.
+    supports_temp_unlock: bool,
 }
 
-/// Door lock-rule (HA: `unifi_access_api.DoorLockRule`).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DoorLockRule {
-    /// Rule kind.
-    pub kind: DoorLockRuleType,
-    /// Duration in minutes (1..=480).
-    pub interval: u32,
-}
-
-impl DoorLockRule {
-    /// Construct from raw values; clamps interval to bounds.
+impl AccessDoor {
+    /// Create a door in the safe default: locked, position unknown, relay
+    /// engaged, no tamper, temp-unlock supported.
     #[must_use]
-    pub fn new(kind: DoorLockRuleType, interval: u32) -> Self {
-        Self {
-            kind,
-            interval: Self::clamp_interval(interval),
-        }
-    }
-
-    /// Clamp interval to [`MIN_LOCK_RULE_INTERVAL`,
-    /// `MAX_LOCK_RULE_INTERVAL`].
-    #[must_use]
-    pub fn clamp_interval(v: u32) -> u32 {
-        v.clamp(MIN_LOCK_RULE_INTERVAL, MAX_LOCK_RULE_INTERVAL)
-    }
-
-    /// Mirror HA `UnifiAccessCoordinator._normalize_interval` —
-    /// `None` -> default; otherwise clamp + bankers'-rounded floor + 0.5.
-    #[must_use]
-    pub fn normalise_interval(v: Option<f64>) -> u32 {
-        let raw = v.unwrap_or(DEFAULT_LOCK_RULE_INTERVAL as f64);
-        let clamped = raw
-            .max(MIN_LOCK_RULE_INTERVAL as f64)
-            .min(MAX_LOCK_RULE_INTERVAL as f64);
-        let rounded = (clamped + 0.5).floor() as i64;
-        let rounded_u = rounded.max(MIN_LOCK_RULE_INTERVAL as i64) as u32;
-        rounded_u.min(MAX_LOCK_RULE_INTERVAL)
-    }
-}
-
-/// A UniFi Access door.
-///
-/// Source: HA `unifi_access_api.Door` model.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Door {
-    /// Stable door identifier.
-    pub id: DoorId,
-    /// User-set door name.
-    pub label: String,
-    /// Live lock-relay status.
-    pub lock_relay: LockRelayStatus,
-    /// Live door-position status (open / close / unknown).
-    pub position: DoorPositionStatus,
-}
-
-impl Door {
-    /// Construct a door in the default "locked, position unknown"
-    /// state.
-    #[must_use]
-    pub fn new(id: DoorId, label: impl Into<String>) -> Self {
+    pub fn new<S: Into<String>>(id: DoorId, name: S) -> Self {
         Self {
             id,
-            label: label.into(),
-            lock_relay: LockRelayStatus::Lock,
-            position: DoorPositionStatus::Unknown,
+            name: name.into(),
+            lock: LockState::Locked,
+            position: DoorPosition::Unknown,
+            relay: RelayState::Engaged,
+            tamper: false,
+            supports_temp_unlock: true,
         }
     }
-}
 
-/// Emergency hub state (HA: `unifi_access_api.EmergencyStatus`).
-#[derive(Default, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EmergencyStatus {
-    /// `evacuation` global rule active (HA settings.update message).
-    pub evacuation: bool,
-    /// `lockdown` global rule active.
-    pub lockdown: bool,
-}
-
-impl EmergencyStatus {
-    /// True if no emergency rule is active.
+    /// Builder: declare whether this door supports timed temporary unlock.
     #[must_use]
-    pub fn is_clear(&self) -> bool {
-        !self.evacuation && !self.lockdown
+    pub fn with_temp_unlock(mut self, supported: bool) -> Self {
+        self.supports_temp_unlock = supported;
+        self
     }
 
-    /// True if lockdown is on.
+    /// The door's stable identifier.
     #[must_use]
-    pub fn is_lockdown(&self) -> bool {
-        self.lockdown
+    pub fn id(&self) -> &DoorId {
+        &self.id
     }
 
-    /// True if evacuation is on.
+    /// The door's household-friendly name, e.g. "Front door".
     #[must_use]
-    pub fn is_evacuation(&self) -> bool {
-        self.evacuation
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Current lock state.
+    #[must_use]
+    pub fn lock_state(&self) -> LockState {
+        self.lock
+    }
+
+    /// Current door-position-sensor reading.
+    #[must_use]
+    pub fn position(&self) -> DoorPosition {
+        self.position
+    }
+
+    /// Current relay state.
+    #[must_use]
+    pub fn relay(&self) -> RelayState {
+        self.relay
+    }
+
+    /// Whether the door is reporting tamper.
+    #[must_use]
+    pub fn is_tampered(&self) -> bool {
+        self.tamper
+    }
+
+    /// Whether the controller can perform a timed temporary unlock.
+    #[must_use]
+    pub fn supports_temp_unlock(&self) -> bool {
+        self.supports_temp_unlock
+    }
+
+    /// True if the door is physically open right now (DPS reports Open).
+    #[must_use]
+    pub fn is_physically_open(&self) -> bool {
+        matches!(self.position, DoorPosition::Open)
+    }
+
+    /// Set the lock state and reconcile the relay (a control-layer helper).
+    pub(crate) fn set_lock(&mut self, lock: LockState) {
+        self.lock = lock;
+        self.relay = match lock {
+            LockState::Unlocked => RelayState::Released,
+            LockState::Locked | LockState::Unknown => RelayState::Engaged,
+        };
+    }
+
+    /// Update the door-position-sensor reading (from the controller).
+    pub fn set_position(&mut self, position: DoorPosition) {
+        self.position = position;
+    }
+
+    /// Update the tamper flag (from the controller).
+    pub fn set_tamper(&mut self, tampered: bool) {
+        self.tamper = tampered;
     }
 }
 
-/// ADR-007 home-world door label. The controller hands us GUIDs +
-/// arbitrary user names; the portal renders "Salon kapı", never the
-/// GUID.
-#[must_use]
-pub fn friendly_door_label(user_name: &str) -> String {
-    let trimmed = user_name.trim();
-    if trimmed.is_empty() {
-        "Adsız kapı".to_string()
-    } else {
-        format!("{trimmed} kapı")
+/// A hub / reader that fronts one or more doors.
+///
+/// The household sees a hub as a place ("Front entrance reader"); cave-home uses
+/// it to group the doors a single controller serves so an evacuation/lockdown
+/// can sweep all of them at once.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AccessHub {
+    id: String,
+    name: String,
+    door_ids: Vec<DoorId>,
+}
+
+impl AccessHub {
+    /// Create a hub with a name and the doors it serves.
+    #[must_use]
+    pub fn new<S: Into<String>>(id: S, name: S, door_ids: Vec<DoorId>) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            door_ids,
+        }
+    }
+
+    /// The hub's identifier.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// The hub's household-friendly name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The doors this hub serves.
+    #[must_use]
+    pub fn door_ids(&self) -> &[DoorId] {
+        &self.door_ids
+    }
+
+    /// Whether this hub serves the given door.
+    #[must_use]
+    pub fn serves(&self, id: &DoorId) -> bool {
+        self.door_ids.iter().any(|d| d == id)
     }
 }
 
@@ -258,34 +224,62 @@ mod tests {
     use super::*;
 
     #[test]
-    fn clamp_interval_high() {
-        assert_eq!(DoorLockRule::clamp_interval(999), MAX_LOCK_RULE_INTERVAL);
+    fn new_door_defaults_to_secure() {
+        let d = AccessDoor::new(DoorId::new("d1"), "Front door");
+        assert_eq!(d.lock_state(), LockState::Locked);
+        assert_eq!(d.position(), DoorPosition::Unknown);
+        assert_eq!(d.relay(), RelayState::Engaged);
+        assert!(!d.is_tampered());
+        assert!(d.supports_temp_unlock());
+        assert_eq!(d.name(), "Front door");
+        assert_eq!(d.id().as_str(), "d1");
     }
 
     #[test]
-    fn clamp_interval_low() {
-        assert_eq!(DoorLockRule::clamp_interval(0), MIN_LOCK_RULE_INTERVAL);
+    fn set_lock_reconciles_relay() {
+        let mut d = AccessDoor::new(DoorId::new("d1"), "Front door");
+        d.set_lock(LockState::Unlocked);
+        assert_eq!(d.relay(), RelayState::Released);
+        d.set_lock(LockState::Locked);
+        assert_eq!(d.relay(), RelayState::Engaged);
+        d.set_lock(LockState::Unknown);
+        assert_eq!(d.relay(), RelayState::Engaged, "unknown defaults to secure");
     }
 
     #[test]
-    fn normalise_none_yields_default() {
-        assert_eq!(DoorLockRule::normalise_interval(None), DEFAULT_LOCK_RULE_INTERVAL);
+    fn position_open_detection() {
+        let mut d = AccessDoor::new(DoorId::new("d1"), "Front door");
+        assert!(!d.is_physically_open());
+        d.set_position(DoorPosition::Open);
+        assert!(d.is_physically_open());
+        d.set_position(DoorPosition::Closed);
+        assert!(!d.is_physically_open());
     }
 
     #[test]
-    fn normalise_rounds_half_up() {
-        assert_eq!(DoorLockRule::normalise_interval(Some(10.5)), 11);
-        assert_eq!(DoorLockRule::normalise_interval(Some(10.4)), 10);
+    fn tamper_flag_toggles() {
+        let mut d = AccessDoor::new(DoorId::new("d1"), "Front door");
+        d.set_tamper(true);
+        assert!(d.is_tampered());
     }
 
     #[test]
-    fn emergency_default_clear() {
-        assert!(EmergencyStatus::default().is_clear());
+    fn temp_unlock_capability_is_declarable() {
+        let d = AccessDoor::new(DoorId::new("g"), "Garage door").with_temp_unlock(false);
+        assert!(!d.supports_temp_unlock());
     }
 
     #[test]
-    fn friendly_label() {
-        assert_eq!(friendly_door_label("Garaj"), "Garaj kapı");
-        assert_eq!(friendly_door_label(""), "Adsız kapı");
+    fn hub_serves_only_its_doors() {
+        let hub = AccessHub::new(
+            "h1",
+            "Front entrance",
+            vec![DoorId::new("d1"), DoorId::new("d2")],
+        );
+        assert!(hub.serves(&DoorId::new("d1")));
+        assert!(hub.serves(&DoorId::new("d2")));
+        assert!(!hub.serves(&DoorId::new("d3")));
+        assert_eq!(hub.name(), "Front entrance");
+        assert_eq!(hub.door_ids().len(), 2);
     }
 }

@@ -8,49 +8,73 @@
 #![allow(clippy::needless_pass_by_value)]
 #![allow(clippy::uninlined_format_args)]
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used, clippy::panic))]
-//! cave-home-unifi-network — UniFi Network port.
+//! `cave-home-unifi-network` — the home-network brain for cave-home (ADR-009).
 //!
-//! Line-by-line port of `homeassistant/components/unifi/` from
-//! home-assistant/core tag `2026.5.2`
-//! (SHA `456202325ac48549bd3c895dc3e69ecd3e2ba6a4`).
+//! This crate is the **decision engine** for a UniFi-style home network: it
+//! models the devices (switches, access points, the gateway) and the clients
+//! (phones, tablets, laptops) on the network, validates the control operations
+//! a household actually performs — *block the kid's tablet, kick a stuck
+//! laptop off Wi-Fi, turn the guest network on, set a switch port to power a
+//! camera* — and turns raw network state into a plain-language summary a
+//! grandmother can read: "12 things connected, Guest Wi-Fi is on, internet is
+//! up".
 //!
-//! Phase 1 surface (per ADR-009):
-//! - [`controller`] — `ControllerConfig` + `UnifiController` connection
-//!   handle.
-//! - [`device`]     — `UnifiDevice`, `DeviceKind`, `DeviceState`,
-//!   `PortStat`, ADR-007 friendly-label helper.
-//! - [`client`]     — `UnifiClient` + `WirelessClientRegistry` (ports HA
-//!   `UnifiWirelessClients`).
-//! - [`switch`]     — `BlockSwitch`, `OutletSwitch` (ports HA
-//!   `UnifiBlockClientSwitch`, `UnifiOutletSwitch`; `DPISwitch` deferred).
-//! - [`events`]     — typed `ControllerEvent` enum for the WebSocket
-//!   subscription.
-//! - [`identifiers`] — `ClientId`, `DeviceId`, `SiteId` newtypes.
-//! - [`error`]       — `UnifiError` widening HA's 4 exception classes.
-//! - [`const_table`] — verbatim HA const port (`DOMAIN`, `DEVICE_STATES`,
-//!   `DEFAULT_*`).
+//! # Scope (Phase 1 MVP — pure logic, std-only)
 //!
-//! Phase 2 backlog:
-//! - Wire-side REST + WebSocket I/O against UniFi Network v8 controller.
-//! - DPI restriction group switch (`UnifiDPIRestrictionGroupSwitch`).
-//! - Device-tracker entity surface (HA `device_tracker.py`).
-//! - Update entity surface for firmware upgrades (HA `update.py`).
-//! - Image entity for AP placement maps (HA `image.py`).
-//! - Persistence of `WirelessClientRegistry` to disk via `Store`.
+//! Implemented, real and tested here:
+//! - [`device`]   — [`NetworkDevice`] model (switch / AP / gateway, online
+//!   state, uplink, switch ports with `PoE`).
+//! - [`client`]   — [`NetworkClient`] model (wired / wireless, IP, SSID,
+//!   guest / blocked flags, last-seen tick).
+//! - [`control`]  — validated control operations (block / unblock, reconnect,
+//!   `PoE` port mode, `WLAN` enable / disable, port-forward toggle, device LED).
+//!   Every operation validates its inputs and yields a typed [`Command`].
+//! - [`presence`] — device-tracker home / away derivation from last-seen + a
+//!   timeout, the input to presence automations.
+//! - [`network`]  — [`Wlan`], [`PortForward`], [`GuestNetwork`],
+//!   [`BandwidthProfile`] and the [`Vlan`] / subnet model.
+//! - [`summary`]  — connectivity summary: per-AP client counts, throughput
+//!   aggregation over samples, and the "is the internet up" derivation.
+//! - [`label`]    — the grandma-friendly EN / DE / TR phrasing (Charter §6.3,
+//!   ADR-007).
+//!
+//! # Deferred to Phase 1b (see `parity.manifest.toml` `[[unmapped]]`)
+//!
+//! The `UniFi` controller `REST` login, the `WebSocket` event transport, the actual
+//! API calls and controller-version negotiation are all **network-bound** and
+//! deferred per ADR-009. They feed their wire formats onto the models in this
+//! crate and reuse this engine unchanged. cave-home stays cloud-free: only the
+//! **local** controller API is ever in scope (Charter §9 — no Ubiquiti cloud).
+//!
+//! # Example
+//!
+//! ```
+//! use cave_home_unifi_network::{NetworkClient, control, Command, Lang, label};
+//!
+//! // The kid's tablet is on Wi-Fi; a bedtime automation blocks it.
+//! let tablet = NetworkClient::new("aa:bb:cc:dd:ee:01", "Kid's tablet")
+//!     .wireless("Home", "ap-1");
+//! let cmd = control::block_client(&tablet).unwrap();
+//! assert_eq!(cmd, Command::BlockClient { mac: "aa:bb:cc:dd:ee:01".to_string() });
+//!
+//! // The household sees plain language, never a MAC address.
+//! assert_eq!(label::client_blocked("Kid's tablet", Lang::En), "Kid's tablet is blocked");
+//! ```
 
 pub mod client;
-pub mod const_table;
-pub mod controller;
+pub mod control;
 pub mod device;
-pub mod error;
-pub mod events;
-pub mod identifiers;
-pub mod switch;
+pub mod label;
+pub mod network;
+pub mod presence;
+pub mod summary;
 
-pub use client::{UnifiClient, WirelessClientRegistry};
-pub use controller::{ControllerConfig, UnifiController};
-pub use device::{DeviceKind, DeviceState, PortStat, UnifiDevice, friendly_device_label};
-pub use error::{UnifiError, UnifiResult};
-pub use events::ControllerEvent;
-pub use identifiers::{ClientId, DeviceId, SiteId};
-pub use switch::{BlockSwitch, OutletSwitch};
+pub use client::{ConnectionKind, NetworkClient};
+pub use control::{Command, ControlError, PoeMode};
+pub use device::{DeviceKind, DeviceState, NetworkDevice, SwitchPort};
+pub use label::Lang;
+pub use network::{
+    BandwidthProfile, GuestNetwork, NetworkPurpose, PortForward, Protocol, Vlan, Wlan,
+};
+pub use presence::{Presence, presence_of};
+pub use summary::{ConnectivitySummary, InternetState, ThroughputSample, summarize};

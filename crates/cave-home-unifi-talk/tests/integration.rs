@@ -1,117 +1,115 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //
-// RED-phase integration tests for cave-home-unifi-talk.
-//
-// HA core has no `unifi_talk` integration as of 2026.5.2; this crate
-// ports against the public Ubiquiti Talk REST surface only. ADR-009
-// caps parity at whatever Ubiquiti documents publicly.
-//
-// Upstream pin: home-assistant/core@456202325ac48549bd3c895dc3e69ecd3e2ba6a4
-//               (tag 2026.5.2) — no homeassistant/components/unifi_talk
-//               exists; this is the boundary of HA upstream parity.
+// Cross-module integration tests for cave-home-unifi-talk: the call-control
+// engine wired end-to-end (route → ring → answer → talk → log → label),
+// exercising the public surface the way a transport adapter would.
+#![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
 
+use cave_home_unifi_talk::routing::RoutingPrefs;
 use cave_home_unifi_talk::{
-    CallControlVerb, CallEvent, CallEventKind, CallId, IncomingCall, PhoneId, PhoneRoster,
-    TalkClient, TalkConfig, TalkError, TalkPhone, friendly_phone_label,
+    BusinessHours, CallDirection, CallEvent, CallLog, CallMachine, CallRecord, CallState,
+    DeviceId, DeviceKind, Disposition, Extension, ExtensionError, Lang, Minute, RingStrategy,
+    RouteOutcome, TalkDevice, label, route_call,
 };
 
 #[test]
-fn talk_config_uses_api_token_auth() {
-    // UniFi Talk REST surface uses API token auth like UniFi Access.
-    let cfg = TalkConfig::new("talk.local", "tok123");
-    assert_eq!(cfg.host, "talk.local");
-    assert_eq!(cfg.api_token, "tok123");
-    assert_eq!(cfg.port, 443);
-    assert!(!cfg.verify_ssl);
+fn front_door_call_answered_and_logged_end_to_end() {
+    // The household has a front-door intercom that maps to extension 200.
+    let door = TalkDevice::new(DeviceId(1), "Front door", DeviceKind::Doorbell);
+    let ext = Extension::new("200", "Front door", door.id()).unwrap();
+
+    // Midday, no DND: routing rings the extension.
+    let hours = BusinessHours::new(Minute::at(8, 0).unwrap(), Minute::at(22, 0).unwrap());
+    let route =
+        route_call(&ext, &RoutingPrefs::default(), hours, Minute::at(12, 0).unwrap(), false);
+    assert!(matches!(route, RouteOutcome::Ring(_)));
+
+    // The intercom rings; the household sees a friendly line.
+    let mut call = CallMachine::new(30, Disposition::Voicemail);
+    assert_eq!(call.apply(CallEvent::Incoming, 0).unwrap(), CallState::Ringing);
+    assert_eq!(
+        label::incoming_from_device(door.kind(), Lang::En),
+        "The front-door intercom is calling"
+    );
+
+    // Someone picks up, talks for 45 s, and hangs up.
+    call.apply(CallEvent::Answer, 3).unwrap();
+    call.apply(CallEvent::Connected, 4).unwrap();
+    assert_eq!(call.apply(CallEvent::Hangup, 49).unwrap(), CallState::Ended);
+
+    // The call lands in the history with the talk time.
+    let mut log = CallLog::with_capacity(50);
+    log.record(CallRecord::answered("Front door", "200", CallDirection::Incoming, 45, 0));
+    assert_eq!(log.missed_count(), 0);
+    assert_eq!(log.total_talk_time(), 45);
 }
 
 #[test]
-fn talk_phone_construction() {
-    let p = TalkPhone::new(PhoneId::new("phone-1"), "Mutfak interkomu", "+90 ...");
-    assert_eq!(p.label, "Mutfak interkomu");
-    assert_eq!(p.extension, "+90 ...");
-    assert!(!p.is_busy);
+fn after_hours_unanswered_call_rolls_to_voicemail_and_logs_history() {
+    let ext = Extension::new("200", "Front door", DeviceId(1)).unwrap();
+    let hours = BusinessHours::new(Minute::at(8, 0).unwrap(), Minute::at(22, 0).unwrap());
+
+    // 23:30 is after hours: a non-emergency call does not ring.
+    let route =
+        route_call(&ext, &RoutingPrefs::default(), hours, Minute::at(23, 30).unwrap(), false);
+    assert_eq!(route, RouteOutcome::Voicemail);
+
+    // Model the unanswered ring rolling to voicemail.
+    let mut call = CallMachine::new(20, Disposition::Voicemail);
+    call.apply(CallEvent::Incoming, 1000).unwrap();
+    assert_eq!(call.tick(1020), CallState::Voicemail);
+
+    // The history shows a voicemail (not counted as a missed call), and the
+    // grandma-friendly line names the caller.
+    let mut log = CallLog::with_capacity(50);
+    log.record(CallRecord::unanswered(
+        "the gate",
+        "200",
+        CallDirection::Incoming,
+        CallState::Voicemail,
+        1000,
+    ));
+    assert_eq!(log.missed_count(), 0);
+    assert_eq!(label::missed_from("the gate", Lang::En), "Missed call from the gate");
 }
 
 #[test]
-fn phone_roster_add_and_lookup() {
-    let mut r = PhoneRoster::new();
-    r.add(TalkPhone::new(PhoneId::new("p1"), "Mutfak", "100"));
-    r.add(TalkPhone::new(PhoneId::new("p2"), "Salon", "101"));
-    assert_eq!(r.len(), 2);
-    let p = r.get(&PhoneId::new("p1")).unwrap();
-    assert_eq!(p.extension, "100");
-    assert!(r.get(&PhoneId::new("missing")).is_none());
+fn dnd_routes_to_voicemail_but_emergency_rings_through() {
+    let ext = Extension::new("101", "Bedroom", DeviceId(2)).unwrap();
+    let open = BusinessHours::always_open();
+    let noon = Minute::at(12, 0).unwrap();
+
+    let quiet = route_call(&ext, &RoutingPrefs::dnd(), open, noon, false);
+    assert_eq!(quiet, RouteOutcome::Voicemail);
+    assert_eq!(label::do_not_disturb_on(Lang::En), "Do not disturb is on");
+
+    let emergency = route_call(&ext, &RoutingPrefs::dnd(), open, noon, true);
+    assert!(matches!(emergency, RouteOutcome::Ring(_)));
 }
 
 #[test]
-fn incoming_call_construction() {
-    let c = IncomingCall {
-        id: CallId::new("call-1"),
-        from_extension: "200".into(),
-        to_phone: PhoneId::new("p1"),
-        from_display_name: Some("Komşu".into()),
-    };
-    assert_eq!(c.from_extension, "200");
-    assert_eq!(c.from_display_name.as_deref(), Some("Komşu"));
+fn bad_extension_number_is_rejected() {
+    assert_eq!(
+        Extension::new("not-a-number", "x", DeviceId(1)),
+        Err(ExtensionError::BadNumber)
+    );
 }
 
 #[test]
-fn call_event_kind_strings() {
-    assert_eq!(CallEventKind::Incoming.as_str(), "incoming");
-    assert_eq!(CallEventKind::Answered.as_str(), "answered");
-    assert_eq!(CallEventKind::Declined.as_str(), "declined");
-    assert_eq!(CallEventKind::Ended.as_str(), "ended");
-    assert_eq!(CallEventKind::Missed.as_str(), "missed");
-    assert_eq!(CallEventKind::Transferred.as_str(), "transferred");
-}
-
-#[test]
-fn call_event_kind_parse_round_trip() {
-    for v in CallEventKind::all() {
-        assert_eq!(CallEventKind::parse(v.as_str()), Some(v));
+fn ring_strategy_is_carried_through_routing() {
+    // A single-extension route is sequential by construction; this guards the
+    // public RingStrategy enum stays wired through the RouteOutcome surface.
+    let ext = Extension::new("101", "Kitchen", DeviceId(1)).unwrap();
+    let route = route_call(
+        &ext,
+        &RoutingPrefs::default(),
+        BusinessHours::always_open(),
+        Minute::at(9, 0).unwrap(),
+        false,
+    );
+    match route {
+        RouteOutcome::Ring(plan) => assert_eq!(plan.strategy, RingStrategy::Sequential),
+        other => panic!("expected ring, got {other:?}"),
     }
-    assert_eq!(CallEventKind::parse("nope"), None);
-}
-
-#[test]
-fn call_event_construction() {
-    let e = CallEvent {
-        call: CallId::new("c1"),
-        phone: PhoneId::new("p1"),
-        kind: CallEventKind::Incoming,
-    };
-    assert_eq!(e.kind, CallEventKind::Incoming);
-}
-
-#[test]
-fn call_control_verbs() {
-    // The Phase 1 surface is "answer / decline / transfer / end" —
-    // those four verbs are the ones the portal mounts as buttons on
-    // the incoming-call tile.
-    assert_eq!(CallControlVerb::Answer.as_str(), "answer");
-    assert_eq!(CallControlVerb::Decline.as_str(), "decline");
-    assert_eq!(CallControlVerb::Transfer.as_str(), "transfer");
-    assert_eq!(CallControlVerb::End.as_str(), "end");
-}
-
-#[test]
-fn friendly_phone_label_appends_interkomu() {
-    assert_eq!(friendly_phone_label("Mutfak"), "Mutfak interkomu");
-    assert_eq!(friendly_phone_label(""), "Adsız interkom");
-}
-
-#[test]
-fn talk_client_unauthenticated_initially() {
-    let c = TalkClient::new(TalkConfig::new("h", "tok"));
-    assert!(!c.is_authenticated());
-}
-
-#[tokio::test]
-async fn talk_client_login_against_offline_host_errors() {
-    let cfg = TalkConfig::new("127.0.0.1", "tok").with_port(1);
-    let mut c = TalkClient::new(cfg);
-    let err = c.login().await.unwrap_err();
-    assert!(matches!(err, TalkError::Connect(_) | TalkError::Timeout));
 }

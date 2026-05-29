@@ -1,24 +1,171 @@
-# cave-home-unifi-talk — parity manifest scaffold.
+# cave-home-unifi-talk — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-unifi-talk — UniFi Talk VoIP/intercom port (limited public API surface; parity ceiling = what Ubiquiti exposes); port method: line-by-line (ADR-009)
+# Phase 1 ships the UniFi Talk *call-control engine*: the call-lifecycle state
+# machine, the extension / ring-group model with its ring strategies, the
+# routing decision (DND + emergency override + after-hours schedule +
+# call-forwarding), the three-way conference membership model, the call-history
+# model, and the six grandma-friendly call lines in EN/DE/TR. This is the brain
+# every automation, Portal tile and voice reply consumes. The transport (SIP
+# signalling + RTP media + codecs), the UniFi Talk provisioning REST/WS API, the
+# audio path, PSTN/SIP-trunk integration and the doorbell/core glue are
+# network/audio/signalling-bound and deferred to Phase 1b — each is enumerated
+# below with an ADR-009 disposition.
+#
+# Port method: spec-based / clean-room. HA core has NO `unifi_talk` integration
+# (home-assistant/core@456202325ac48549bd3c895dc3e69ecd3e2ba6a4, tag 2026.5.2),
+# so there is no upstream line-by-line source to read. ADR-009 §4 caps this
+# crate's parity at "whatever Ubiquiti exposes"; the call-control DOMAIN MODEL
+# below is implemented from first principles + the public, vendor-neutral
+# semantics of a SIP-class intercom/PBX (call states, ring strategies, DND,
+# after-hours routing). No GPL source was read.
 
 [crate]
 name             = "cave-home-unifi-talk"
-upstream_repo    = "home-assistant/core (UniFi Talk, where available) + Ubiquiti Talk REST"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "Ubiquiti UniFi Talk (public call-control surface) — no HA integration exists"
+port_method      = "spec-based (clean-room call-control domain model)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "UniFi Talk product behaviour — intercom / desk-phone / doorbell call flow (public docs)",
+    "Vendor-neutral SIP/PBX call-control semantics: call states (ringing/active/held/ended), blind & attended transfer, three-way conference",
+    "Common ring-group strategies (ring-all / sequential / round-robin) as used by open PBX systems",
+    "ADR-009 §4 — UniFi Talk parity ceiling = what Ubiquiti exposes publicly",
+    "ADR-007 / Charter §6.3 — grandma-friendly EN/DE/TR UX (no protocol/codec terms)",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (call-control engine + SIP/RTP
+# transport + provisioning API + audio path + PSTN/trunk + doorbell/core glue).
+# The engine is implemented and tested in full; the transport, API, audio and
+# integration layers remain and are all ADR-justified Phase 1b/permanent.
+fill_ratio              = 0.30
+fill_ratio_basis        = "call-state machine + extension/ring-group model + routing (DND/emergency/after-hours/forward) + conference + call-log + EN/DE/TR UX, fully implemented & tested; transport/API/audio/integration deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-009 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Device + extension roster model (desk-phone / intercom / doorbell, online/offline)"
+ours = "src/device.rs::{TalkDevice,DeviceKind,DeviceState}"
+
+[[mapped]]
+spec = "Extension (number, display name, assigned device, voicemail) + dialable-number validation"
+ours = "src/extension.rs::Extension"
+
+[[mapped]]
+spec = "Ring group + ring strategy (ring-all / sequential / round-robin) ordering"
+ours = "src/extension.rs::{CallGroup,RingStrategy}"
+
+[[mapped]]
+spec = "Call lifecycle state set (Idle/Ringing/Connecting/Active/Held/Ended/Missed/Voicemail)"
+ours = "src/call.rs::CallState"
+
+[[mapped]]
+spec = "Call event vocabulary + valid/invalid transition handling (Incoming/Outgoing/Answer/Reject/Hangup/Hold/Resume/Transfer/Timeout)"
+ours = "src/call.rs::{CallEvent,CallMachine}"
+
+[[mapped]]
+spec = "Ring-no-answer timeout -> Missed / Voicemail per configured disposition (caller-supplied elapsed)"
+ours = "src/call.rs::CallMachine::{tick,apply}"
+
+[[mapped]]
+spec = "Blind / attended transfer + hold / resume model"
+ours = "src/call.rs::{TransferKind,CallMachine::apply}"
+
+[[mapped]]
+spec = "Three-way / conference membership model (join/leave, size cap)"
+ours = "src/call.rs::Conference"
+
+[[mapped]]
+spec = "Time-based routing schedule (business hours, midnight-wrapping; after-hours -> voicemail/forward)"
+ours = "src/schedule.rs::BusinessHours"
+
+[[mapped]]
+spec = "Incoming-call routing: who rings, in what order, honouring per-extension DND + emergency override + call-forwarding"
+ours = "src/routing.rs::{route_call,route_group,RoutingPrefs,RouteOutcome}"
+
+[[mapped]]
+spec = "Call-log / history model (from, to, direction, outcome, duration, tick)"
+ours = "src/log.rs::{CallRecord,CallLog,CallDirection}"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR call lines + DND status (ADR-007, Charter §6.3)"
+ours = "src/label.rs"
+
+# ---- unmapped (NOT in this crate; ADR-009 Phase 1b/permanent disposition) --
+
+[[unmapped]]
+area     = "SIP signalling + RTP media transport + audio codecs (G.711/G.722/Opus)"
+priority = "phase-1b"
+note     = "ADR-009: the actual two-way audio path is signalling/media-bound. The engine produces a RouteOutcome + drives a CallMachine; the SIP/RTP stack carries the media beneath it without changing the call-control logic."
+
+[[unmapped]]
+area     = "UniFi Talk provisioning REST/WS API client"
+priority = "phase-1b"
+note     = "ADR-009 §4: Ubiquiti's Talk API is under-documented and the parity ceiling is whatever it exposes. Network-bound; it maps the controller's device/extension list onto device::TalkDevice + extension::Extension then reuses this engine. I/O adapter only."
+
+[[unmapped]]
+area     = "Voicemail recording, storage + playback"
+priority = "phase-1b"
+note     = "ADR-009: the engine decides a call rolls to Voicemail; capturing/storing/playing the recording is an audio + storage surface that lands with the SIP/RTP transport."
+
+[[unmapped]]
+area     = "PSTN / SIP-trunk integration (calls to/from the public phone network)"
+priority = "phase-1b"
+note     = "ADR-009: trunking to an external SIP provider is a transport concern layered under the same routing engine; the routing model already treats an external number as a forward target."
+
+[[unmapped]]
+area     = "cave-home-doorbell / cave-home-core integration glue"
+priority = "phase-1b"
+note     = "ADR-009: surfacing a doorbell press as an incoming intercom call, and call events as core automation triggers, lands once those crates' event APIs stabilise. The engine is already crate-agnostic — it depends on no other cave-home crate."
+
+[[unmapped]]
+area     = "Cloud-VoIP relay / hosted-Talk dependency"
+priority = "permanent"
+note     = "Charter §9 local-first / no cloud dependency in the critical path: cave-home routes and rings on the local network with no internet access. cave-home will never require a cloud-VoIP relay; cloud SIP trunking stays opt-in augmentation, never a precondition."
+
+[[unmapped]]
+area     = "Legacy / pre-current UniFi Talk API compatibility shim"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home tracks the current Ubiquiti Talk surface only; no historical-API compatibility mode."
+
+# ---- spec_test (designed from spec / call-control semantics) ---------------
+
+[[spec_test]]
+designed_for = "Call-state transitions — full happy path + every illegal transition rejected"
+ours         = "src/call.rs::tests"
+
+[[spec_test]]
+designed_for = "Ring-no-answer timeout resolves to Missed or Voicemail at the boundary per disposition"
+ours         = "src/call.rs::tests::{unanswered_ring_rolls_to_voicemail_at_boundary,unanswered_ring_rolls_to_missed_when_no_voicemail,timeout_event_path_matches_disposition}"
+
+[[spec_test]]
+designed_for = "Three-way conference membership (cap, dup-join, leave-makes-room)"
+ours         = "src/call.rs::tests::{three_way_starts_empty_and_caps_at_three,cannot_join_the_same_party_twice,leaving_makes_room_again}"
+
+[[spec_test]]
+designed_for = "Ring strategies — ring-all / sequential / round-robin ordering + offset wrap"
+ours         = "src/extension.rs::tests"
+
+[[spec_test]]
+designed_for = "DND routing + emergency override + after-hours schedule + call-forwarding"
+ours         = "src/routing.rs::tests"
+
+[[spec_test]]
+designed_for = "Business-hours window incl. midnight-wrapping after-hours detection"
+ours         = "src/schedule.rs::tests"
+
+[[spec_test]]
+designed_for = "Call-log / history outcomes + missed count + total talk time"
+ours         = "src/log.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"
+
+[[spec_test]]
+designed_for = "End-to-end route → ring → answer → talk → log → label across modules"
+ours         = "tests/integration.rs"

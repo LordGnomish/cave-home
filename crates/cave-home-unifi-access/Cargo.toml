@@ -19,16 +19,12 @@ release = "2026.5.2"
 sha     = "456202325ac48549bd3c895dc3e69ecd3e2ba6a4"
 subpath = "homeassistant/components/unifi_access"
 
+# Phase-1 MVP is pure, std-only domain logic: the door-control model + access
+# policy engine. No external crates, no network/hardware/crypto. The transport
+# and real crypto deps land in Phase 1b (see parity.manifest.toml, ADR-009).
 [dependencies]
-parking_lot  = "0.12"
-serde        = { version = "1", features = ["derive"] }
-serde_json   = "1"
-thiserror    = "2"
-tokio        = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "net", "io-util"] }
-tracing      = "0.1"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "net", "test-util"] }
 
 [lints]
 workspace = true

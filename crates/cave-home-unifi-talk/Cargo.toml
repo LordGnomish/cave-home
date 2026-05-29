@@ -6,29 +6,12 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-unifi-talk — UniFi Talk VoIP/intercom port (limited public API surface; parity ceiling = what Ubiquiti exposes); port method: line-by-line (ADR-009)"
+description = "cave-home-unifi-talk — UniFi Talk intercom/phone call-control engine (call-state machine, ring routing, schedule, call log; SIP/RTP transport deferred); port method: spec-based (ADR-009)"
 
 [package.metadata.cave-home]
-upstream    = "home-assistant/core (UniFi Talk, where available) + Ubiquiti Talk REST"
-port-method = "line-by-line"
+upstream    = "Ubiquiti UniFi Talk (public call-control surface) — no HA integration exists"
+port-method = "spec-based"
 adr         = "ADR-009"
-
-[package.metadata.upstream]
-repo    = "home-assistant/core"
-release = "2026.5.2"
-sha     = "456202325ac48549bd3c895dc3e69ecd3e2ba6a4"
-subpath = "(none — HA has no unifi_talk integration; cave-home ports against Ubiquiti Talk REST)"
-
-[dependencies]
-parking_lot  = "0.12"
-serde        = { version = "1", features = ["derive"] }
-serde_json   = "1"
-thiserror    = "2"
-tokio        = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "net", "io-util"] }
-tracing      = "0.1"
-
-[dev-dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "net", "test-util"] }
 
 [lints]
 workspace = true

@@ -1,136 +1,224 @@
-// SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 cave-home contributors
-//
-// Source: home-assistant/core@456202325ac48549bd3c895dc3e69ecd3e2ba6a4
-//         (tag 2026.5.2) :: homeassistant/components/unifi/__init__.py
-//                            (UnifiWirelessClients) +
-//                            aiounifi/models/client.py (Client model).
+//! Network-client model — the phones, tablets, laptops and TVs on the network.
+//!
+//! A [`NetworkClient`] is what a household actually thinks of as "a device on
+//! the Wi-Fi". The presence model ([`crate::presence`]) tracks one of these to
+//! decide whether a family member is home; the control engine
+//! ([`crate::control`]) blocks / unblocks / reconnects one.
 
-use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::net::IpAddr;
 
-use crate::identifiers::ClientId;
-
-/// A client device tracked by the UniFi controller.
-///
-/// HA model (`aiounifi.models.client.Client`) is wide (mac, hostname,
-/// ip, vlan, ap_mac, last_seen, is_wired, ...). cave-home Phase 1
-/// surfaces the four fields the portal needs; Phase 2 ticket: full
-/// `Client` parity behind a feature flag.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UnifiClient {
-    /// MAC-keyed client ID.
-    pub id: ClientId,
-    /// Friendly label (hostname or controller-set name).
-    pub label: String,
-    /// True if connected via Ethernet (HA `Client.is_wired`).
-    pub is_wired: bool,
-    /// True if a `block_client` switch has been flipped on for this MAC.
-    pub blocked: bool,
+/// How a client is attached to the network.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConnectionKind {
+    /// Plugged into a switch port with a cable.
+    Wired,
+    /// On Wi-Fi: carries the SSID it joined and the id of the AP serving it.
+    Wireless { ssid: String, access_point: String },
 }
 
-impl UnifiClient {
-    /// Construct a new client entry.
+impl ConnectionKind {
     #[must_use]
-    pub fn new(id: ClientId, label: impl Into<String>, is_wired: bool) -> Self {
+    pub const fn is_wireless(&self) -> bool {
+        matches!(self, Self::Wireless { .. })
+    }
+
+    /// The SSID, when this is a wireless connection.
+    #[must_use]
+    pub fn ssid(&self) -> Option<&str> {
+        match self {
+            Self::Wireless { ssid, .. } => Some(ssid),
+            Self::Wired => None,
+        }
+    }
+
+    /// The id of the access point serving this client, when wireless.
+    #[must_use]
+    pub fn access_point(&self) -> Option<&str> {
+        match self {
+            Self::Wireless { access_point, .. } => Some(access_point),
+            Self::Wired => None,
+        }
+    }
+}
+
+/// A client on the network.
+///
+/// Defaults: a freshly-constructed client is wired, has no IP, is not a guest,
+/// is not blocked, and was last seen at tick 0. The builder methods set the
+/// rest. `last_seen` is a caller-supplied monotonic tick (seconds since some
+/// epoch the caller chooses); the crate never reads a clock itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetworkClient {
+    mac: String,
+    name: String,
+    ip: Option<IpAddr>,
+    connection: ConnectionKind,
+    uplink_device: Option<String>,
+    is_guest: bool,
+    is_blocked: bool,
+    last_seen: u64,
+}
+
+impl NetworkClient {
+    /// Construct a client by MAC and friendly name. Wired, not a guest, not
+    /// blocked, last seen at tick 0 until the builders say otherwise.
+    #[must_use]
+    pub fn new(mac: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
-            id,
-            label: label.into(),
-            is_wired,
-            blocked: false,
-        }
-    }
-}
-
-/// Persistent "known-wireless" registry.
-///
-/// Source: HA `UnifiWirelessClients` class in `__init__.py`. UniFi
-/// marks a wireless client as wired once it goes offline; HA
-/// remembers the wireless ones so they keep tracking correctly.
-/// cave-home replicates the same in-memory semantics; persistence to
-/// disk is a Phase 2 ticket.
-#[derive(Default, Debug)]
-pub struct WirelessClientRegistry {
-    known_wireless: HashSet<ClientId>,
-}
-
-impl WirelessClientRegistry {
-    /// Construct an empty registry.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// True if this client has ever been seen wireless.
-    /// Mirrors HA `UnifiWirelessClients.is_wireless(client)`: a side
-    /// effect — calling on a non-wired previously-unknown client
-    /// records it.
-    pub fn is_wireless(&mut self, client: &UnifiClient) -> bool {
-        if !client.is_wired && !self.known_wireless.contains(&client.id) {
-            self.known_wireless.insert(client.id.clone());
-        }
-        self.known_wireless.contains(&client.id)
-    }
-
-    /// Update from a batch of currently-seen clients.
-    pub fn update<'a>(&mut self, clients: impl IntoIterator<Item = &'a UnifiClient>) {
-        for c in clients {
-            if !c.is_wired {
-                self.known_wireless.insert(c.id.clone());
-            }
+            mac: mac.into(),
+            name: name.into(),
+            ip: None,
+            connection: ConnectionKind::Wired,
+            uplink_device: None,
+            is_guest: false,
+            is_blocked: false,
+            last_seen: 0,
         }
     }
 
-    /// Count of clients tracked as wireless.
+    /// Builder: mark this client wireless on `ssid`, served by `access_point`.
     #[must_use]
-    pub fn len(&self) -> usize {
-        self.known_wireless.len()
+    pub fn wireless(mut self, ssid: impl Into<String>, access_point: impl Into<String>) -> Self {
+        let ap = access_point.into();
+        self.uplink_device = Some(ap.clone());
+        self.connection = ConnectionKind::Wireless { ssid: ssid.into(), access_point: ap };
+        self
     }
 
-    /// True if zero wireless clients are tracked.
+    /// Builder: mark this client wired through switch/device `device_id`.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.known_wireless.is_empty()
+    pub fn wired_to(mut self, device_id: impl Into<String>) -> Self {
+        self.uplink_device = Some(device_id.into());
+        self.connection = ConnectionKind::Wired;
+        self
     }
 
-    /// Check membership.
+    /// Builder: set the client's IP address.
     #[must_use]
-    pub fn contains(&self, id: &ClientId) -> bool {
-        self.known_wireless.contains(id)
+    pub fn with_ip(mut self, ip: IpAddr) -> Self {
+        self.ip = Some(ip);
+        self
+    }
+
+    /// Builder: record the last-seen tick (caller's monotonic clock).
+    #[must_use]
+    pub fn last_seen_at(mut self, tick: u64) -> Self {
+        self.last_seen = tick;
+        self
+    }
+
+    /// Builder: mark this client as a guest-network client.
+    #[must_use]
+    pub fn as_guest(mut self) -> Self {
+        self.is_guest = true;
+        self
+    }
+
+    /// Builder: mark this client as currently blocked.
+    #[must_use]
+    pub fn blocked(mut self) -> Self {
+        self.is_blocked = true;
+        self
+    }
+
+    #[must_use]
+    pub fn mac(&self) -> &str {
+        &self.mac
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    #[must_use]
+    pub const fn ip(&self) -> Option<IpAddr> {
+        self.ip
+    }
+
+    #[must_use]
+    pub const fn connection(&self) -> &ConnectionKind {
+        &self.connection
+    }
+
+    /// The id of the device (AP or switch) this client connects through.
+    #[must_use]
+    pub fn uplink_device(&self) -> Option<&str> {
+        self.uplink_device.as_deref()
+    }
+
+    #[must_use]
+    pub const fn is_guest(&self) -> bool {
+        self.is_guest
+    }
+
+    #[must_use]
+    pub const fn is_blocked(&self) -> bool {
+        self.is_blocked
+    }
+
+    #[must_use]
+    pub const fn last_seen(&self) -> u64 {
+        self.last_seen
+    }
+
+    #[must_use]
+    pub const fn is_wireless(&self) -> bool {
+        self.connection.is_wireless()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::Ipv4Addr;
 
     #[test]
-    fn wireless_registry_records_on_first_sight() {
-        let mut r = WirelessClientRegistry::new();
-        let c = UnifiClient::new(ClientId::new("aa:bb:cc:dd:ee:ff"), "iPhone", false);
-        assert!(!r.contains(&c.id));
-        assert!(r.is_wireless(&c));
-        assert!(r.contains(&c.id));
+    fn new_client_defaults_are_safe() {
+        let c = NetworkClient::new("aa:bb", "Phone");
+        assert_eq!(c.mac(), "aa:bb");
+        assert_eq!(c.name(), "Phone");
+        assert_eq!(c.ip(), None);
+        assert!(!c.is_wireless());
+        assert!(!c.is_guest());
+        assert!(!c.is_blocked());
+        assert_eq!(c.last_seen(), 0);
+        assert_eq!(c.uplink_device(), None);
     }
 
     #[test]
-    fn wireless_registry_ignores_wired() {
-        let mut r = WirelessClientRegistry::new();
-        let c = UnifiClient::new(ClientId::new("aa:bb:cc:dd:ee:00"), "Desktop", true);
-        assert!(!r.is_wireless(&c));
-        assert!(!r.contains(&c.id));
+    fn wireless_builder_sets_ssid_ap_and_uplink() {
+        let c = NetworkClient::new("aa:bb", "Tablet").wireless("Home", "ap-1");
+        assert!(c.is_wireless());
+        assert_eq!(c.connection().ssid(), Some("Home"));
+        assert_eq!(c.connection().access_point(), Some("ap-1"));
+        assert_eq!(c.uplink_device(), Some("ap-1"));
     }
 
     #[test]
-    fn registry_update_batch() {
-        let mut r = WirelessClientRegistry::new();
-        let a = UnifiClient::new(ClientId::new("aa:bb:cc:dd:ee:01"), "A", false);
-        let b = UnifiClient::new(ClientId::new("aa:bb:cc:dd:ee:02"), "B", true);
-        let c = UnifiClient::new(ClientId::new("aa:bb:cc:dd:ee:03"), "C", false);
-        r.update([&a, &b, &c]);
-        assert_eq!(r.len(), 2);
-        assert!(r.contains(&a.id));
-        assert!(!r.contains(&b.id));
-        assert!(r.contains(&c.id));
+    fn wired_client_has_no_ssid() {
+        let c = NetworkClient::new("aa:bb", "Desktop").wired_to("sw-1");
+        assert!(!c.is_wireless());
+        assert_eq!(c.connection().ssid(), None);
+        assert_eq!(c.connection().access_point(), None);
+        assert_eq!(c.uplink_device(), Some("sw-1"));
+    }
+
+    #[test]
+    fn ip_uses_std_net() {
+        let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50));
+        let c = NetworkClient::new("aa:bb", "Laptop").with_ip(ip);
+        assert_eq!(c.ip(), Some(ip));
+    }
+
+    #[test]
+    fn guest_and_blocked_and_last_seen_builders() {
+        let c = NetworkClient::new("aa:bb", "Visitor phone")
+            .as_guest()
+            .blocked()
+            .last_seen_at(1234);
+        assert!(c.is_guest());
+        assert!(c.is_blocked());
+        assert_eq!(c.last_seen(), 1234);
     }
 }
