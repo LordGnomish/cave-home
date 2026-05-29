@@ -135,4 +135,44 @@ mod tests {
         let second = m.set(light_kitchen(), "on", attrs, Context::new()).expect("attr emit");
         assert_eq!(second.new_state.last_changed, lc);
     }
+
+    #[test]
+    fn entity_ids_all_and_domain_query() {
+        let m = StateMachine::new(EventBus::new());
+        let ctx = Context::new();
+        m.set(EntityId::new("light", "kitchen").unwrap(), "on", StateAttributes::new(), ctx.clone());
+        m.set(EntityId::new("light", "hall").unwrap(), "off", StateAttributes::new(), ctx.clone());
+        m.set(EntityId::new("lock", "front").unwrap(), "locked", StateAttributes::new(), ctx);
+
+        // entity_ids() returns every tracked id (order-independent).
+        let mut all_ids = m.entity_ids();
+        all_ids.sort();
+        assert_eq!(
+            all_ids,
+            vec![
+                EntityId::new("light", "hall").unwrap(),
+                EntityId::new("light", "kitchen").unwrap(),
+                EntityId::new("lock", "front").unwrap(),
+            ]
+        );
+
+        // entity_ids_by_domain() filters to one domain.
+        let mut lights = m.entity_ids_by_domain("light");
+        lights.sort();
+        assert_eq!(
+            lights,
+            vec![
+                EntityId::new("light", "hall").unwrap(),
+                EntityId::new("light", "kitchen").unwrap(),
+            ]
+        );
+        assert!(m.entity_ids_by_domain("does_not_exist").is_empty());
+
+        // all() snapshots every current State.
+        let mut all = m.all();
+        all.sort_by(|a, b| a.entity_id.cmp(&b.entity_id));
+        assert_eq!(all.len(), 3);
+        assert_eq!(all[0].entity_id.to_string(), "light.hall");
+        assert_eq!(all[2].state, "locked");
+    }
 }
