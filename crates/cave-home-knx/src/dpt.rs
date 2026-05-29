@@ -412,6 +412,162 @@ pub mod dpt9 {
 }
 
 // ---------------------------------------------------------------------------
+// DPT 10.x — 3-byte time-of-day.
+// ---------------------------------------------------------------------------
+
+/// DPT 10.001 — time of day with an optional day-of-week.
+///
+/// Big-endian 3-byte layout:
+///
+/// ```text
+///   byte0: bits 7..5 = day-of-week (0 = no day, 1 = Mon .. 7 = Sun)
+///          bits 4..0 = hour (0..=23)
+///   byte1: bits 5..0 = minute (0..=59)   (bits 7..6 reserved, 0)
+///   byte2: bits 5..0 = second (0..=59)   (bits 7..6 reserved, 0)
+/// ```
+pub mod dpt10 {
+    use super::{conv, expect_len, Result};
+
+    /// A wall-clock time, with an optional day-of-week (`0` = unspecified).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct Time {
+        /// Day of week: `0` = no day, `1` = Monday .. `7` = Sunday.
+        pub day: u8,
+        /// Hour of day, `0..=23`.
+        pub hour: u8,
+        /// Minute, `0..=59`.
+        pub minute: u8,
+        /// Second, `0..=59`.
+        pub second: u8,
+    }
+
+    /// Encode a [`Time`] into its 3-byte payload.
+    ///
+    /// # Errors
+    /// Returns a conversion error if any field is out of range: `day > 7`,
+    /// `hour > 23`, `minute > 59`, or `second > 59`.
+    pub fn encode(t: Time) -> Result<[u8; 3]> {
+        if t.day > 7 {
+            return Err(conv(format!("day-of-week must be 0..=7, got {}", t.day)));
+        }
+        if t.hour > 23 {
+            return Err(conv(format!("hour must be 0..=23, got {}", t.hour)));
+        }
+        if t.minute > 59 {
+            return Err(conv(format!("minute must be 0..=59, got {}", t.minute)));
+        }
+        if t.second > 59 {
+            return Err(conv(format!("second must be 0..=59, got {}", t.second)));
+        }
+        let byte0 = (t.day << 5) | t.hour;
+        Ok([byte0, t.minute, t.second])
+    }
+
+    /// Decode a 3-byte payload into a [`Time`].
+    ///
+    /// # Errors
+    /// Returns a conversion error if the payload is not exactly 3 bytes, or if a
+    /// decoded field is out of range.
+    pub fn decode(bytes: &[u8]) -> Result<Time> {
+        expect_len(bytes, 3, "time-of-day")?;
+        let day = (bytes[0] >> 5) & 0x07;
+        let hour = bytes[0] & 0x1F;
+        let minute = bytes[1] & 0x3F;
+        let second = bytes[2] & 0x3F;
+        let t = Time {
+            day,
+            hour,
+            minute,
+            second,
+        };
+        // Re-validate (encode performs the range checks).
+        encode(t)?;
+        Ok(t)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DPT 11.x — 3-byte date.
+// ---------------------------------------------------------------------------
+
+/// DPT 11.001 — a calendar date.
+///
+/// Big-endian 3-byte layout:
+///
+/// ```text
+///   byte0: bits 4..0 = day (1..=31)
+///   byte1: bits 3..0 = month (1..=12)
+///   byte2: bits 6..0 = year code, where 0..=89 => 2000..=2089 and
+///                      90..=99 => 1990..=1999
+/// ```
+pub mod dpt11 {
+    use super::{conv, expect_len, Result};
+
+    /// A calendar date.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct Date {
+        /// Day of month, `1..=31`.
+        pub day: u8,
+        /// Month, `1..=12`.
+        pub month: u8,
+        /// Full year. Supported range is `1990..=1999` and `2000..=2089`.
+        pub year: u16,
+    }
+
+    /// Encode a [`Date`] into its 3-byte payload.
+    ///
+    /// # Errors
+    /// Returns a conversion error if `day` is outside `1..=31`, `month` is
+    /// outside `1..=12`, or `year` is outside the supported `1990..=1999` /
+    /// `2000..=2089` ranges.
+    pub fn encode(d: Date) -> Result<[u8; 3]> {
+        if !(1..=31).contains(&d.day) {
+            return Err(conv(format!("day must be 1..=31, got {}", d.day)));
+        }
+        if !(1..=12).contains(&d.month) {
+            return Err(conv(format!("month must be 1..=12, got {}", d.month)));
+        }
+        let year_code: u8 = match d.year {
+            2000..=2089 => (d.year - 2000) as u8,
+            1990..=1999 => (d.year - 1990 + 90) as u8,
+            other => {
+                return Err(conv(format!(
+                    "year must be in 1990..=1999 or 2000..=2089, got {other}"
+                )));
+            }
+        };
+        Ok([d.day, d.month, year_code])
+    }
+
+    /// Decode a 3-byte payload into a [`Date`].
+    ///
+    /// # Errors
+    /// Returns a conversion error if the payload is not exactly 3 bytes, or if a
+    /// decoded field is out of range.
+    pub fn decode(bytes: &[u8]) -> Result<Date> {
+        expect_len(bytes, 3, "date")?;
+        let day = bytes[0] & 0x1F;
+        let month = bytes[1] & 0x0F;
+        let year_code = bytes[2] & 0x7F;
+        let year: u16 = match year_code {
+            0..=89 => 2000 + u16::from(year_code),
+            90..=99 => 1990 + u16::from(year_code - 90),
+            other => {
+                return Err(conv(format!("year code must be 0..=99, got {other}")));
+            }
+        };
+        let d = Date { day, month, year };
+        if !(1..=31).contains(&d.day) {
+            return Err(conv(format!("day must be 1..=31, got {}", d.day)));
+        }
+        if !(1..=12).contains(&d.month) {
+            return Err(conv(format!("month must be 1..=12, got {}", d.month)));
+        }
+        Ok(d)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // DPT 12.x / 13.x — 4-byte integers.
 // ---------------------------------------------------------------------------
 
@@ -788,5 +944,71 @@ mod tests {
         assert!(dpt16::decode(&[0u8; 13]).is_err());
         // exactly 14 chars is fine.
         assert_eq!(dpt16::encode("ABCDEFGHIJKLMN").unwrap().len(), 14);
+    }
+
+    // ---- DPT 10 ---------------------------------------------------------
+    #[test]
+    fn dpt10_time_roundtrip() {
+        let t = dpt10::Time {
+            day: 3,
+            hour: 13,
+            minute: 45,
+            second: 30,
+        };
+        assert_eq!(dpt10::encode(t).unwrap(), [0x6D, 0x2D, 0x1E]);
+        assert_eq!(dpt10::decode(&[0x6D, 0x2D, 0x1E]).unwrap(), t);
+    }
+
+    #[test]
+    fn dpt10_time_rejects() {
+        assert!(dpt10::encode(dpt10::Time {
+            day: 8,
+            hour: 0,
+            minute: 0,
+            second: 0
+        })
+        .is_err());
+        assert!(dpt10::decode(&[0, 0]).is_err());
+    }
+
+    // ---- DPT 11 ---------------------------------------------------------
+    #[test]
+    fn dpt11_date_roundtrip() {
+        let d = dpt11::Date {
+            day: 15,
+            month: 3,
+            year: 2024,
+        };
+        assert_eq!(dpt11::encode(d).unwrap(), [0x0F, 0x03, 0x18]);
+        assert_eq!(dpt11::decode(&[0x0F, 0x03, 0x18]).unwrap(), d);
+        // 90s-era year code maps back to 19xx.
+        assert_eq!(dpt11::decode(&[0x01, 0x01, 95]).unwrap().year, 1995);
+        // round-trip a 1990s year through encode too.
+        assert_eq!(
+            dpt11::encode(dpt11::Date {
+                day: 1,
+                month: 1,
+                year: 1995
+            })
+            .unwrap(),
+            [0x01, 0x01, 95]
+        );
+    }
+
+    #[test]
+    fn dpt11_date_rejects() {
+        assert!(dpt11::encode(dpt11::Date {
+            day: 0,
+            month: 1,
+            year: 2024
+        })
+        .is_err());
+        assert!(dpt11::encode(dpt11::Date {
+            day: 1,
+            month: 1,
+            year: 1899
+        })
+        .is_err());
+        assert!(dpt11::decode(&[1, 1]).is_err());
     }
 }
