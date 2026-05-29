@@ -1,24 +1,143 @@
-# cave-home-vacuum — parity manifest scaffold.
+# cave-home-vacuum — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-vacuum — robot vacuum (Valetudo for cloud-free Xiaomi/Roborock/Dreame); upstream: Hypfer/Valetudo (MIT) + HA vacuum-domain integrations; port method: line-by-line (ADR-017)
+# Phase 1 ships the robot-vacuum *decision engine*: the vacuum state machine
+# (HA `vacuum` domain + Valetudo control-surface semantics), the suction-power
+# model with per-unit capability gating, the battery model with low-battery
+# auto-return, the room/segment + zone clean-request model with map validation,
+# the fault taxonomy, and the EN/DE/TR grandma-friendly status + fault advice.
+# This is the brain every automation, Portal tile and voice reply consumes. The
+# transport adapters (Valetudo REST/MQTT, the vendor-cloud paths) and live
+# map/lidar rendering are network/hardware-bound and deferred to Phase 1b — each
+# is enumerated below with an ADR-017 disposition.
+#
+# Port method: the state model and command semantics are implemented from the
+# *public domain semantics* of the Home Assistant `vacuum` entity domain
+# (Apache-2.0) and Valetudo's documented control surface (MIT). No vendor source
+# was ported; the firmware-replacement itself (Valetudo) is a user-side
+# operation cave-home does not perform (ADR-017).
 
 [crate]
 name             = "cave-home-vacuum"
 upstream_repo    = "Hypfer/Valetudo + home-assistant/core (xiaomi_miio, vacuum-domain)"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+port_method      = "spec-based (domain semantics) — adapters line-by-line in phase-1b"
+upstream_license = "MIT (Valetudo) + Apache-2.0 (HA vacuum domain)"
+spec_sources     = [
+    "Home Assistant `vacuum` entity domain — states (cleaning/returning/docked/paused/error/idle), services (start/pause/stop/return_to_base/clean_spot/locate/set_fan_speed), VacuumEntityFeature capability flags",
+    "Valetudo documented control surface — segment (room) cleaning, zone cleaning, fan-speed presets, capability advertisement",
+    "Valetudo / common robot fault taxonomy — brush/wheel/side-brush stuck, bin full, dustbin missing, lost, trapped, cliff sensor, water tank empty",
+    "Charter §6.3 / ADR-007 — grandma-friendly EN/DE/TR UX (no vendor/protocol terms)",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (engine + Valetudo REST/MQTT
+# adapter + vendor-cloud adapters + live map/lidar rendering + core-state
+# integration). The engine is implemented and tested in full; the transport
+# adapters, map rendering and core glue remain and are all ADR-justified
+# Phase 1b. Charter §8 no-backcompat: a permanent de-scope is also recorded.
+fill_ratio              = 0.30
+fill_ratio_basis        = "vacuum state machine + fan/battery/map/error models + EN/DE/TR UX, fully implemented & tested; transport adapters + map rendering + core glue deferred"
+test_port_ratio         = 0.0   # tests designed from domain semantics, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-017 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "HA vacuum states: idle/cleaning/returning/docked/paused/error (+ spot-cleaning, manual)"
+ours = "src/state.rs::VacuumState"
+
+[[mapped]]
+spec = "HA vacuum services: start/pause/stop/return_to_base/clean_spot/locate/set_fan_speed (+ clean_segments, clean_zones)"
+ours = "src/state.rs::VacuumCommand"
+
+[[mapped]]
+spec = "Command-application state machine with valid/invalid transition handling"
+ours = "src/machine.rs::Vacuum::apply"
+
+[[mapped]]
+spec = "Reaching-dock settles to Docked; error input gates further commands until cleared"
+ours = "src/machine.rs::Vacuum::{reached_dock,report_error,clear_error}"
+
+[[mapped]]
+spec = "Fan-speed presets (Off/Min/Low/Medium/High/Max/Turbo) with per-unit capability gating"
+ours = "src/fan.rs::{FanSpeed,FanCapability}"
+
+[[mapped]]
+spec = "Battery model (0..=100, charging vs discharging) + low-battery auto-return threshold"
+ours = "src/battery.rs::Battery"
+
+[[mapped]]
+spec = "Low-battery-while-cleaning -> Returning auto-return"
+ours = "src/machine.rs::Vacuum::update_battery"
+
+[[mapped]]
+spec = "Room/segment + zone value types and validated clean-segments request"
+ours = "src/map.rs::{Segment,Zone,VacuumMap::validate_segments}"
+
+[[mapped]]
+spec = "Fault taxonomy (brush/wheel/side-brush stuck, bin full, dustbin missing, lost, trapped, cliff, water-tank, generic)"
+ours = "src/error.rs::ErrorCode"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR status label + fault explanation & advice (Charter §6.3, ADR-007)"
+ours = "src/label.rs"
+
+# ---- unmapped (NOT in this crate; ADR-017 Phase 1b/permanent disposition) --
+
+[[unmapped]]
+area     = "Valetudo local REST/MQTT control adapter"
+priority = "phase-1b"
+note     = "ADR-017: Valetudo exposes a local REST + MQTT control surface on the Valetudo-flashed vacuum. Network-bound; maps wire commands onto this crate's VacuumCommand and feeds state/battery/error events back into the machine. No new decision logic, just a transport poller/publisher."
+
+[[unmapped]]
+area     = "Vendor-cloud adapters (Roborock / Dreame / Viomi cloud)"
+priority = "phase-1b"
+note     = "ADR-017: for users who have NOT flashed Valetudo. Account/network-bound; cave-home prefers the cloud-free Valetudo path (Charter §9) and only adds these as an opt-in fallback. I/O adapters only — they reuse this engine unchanged."
+
+[[unmapped]]
+area     = "Live map / lidar rendering"
+priority = "phase-1b"
+note     = "ADR-017: the saved-map pixel grid + live lidar scan render for the Portal tile is a data/graphics surface over the vacuum's reported map. Hardware/data-bound; the clean-request VALIDATION (segments/zones) is already modelled here — only the rendering of the map is deferred."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration"
+priority = "phase-1b"
+note     = "ADR-017: surfacing the vacuum as a core State entity + automation triggers (clean kitchen after dinner; skip baby room during nap) lands once cave-home-core's entity API stabilises. The engine is already core-agnostic."
+
+[[unmapped]]
+area     = "Vacuum firmware re-flashing (Valetudo rooting)"
+priority = "permanent"
+note     = "ADR-017 explicit: cave-home does NOT re-flash vacuum firmware — the vacuum must already be Valetudo-flashed. Rooting remains a user-side operation, never in scope for this crate. Charter §8 no-backcompat applies."
+
+[[unmapped]]
+area     = "Matter Robot Vacuum cluster binding"
+priority = "phase-2"
+note     = "ADR-017 alternative (b): the Matter Robot Vacuum device type is tracked separately; the Valetudo path ships now (Phase 1b adapters), the Matter binding is a Phase 2 transport over this same engine."
+
+# ---- spec_test (designed from domain semantics / fault taxonomy) -----------
+
+[[spec_test]]
+designed_for = "Valid + rejected state transitions (start/pause/stop/return/spot from each state)"
+ours         = "src/machine.rs::tests"
+
+[[spec_test]]
+designed_for = "Low-battery auto-return while cleaning; charging never forces return; start blocked when low"
+ours         = "src/machine.rs::tests::{low_battery_while_cleaning_auto_returns,charging_battery_never_forces_return,start_blocked_when_battery_too_low}"
+
+[[spec_test]]
+designed_for = "Fan-speed capability gating (supported preset applies, unsupported rejected)"
+ours         = "src/machine.rs::tests::{set_supported_fan_speed_takes_effect,set_unsupported_fan_speed_is_rejected}"
+
+[[spec_test]]
+designed_for = "Segment-id validation against the saved map (unknown ids rejected, empty rejected, dedup/sort)"
+ours         = "src/map.rs::tests"
+
+[[spec_test]]
+designed_for = "Error gating + clear (cleaning commands held while faulted; locate/return allowed; clear -> idle)"
+ours         = "src/machine.rs::tests::{cleaning_commands_gated_while_faulted,locate_and_return_allowed_while_faulted,clear_error_returns_to_idle}"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

@@ -1,24 +1,147 @@
-# cave-home-notify — parity manifest scaffold.
+# cave-home-notify — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-notify — notification stack (ntfy embedded server + gotify + Apprise multi-destination router); upstreams: binwiederhier/ntfy (Apache-2.0) + gotify/server (MIT) + caronc/apprise (MIT); port method: line-by-line (ADR-021)
+# Phase 1 ships the notification *routing brain*: the five-level priority scale
+# (ordering + minimum-priority filter), the validated pub/sub Topic value
+# object, the Notification value model with content de-dup key, the
+# subscription/channel routing engine (per-subscriber priority filtering +
+# per-channel capability gating producing a DeliveryPlan), the de-duplication
+# window and per-topic token-bucket rate limiter (both pure over a caller-
+# supplied integer clock), and the EN/DE/TR grandma-friendly priority labels +
+# notification rendering. This is the pure logic every automation, Portal tile
+# and (Phase-1b) transport consumes. The transports and the self-hosted server
+# are network-bound and deferred to Phase 1b — each enumerated below with an
+# ADR-021 disposition.
+#
+# Port method: the priority scale, topic/pub-sub model, de-dup window and
+# token-bucket rate limiter follow well-known *self-hosted notification*
+# (ntfy-class) semantics but are implemented FIRST-PARTY from those public
+# concepts plus first-party routing/throttle/i18n logic. No ntfy / gotify /
+# Apprise source was read or ported (the earlier ADR-021 line-by-line plan is
+# superseded for the pure domain model; the deferred transports remain the
+# place any permissive upstream code would land).
 
 [crate]
 name             = "cave-home-notify"
-upstream_repo    = "binwiederhier/ntfy + gotify/server + caronc/apprise"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "none (first-party ntfy-class semantics)"
+port_method      = "spec-based (self-hosted notification semantics) + first-party (routing/throttle/i18n logic)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "Self-hosted notification (ntfy-class) public semantics: pub/sub topics, 1..=5 priority levels, tags, click-action & attachment metadata (concepts only; no source read)",
+    "Token-bucket rate-limiting algorithm (public, textbook): burst ceiling + steady refill",
+    "First-party logic: content de-dup window, per-channel capability gating, EN/DE/TR grandma-friendly priority labels & rendering (Charter §6.3, ADR-007)",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (routing/throttle engine + i18n +
+# the self-hosted push server + the four transports + core event-bus glue).
+# The engine, throttle and i18n are implemented and tested in full; the server,
+# transports and core integration remain and are all ADR-justified Phase 1b.
+# The routing/throttle brain is done, but it is an honestly small slice of the
+# eventual transport-carrying crate, so fill stays conservative.
+fill_ratio              = 0.30
+fill_ratio_basis        = "Priority scale + Topic value object + Notification model + routing engine (priority filter + capability gating + DeliveryPlan) + dedup window + per-topic token-bucket rate limiter + EN/DE/TR UX, fully implemented & tested; server + transports + core glue deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-021 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Five-level priority scale (1..=5) with ordering + minimum-priority filter"
+ours = "src/priority.rs::Priority"
+
+[[mapped]]
+spec = "Validated pub/sub channel name (non-empty, length-bounded, restricted charset)"
+ours = "src/topic.rs::Topic"
+
+[[mapped]]
+spec = "Notification value model (title/body/priority/tags/click-action/attachment/created-at)"
+ours = "src/notification.rs::Notification"
+
+[[mapped]]
+spec = "Content de-dup fingerprint (topic+title+body)"
+ours = "src/notification.rs::Notification::dedup_key"
+
+[[mapped]]
+spec = "Subscription model (topic interest + minimum priority + receivable channels)"
+ours = "src/route.rs::Subscriber"
+
+[[mapped]]
+spec = "Delivery-channel abstraction (push/email/sms/webhook) + capability gating"
+ours = "src/route.rs::{Channel,route}"
+
+[[mapped]]
+spec = "Routing decision producing a DeliveryPlan (priority filter + per-channel fan-out)"
+ours = "src/route.rs::DeliveryPlan"
+
+[[mapped]]
+spec = "De-duplication within a caller-supplied window (pure over integer clock)"
+ours = "src/throttle.rs::DedupCache"
+
+[[mapped]]
+spec = "Per-topic token-bucket rate limiter (burst + steady refill, pure over integer clock)"
+ours = "src/throttle.rs::RateLimiter"
+
+[[mapped]]
+spec = "Six-language-line grandma-friendly priority labels + notification rendering (ADR-007)"
+ours = "src/label.rs::{Lang,Priority::label,Notification::render}"
+
+# ---- unmapped (NOT in this crate; ADR-021 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "Self-hosted ntfy-class HTTP/WebSocket push server"
+priority = "phase-1b"
+note     = "ADR-021: the cave-home back-end relay that satisfies Charter §9 'no third-party push relay'. Network-bound (HTTP/WebSocket listener); it publishes onto the topics this engine routes and emits the DeliveryPlan's Push deliveries. No new decision logic, just the server I/O."
+
+[[unmapped]]
+area     = "Self-hosted mobile push transport (APNs/FCM-free control plane)"
+priority = "phase-1b"
+note     = "ADR-021 + Charter §9: the cave-home control plane must not depend on Google/Apple; the OS-level final-hop wake-token is out-of-band. This transport carries a Channel::Push delivery to the companion app. Network/device-bound I/O adapter only."
+
+[[unmapped]]
+area     = "SMTP / SMS / webhook transports"
+priority = "phase-1b"
+note     = "ADR-021: the actual senders behind Channel::Email / Channel::Sms / Channel::Webhook. Each consumes a Delivery from the plan and performs network I/O; no routing logic lives there. Modelled now as routing decisions only."
+
+[[unmapped]]
+area     = "cave-home-core event-bus integration"
+priority = "phase-1b"
+note     = "ADR-021: turning core events (door opened, leak detected, alarm armed) into Notifications and feeding subscriber registries from core entities lands once cave-home-core's event API stabilises. The engine is already core-agnostic."
+
+[[unmapped]]
+area     = "Persisted subscriber registry + message history store"
+priority = "phase-2"
+note     = "ADR-021: durable storage of subscriptions and a queryable notification log is a storage-bound Phase 2 concern over the same pure model; the engine takes subscribers by slice and is storage-agnostic."
+
+[[unmapped]]
+area     = "Third-party push-relay compatibility shim"
+priority = "permanent"
+note     = "Charter §9 no third-party push relay + Charter §8 no-backcompat: cave-home self-hosts its push surface; it will never ship a shim that routes the control plane through a third-party relay."
+
+# ---- spec_test (designed from spec / first-party reference behaviour) -------
+
+[[spec_test]]
+designed_for = "Priority ordering, 1..=5 round-trip, and minimum-priority filter"
+ours         = "src/priority.rs::tests"
+
+[[spec_test]]
+designed_for = "Topic validation (empty / too-long / bad-charset boundaries)"
+ours         = "src/topic.rs::tests"
+
+[[spec_test]]
+designed_for = "Notification model defaults, builders and dedup-key content scoping"
+ours         = "src/notification.rs::tests"
+
+[[spec_test]]
+designed_for = "Multi-subscriber routing, priority filtering and channel capability gating"
+ours         = "src/route.rs::tests"
+
+[[spec_test]]
+designed_for = "Dedup window boundaries + per-topic token-bucket burst/refill/clamp"
+ours         = "src/throttle.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

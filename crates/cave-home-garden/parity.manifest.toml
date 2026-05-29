@@ -1,24 +1,158 @@
-# cave-home-garden — parity manifest scaffold.
+# cave-home-garden — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-garden — garden / outdoor (Husqvarna Automower, Worx Landroid, soil-moisture sensors, weather stations); upstream: HA garden-class integrations (Apache-2.0); port method: line-by-line (ADR-029)
+# Phase 1 ships the garden/outdoor plant-care *decision engine*: the plant care
+# profile model + common-plant presets, the frost-risk classifier (per frost
+# sensitivity), the light-fit assessment (lux or coarse band vs. light need),
+# the soil-moisture-band assessment + a watering recommendation modelled for
+# hand-off to cave-home-water, the growing-season / dormancy flag (caller
+# supplies the month; northern-hemisphere default), and the combined care-advice
+# engine — all surfaced grandma-friendly in EN/DE/TR. This is the brain every
+# automation, Portal tile and voice reply consumes. The outdoor sensor adapters,
+# the live weather-forecast feed, the plant-database import and the
+# cave-home-water / cave-home-core integration are network/hardware/clock-bound
+# and deferred to Phase 1b — each is enumerated below with an ADR-029
+# disposition.
+#
+# Port method: the care thresholds are implemented from *public horticultural
+# guidance* (frost-tenderness classes, daylight illuminance references, growing-
+# season calendar), all clean-room — no GPL source was read. The eventual vendor
+# adapters (Husqvarna Automower, Worx Landroid, weather stations) named in
+# ADR-029 are line-by-line ports of HA's Apache-2.0 integrations, deferred.
 
 [crate]
 name             = "cave-home-garden"
 upstream_repo    = "home-assistant/core (husqvarna_automower, worx_landroid, weather integrations)"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+port_method      = "spec-based (care engine) + line-by-line (vendor adapters, deferred)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "Frost-tenderness plant classes (tender / half-hardy / hardy) — standard horticultural guidance",
+    "Daylight illuminance references (full sun outdoors ≈ 100 000 lux; bright/indirect/shade bands)",
+    "Northern-hemisphere growing-season calendar (March–October active; November–February dormant)",
+    "RHS / extension-service soil-moisture and light-need guidance for common garden plants",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
+# Charter §7 always-latest + §8 no-backcompat apply: cave-home ships current
+# horticultural thresholds only; no historical-snapshot or legacy-compat mode.
+
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (care engine + outdoor sensor
+# adapters + weather feed + plant-DB import + water/core integration). The
+# engine is implemented and tested in full; the I/O adapters, the live feed, the
+# import and the cross-crate glue remain and are all ADR-justified Phase 1b.
+fill_ratio              = 0.30
+fill_ratio_basis        = "plant model + presets + frost/light/soil/temperature/season classifiers + combined care engine + EN/DE/TR UX, fully implemented & tested; sensor/weather/import/integration I/O deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-029 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Plant care-profile model (light need, soil-moisture band, frost sensitivity, temperature band)"
+ours = "src/plant.rs::{Plant,CareProfile}"
+
+[[mapped]]
+spec = "Common-plant care presets (frost-tenderness + light + moisture per kind)"
+ours = "src/plant.rs::PlantKind::profile"
+
+[[mapped]]
+spec = "Frost-risk classification (None/Watch/Warning/Danger) per frost-tenderness class"
+ours = "src/frost.rs::FrostRisk::classify"
+
+[[mapped]]
+spec = "Light-fit assessment (measured lux or coarse band vs. FullSun/PartShade/Shade need)"
+ours = "src/light.rs::{assess_lux,assess_band}"
+
+[[mapped]]
+spec = "Soil-moisture-band assessment (TooDry/Ideal/TooWet) vs. plant's ideal band"
+ours = "src/moisture.rs::assess"
+
+[[mapped]]
+spec = "Watering recommendation modelled for hand-off to cave-home-water (no runtime/valve here)"
+ours = "src/moisture.rs::recommend_water"
+
+[[mapped]]
+spec = "Ambient-temperature comfort assessment (TooCold/Comfortable/TooHot)"
+ours = "src/advice.rs::assess_temp"
+
+[[mapped]]
+spec = "Growing-season / dormancy flag from caller-supplied month (NH default + SH offset)"
+ours = "src/season.rs::{growing_season,growing_season_in}"
+
+[[mapped]]
+spec = "Combined care-advice engine (frost + light + soil + temp + water + season, one verdict)"
+ours = "src/advice.rs::advise"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR care messages + single most-actionable headline (ADR-007, §6.3)"
+ours = "src/advice.rs::CareAdvice::headline"
+
+# ---- unmapped (NOT in this crate; ADR-029 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "Outdoor soil-moisture / light / temperature sensor adapters (Zigbee / BLE / ESPHome)"
+priority = "phase-1b"
+note     = "ADR-029: outdoor probes report over Zigbee/BLE/ESPHome bridges. Hardware/BLE-bound; each maps its reading onto this engine's Conditions inputs (soil %, lux/band, °C) then reuses the engine unchanged. No new decision logic."
+
+[[unmapped]]
+area     = "Live weather-forecast feed (Davis Vantage, Ecowitt, Netatmo Weather)"
+priority = "phase-1b"
+note     = "ADR-029: the engine takes the forecast overnight minimum as a plain input. Wiring a live feed (HA Apache-2.0 weather integrations, line-by-line) is network-bound and deferred; it feeds forecast_min_c into FrostRisk::classify."
+
+[[unmapped]]
+area     = "Plant-database import (species → CareProfile)"
+priority = "phase-1b"
+note     = "ADR-029: presets cover common plants today; bulk import of a species database into CareProfile is a data/IO concern. The CareProfile model and Plant::custom already accept arbitrary profiles, so no engine change is needed."
+
+[[unmapped]]
+area     = "cave-home-water integration (carry out the watering recommendation)"
+priority = "phase-1b"
+note     = "ADR-029 + ADR-013: this crate models the boundary as WaterRecommendation (a flag + reason, no runtime/valve) and takes NO dependency on cave-home-water. Routing a recommendation into that crate's decide()/plan_run() is cross-crate glue, deferred."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration + automation triggers"
+priority = "phase-1b"
+note     = "ADR-029: surfacing care advice as core State entities + automation triggers (e.g. 'çim biçilmesin yağmur yağarken') lands once cave-home-core's entity API stabilises. The engine is already core-agnostic."
+
+[[unmapped]]
+area     = "Husqvarna Automower / Worx Landroid robot-mower control"
+priority = "phase-1b"
+note     = "ADR-029: the lawnmower surface is a line-by-line port of HA's Apache-2.0 husqvarna_automower / worx_landroid integrations. Cloud/network-bound (Husqvarna Connect; no published local LAN API as of 2026-05) and orthogonal to the plant-care engine shipped here."
+
+[[unmapped]]
+area     = "Sub-daily / multi-day weather extrapolation for frost timing"
+priority = "phase-2"
+note     = "ADR-029: a single forecast minimum is correct for tonight's frost verdict; smoothing a multi-day forecast into 'first frost date' style guidance is a Phase 2 refinement over the same thresholds."
+
+[[unmapped]]
+area     = "Historical-snapshot / legacy threshold compatibility mode"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home ships current horticultural thresholds only; no historical-snapshot or legacy-compat mode."
+
+# ---- spec_test (designed from spec / reference values) ---------------------
+
+[[spec_test]]
+designed_for = "Frost-risk thresholds at each band boundary, per frost-tenderness class"
+ours         = "src/frost.rs::tests"
+
+[[spec_test]]
+designed_for = "Light over/under/adequate vs. each light need, lux + coarse band, boundaries inclusive"
+ours         = "src/light.rs::tests"
+
+[[spec_test]]
+designed_for = "Soil-moisture band boundaries (TooDry/Ideal/TooWet) + watering-recommendation gating"
+ours         = "src/moisture.rs::tests"
+
+[[spec_test]]
+designed_for = "Growing-season flag per month, northern + southern hemisphere, out-of-range total"
+ours         = "src/season.rs::tests"
+
+[[spec_test]]
+designed_for = "Combined care advice + most-actionable headline priority (frost trumps the rest)"
+ours         = "src/advice.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/lib.rs::tests::ui_strings_carry_no_implementation_jargon"
