@@ -15,8 +15,8 @@ ported_at        = "2026-05-25"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.44
-fill_ratio_basis        = "phase-1 skeleton (Context + Event + EventBus + State + StateMachine)"
+fill_ratio              = 0.46
+fill_ratio_basis        = "phase-1 skeleton (Context + Event + EventBus + State + StateMachine) + StateMachine query API (entity_ids / entity_ids_by_domain / all)"
 fill_ratio_full_module  = 0.18
 test_port_ratio         = 0.20
 
@@ -51,6 +51,10 @@ ours     = "src/state_machine.rs::StateMachine"
 [[mapped]]
 upstream = "homeassistant/core.py::EVENT_STATE_CHANGED"
 ours     = "src/state_machine.rs::EVENT_STATE_CHANGED"
+
+[[mapped]]
+upstream = "homeassistant/core.py::StateMachine.async_entity_ids + async_entity_ids(domain) + async_all"
+ours     = "src/state_machine.rs::StateMachine::{entity_ids,entity_ids_by_domain,all}"
 
 [[unmapped]]
 upstream = "homeassistant/core.py::HomeAssistant + bootstrap"

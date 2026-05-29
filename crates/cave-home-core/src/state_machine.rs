@@ -101,6 +101,36 @@ impl StateMachine {
     pub fn remove(&self, id: &EntityId) -> Option<State> {
         self.inner.write().remove(id)
     }
+
+    /// Every entity id currently tracked, in arbitrary order.
+    ///
+    /// Mirrors HA's `StateMachine.async_entity_ids()`.
+    #[must_use]
+    pub fn entity_ids(&self) -> Vec<EntityId> {
+        self.inner.read().keys().cloned().collect()
+    }
+
+    /// Every tracked entity id whose domain matches `domain`
+    /// (e.g. `"light"`), in arbitrary order.
+    ///
+    /// Mirrors HA's `StateMachine.async_entity_ids(domain_filter)`.
+    #[must_use]
+    pub fn entity_ids_by_domain(&self, domain: &str) -> Vec<EntityId> {
+        self.inner
+            .read()
+            .keys()
+            .filter(|id| id.domain == domain)
+            .cloned()
+            .collect()
+    }
+
+    /// A snapshot of every current `State`, in arbitrary order.
+    ///
+    /// Mirrors HA's `StateMachine.async_all()`.
+    #[must_use]
+    pub fn all(&self) -> Vec<State> {
+        self.inner.read().values().cloned().collect()
+    }
 }
 
 #[cfg(test)]
