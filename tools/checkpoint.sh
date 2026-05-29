@@ -10,9 +10,10 @@ DISK=$(df -h /System/Volumes/Data | awk 'NR==2{print $5}')
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 COMMITS=$(git rev-list --count main..HEAD 2>/dev/null || echo 0)
 TARGET=$(du -sh target 2>/dev/null | awk '{print $1}')
-python3 - "$STATUS" "$HONEST" "$COMPLETE" "$DISK" "$BRANCH" "$COMMITS" "$TARGET" "$1" <<'PY'
+TDD=$(python3 tools/tdd_compliance.py 2>/dev/null | awk -F': ' '/test-first ratio/{print $2}' | tr -d '%')
+python3 - "$STATUS" "$HONEST" "$COMPLETE" "$DISK" "$BRANCH" "$COMMITS" "$TARGET" "${TDD:-NA}" "$1" <<'PY'
 import sys, json
-status, honest, complete, disk, branch, commits, target, note = sys.argv[1:9]
+status, honest, complete, disk, branch, commits, target, tdd, note = sys.argv[1:10]
 doc = {
   "updated": note or "checkpoint",
   "honest_count": int(honest),
@@ -22,6 +23,7 @@ doc = {
   "target_size": target,
   "branch": branch,
   "commits_ahead_of_main": int(commits),
+  "tdd_test_first_ratio_pct": (None if tdd in ("NA","") else float(tdd)),
 }
 open(status,"w").write(json.dumps(doc, indent=2)+"\n")
 print(json.dumps(doc, indent=2))
