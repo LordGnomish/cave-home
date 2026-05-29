@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Line-by-line port of `pkg/proxy/iptables/proxier.go` chain-naming
-//! helpers (lines 546-594). Verified bit-for-bit against upstream chain
-//! literals harvested from `proxier_test.go` (see `tests/chain_names_test.rs`).
+//! Chain-naming helpers — a behavioural reimplementation of the *documented*
+//! kube-proxy iptables chain-naming scheme (`KUBE-SVC-`/`KUBE-SEP-`/… +
+//! truncated base32(SHA-256) hash). The expected chain literals used in
+//! `tests/chain_names_test.rs` are the well-known published values for the
+//! canonical `ns1/svc1:p80` fixtures; this is verified against those documented
+//! values, not against any specific unread upstream source revision.
 //!
-//! Algorithm (upstream, Go):
+//! Algorithm (as publicly documented, Go):
 //! ```go
 //! func portProtoHash(servicePortName string, protocol string) string {
 //!     hash := sha256.Sum256([]byte(servicePortName + protocol))

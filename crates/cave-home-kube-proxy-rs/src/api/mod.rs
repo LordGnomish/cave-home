@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Hand-ported subset of `k8s.io/api/core/v1` + `k8s.io/api/discovery/v1`.
+//! Narrow iptables-MVP subset of the documented `k8s.io/api/core/v1` +
+//! `k8s.io/api/discovery/v1` shapes (the fuller decision-core model lives in
+//! [`crate::core::model`]).
 //! Only the fields needed by Phase 1 ClusterIP iptables proxying are modelled.
 //! Larger surface (LoadBalancer, NodePort, IPv6, topology hints) is
 //! deliberately unmapped — see `parity.manifest.toml`.

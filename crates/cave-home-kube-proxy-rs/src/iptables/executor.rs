@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `IptablesExecutor` trait + Linux subprocess implementation.
 //!
-//! Upstream: `pkg/util/iptables/iptables.go` `runner.Restore` /
-//! `runner.RestoreAll`. We split the surface into a trait so the rest of
-//! the proxier can be tested without a real iptables binary.
+//! Modelled on the documented `iptables-restore --noflush --counters` flow
+//! with the `/run/xtables.lock` advisory lock. We split the surface into a
+//! trait so the rest of the proxier can be tested without a real iptables
+//! binary. Behavioural reimplementation, not a verbatim source port.
 //!
 //! On non-Linux hosts the `LinuxExecutor` returns
 //! `ProxierError::UnsupportedPlatform` — Charter §6 declares Linux 7.1+

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use cave_home_scheduler_rs::{
     Container, InMemorySink, InMemorySource, Node, NodeSelector, NodeSelectorOperator,
     NodeSelectorRequirement, NodeSelectorTerm, ObjectMeta, Pod, PodSpec, Quantity, ResourceName,
-    Scheduler, Taint, TaintEffect, Toleration, TolerationOperator,
+    Scheduler, SchedulingQueue, Taint, TaintEffect, Toleration, TolerationOperator,
 };
 
 fn node(name: &str, cpu_m: i64, mem_b: i64) -> Node {
@@ -166,6 +166,80 @@ async fn end_to_end_tolerated_taint_allows_bind() {
     sched.sync().await.unwrap();
     sched.run_once().await.unwrap();
     assert_eq!(sink.binds(), vec![("default/workload".into(), "gpu".into())]);
+}
+
+#[tokio::test]
+async fn end_to_end_preemption_nominates_node_when_only_lower_priority_pods_block() {
+    // A node already saturated by a low-priority pod cannot fit a new
+    // high-priority pod on the Filter pass; PostFilter (DefaultPreemption)
+    // must nominate the node by evicting the lower-priority occupant, and the
+    // scheduler must surface that as a "Preempted" event (no bind yet — the
+    // eviction is driven by the API server in a later cycle).
+    let src = Arc::new(InMemorySource::new());
+    let sink = Arc::new(InMemorySink::new());
+    src.add_node(node("n1", 1000, 4096));
+
+    // Occupant pod is already bound to n1 and consumes almost all CPU.
+    let mut occupant = pod("occupant", 800, 256);
+    occupant.spec.priority = 0;
+    occupant.spec.node_name = "n1".into();
+    src.add_pod(occupant);
+
+    // Incoming high-priority pod needs more CPU than is free.
+    let mut important = pod("important", 500, 256);
+    important.spec.priority = 1000;
+    src.add_pod(important);
+
+    let sched = Scheduler::new(src.clone(), sink.clone());
+    // Fold the already-bound occupant into the cache so NodeInfo reflects its load.
+    sched.cache.add_node(node("n1", 1000, 4096));
+    let mut bound = pod("occupant", 800, 256);
+    bound.spec.node_name = "n1".into();
+    sched.cache.add_pod(bound).unwrap();
+
+    sched.sync().await.unwrap();
+    sched.run_once().await.unwrap();
+
+    // No bind for the important pod yet — it was nominated via preemption.
+    assert!(
+        sink.binds()
+            .iter()
+            .all(|(name, _)| name != "default/important"),
+        "preempting pod must not bind in the same cycle"
+    );
+    assert!(
+        sink.events()
+            .iter()
+            .any(|(p, r, _)| p == "default/important" && r == "Preempted"),
+        "expected a Preempted event, got {:?}",
+        sink.events()
+    );
+}
+
+#[tokio::test]
+async fn end_to_end_backoff_flush_requeues_unschedulable_pod() {
+    // An unschedulable pod is moved to the backoff sub-queue; flushing the
+    // backoff after its ready time promotes it back to active so a later
+    // cycle can retry. This exercises the queue's exponential-backoff
+    // promotion path end-to-end through the Scheduler.
+    let src = Arc::new(InMemorySource::new());
+    let sink = Arc::new(InMemorySink::new());
+    src.add_node(node("tiny", 100, 256));
+    src.add_pod(pod("huge", 5_000, 1));
+
+    let sched = Scheduler::new(src.clone(), sink.clone());
+    sched.sync().await.unwrap();
+    // First attempt fails -> pod lands in backoff (queue len stays 1).
+    sched.run_once().await.unwrap();
+    assert!(sink.binds().is_empty());
+    assert_eq!(sched.queue.len(), 1);
+    // Nothing is active yet, so a second run_once finds an empty active queue.
+    assert!(sched.run_once().await.unwrap().is_none());
+    // Flush backoff well past the 1s initial window -> pod returns to active.
+    sched.queue.flush_backoff(60_000);
+    let outcome = sched.run_once().await.unwrap();
+    assert!(outcome.is_some(), "flushed pod should be popped and retried");
+    assert_eq!(outcome.unwrap().pod_full_name, "default/huge");
 }
 
 #[tokio::test]

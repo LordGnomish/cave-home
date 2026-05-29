@@ -2,7 +2,9 @@
 //! Composition root: the `Proxier` glues `ServiceCache` + `EndpointSliceCache`
 //! + `build_proxy_rules` + `IptablesExecutor` together and runs the reconciler.
 //!
-//! Upstream: `pkg/proxy/iptables/proxier.go` `Proxier` struct.
+//! Modelled on the documented kube-proxy `Proxier` reconcile loop (event-driven
+//! cache + debounced full sync). Behavioural reimplementation, not a verbatim
+//! source port — see `parity.manifest.toml`.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -73,6 +75,10 @@ impl Proxier {
     /// Drain any currently-available events from the source, snapshot the
     /// caches, build rules, and feed the executor exactly once. This is
     /// the building block both `run_until` and tests use.
+    ///
+    /// # Errors
+    /// Returns [`ProxierError`] when the executor fails to apply the rules
+    /// (e.g. a non-zero `iptables-restore` exit).
     pub async fn sync_once(&self) -> Result<(), ProxierError> {
         // -- 1. drain pending watch events into caches --------------------
         {
@@ -122,6 +128,9 @@ impl Proxier {
     /// Reconciler loop that runs until `deadline` elapses. Mirrors
     /// upstream `Proxier.SyncLoop` but with a finite deadline so tests
     /// can call it directly. Production callers pass `Duration::MAX`.
+    ///
+    /// # Errors
+    /// Returns [`ProxierError`] if a sync performed during the loop fails.
     pub async fn run_until(&self, deadline: Duration) -> Result<(), ProxierError> {
         let started = Instant::now();
         let mut last_sync = Instant::now()
