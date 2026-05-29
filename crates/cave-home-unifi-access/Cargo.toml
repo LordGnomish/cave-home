@@ -6,17 +6,18 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-unifi-access — UniFi Access port (door locks, hub status, access events); upstream: home-assistant/core UniFi Access integration + Ubiquiti Access REST API; port method: line-by-line (ADR-009)"
+description = "cave-home-unifi-access — UniFi Access (door locks, hub status, access events); upstream: home-assistant/core UniFi Access integration + Ubiquiti Access REST API; port method: spec-based (door/credential engine) + line-by-line (Access API shape) (ADR-009)"
 
 [package.metadata.cave-home]
 upstream    = "home-assistant/core (UniFi Access) + Ubiquiti Access REST"
-port-method = "line-by-line"
+# Upstream referenced for behaviour/API shape only; source not transcribed. A
+# prior pinned SHA was unverified (reused across unrelated upstreams) and removed.
+port-method = "spec-based (door/credential engine) + line-by-line (Access API shape)"
 adr         = "ADR-009"
 
 [package.metadata.upstream]
 repo    = "home-assistant/core"
 release = "2026.5.2"
-sha     = "456202325ac48549bd3c895dc3e69ecd3e2ba6a4"
 subpath = "homeassistant/components/unifi_access"
 
 # Phase-1 MVP is pure, std-only domain logic: the door-control model + access

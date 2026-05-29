@@ -6,11 +6,11 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-garden — garden / outdoor (Husqvarna Automower, Worx Landroid, soil-moisture sensors, weather stations); upstream: HA garden-class integrations (Apache-2.0); port method: line-by-line (ADR-029)"
+description = "cave-home-garden — garden / outdoor (Husqvarna Automower, Worx Landroid, soil-moisture sensors, weather stations); upstream: HA garden-class integrations (Apache-2.0); port method: spec-based (care engine) + line-by-line (vendor adapters, deferred) (ADR-029)"
 
 [package.metadata.cave-home]
 upstream    = "home-assistant/core (husqvarna_automower, worx_landroid, weather integrations)"
-port-method = "line-by-line"
+port-method = "spec-based (care engine) + line-by-line (vendor adapters, deferred)"
 adr         = "ADR-029"
 
 [lints]

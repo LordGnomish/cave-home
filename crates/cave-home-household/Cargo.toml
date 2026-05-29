@@ -6,11 +6,11 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-household — household management (Grocy port: food/medicine/battery inventory, chores, shopping list); upstream: grocy/grocy (MIT); port method: line-by-line (ADR-026)"
+description = "cave-home-household — household management (Grocy-class: food/medicine/battery inventory, chores, shopping list); upstream: grocy/grocy (MIT, domain reference); port method: spec-based (first-party domain model; no PHP source ported) (ADR-026)"
 
 [package.metadata.cave-home]
 upstream    = "grocy/grocy"
-port-method = "line-by-line"
+port-method = "spec-based (first-party domain model from Grocy-class semantics; no PHP source ported)"
 adr         = "ADR-026"
 
 [lints]

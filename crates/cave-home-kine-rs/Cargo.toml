@@ -6,11 +6,11 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-kine-rs — etcd-compatible SQLite/Postgres-backed datastore (K3s's single-binary trick); upstream: k3s-io/kine; port method: line-by-line (Orchestration Phase 3, ADR-004)"
+description = "cave-home-kine-rs — etcd-compatible SQLite/Postgres-backed datastore (K3s's single-binary trick); upstream: k3s-io/kine; port method: spec-based behavioural reimplementation of etcd-MVCC + kine semantics (not verbatim line-by-line) (Orchestration Phase 3, ADR-004)"
 
 [package.metadata.cave-home]
 upstream    = "k3s-io/kine"
-port-method = "line-by-line"
+port-method = "spec-based (behavioural reimplementation of etcd-MVCC + kine semantics; NOT verbatim line-by-line)"
 phase       = "orchestration-phase-3"
 
 [lints]

@@ -6,11 +6,12 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-alarm — alarm panels (AlarmDecoder for Honeywell/DSC + Bosch + ELK-M1 + HA alarm_control_panel domain); port method: line-by-line (ADR-018)"
+description = "cave-home-alarm — alarm panels (AlarmDecoder for Honeywell/DSC + Bosch + ELK-M1 + HA alarm_control_panel domain); port method: spec-based (alarm state machine) + first-party (safety/code/delay logic) (ADR-018)"
 
 [package.metadata.cave-home]
 upstream    = "home-assistant/core (alarmdecoder, alarm_control_panel domain, vendor panel integrations)"
-port-method = "line-by-line"
+# Upstream referenced for the alarm_control_panel state contract only.
+port-method = "spec-based (alarm state machine) + first-party (safety/code/delay logic)"
 adr         = "ADR-018"
 
 [lints]

@@ -6,11 +6,12 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-lock — residential smart locks (Nuki, SwitchBot, August/Yale, ESPHome lock components) + Zigbee/Z-Wave/Matter lock-domain bindings; port method: line-by-line (ADR-016)"
+description = "cave-home-lock — residential smart locks (Nuki, SwitchBot, August/Yale, ESPHome lock components) + Zigbee/Z-Wave/Matter lock-domain bindings; port method: spec-based (lock state machine) + first-party (safety/PIN logic) (ADR-016)"
 
 [package.metadata.cave-home]
 upstream    = "home-assistant/core (lock-domain integrations) + Nuki/SwitchBot public REST APIs"
-port-method = "line-by-line"
+# Upstream referenced for the lock entity state contract only.
+port-method = "spec-based (lock state machine) + first-party (safety/PIN logic)"
 adr         = "ADR-016"
 
 [lints]

@@ -6,11 +6,13 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-core — state machine + event bus (upstream: home-assistant/core, port method: line-by-line)"
+description = "cave-home-core — state machine + event bus (upstream: home-assistant/core; port method: behavioural reimplementation of HA-core semantics)"
 
 [package.metadata.cave-home]
 upstream    = "home-assistant/core"
-port-method = "line-by-line"
+# Behavioural reference (homeassistant/core.py semantics); not a verbatim
+# line-by-line transcription. See parity.manifest.toml for spec sources.
+port-method = "behavioural-reimplementation"
 
 [dependencies]
 parking_lot = "0.12"

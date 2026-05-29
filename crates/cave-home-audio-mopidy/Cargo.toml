@@ -6,11 +6,11 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-audio-mopidy — local music server (Mopidy backend client + HA mopidy integration); upstream: mopidy/mopidy (Apache-2.0); port method: line-by-line (ADR-020)"
+description = "cave-home-audio-mopidy — local music server (MPD protocol engine + HA mopidy integration); upstream: mopidy/mopidy (Apache-2.0); port method: spec-based (MPD protocol engine, clean-room) + line-by-line (Mopidy adapters, phase-1b) (ADR-020)"
 
 [package.metadata.cave-home]
 upstream    = "mopidy/mopidy + home-assistant/core (mopidy integration)"
-port-method = "line-by-line"
+port-method = "spec-based (MPD protocol engine; clean-room per Charter §6.1) + line-by-line (Mopidy adapters, phase-1b)"
 adr         = "ADR-020"
 
 [lints]

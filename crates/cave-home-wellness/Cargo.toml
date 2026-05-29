@@ -6,11 +6,11 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-wellness — wearable + health-data integrations (Withings, Garmin, Fitbit, Oura); upstream: HA wellness integrations (Apache-2.0); port method: line-by-line (ADR-025)"
+description = "cave-home-wellness — wearable + health-data integrations (Withings, Garmin, Fitbit, Oura); upstream: HA wellness integrations (Apache-2.0); port method: spec-based (wellness engine) + line-by-line (vendor adapters, phase-1b) (ADR-025)"
 
 [package.metadata.cave-home]
 upstream    = "home-assistant/core (withings, garmin_connect, fitbit, oura)"
-port-method = "line-by-line"
+port-method = "spec-based (wellness engine) + line-by-line (vendor adapters, phase-1b)"
 adr         = "ADR-025"
 
 [lints]

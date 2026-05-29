@@ -6,11 +6,11 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-air-quality — CO2/PM2.5/VOC/radon sensors (AirGradient, Awair, IKEA Vindriktning, Airthings); port method: line-by-line (ADR-019)"
+description = "cave-home-air-quality — CO2/PM2.5/VOC/radon sensors (AirGradient, Awair, IKEA Vindriktning, Airthings); port method: line-by-line (vendor adapters) + spec-based (AQI engine) (ADR-019)"
 
 [package.metadata.cave-home]
 upstream    = "home-assistant/core (airgradient, awair, ikea_vindriktning, airthings)"
-port-method = "line-by-line"
+port-method = "line-by-line (vendor adapters) + spec-based (AQI engine)"
 adr         = "ADR-019"
 
 [lints]
