@@ -1,24 +1,145 @@
-# cave-home-portal — parity manifest scaffold.
+# cave-home-portal — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-portal — Lovelace-class web dashboard (upstream: home-assistant/core (frontend) + koush/scrypted, port method: line-by-line)
+# Phase 1 ships the Portal's *view-model + layout engine*: the pure UI logic a
+# Lovelace-class household dashboard sits on. That is the navigation tree
+# (Home → rooms → devices), the typed card model, the zero-config auto-dashboard
+# generator, the raw-state → grandma-friendly tile mapping (EN/DE/TR), the
+# Developer-view gate (Charter §6.3), and the theme / responsive model. It is
+# std-only and depends on no other cave-home crate, so the whole brain is
+# unit-tested in isolation. The HTTP/WebSocket server, the REST API, the web
+# frontend assets (HTML/JS/WASM), live state streaming, auth/session, the
+# editor's persistence, and the cave-home-core state subscription are network-
+# or frontend-bound and deferred to Phase 1b — each is enumerated below with an
+# ADR-019 disposition.
+#
+# Port method: FIRST-PARTY. We treated the *concept* of a card-based,
+# area-organised household dashboard (the "Lovelace-class" target named in
+# Charter §3) and the normative UI vocabulary in docs/ui-language.md as the
+# spec. No Home Assistant frontend or Scrypted source was read or ported; the
+# card taxonomy, the auto-generation rules, and the Developer-view gate are our
+# own design. (The pre-uplift manifest's "line-by-line port of
+# home-assistant/core (frontend) + koush/scrypted" provenance was false and has
+# been corrected.)
 
 [crate]
 name             = "cave-home-portal"
-upstream_repo    = "home-assistant/core (frontend) + koush/scrypted"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "none (first-party)"
+port_method      = "first-party (Lovelace-class UX concept + docs/ui-language.md as spec)"
+upstream_license = "n/a — first-party, Apache-2.0"
+spec_sources     = [
+    "cave-home Charter §3 (Portal = Lovelace-class dashboard, mobile-friendly)",
+    "cave-home Charter §6.3 + ADR-007 (grandma-friendly UX; Developer-view toggle off by default, hidden on mobile)",
+    "cave-home Charter §2 (personas: headline non-technical resident; power-user escape hatch)",
+    "docs/ui-language.md (normative home-world UI vocabulary + 'never show in UI' jargon list)",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL Portal scope: the view-model/layout engine
+# (this crate) PLUS the HTTP/WS server, REST API, web frontend assets, live
+# state streaming, auth/session, editor persistence, and core-state
+# subscription. The UI-model brain is implemented and tested in full; the
+# network + frontend half remains and is entirely ADR-justified Phase 1b.
+fill_ratio              = 0.25
+fill_ratio_basis        = "area/hierarchy model + typed card model + auto-dashboard generator + entity→tile view-model (light/switch/lock/cover/climate/sensor/scene/camera) + EN/DE/TR labels + Developer-view gate + theme/responsive model, all implemented & tested (50 unit tests + 1 doctest); HTTP/WS server, REST API, web frontend, live streaming, auth, editor persistence, core subscription deferred"
+test_port_ratio         = 0.0   # tests designed first-party, none ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-019 phase disposition
+honest_ratio            = 1.00  # 0.25 / (0.25 + (1-0.25)*(1-1.00)) = 1.00
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Charter §3 area model: Home → Areas (rooms) → Entities navigation tree ('rooms over hierarchies', ui-language.md)"
+ours = "src/area.rs::{Home,Area,Entity,Domain}"
+
+[[mapped]]
+spec = "Lovelace-class typed card model (Entity/Glance/Button/Thermostat/Cover/Light/Camera/SensorGraph/Scene/AreaSummary) + developer-only card kinds"
+ours = "src/card.rs::Card"
+
+[[mapped]]
+spec = "Dashboard structure: views/tabs + cards, favourites + scenes surfaces"
+ours = "src/dashboard.rs::{Dashboard,View,Favorite}"
+
+[[mapped]]
+spec = "Auto-dashboard generation: group by area, one card kind per domain, catch-all 'Other' view, scenes + auto-favourites"
+ours = "src/autogen.rs::auto_dashboard"
+
+[[mapped]]
+spec = "Raw entity (domain+state+attributes) → grandma-friendly tile: name, human status ('On'/'21°'/'Locked'), icon, actions, localised EN/DE/TR"
+ours = "src/viewmodel.rs::{tile,Tile,EntityState,Action,ActionKind}"
+
+[[mapped]]
+spec = "Developer-view toggle (Charter §6.3): ViewMode gates developer-only cards/pages; default Resident; hidden on mobile"
+ours = "src/view_mode.rs::ViewMode + src/dashboard.rs::Dashboard::for_mode"
+
+[[mapped]]
+spec = "Grandma-friendly UI vocabulary EN/DE/TR (Charter §6.3, docs/ui-language.md), verified jargon-free"
+ours = "src/label.rs::{Lang,Phrase}"
+
+[[mapped]]
+spec = "Theme/branding model + responsive breakpoint → card-column hints (mobile/tablet/desktop)"
+ours = "src/theme.rs::{Theme,Breakpoint,Mode}"
+
+# ---- unmapped (NOT in this crate; ADR-019 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "HTTP / WebSocket server + REST API"
+priority = "phase-1b"
+note     = "ADR-019: the Portal backend serves the view-model over HTTP and pushes state over WebSocket. Network-bound; it serialises the types in this crate and dispatches the typed ActionKind set. No new UI logic, just transport."
+
+[[unmapped]]
+area     = "Web frontend assets (HTML / JS / WASM)"
+priority = "phase-1b"
+note     = "ADR-019: the actual rendered dashboard (cards, theme CSS variables, responsive grid) is a frontend artifact built on this crate's view-model + theme + Breakpoint::columns hints. Frontend-bound, separate toolchain."
+
+[[unmapped]]
+area     = "Live entity-state streaming"
+priority = "phase-1b"
+note     = "ADR-019: continuous tile refresh feeds EntityState into viewmodel::tile on each update. Stream/transport-bound; the mapping function is already total and side-effect-free."
+
+[[unmapped]]
+area     = "cave-home-core entity/state subscription"
+priority = "phase-1b"
+note     = "ADR-019: sourcing the Home registry and live states from cave-home-core lands once core's entity API stabilises. This crate is deliberately core-agnostic so it can be tested in isolation."
+
+[[unmapped]]
+area     = "Authentication / session / family-role gating"
+priority = "phase-1b"
+note     = "ADR-019: who-can-see-what (Charter family roles: Yönetici/Üye/Misafir/Çocuk) is an auth concern layered above the view-model. Auth-bound; the ViewMode gate is independent of it."
+
+[[unmapped]]
+area     = "Drag-and-drop dashboard editor persistence"
+priority = "phase-1b"
+note     = "ADR-019: residents can reorder/customise the auto-generated dashboard; saving that layout needs a store + the frontend editor. Frontend + persistence-bound. The Dashboard model is already serialisable in shape."
+
+[[unmapped]]
+area     = "Backward-compatibility / legacy dashboard import mode"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home ships its own first-party dashboard model only; no Lovelace-YAML import or historical-schema compatibility layer."
+
+# ---- spec_test (designed from Charter / ui-language.md, not ported) --------
+
+[[spec_test]]
+designed_for = "Area/hierarchy: group entities by room, surface unassigned, idempotent registry re-sync"
+ours         = "src/area.rs::tests"
+
+[[spec_test]]
+designed_for = "Auto-dashboard generation: one view per non-empty room, per-domain card choice, 'Other' catch-all, scenes + favourites, no developer content emitted"
+ours         = "src/autogen.rs::tests"
+
+[[spec_test]]
+designed_for = "Entity→tile view-model state text for light/switch/lock/climate/cover/sensor/scene + unavailable, localised EN/DE/TR"
+ours         = "src/viewmodel.rs::tests"
+
+[[spec_test]]
+designed_for = "Developer-view gating (Charter §6.3): resident strips all developer cards/views; mobile strips them even with the flag set; default is Resident"
+ours         = "src/dashboard.rs::tests + src/view_mode.rs::tests"
+
+[[spec_test]]
+designed_for = "Responsive breakpoints → card columns (mobile 1 / tablet 2 / desktop 4) + theme validation"
+ours         = "src/theme.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3) — across every phrase, every domain tile, every language"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon + src/viewmodel.rs::tests::no_tile_status_or_icon_leaks_jargon"

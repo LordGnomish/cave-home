@@ -12,6 +12,10 @@ description = "cave-home — unified Rust binary entry point linking every cave-
 upstream    = "none"
 port-method = "first-party"
 
+[lib]
+name = "cave_home_binary"
+path = "src/lib.rs"
+
 [[bin]]
 name = "cave-home"
 path = "src/main.rs"

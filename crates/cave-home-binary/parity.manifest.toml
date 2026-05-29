@@ -1,22 +1,172 @@
-# cave-home-binary — parity manifest scaffold.
+# cave-home-binary — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home — unified Rust binary entry point linking every cave-home-* crate per Charter §5 (first-party, no upstream port)
+# `cave-home-binary` is the unified single-binary entry point (Charter §5: one
+# Rust binary per node — the unit of install, upgrade, and rollback). It has no
+# upstream to port; it is the aggregator that the other cave-home-* crates link
+# into. Phase 1 ships the *pure-logic bootstrap/config/dispatch core*: the
+# layered node-config model + validation, hand-rolled argv → typed Command
+# parsing with grandma-friendly help, the ordered bring-up plan + single-binary
+# invariant, the reverse-order shutdown plan, the health/readiness aggregation,
+# and honest build/version info. All of it is std-only and I/O-free so the
+# decisions are fully unit-tested before any of them actually happen.
+#
+# The execution half — the async runtime, the real process launch + OS signal
+# handling, the actual per-component start (which depends on sibling crates'
+# start APIs), and the install/upgrade/rollback mechanics — is network/OS-bound
+# and deferred to Phase 1b. Each is enumerated in [[unmapped]] with a phase
+# disposition. The core computes the plans those phases will execute.
+#
+# Port method: first-party. There is no upstream source; the shape follows the
+# Charter (§5 single-binary, §6.3 grandma-friendly) and ADR-005 deployment
+# topology. No GPL/AGPL source was read; nothing is ported line-by-line.
 
 [crate]
 name             = "cave-home-binary"
 upstream_repo    = "none"
 port_method      = "first-party"
-ported_at        = "2026-05-25"
+upstream_license = "n/a"
+spec_sources     = [
+    "docs/CHARTER.md §5 — one Rust binary per node; in-process, no sidecars; unit of install/upgrade/rollback",
+    "docs/CHARTER.md §6.3 / ADR-007 — grandma-friendly UX (no implementation jargon in user-facing text)",
+    "docs/adr/ADR-005-deployment-topology.md — hub / secondary / ml node roles + bootstrap shape",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# First-party crate: fill_ratio is measured against the FULL intended scope of
+# the single-binary runtime (decision core + execution machinery), not an
+# upstream baseline. The decision core (config/cli/bootstrap/shutdown/health/
+# version) is implemented and tested in full; the execution machinery is
+# network/OS-bound and ADR-justified Phase 1b — it is removed from the honest
+# denominator, not counted as done.
+fill_ratio              = 0.35
+fill_ratio_basis        = "layered config model + validation, argv→Command parser + grandma-friendly help, bring-up plan + single-binary invariant, reverse-order shutdown plan, health aggregation, honest build/version info — all implemented & tested; runtime/launch/signals/real-start/install-upgrade-rollback deferred"
+test_port_ratio         = 0.0   # tests designed from Charter/ADR, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries a phase disposition
+honest_ratio            = 1.00  # 0.35 / (0.35 + (1-0.35)*(1-1.0)) = 1.00
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Charter §5 single-binary component identities (in-process, no sidecars)"
+ours = "src/lib.rs::Component"
+
+[[mapped]]
+spec = "Layered node config: defaults < file < env < flags, deterministic merge"
+ours = "src/config.rs::{Config::from_layers,ConfigLayer::overlay}"
+
+[[mapped]]
+spec = "Node config model: name / role (hub|secondary|ml) / pillars / data dir / network bind / log level"
+ours = "src/config.rs::{Config,NodeRole,LogLevel}"
+
+[[mapped]]
+spec = "Config validation → typed errors, no panic"
+ours = "src/config.rs::{Config::validate,ConfigError}"
+
+[[mapped]]
+spec = "Hand-rolled argv → typed Command (run/serve, status, config check/show, node join/list, backup/restore, version, help)"
+ours = "src/cli.rs::{parse,Command}"
+
+[[mapped]]
+spec = "Arg-parse error cases → typed errors, no panic"
+ours = "src/cli.rs::ParseError"
+
+[[mapped]]
+spec = "Grandma-friendly help text (Charter §6.3, ADR-007) — no implementation jargon"
+ours = "src/cli.rs::help_text"
+
+[[mapped]]
+spec = "Ordered bring-up plan from validated config (pure planning, no launch)"
+ours = "src/bootstrap.rs::Plan::compute"
+
+[[mapped]]
+spec = "Single-binary invariant over a computed plan (Charter §5)"
+ours = "src/bootstrap.rs::Plan::is_single_binary"
+
+[[mapped]]
+spec = "Graceful-shutdown plan (bring-up order reversed)"
+ours = "src/shutdown.rs::ShutdownPlan::from_bootstrap"
+
+[[mapped]]
+spec = "Health/readiness aggregation (overall up/degraded/down from component states)"
+ours = "src/health.rs::Health::aggregate"
+
+[[mapped]]
+spec = "Honest build/version info: version, git sha (env or \"unknown\", never fabricated), profile, supported-pillar list"
+ours = "src/version.rs::BuildInfo"
+
+[[mapped]]
+spec = "Thin entry point: parse argv, dispatch into tested lib, top-level Result/ExitCode (no unwrap)"
+ours = "src/main.rs::main"
+
+# ---- unmapped (NOT in this crate; Phase 1b/2 disposition) ------------------
+
+[[unmapped]]
+area     = "Async runtime + actual process launch"
+priority = "phase-1b"
+note     = "The decision core computes the bring-up Plan; spinning up the async runtime and entering the long-running process loop is OS/runtime-bound and lands once the sibling pillars expose start APIs. No new planning logic — the plan is already computed and tested."
+
+[[unmapped]]
+area     = "OS signal handling (SIGTERM/SIGINT → graceful shutdown)"
+priority = "phase-1b"
+note     = "ShutdownPlan is computed and tested here; wiring it to real OS signals is syscall-bound (Charter §6.2 modern-Linux) and deferred with the runtime."
+
+[[unmapped]]
+area     = "Real per-component start/stop wiring"
+priority = "phase-1b"
+note     = "Component is modelled as an in-process identity enum to keep this crate std-only and testable. Mapping each Component to its owning crate's start/stop function is added as those crates' lifecycle APIs stabilise; it consumes this plan unchanged."
+
+[[unmapped]]
+area     = "Config-file + environment loaders (parse real files/env into ConfigLayer)"
+priority = "phase-1b"
+note     = "The merge + validation are implemented and tested against typed ConfigLayer values. Reading an on-disk file and the process environment into those layers is I/O-bound; deferred so the merge stays a pure, fully-tested function (no YAML crate required)."
+
+[[unmapped]]
+area     = "Install / upgrade / rollback mechanics (the binary as unit of each — Charter §5)"
+priority = "phase-1b"
+note     = "ADR-005: the binary is the unit of install/upgrade/rollback. The atomic-swap + health-gated rollback mechanics are filesystem/OS-bound and land with the deployment-bootstrap work; the health verdict they gate on is implemented here."
+
+[[unmapped]]
+area     = "Live `status` / `node list` / `backup` / `restore` execution"
+priority = "phase-1b"
+note     = "These verbs parse to typed Commands today; their action needs a running home (state to read, nodes to enumerate, snapshots to take). The command surface is complete; the execution is deferred with the runtime."
+
+[[unmapped]]
+area     = "Pre-7.1-kernel / 32-bit / legacy compatibility shims"
+priority = "permanent"
+note     = "Charter §6.2 + §8 no-backcompat: the floor is 64-bit modern Linux 7.1+. No compatibility shims are planned, ever."
+
+# ---- spec_test (designed from Charter / ADR, not ported) -------------------
+
+[[spec_test]]
+designed_for = "Layered merge precedence: defaults/file/env/flag + unset-does-not-clear"
+ours         = "src/config.rs::tests (full_four_layer_precedence_chain, env_overrides_file, flags_override_everything, unset_higher_layer_field_does_not_clear_lower)"
+
+[[spec_test]]
+designed_for = "Config validation rejects bad name/data-dir/port/empty-components/missing-foundation/ml-without-cameras"
+ours         = "src/config.rs::tests (bad_*_rejected, pillars_without_orchestration_rejected, ml_role_without_cameras_rejected)"
+
+[[spec_test]]
+designed_for = "argv parse for each subcommand + bad args + help routing"
+ours         = "src/cli.rs::tests (run_parses_all_flags, config_*, node_*, backup_*, restore_*, *help*)"
+
+[[spec_test]]
+designed_for = "Bring-up plan ordering + single-binary invariant (Charter §5)"
+ours         = "src/bootstrap.rs::tests (broker_precedes_core_which_precedes_pillars, single_binary_invariant_holds_for_hub, subset_plan_keeps_relative_order)"
+
+[[spec_test]]
+designed_for = "Shutdown plan is the exact reverse of bring-up"
+ours         = "src/shutdown.rs::tests (shutdown_is_the_exact_reverse_of_bootstrap, portal_stops_first_and_orchestration_last)"
+
+[[spec_test]]
+designed_for = "Health aggregation: all-up / all-down / partial-degraded"
+ours         = "src/health.rs::tests (all_up_is_up_and_ready, all_down_is_down, one_down_among_up_is_degraded)"
+
+[[spec_test]]
+designed_for = "Build/version info never fabricates a git sha (env or \"unknown\")"
+ours         = "src/version.rs::tests (absent_sha_reports_unknown_not_fabricated, current_does_not_fabricate_a_sha)"
+
+[[spec_test]]
+designed_for = "Grandma-friendly text carries no implementation jargon (Charter §6.3)"
+ours         = "src/cli.rs::tests::help_text_is_grandma_friendly + src/lib.rs::tests::friendly_names_carry_no_implementation_jargon"
