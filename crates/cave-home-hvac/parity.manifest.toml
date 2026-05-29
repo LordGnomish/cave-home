@@ -1,24 +1,137 @@
-# cave-home-hvac — parity manifest scaffold.
+# cave-home-hvac — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-hvac — HVAC / heat-pump / climate; upstream: HA climate-domain integrations (Viessmann Open3EClient, Daikin, LG, Bosch, Mitsubishi, Samsung); port method: line-by-line (ADR-012)
+# Phase 1 ships the climate *decision engine*: the Home Assistant `climate`
+# entity-domain model (HVAC modes, the current activity / hvac_action, fan and
+# preset modes), a canonical-Celsius temperature value object with C↔F
+# conversion, single-target and low/high band setpoints with the
+# low<high invariant, device capability gating (range / step / fan / preset),
+# the generic-thermostat hysteresis control decision, and the six EN/DE/TR
+# grandma-friendly labels every automation, Portal tile and voice reply
+# consumes. The vendor I/O adapters (Viessmann Open3EClient, Daikin, LG ThinQ,
+# Bosch, Mitsubishi, Samsung; generic Zigbee/Z-Wave/Matter/Modbus thermostats)
+# plus scheduling/PID and core-state integration are network/hardware-bound and
+# deferred to Phase 1b — each is enumerated below with an ADR-012 disposition.
+#
+# Port method: the modes, hysteresis semantics and capability gating are
+# implemented from the *public Home Assistant climate-domain documentation*
+# (generic_thermostat hysteresis, HVACMode / HVACAction vocabulary), all
+# Apache-2.0. No GPL source was read; the engine is first-party logic.
 
 [crate]
 name             = "cave-home-hvac"
-upstream_repo    = "home-assistant/core (climate-domain integrations) + Open3EClient (Viessmann ViCare)"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "home-assistant/core (climate domain, generic_thermostat) + Open3EClient (Viessmann ViCare)"
+port_method      = "line-by-line (vendor adapters) + spec-based (climate engine)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "Home Assistant climate entity domain — HVACMode / HVACAction / fan_mode / preset_mode vocabulary (Apache-2.0 docs)",
+    "Home Assistant generic_thermostat — cold_tolerance / hot_tolerance hysteresis semantics (Apache-2.0 docs)",
+    "Home Assistant climate target_temp_low < target_temp_high band invariant",
+    "Charter §6.3 / ADR-007 — grandma-friendly EN/DE/TR UX (no protocol/vendor terms)",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (engine + the vendor I/O adapter
+# fleet + scheduling/PID + core-state integration). The engine is implemented
+# and tested in full; the I/O adapters + scheduling + core glue remain and are
+# all ADR-justified Phase 1b. no-backcompat (Charter §8) is the permanent stance
+# recorded below.
+fill_ratio              = 0.30
+fill_ratio_basis        = "Climate mode model + temperature value object + setpoint/capability gating + generic-thermostat hysteresis engine + EN/DE/TR UX, fully implemented & tested; vendor I/O adapters + scheduling/PID + core glue deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-012 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "HA HVACMode vocabulary (off/heat/cool/heat_cool/auto/dry/fan_only)"
+ours = "src/mode.rs::HvacMode"
+
+[[mapped]]
+spec = "HA HVACAction current-activity vocabulary (off/idle/heating/cooling/drying/fan/preheating/defrosting)"
+ours = "src/mode.rs::HvacAction"
+
+[[mapped]]
+spec = "HA fan_mode + preset_mode vocabularies"
+ours = "src/mode.rs::{FanMode,PresetMode}"
+
+[[mapped]]
+spec = "Canonical-Celsius temperature value object, validated finite + range, with C↔F conversion"
+ours = "src/temperature.rs::Temperature"
+
+[[mapped]]
+spec = "Single target_temperature and target_temp_low<target_temp_high band setpoints"
+ours = "src/setpoint.rs::Setpoint"
+
+[[mapped]]
+spec = "Device min/max temp + target_step + supported fan/preset capability gating"
+ours = "src/setpoint.rs::Capabilities"
+
+[[mapped]]
+spec = "HA generic_thermostat cold/hot-tolerance hysteresis decision per mode"
+ours = "src/control.rs::decide"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR labels + action sentence for every mode/action/fan/preset (Charter §6.3, ADR-007)"
+ours = "src/label.rs"
+
+# ---- unmapped (NOT in this crate; ADR-012 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "Viessmann Open3EClient (ViCare) heat-pump adapter"
+priority = "phase-1b"
+note     = "ADR-012: Open3EClient talks to the Viessmann heat pump over the network. Account/network-bound; maps the device onto HvacMode/Setpoint/Temperature then reuses this engine. I/O adapter only, no new decision logic."
+
+[[unmapped]]
+area     = "Daikin / LG ThinQ / Bosch / Mitsubishi / Samsung climate adapters"
+priority = "phase-1b"
+note     = "ADR-012: each is a vendor API with its own auth + rate-limit quirks (LG/Samsung cloud-bound). All map onto this crate's mode/setpoint model. Network-bound I/O adapters."
+
+[[unmapped]]
+area     = "Generic Zigbee / Z-Wave / Matter / Modbus thermostat adapters"
+priority = "phase-1b"
+note     = "ADR-012: transitively covered via the existing radio pillars; a thermostat cluster maps onto HvacMode/Setpoint and routes its current temperature into decide(). Hardware/bus-bound."
+
+[[unmapped]]
+area     = "Scheduling + PID auto-tuning of the control loop"
+priority = "phase-1b"
+note     = "ADR-012: time-of-day schedules and PID tuning sit on top of the hysteresis primitive shipped here. Stateful over time; layered atop decide() once the core scheduler API lands."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration"
+priority = "phase-1b"
+note     = "ADR-012: surfacing the climate state as core State entities + automation triggers lands once cave-home-core's entity API stabilises. The engine is already core-agnostic."
+
+[[unmapped]]
+area     = "Solar-surplus heat-pump load-shifting (cave-home-solar-evcc tie-in)"
+priority = "phase-2"
+note     = "ADR-012: running the heat pump when solar surplus is high is a cross-crate automation built on this engine + the Energy Dashboard; a Phase 2 refinement, not a climate primitive."
+
+[[unmapped]]
+area     = "Pre-current HA climate-attribute compatibility shims"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home models the current HA climate vocabulary only; no historical-attribute compatibility mode."
+
+# ---- spec_test (designed from spec / HA reference semantics) ----------------
+
+[[spec_test]]
+designed_for = "Generic-thermostat hysteresis boundaries for Heat/Cool/Dry/Auto/HeatCool (start + stop thresholds, inclusive)"
+ours         = "src/control.rs::tests"
+
+[[spec_test]]
+designed_for = "target_temp_low < target_temp_high band invariant"
+ours         = "src/setpoint.rs::tests::band_requires_low_below_high"
+
+[[spec_test]]
+designed_for = "Celsius↔Fahrenheit conversion correctness (0/100/-40 anchors, round-trip)"
+ours         = "src/temperature.rs::tests"
+
+[[spec_test]]
+designed_for = "Temperature range + target-step rejection and fan/preset capability gating"
+ours         = "src/setpoint.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"
