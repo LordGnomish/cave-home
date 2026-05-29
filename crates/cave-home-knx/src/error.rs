@@ -2,41 +2,41 @@
 // Copyright 2026 cave-home contributors
 //! Errors shared across the cave-home-knx crate.
 //!
-//! Ported from `xknx/exceptions` (XKNX/xknx@50fdf8af, MIT) line-by-line:
-//! the upstream classes `CouldNotParseAddress`, `CouldNotParseKNXIP`,
-//! `IncompleteKNXIPFrame`, `ConversionError`, `CouldNotParseCEMI`,
-//! `UnsupportedCEMIMessage` map onto the variants below. Idiomatic Rust
-//! `thiserror` enum, semantically equivalent.
+//! A small, std-only error enum. No `thiserror` dependency: the Phase-1 MVP is
+//! deliberately dependency-free (std-only), so we hand-write [`core::fmt::Display`]
+//! and implement [`std::error::Error`]. The variants mirror the failure modes a
+//! pure-logic KNX codec actually has — address parsing, datapoint conversion,
+//! and telegram framing — and the crate *never* panics on bad input: every
+//! fallible path returns [`Result`].
 
-use thiserror::Error;
+use core::fmt;
 
 /// All errors the crate can raise.
-#[derive(Debug, Error, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KnxError {
-    /// Address string / int could not be parsed (`CouldNotParseAddress`).
-    #[error("could not parse address: {0}")]
+    /// An address string or raw value could not be parsed or was out of range.
     AddressParse(String),
 
-    /// KNX/IP frame is structurally invalid (`CouldNotParseKNXIP`).
-    #[error("could not parse KNX/IP frame: {0}")]
-    KnxIpParse(String),
-
-    /// KNX/IP frame is shorter than expected (`IncompleteKNXIPFrame`).
-    #[error("incomplete KNX/IP frame: {0}")]
-    IncompleteFrame(String),
-
-    /// CEMI frame is structurally invalid (`CouldNotParseCEMI`).
-    #[error("could not parse CEMI frame: {0}")]
-    CemiParse(String),
-
-    /// CEMI variant not supported by this port (`UnsupportedCEMIMessage`).
-    #[error("unsupported CEMI message: {0}")]
-    UnsupportedCemi(String),
-
-    /// DPT value out of range / wrong shape (`ConversionError`).
-    #[error("DPT conversion failed: {0}")]
+    /// A datapoint value was out of range, or the raw payload had the wrong
+    /// length / shape for the datapoint type.
     Conversion(String),
+
+    /// A group telegram could not be parsed (too short, bad framing, or an
+    /// application-service code this Phase-1 codec does not model).
+    Telegram(String),
 }
+
+impl fmt::Display for KnxError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::AddressParse(m) => write!(f, "could not parse address: {m}"),
+            Self::Conversion(m) => write!(f, "value conversion failed: {m}"),
+            Self::Telegram(m) => write!(f, "could not parse telegram: {m}"),
+        }
+    }
+}
+
+impl std::error::Error for KnxError {}
 
 /// Crate result alias.
 pub type Result<T> = core::result::Result<T, KnxError>;

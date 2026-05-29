@@ -6,35 +6,25 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-knx — KNX/IP stack: xknx line-by-line port (transport, telegrams, DPTs) + clean-room KNXd-equivalent gateway daemon (KNX Association public spec only; KNXd GPL-3.0 source NOT read)"
+description = "cave-home-knx — KNX datapoint-type (DPT) codec + group-telegram model: pure-logic, std-only engine built from the public KNX standard (xknx MIT public behavior referenced; KNXd strong-copyleft source NOT read — clean-room recusal for the deferred gateway)"
 
 [package.metadata.cave-home]
-upstream    = "XKNX/xknx (MIT) + KNXd (GPL-3.0, NOT read — clean-room recusal)"
-port-method = "mixed (xknx line-by-line; knxd-equivalent clean-room)"
+upstream    = "Public KNX standard (DPT tables, cEMI/APCI framing); XKNX/xknx (MIT) public behavior referenced; KNXd (strong copyleft, NOT read — clean-room recusal)"
+port-method = "spec-based (public KNX DPT/APCI tables) + xknx-MIT public-behavior reference"
 adr         = "ADR-011"
 
-[package.metadata.upstream]
-repo    = "XKNX/xknx"
-release = "3.15.0"
-sha     = "50fdf8af8e29b84b96de4487f5bd4f060f7c502c"
-subpath = "xknx/"
-
 [package.metadata.clean-room]
-component        = "gateway (knxd-equivalent)"
-reason           = "KNXd is GPL-3.0 — license-incompatible with cave-home Apache-2.0"
-spec-source      = "KNX Association public service-code table + KNX/IP framing (header, HPAI)"
+component         = "gateway (knxd-equivalent, deferred to Phase 1b)"
+reason            = "KNXd is strong copyleft — license-incompatible with cave-home Apache-2.0"
+spec-source       = "KNX Association public service-code table + KNX/IP framing"
 prohibited-source = ["KNXd (selfbus/knxd)", "Wireshark KNX dissector"]
-attestation      = "No KNXd or Wireshark KNX dissector source consulted at any point."
+attestation       = "No KNXd or Wireshark KNX dissector source consulted at any point."
 
+# Phase-1 MVP is pure logic: std-only, no external crates, no network/hardware.
+# The KNXnet/IP, TPUART and gateway-daemon transports are Phase-1b (see manifest).
 [dependencies]
-bytes       = "1"
-parking_lot = "0.12"
-thiserror   = "2"
-tokio       = { version = "1", features = ["rt-multi-thread", "sync", "macros", "net", "time", "io-util"] }
-tracing     = "0.1"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "net", "time", "io-util", "test-util"] }
 
 [lints]
 workspace = true

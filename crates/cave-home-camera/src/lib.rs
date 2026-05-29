@@ -1,69 +1,112 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::module_name_repetitions)]
-#![allow(clippy::missing_errors_doc)]
-#![allow(clippy::missing_panics_doc)]
 #![allow(clippy::must_use_candidate)]
-#![allow(clippy::cast_precision_loss)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_lossless)]
-#![allow(clippy::cast_possible_wrap)]
-#![allow(clippy::doc_markdown)]
-#![allow(clippy::missing_const_for_fn)]
-#![allow(clippy::map_unwrap_or)]
-#![allow(clippy::explicit_iter_loop)]
-#![allow(clippy::needless_pass_by_value)]
-#![allow(clippy::similar_names)]
-#![allow(clippy::redundant_closure_for_method_calls)]
-#![allow(clippy::option_if_let_else)]
-#![allow(clippy::if_not_else)]
-#![allow(clippy::single_match_else)]
-#![allow(clippy::format_push_string)]
-#![allow(clippy::large_enum_variant)]
-#![allow(clippy::or_fun_call)]
-#![allow(clippy::redundant_else)]
-#![allow(clippy::manual_let_else)]
-#![allow(clippy::uninlined_format_args)]
-#![allow(clippy::unused_async)]
-#![allow(clippy::case_sensitive_file_extension_comparisons)]
-#![allow(clippy::suboptimal_flops)]
-#![allow(clippy::wildcard_imports)]
-#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used, clippy::panic))]
-//! cave-home-camera — NVR + object-detection.
+#![allow(clippy::missing_errors_doc)]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::expect_used,
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::float_cmp
+    )
+)]
+//! `cave-home-camera` — the detection-policy brain of the camera / NVR pillar
+//! (Charter §3 camera pillar, ADR-009 camera convergence; inference backend
+//! deferred to the future ADR-033).
 //!
-//! Line-by-line port of `frigate/` from `blakeblackshear/frigate` v0.17.1
-//! (SHA `416a9b7692e052be98ad503704d26c7ef7a4c88d`).
+//! This crate is the **Frigate-class decision core**: it turns a stream of
+//! object detections into the answers a household actually wants — *is there a
+//! person in the driveway, is it the same person as a moment ago, should we save
+//! a clip, and how long do we keep it?* It deliberately stops at the edge of
+//! anything ML-, video-, or network-bound, because those are exactly the parts
+//! that cannot be tested as pure logic.
 //!
-//! Phase 1 MVP scope (per Charter §3 camera pillar):
-//! - [`capture`]   — RTSP ingest via `ffmpeg` sub-process; raw frame stream.
-//! - [`motion`]    — frame-differencing motion detector (background model).
-//! - [`detectors`] — `Detector` trait + 3 production impls
-//!   (Coral EdgeTPU, CPU YOLO ONNX, NVIDIA TensorRT)
-//!   plus a deterministic `MockDetector` for tests.
-//! - [`tracker`]   — IOU-based multi-object tracker across frames.
-//! - [`record`]    — MP4 segment writer + event clip extractor.
-//! - [`birdseye`]  — multi-camera mosaic composer.
-//! - [`events`]    — `CameraEventSink` trait wired to the
-//!   `cave-home-automation::EventBus` (Phase 2).
-//! - [`config`]    — `CameraConfig` + `Pipeline` settings (YAML mirror).
-//! - [`error`]     — top-level error union.
-//! - [`prelude`]   — single-import convenience for downstream crates.
+//! # Scope (Phase 1 MVP)
 //!
-//! Out-of-Phase-1 surface (Frigate's audio, MQTT, ONVIF PTZ, web API,
-//! review-pipeline, semantic-search, plus-cloud sync) is enumerated in
-//! `parity.manifest.toml` `[[unmapped]]`.
+//! Implemented, real and tested here, with **no external crates**:
+//! - [`geometry`] — points, bounding boxes, a detection [`Polygon`] with a
+//!   robust ray-casting point-in-polygon test, and [`iou`] for overlap.
+//! - [`label`] — the recognised [`ObjectLabel`] set and the grandma-friendly
+//!   EN / DE / TR phrasing (Charter §6.3, ADR-007).
+//! - [`detection`] — the [`Detection`] model, the score / label / zone filter
+//!   pipeline, and stationary-vs-moving classification.
+//! - [`zone`] — a named [`Zone`] (polygon + required labels + min score) and the
+//!   accept/filter logic.
+//! - [`track`] — object-tracking-lite: a greedy `IoU` [`Tracker`] that stitches
+//!   per-frame detections into persistent [`TrackedObject`]s.
+//! - [`config`] — the per-camera [`CameraConfig`] (id / name / watched labels /
+//!   zones / [`RecordMode`] / retention days).
+//! - [`policy`] — the [`ClipPolicy`] (pre/post-roll start-stop), the per-label
+//!   [`Debounce`] and the [`classify_retention`] rule.
+//!
+//! # Deferred to Phase 1b (see `parity.manifest.toml` `[[unmapped]]`)
+//!
+//! The **RTSP / ONVIF ingest**, the **object-detection inference** (the ML model
+//! plus its GPU / Coral / accelerator), **hardware decode** (the Charter §5 ML
+//! node), **recording storage + clip extraction** (ffmpeg-class), the **`UniFi`
+//! Protect / camera-vendor adapters** (ADR-009) and **cave-home-core
+//! integration** are all ML / video / IO / network-bound and are enumerated as
+//! deferred. They feed this engine (or are driven by its decisions) without
+//! changing it. Per Charter §9 there is **no cloud video upload** — video stays
+//! on-device, permanently.
+//!
+//! # Example
+//!
+//! ```
+//! use cave_home_camera::{
+//!     BBox, CameraConfig, ClipAction, ClipPolicy, Detection, Lang, ObjectLabel,
+//!     Point, Polygon, RecordMode, Zone, label,
+//! };
+//!
+//! // The household draws a "driveway" box over the camera view and says it
+//! // cares about people and cars there, confident at 0.6+.
+//! let driveway = Zone::new(
+//!     "driveway",
+//!     Polygon::new(vec![
+//!         Point::new(0.0, 0.0),
+//!         Point::new(100.0, 0.0),
+//!         Point::new(100.0, 100.0),
+//!         Point::new(0.0, 100.0),
+//!     ]).unwrap(),
+//!     vec![ObjectLabel::Person, ObjectLabel::Car],
+//!     0.6,
+//! );
+//! let cam = CameraConfig::new("front", "Front camera")
+//!     .with_zone(driveway.clone())
+//!     .with_record_mode(RecordMode::MotionOnly)
+//!     .with_retention_days(7);
+//!
+//! // A car is detected, bottom-centre inside the driveway, confidently.
+//! let car = Detection::new(ObjectLabel::Car, 0.82, BBox::new(40.0, 60.0, 20.0, 30.0), 100);
+//! assert!(driveway.accepts(&car));
+//!
+//! // That activity starts an event clip, padded by a 5s pre-roll.
+//! let mut clip = ClipPolicy::new(5, 10);
+//! assert_eq!(clip.observe(true, 100), ClipAction::Start(95));
+//!
+//! // And the household sees a plain line, not a model class index.
+//! let place = driveway.friendly_name(Lang::En);
+//! assert_eq!(label::seen_at(ObjectLabel::Car, &place, Lang::En), "Car at the driveway");
+//! # let _ = cam.retention_days();
+//! ```
 
-pub mod birdseye;
-pub mod capture;
 pub mod config;
-pub mod detectors;
-pub mod error;
-pub mod events;
-pub mod motion;
-pub mod prelude;
-pub mod record;
-pub mod tracker;
+pub mod detection;
+pub mod geometry;
+pub mod label;
+pub mod policy;
+pub mod track;
+pub mod zone;
 
-pub use config::{CameraConfig, DetectorKind, MotionConfig, RecordConfig};
-pub use error::{CameraError, CameraResult};
-pub use events::{CameraEvent, CameraEventSink, EventKind, NullEventSink, RecordingEventSink};
+pub use config::{CameraConfig, RecordMode};
+pub use detection::{
+    classify_motion, is_stationary_by_overlap, Detection, Motion, Tick, ZoneAnchor,
+};
+pub use geometry::{iou, BBox, Point, Polygon, PolygonError};
+pub use label::{nothing_unusual, seen_at, Lang, ObjectLabel};
+pub use policy::{
+    classify_retention, ClipAction, ClipPolicy, Debounce, Retention, SECONDS_PER_DAY,
+};
+pub use track::{TrackId, TrackedObject, Tracker};
+pub use zone::{filter, Zone};

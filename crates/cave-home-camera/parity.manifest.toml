@@ -1,24 +1,181 @@
-# cave-home-camera — parity manifest scaffold.
+# cave-home-camera — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-camera — NVR + object-detection reimpl (upstream: blakeblackshear/frigate, port method: line-by-line)
+# Phase 1 ships the camera/NVR *decision core*: the detection-zone model with a
+# robust ray-casting point-in-polygon test, intersection-over-union (IoU) and a
+# greedy IoU object-tracker, the detection filter pipeline (score / label / zone
+# membership + stationary-vs-moving), the clip/snapshot policy (pre/post-roll,
+# per-label alert de-bounce, retention classification), the per-camera config
+# model, and the grandma-friendly EN/DE/TR phrasing. This is the brain that
+# decides "is there a person in the driveway, is it the same person, save a
+# clip, keep it N days" — the part that needs no model, no video and no network.
+#
+# The heavy surface — RTSP/ONVIF ingest, the object-detection inference (the ML
+# model + GPU/Coral/accelerator), hardware decode (the Charter §5 ML node),
+# recording storage + clip extraction (ffmpeg-class), the UniFi-Protect /
+# camera-vendor adapters (ADR-009) and cave-home-core integration — is
+# ML/video/IO/network-bound and is deferred to Phase 1b. Each is enumerated
+# below with a disposition. Per Charter §9 there is no cloud video upload.
+#
+# Port method: spec-based clean-room. The detection-policy core is built from
+# the *public, well-known algorithms* (ray-casting point-in-polygon, IoU,
+# greedy IoU association) and from Frigate's documented behaviour (zones,
+# objects, record retain modes, pre/post-capture) — not from reading its
+# AGPL-licensed source. No GPL/AGPL source was read or ported.
 
 [crate]
 name             = "cave-home-camera"
-upstream_repo    = "blakeblackshear/frigate"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "blakeblackshear/frigate (behaviour reference only — NOT source-ported)"
+port_method      = "spec-based (detection-policy core; clean-room)"
+upstream_license = "Apache-2.0 (this crate; upstream Frigate is AGPL and was NOT read)"
+spec_sources     = [
+    "Ray-casting / even-odd point-in-polygon test (standard computational geometry)",
+    "Intersection-over-union (IoU) — standard object-detection overlap metric",
+    "Greedy IoU detection-to-track association (standard lightweight tracker)",
+    "Frigate documented behaviour: detection zones, object labels + min-score, record retain modes (all/motion/active_objects), pre/post-capture padding",
+    "Charter §6.3 / ADR-007 grandma-friendly UX; Charter §9 video stays on-device",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (the decision core + RTSP/ONVIF
+# ingest + the object-detection inference engine + hardware decode + recording
+# storage/clip extraction + vendor adapters + core integration). The decision
+# core is implemented and tested in full; everything ML/video/IO/network-bound
+# remains and is all ADR-justified Phase 1b/permanent.
+fill_ratio              = 0.30
+fill_ratio_basis        = "detection-zone + point-in-polygon + IoU tracker + detection filter pipeline + clip/de-bounce/retention policy + camera-config model + EN/DE/TR UX, fully implemented & tested (63 unit tests + doctest); RTSP/inference/decode/recording/vendor I/O deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries a phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + (1-0.30)*(1-1.0)) = 1.00
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Ray-casting (even-odd) point-in-polygon with boundary/vertex handling"
+ours = "src/geometry.rs::Polygon::contains"
+
+[[mapped]]
+spec = "Intersection-over-union of two bounding boxes"
+ours = "src/geometry.rs::iou"
+
+[[mapped]]
+spec = "Detection-zone model: named polygon + required labels + min-score + box anchor"
+ours = "src/zone.rs::Zone"
+
+[[mapped]]
+spec = "Zone membership of a detection by bbox centre / bottom-centre anchor"
+ours = "src/zone.rs::Zone::contains"
+
+[[mapped]]
+spec = "Detection filter pipeline: by min-score, by allowed labels, by zone membership"
+ours = "src/zone.rs::{Zone::accepts,filter}"
+
+[[mapped]]
+spec = "Detection event model (label, confidence 0..=1, bbox, tick) with clamped score"
+ours = "src/detection.rs::Detection"
+
+[[mapped]]
+spec = "Stationary vs moving classification across frames (movement threshold)"
+ours = "src/detection.rs::{classify_motion,is_stationary_by_overlap}"
+
+[[mapped]]
+spec = "Object-tracking-lite: greedy IoU association into TrackedObject across frames"
+ours = "src/track.rs::Tracker"
+
+[[mapped]]
+spec = "Recording/clip policy: start/stop with configurable pre-roll + post-roll"
+ours = "src/policy.rs::ClipPolicy"
+
+[[mapped]]
+spec = "Per-label event de-bounce (suppress a repeat alert within N seconds)"
+ours = "src/policy.rs::Debounce"
+
+[[mapped]]
+spec = "Retention classification (keep vs expired) from per-label retention days"
+ours = "src/policy.rs::classify_retention"
+
+[[mapped]]
+spec = "Camera config model: id/name, watched labels, zones, record mode, retention days"
+ours = "src/config.rs::{CameraConfig,RecordMode}"
+
+[[mapped]]
+spec = "Recognised object labels + grandma-friendly EN/DE/TR phrasing (ADR-007, Charter §6.3)"
+ours = "src/label.rs::{ObjectLabel,seen_at,nothing_unusual}"
+
+# ---- unmapped (NOT in this crate; deferred with disposition) ---------------
+
+[[unmapped]]
+area     = "RTSP / ONVIF ingest (live frame stream from the camera)"
+priority = "phase-1b"
+note     = "Network/IO-bound: pulls frames off an RTSP/ONVIF camera (an ffmpeg-class sub-process). Hands raw frames to the inference step; produces no decision logic itself. Deferred per the future camera ADR-033 (inference backend). The decision core here is frame-source-agnostic."
+
+[[unmapped]]
+area     = "Object-detection inference (the ML model + GPU / Coral / accelerator)"
+priority = "phase-1b"
+note     = "ML-bound: the actual neural-network detector (YOLO/SSD-class) that turns a decoded frame into Detection structs. Requires a model + an accelerator runtime; cannot be exercised as pure logic. Lands with ADR-033. This crate already consumes its output (Detection) unchanged."
+
+[[unmapped]]
+area     = "Hardware video decode on the GPU / ML node (Charter §5)"
+priority = "phase-1b"
+note     = "Hardware-bound: GPU/VAAPI/NVDEC decode of the camera stream on the optional ML node (Charter §5). Throughput plumbing, not decision logic."
+
+[[unmapped]]
+area     = "Recording storage + event clip extraction (ffmpeg-class)"
+priority = "phase-1b"
+note     = "IO-bound: muxing segments to disk and cutting an event clip from start/stop ticks. This crate already decides WHEN (ClipPolicy emits Start/Continue/Stop ticks); the muxer just acts on them. Per Charter §9 clips stay on-device."
+
+[[unmapped]]
+area     = "UniFi Protect / camera-vendor adapters (ADR-009)"
+priority = "phase-1b"
+note     = "ADR-009: UniFi Protect (and other vendor) cameras render through the same camera pillar. Each adapter is a network/WebSocket-bound port that maps vendor smart-detections onto this crate's Detection/Zone model. No new decision logic — they feed this engine."
+
+[[unmapped]]
+area     = "cave-home-core entity/state + automation-trigger integration"
+priority = "phase-1b"
+note     = "Surfacing zone events + tracked objects as core entities and automation triggers lands once cave-home-core's entity API stabilises. The engine is already core-agnostic and reads no clock."
+
+[[unmapped]]
+area     = "Birdseye multi-camera mosaic + live-view compositing"
+priority = "phase-2"
+note     = "Video-bound presentation feature (Frigate's birdseye): composes multiple live streams into one mosaic. Pure UI/compositing over decoded frames; no detection-policy content."
+
+[[unmapped]]
+area     = "Cloud video upload / off-device clip sync"
+priority = "permanent"
+note     = "Charter §9 privacy-first: video and clips stay on-device. cave-home will never ship a default-on cloud video upload path. Recorded here so the boundary is explicit and permanent."
+
+[[unmapped]]
+area     = "Frigate AGPL source line-by-line port"
+priority = "permanent"
+note     = "ADR-002 license discipline: Frigate is AGPL-3.0. cave-home is Apache-2.0, so this crate is a clean-room SPEC-based reimplementation of the documented behaviour and standard algorithms — Frigate source was NOT read or ported. A line-by-line port is permanently out of scope on license grounds."
+
+# ---- spec_test (designed from spec / known reference values) ---------------
+
+[[spec_test]]
+designed_for = "Point-in-polygon: convex inside/outside, concave solid vs notch, edge + vertex boundary"
+ours         = "src/geometry.rs::tests"
+
+[[spec_test]]
+designed_for = "IoU known values (identical=1, disjoint=0, half=1/3, corner=1/7, contained=0.25, zero-area=0)"
+ours         = "src/geometry.rs::tests"
+
+[[spec_test]]
+designed_for = "Zone membership of a bbox (bottom-centre vs centre anchor) + score/label filtering"
+ours         = "src/zone.rs::tests"
+
+[[spec_test]]
+designed_for = "Stationary vs moving classification incl. threshold boundary"
+ours         = "src/detection.rs::tests"
+
+[[spec_test]]
+designed_for = "Greedy IoU tracking association, label-mismatch, max-age retirement, gap survival"
+ours         = "src/track.rs::tests"
+
+[[spec_test]]
+designed_for = "Clip policy start/stop + pre/post-roll, post-roll reset, event de-bounce, retention edges"
+ours         = "src/policy.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

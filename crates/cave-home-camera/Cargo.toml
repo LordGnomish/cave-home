@@ -6,47 +6,24 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-camera — NVR + object-detection reimpl (upstream: blakeblackshear/frigate, port method: line-by-line)"
+description = "cave-home-camera — Frigate-class detection-zone, object-tracking and clip-policy engine (Phase-1 pure-logic core; RTSP/inference/recording deferred)"
 
 [package.metadata.cave-home]
 upstream    = "blakeblackshear/frigate"
-port-method = "line-by-line"
+port-method = "spec-based (detection-policy core)"
 phase       = "camera-phase-1"
 
-[package.metadata.upstream]
-repo    = "blakeblackshear/frigate"
-release = "v0.17.1"
-sha     = "416a9b7692e052be98ad503704d26c7ef7a4c88d"
-subpath = "frigate"
-
-[features]
-# Frigate's ORT (onnxruntime) bindings download a native runtime on first
-# build. The Phase 1 trait + tracker code is provider-agnostic; the
-# `cpu-yolo` feature pulls in the optional `ort` dependency for the real
-# CPU YOLO inference path. The trait impl itself is always compiled; with
-# the feature off, `CpuYoloDetector::load_model` returns
-# `DetectorError::Unavailable` with a clear cause.
-default      = []
-cpu-yolo     = []
-coral-tpu    = []
-nvidia-trt   = []
+# Phase 1 ships the std-only decision core (zones, point-in-polygon, IoU
+# tracking, detection filtering, clip/snapshot policy, retention, EN/DE/TR UX).
+# The RTSP/ONVIF ingest, the object-detection inference (ML model + GPU /
+# accelerator), hardware decode, recording storage / clip extraction and the
+# UniFi-Protect-class vendor adapters are ML/video/IO/network-bound and are
+# deferred to Phase 1b — see parity.manifest.toml [[unmapped]]. The core
+# therefore depends on no external crates.
 
 [dependencies]
-async-trait  = "0.1"
-bytes        = "1"
-futures      = "0.3"
-image        = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
-imageproc    = { version = "0.25", default-features = false }
-parking_lot  = "0.12"
-serde        = { version = "1", features = ["derive"] }
-serde_json   = "1"
-thiserror    = "2"
-tokio        = { version = "1", features = ["rt-multi-thread", "sync", "macros", "fs", "time", "process", "io-util"] }
-tracing      = "0.1"
 
 [dev-dependencies]
-tempfile = "3"
-tokio    = { version = "1", features = ["rt-multi-thread", "sync", "macros", "fs", "time", "test-util", "process", "io-util"] }
 
 [lints]
 workspace = true
