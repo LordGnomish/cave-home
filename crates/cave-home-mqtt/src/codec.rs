@@ -108,6 +108,11 @@ pub fn encode_packet(packet: &Packet) -> Result<BytesMut, CodecError> {
             let flags = encode_publish(p, &mut body)?;
             (flags, PacketType::Publish)
         }
+        // §3.12/§3.13/§3.14 — zero-length control packets: empty body,
+        // flags 0000, so encoding reduces to the two-byte fixed header.
+        Packet::PingReq => (0u8, PacketType::PingReq),
+        Packet::PingResp => (0u8, PacketType::PingResp),
+        Packet::Disconnect => (0u8, PacketType::Disconnect),
     };
 
     let mut out = BytesMut::with_capacity(body.len() + 5);
@@ -163,6 +168,11 @@ pub fn decode_packet(input: &[u8]) -> Result<(Packet, usize), CodecError> {
         PacketType::Connect => Packet::Connect(decode_connect(&mut body)?),
         PacketType::ConnAck => Packet::ConnAck(decode_connack(&mut body)?),
         PacketType::Publish => Packet::Publish(decode_publish(&mut body, flags)?),
+        // §3.12/§3.13/§3.14 — remaining length is 0, so `body` is empty
+        // and the packet is fully identified by its fixed-header type.
+        PacketType::PingReq => Packet::PingReq,
+        PacketType::PingResp => Packet::PingResp,
+        PacketType::Disconnect => Packet::Disconnect,
         other => return Err(CodecError::UnsupportedInPhase1(other)),
     };
     Ok((packet, total))

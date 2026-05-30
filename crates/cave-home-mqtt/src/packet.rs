@@ -124,11 +124,18 @@ pub struct Publish {
 }
 
 /// Top-level decoded/encoded MQTT packet (Phase 1 subset).
+///
+/// The three field-less variants are the zero-length control packets
+/// §3.12 PINGREQ, §3.13 PINGRESP, and §3.14 DISCONNECT — each carries
+/// no variable header or payload, only the two-byte fixed header.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Packet {
     Connect(Connect),
     ConnAck(ConnAck),
     Publish(Publish),
+    PingReq,
+    PingResp,
+    Disconnect,
 }
 
 impl Packet {
@@ -137,6 +144,9 @@ impl Packet {
             Self::Connect(_) => PacketType::Connect,
             Self::ConnAck(_) => PacketType::ConnAck,
             Self::Publish(_) => PacketType::Publish,
+            Self::PingReq => PacketType::PingReq,
+            Self::PingResp => PacketType::PingResp,
+            Self::Disconnect => PacketType::Disconnect,
         }
     }
 }
