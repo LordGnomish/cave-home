@@ -136,6 +136,14 @@ pub enum Packet {
     PingReq,
     PingResp,
     Disconnect,
+    /// §3.4 PUBACK — QoS 1 acknowledgement; wraps the packet identifier.
+    PubAck(u16),
+    /// §3.5 PUBREC — QoS 2 publish received (first half of the handshake).
+    PubRec(u16),
+    /// §3.6 PUBREL — QoS 2 publish release (reserved fixed-header flags 0010).
+    PubRel(u16),
+    /// §3.7 PUBCOMP — QoS 2 publish complete.
+    PubComp(u16),
 }
 
 impl Packet {
@@ -147,6 +155,10 @@ impl Packet {
             Self::PingReq => PacketType::PingReq,
             Self::PingResp => PacketType::PingResp,
             Self::Disconnect => PacketType::Disconnect,
+            Self::PubAck(_) => PacketType::PubAck,
+            Self::PubRec(_) => PacketType::PubRec,
+            Self::PubRel(_) => PacketType::PubRel,
+            Self::PubComp(_) => PacketType::PubComp,
         }
     }
 }

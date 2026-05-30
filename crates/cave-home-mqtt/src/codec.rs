@@ -93,6 +93,16 @@ fn decode_str(buf: &mut &[u8]) -> Result<String, CodecError> {
     Ok(s)
 }
 
+/// MQTT 3.1.1 §2.3.1 — 2-byte big-endian Packet Identifier.
+fn decode_packet_id(buf: &mut &[u8]) -> Result<u16, CodecError> {
+    if buf.len() < 2 {
+        return Err(CodecError::Underflow { needed: 2 - buf.len() });
+    }
+    let id = u16::from_be_bytes([buf[0], buf[1]]);
+    buf.advance(2);
+    Ok(id)
+}
+
 pub fn encode_packet(packet: &Packet) -> Result<BytesMut, CodecError> {
     let mut body = BytesMut::new();
     let (header_flags, packet_type) = match packet {
@@ -113,6 +123,25 @@ pub fn encode_packet(packet: &Packet) -> Result<BytesMut, CodecError> {
         Packet::PingReq => (0u8, PacketType::PingReq),
         Packet::PingResp => (0u8, PacketType::PingResp),
         Packet::Disconnect => (0u8, PacketType::Disconnect),
+        // §3.4-§3.7 — acknowledgement packets: variable header is the
+        // 2-byte packet identifier, no payload. PUBREL (§3.6.1) is the
+        // only one whose reserved fixed-header flags are 0010.
+        Packet::PubAck(id) => {
+            body.put_u16(*id);
+            (0u8, PacketType::PubAck)
+        }
+        Packet::PubRec(id) => {
+            body.put_u16(*id);
+            (0u8, PacketType::PubRec)
+        }
+        Packet::PubRel(id) => {
+            body.put_u16(*id);
+            (0x02u8, PacketType::PubRel)
+        }
+        Packet::PubComp(id) => {
+            body.put_u16(*id);
+            (0u8, PacketType::PubComp)
+        }
     };
 
     let mut out = BytesMut::with_capacity(body.len() + 5);
@@ -173,6 +202,12 @@ pub fn decode_packet(input: &[u8]) -> Result<(Packet, usize), CodecError> {
         PacketType::PingReq => Packet::PingReq,
         PacketType::PingResp => Packet::PingResp,
         PacketType::Disconnect => Packet::Disconnect,
+        // §3.4-§3.7 — read the 2-byte packet identifier; flags carry no
+        // decoded state here (PUBREL's reserved 0010 is asserted on encode).
+        PacketType::PubAck => Packet::PubAck(decode_packet_id(&mut body)?),
+        PacketType::PubRec => Packet::PubRec(decode_packet_id(&mut body)?),
+        PacketType::PubRel => Packet::PubRel(decode_packet_id(&mut body)?),
+        PacketType::PubComp => Packet::PubComp(decode_packet_id(&mut body)?),
         other => return Err(CodecError::UnsupportedInPhase1(other)),
     };
     Ok((packet, total))
