@@ -20,6 +20,7 @@
 //! - [`zcl`]        — ZCL frame format + Foundation commands.
 //! - [`onoff`]      — OnOff cluster (0x0006) commands + state.
 //! - [`level_control`] — Level Control cluster (0x0008) dimming.
+//! - [`color_control`] — Color Control cluster (0x0300) colour/temperature.
 //! - [`ias_zone`]   — IAS Zone cluster (0x0500) security sensors.
 //! - [`occupancy_sensing`] — Occupancy Sensing cluster (0x0406) presence.
 //! - [`pairing`]    — network steering / InstallCode / Touchlink.
@@ -37,6 +38,7 @@
 #![doc(html_root_url = "https://docs.rs/cave-home-zigbee")]
 
 pub mod attribute_reporting;
+pub mod color_control;
 pub mod coordinator;
 pub mod deconz;
 pub mod error;
