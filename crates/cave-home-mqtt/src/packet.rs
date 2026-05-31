@@ -133,6 +133,9 @@ pub enum Packet {
     SubAck(SubAck),
     Unsubscribe(Unsubscribe),
     UnsubAck(UnsubAck),
+    PingReq,
+    PingResp,
+    Disconnect,
 }
 
 impl Packet {
@@ -145,6 +148,9 @@ impl Packet {
             Self::SubAck(_) => PacketType::SubAck,
             Self::Unsubscribe(_) => PacketType::Unsubscribe,
             Self::UnsubAck(_) => PacketType::UnsubAck,
+            Self::PingReq => PacketType::PingReq,
+            Self::PingResp => PacketType::PingResp,
+            Self::Disconnect => PacketType::Disconnect,
         }
     }
 }

@@ -36,6 +36,8 @@ pub enum CodecError {
     EmptySubscription,
     #[error("SUBACK return code {0} is invalid")]
     BadSubAckCode(u8),
+    #[error("control packet expected an empty body")]
+    UnexpectedPayload,
 }
 
 /// MQTT 3.1.1 §2.2.3 — Remaining-Length variable-byte integer encoder.
@@ -131,6 +133,9 @@ pub fn encode_packet(packet: &Packet) -> Result<BytesMut, CodecError> {
             encode_unsuback(a, &mut body);
             (0u8, PacketType::UnsubAck)
         }
+        Packet::PingReq => (0u8, PacketType::PingReq),
+        Packet::PingResp => (0u8, PacketType::PingResp),
+        Packet::Disconnect => (0u8, PacketType::Disconnect),
     };
 
     let mut out = BytesMut::with_capacity(body.len() + 5);
@@ -194,6 +199,18 @@ pub fn decode_packet(input: &[u8]) -> Result<(Packet, usize), CodecError> {
             Packet::Unsubscribe(decode_unsubscribe(&mut body, flags)?)
         }
         PacketType::UnsubAck => Packet::UnsubAck(decode_unsuback(&mut body)?),
+        PacketType::PingReq => {
+            decode_empty(body)?;
+            Packet::PingReq
+        }
+        PacketType::PingResp => {
+            decode_empty(body)?;
+            Packet::PingResp
+        }
+        PacketType::Disconnect => {
+            decode_empty(body)?;
+            Packet::Disconnect
+        }
         other => return Err(CodecError::UnsupportedInPhase1(other)),
     };
     Ok((packet, total))
@@ -313,6 +330,16 @@ fn decode_suback(buf: &mut &[u8]) -> Result<SubAck, CodecError> {
         return_codes.push(code);
     }
     Ok(SubAck { packet_id, return_codes })
+}
+
+/// Validate that a packet body is empty (§3.12-§3.14: PINGREQ, PINGRESP
+/// and DISCONNECT carry no variable header or payload).
+fn decode_empty(buf: &[u8]) -> Result<(), CodecError> {
+    if buf.is_empty() {
+        Ok(())
+    } else {
+        Err(CodecError::UnexpectedPayload)
+    }
 }
 
 /// MQTT 3.1.1 §3.10 UNSUBSCRIBE — packet id + a payload of topic filters
