@@ -308,6 +308,52 @@ mod tests {
     use super::*;
 
     #[test]
+    fn unsubscribe_round_trip() {
+        // §3.10 UNSUBSCRIBE: packet id 11, filters "a/b" and "c/d"
+        // (topic filters only — no per-filter QoS byte).
+        let u = Unsubscribe {
+            packet_id: 11,
+            topic_filters: vec!["a/b".into(), "c/d".into()],
+        };
+        let bytes = encode_packet(&Packet::Unsubscribe(u.clone())).expect("encode");
+        // §3.10.1: UNSUBSCRIBE reserved fixed-header flags are 0b0010.
+        assert_eq!(bytes[0], 0xa2);
+        let (back, used) = decode_packet(&bytes).expect("decode");
+        assert_eq!(used, bytes.len());
+        assert_eq!(back, Packet::Unsubscribe(u));
+    }
+
+    #[test]
+    fn unsubscribe_rejects_wrong_reserved_flags() {
+        // §3.10.1: byte-1 flags must be 0b0010; here they are 0b0000.
+        let frame = [0xa0, 0x05, 0x00, 0x0b, 0x00, 0x01, b'x'];
+        assert!(matches!(
+            decode_packet(&frame),
+            Err(CodecError::BadReservedFlags(0))
+        ));
+    }
+
+    #[test]
+    fn unsubscribe_rejects_empty_filter_list() {
+        // §3.10.3: UNSUBSCRIBE MUST carry at least one topic filter.
+        let frame = [0xa2, 0x02, 0x00, 0x0b];
+        assert!(matches!(
+            decode_packet(&frame),
+            Err(CodecError::EmptySubscription)
+        ));
+    }
+
+    #[test]
+    fn unsuback_round_trip() {
+        // §3.11: UNSUBACK is a packet identifier only; remaining len 2.
+        let a = UnsubAck { packet_id: 11 };
+        let bytes = encode_packet(&Packet::UnsubAck(a.clone())).expect("encode");
+        assert_eq!(&bytes[..], [0xb0, 0x02, 0x00, 0x0b].as_slice());
+        let (back, _) = decode_packet(&bytes).expect("decode");
+        assert_eq!(back, Packet::UnsubAck(a));
+    }
+
+    #[test]
     fn subscribe_round_trip() {
         // §3.8 SUBSCRIBE: packet id 10, "a/b" QoS 1, "c/d" QoS 2.
         let s = Subscribe {
