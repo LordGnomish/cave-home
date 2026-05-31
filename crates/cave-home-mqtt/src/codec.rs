@@ -368,6 +368,46 @@ mod tests {
     use super::*;
 
     #[test]
+    fn pingreq_round_trip() {
+        // §3.12: PINGREQ is a 2-byte packet with zero remaining length.
+        let bytes = encode_packet(&Packet::PingReq).expect("encode");
+        assert_eq!(&bytes[..], [0xc0, 0x00].as_slice());
+        let (back, used) = decode_packet(&bytes).expect("decode");
+        assert_eq!(used, 2);
+        assert_eq!(back, Packet::PingReq);
+    }
+
+    #[test]
+    fn pingresp_round_trip() {
+        // §3.13: PINGRESP is the server's reply to a PINGREQ.
+        let bytes = encode_packet(&Packet::PingResp).expect("encode");
+        assert_eq!(&bytes[..], [0xd0, 0x00].as_slice());
+        let (back, used) = decode_packet(&bytes).expect("decode");
+        assert_eq!(used, 2);
+        assert_eq!(back, Packet::PingResp);
+    }
+
+    #[test]
+    fn disconnect_round_trip() {
+        // §3.14: DISCONNECT is the client's clean network teardown.
+        let bytes = encode_packet(&Packet::Disconnect).expect("encode");
+        assert_eq!(&bytes[..], [0xe0, 0x00].as_slice());
+        let (back, used) = decode_packet(&bytes).expect("decode");
+        assert_eq!(used, 2);
+        assert_eq!(back, Packet::Disconnect);
+    }
+
+    #[test]
+    fn pingreq_rejects_nonzero_payload() {
+        // §3.12: a PINGREQ with a non-empty remaining length is malformed.
+        let frame = [0xc0, 0x01, 0x00];
+        assert!(matches!(
+            decode_packet(&frame),
+            Err(CodecError::UnexpectedPayload)
+        ));
+    }
+
+    #[test]
     fn unsubscribe_round_trip() {
         // §3.10 UNSUBSCRIBE: packet id 11, filters "a/b" and "c/d"
         // (topic filters only — no per-filter QoS byte).
