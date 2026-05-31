@@ -22,6 +22,11 @@
 //!   encoding every native-API field uses.
 //! - [`frame`] — the plaintext frame codec: encode + streaming-aware decode of
 //!   `<0x00> <varint len> <varint type> <payload>`.
+//! - [`message`] — the message-type registry (`api.proto` ids `1..=29`).
+//! - [`hash`] — `ESPHome`'s FNV-1 entity-key hash.
+//! - [`entity`] — the entity data model ([`EntityKind`], [`EntityCategory`],
+//!   [`EntityInfo`]).
+//! - [`label`] — grandma-friendly EN/DE/TR descriptions.
 //!
 //! Everything network/crypto/codegen-bound — the TCP transport, the Noise
 //! (encrypted) frame helper, the protobuf message bodies, discovery and core
@@ -51,9 +56,17 @@
 // and cannot truncate for any real frame.
 #![allow(clippy::cast_possible_truncation)]
 
+pub mod entity;
 pub mod error;
 pub mod frame;
+pub mod hash;
+pub mod label;
+pub mod message;
 pub mod varint;
 
+pub use entity::{EntityCategory, EntityInfo, EntityKind};
 pub use error::{EsphomeError, Result};
 pub use frame::{ApiFrame, FrameDecode};
+pub use hash::fnv1_hash;
+pub use label::Lang;
+pub use message::MessageType;
