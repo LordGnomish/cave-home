@@ -3,6 +3,7 @@
 
 use crate::packet::{
     ConnAck, ConnAckReturnCode, Connect, Packet, PacketType, Publish, QoS,
+    SubAck, SubAckReturnCode, Subscribe, Subscription,
 };
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use thiserror::Error;
@@ -29,6 +30,12 @@ pub enum CodecError {
     MissingPacketId,
     #[error("packet type {0:?} is not yet supported by Phase 1 codec")]
     UnsupportedInPhase1(PacketType),
+    #[error("reserved fixed-header flags 0x{0:x} are invalid for this packet type")]
+    BadReservedFlags(u8),
+    #[error("SUBSCRIBE/UNSUBSCRIBE must carry at least one topic filter")]
+    EmptySubscription,
+    #[error("SUBACK return code {0} is invalid")]
+    BadSubAckCode(u8),
 }
 
 /// MQTT 3.1.1 §2.2.3 — Remaining-Length variable-byte integer encoder.
@@ -108,6 +115,14 @@ pub fn encode_packet(packet: &Packet) -> Result<BytesMut, CodecError> {
             let flags = encode_publish(p, &mut body)?;
             (flags, PacketType::Publish)
         }
+        Packet::Subscribe(s) => {
+            let flags = encode_subscribe(s, &mut body);
+            (flags, PacketType::Subscribe)
+        }
+        Packet::SubAck(a) => {
+            encode_suback(a, &mut body);
+            (0u8, PacketType::SubAck)
+        }
     };
 
     let mut out = BytesMut::with_capacity(body.len() + 5);
@@ -163,6 +178,10 @@ pub fn decode_packet(input: &[u8]) -> Result<(Packet, usize), CodecError> {
         PacketType::Connect => Packet::Connect(decode_connect(&mut body)?),
         PacketType::ConnAck => Packet::ConnAck(decode_connack(&mut body)?),
         PacketType::Publish => Packet::Publish(decode_publish(&mut body, flags)?),
+        PacketType::Subscribe => {
+            Packet::Subscribe(decode_subscribe(&mut body, flags)?)
+        }
+        PacketType::SubAck => Packet::SubAck(decode_suback(&mut body)?),
         other => return Err(CodecError::UnsupportedInPhase1(other)),
     };
     Ok((packet, total))
@@ -220,6 +239,68 @@ fn decode_publish(buf: &mut &[u8], flags: u8) -> Result<Publish, CodecError> {
     };
     let payload = Bytes::copy_from_slice(buf);
     Ok(Publish { topic, qos, retain, dup, packet_id, payload })
+}
+
+/// MQTT 3.1.1 §3.8 SUBSCRIBE — variable header (packet id) + payload of
+/// topic-filter/QoS pairs. Returns the reserved fixed-header flags (0b0010).
+fn encode_subscribe(s: &Subscribe, out: &mut BytesMut) -> u8 {
+    out.put_u16(s.packet_id);
+    for sub in &s.subscriptions {
+        encode_str(&sub.topic_filter, out);
+        out.put_u8(sub.qos as u8);
+    }
+    0x02
+}
+
+fn decode_subscribe(buf: &mut &[u8], flags: u8) -> Result<Subscribe, CodecError> {
+    // §3.8.1: bits 3-0 of byte 1 are reserved and MUST be 0b0010.
+    if flags != 0x02 {
+        return Err(CodecError::BadReservedFlags(flags));
+    }
+    if buf.len() < 2 {
+        return Err(CodecError::Underflow { needed: 2 - buf.len() });
+    }
+    let packet_id = u16::from_be_bytes([buf[0], buf[1]]);
+    buf.advance(2);
+    let mut subscriptions = Vec::new();
+    while !buf.is_empty() {
+        let topic_filter = decode_str(buf)?;
+        if buf.is_empty() {
+            return Err(CodecError::Underflow { needed: 1 });
+        }
+        let qos = QoS::from_u8(buf[0]).ok_or(CodecError::BadQoS(buf[0]))?;
+        buf.advance(1);
+        subscriptions.push(Subscription { topic_filter, qos });
+    }
+    // §3.8.3: a SUBSCRIBE with no topic filters is a protocol violation.
+    if subscriptions.is_empty() {
+        return Err(CodecError::EmptySubscription);
+    }
+    Ok(Subscribe { packet_id, subscriptions })
+}
+
+/// MQTT 3.1.1 §3.9 SUBACK — packet id + one return code per filter.
+fn encode_suback(a: &SubAck, out: &mut BytesMut) {
+    out.put_u16(a.packet_id);
+    for code in &a.return_codes {
+        out.put_u8(*code as u8);
+    }
+}
+
+fn decode_suback(buf: &mut &[u8]) -> Result<SubAck, CodecError> {
+    if buf.len() < 2 {
+        return Err(CodecError::Underflow { needed: 2 - buf.len() });
+    }
+    let packet_id = u16::from_be_bytes([buf[0], buf[1]]);
+    buf.advance(2);
+    let mut return_codes = Vec::with_capacity(buf.len());
+    while !buf.is_empty() {
+        let code = SubAckReturnCode::from_u8(buf[0])
+            .ok_or(CodecError::BadSubAckCode(buf[0]))?;
+        buf.advance(1);
+        return_codes.push(code);
+    }
+    Ok(SubAck { packet_id, return_codes })
 }
 
 #[cfg(test)]
