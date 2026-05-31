@@ -22,6 +22,8 @@
 //! - [`intents`] — the built-in command set (lights, climate, covers, scenes,
 //!   state queries) with EN/DE/TR sentence sets.
 //! - [`route`] — map a matched intent to a typed [`route::IntentAction`].
+//! - [`policy`] — family-aware authorization: allow / confirm / deny an action
+//!   by the speaker's permission level (Charter §6.3 / ADR-007).
 //! - [`response`] — generate the localised spoken reply.
 //! - [`config`] — the wake-word + assistant configuration model (settings
 //!   only, validated).
