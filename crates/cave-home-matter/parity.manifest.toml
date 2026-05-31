@@ -24,15 +24,17 @@ linux_min_kernel = "7.1"
 rust_min         = "1.85"
 
 [ratios]
-# src LOC is ~3.4 kLOC against an upstream src/ tree of >850 kLOC C++
+# src LOC is ~3.5 kLOC against an upstream src/ tree of >850 kLOC C++
 # (sampled across setup_payload/, protocols/secure_channel/, credentials/,
 # access/, app/clusters/{onoff,levelcontrol,colorcontrol,thermostat,
-# doorlock,network-commissioning,ota-requestor}/, transport/raw/{UDP,BLE}).
+# doorlock,window-covering,network-commissioning,ota-requestor}/,
+# transport/raw/{UDP,BLE}).
 # Mechanically that's a fill_ratio of 0.004, but the connectedhomeip
-# tree is enormous and Phase 1 maps the **MVP commissioning + 5
-# essential clusters** slice. Against the MVP slice (~7 kLOC of relevant
-# upstream sources for the picked sub-trees), fill_ratio ≈ 0.48.
-fill_ratio      = 0.48
+# tree is enormous and Phase 1 maps the **MVP commissioning + 6
+# essential clusters** slice (WindowCovering joined OnOff, LevelControl,
+# ColorControl, Thermostat, DoorLock). Against the MVP slice (~7 kLOC of
+# relevant upstream sources for the picked sub-trees), fill_ratio ≈ 0.50.
+fill_ratio      = 0.50
 test_port_ratio = 0.18
 
 # ---- mapped (line-by-line port present in this crate) -----------------------
@@ -241,6 +243,28 @@ ours     = "src/clusters/door_lock.rs::DoorLockClient::lock_door"
 upstream = "src/app/clusters/door-lock-server/door-lock-server.cpp::unlockDoor"
 ours     = "src/clusters/door_lock.rs::DoorLockClient::unlock_door"
 
+# Window Covering cluster (0x0102) — roller shutters / blinds.
+
+[[mapped]]
+upstream = "src/app/clusters/window-covering-server/window-covering-server.cpp::UpOrOpen"
+ours     = "src/clusters/window_covering.rs::WindowCoveringClient::up_or_open"
+
+[[mapped]]
+upstream = "src/app/clusters/window-covering-server/window-covering-server.cpp::DownOrClose"
+ours     = "src/clusters/window_covering.rs::WindowCoveringClient::down_or_close"
+
+[[mapped]]
+upstream = "src/app/clusters/window-covering-server/window-covering-server.cpp::StopMotion"
+ours     = "src/clusters/window_covering.rs::WindowCoveringClient::stop_motion"
+
+[[mapped]]
+upstream = "src/app/clusters/window-covering-server/window-covering-server.cpp::GoToLiftPercentage"
+ours     = "src/clusters/window_covering.rs::WindowCoveringClient::go_to_lift_percentage"
+
+[[mapped]]
+upstream = "src/app/clusters/window-covering-server/window-covering-server.cpp::GoToTiltPercentage"
+ours     = "src/clusters/window_covering.rs::WindowCoveringClient::go_to_tilt_percentage"
+
 # Network Commissioning (Thread).
 
 [[mapped]]
@@ -321,11 +345,6 @@ note     = "Discovery uses BLE advert in Phase 1; mDNS browse depends on cave-ho
 area     = "src/credentials/attestation_verifier/ (DAC chain validation)"
 priority = "phase-1b"
 note     = "DAC/PAI chain verification against the test PAA roots is stubbed out for Phase 1 dev-mode pairing."
-
-[[unmapped]]
-area     = "src/app/clusters/window-covering"
-priority = "phase-1b"
-note     = "Roller-shutter / blind cluster; cave-home-cover plans to integrate."
 
 [[unmapped]]
 area     = "src/app/clusters/fan-control"
@@ -465,6 +484,10 @@ ours = "src/clusters/thermostat.rs::tests::setpoint_raise_lower_updates_setpoint
 [[upstream_test]]
 file = "src/app/tests/cluster-objects/TestDoorLock.cpp::TestLockDoor"
 ours = "src/clusters/door_lock.rs::tests::lock_door_transitions_state"
+
+[[upstream_test]]
+file = "src/app/clusters/window-covering-server/tests/TestWindowCovering.cpp::GoToLiftPercentage"
+ours = "src/clusters/window_covering.rs::tests::go_to_lift_percentage_records_target"
 
 [[upstream_test]]
 file = "src/app/tests/network-commissioning/TestNetworkCommissioning.cpp::TestAddThreadNetwork"

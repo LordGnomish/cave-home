@@ -15,7 +15,7 @@
 //! - [`group_key`]      — GroupDataProvider (group keys).
 //! - [`ota`]            — OTA-Requestor cluster client.
 //! - [`clusters`]       — OnOff, LevelControl, ColorControl, Thermostat,
-//!                        DoorLock, NetworkCommissioning clients.
+//!                        DoorLock, WindowCovering, NetworkCommissioning clients.
 //! - [`transport`]      — UDP + BLE GATT commissioning transports.
 //! - [`commissioner`]   — DeviceCommissioner (pair / unpair).
 //! - [`controller`]     — top-level Controller composition.
