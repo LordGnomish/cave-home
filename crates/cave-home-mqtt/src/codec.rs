@@ -395,6 +395,58 @@ mod tests {
     use super::*;
 
     #[test]
+    fn puback_round_trip() {
+        // §3.4 PUBACK: QoS 1 acknowledgement — packet id only, flags 0.
+        let a = PubAck { packet_id: 0x1234 };
+        let bytes = encode_packet(&Packet::PubAck(a)).expect("encode");
+        assert_eq!(&bytes[..], [0x40, 0x02, 0x12, 0x34].as_slice());
+        let (back, used) = decode_packet(&bytes).expect("decode");
+        assert_eq!(used, bytes.len());
+        assert_eq!(back, Packet::PubAck(a));
+    }
+
+    #[test]
+    fn pubrec_round_trip() {
+        // §3.5 PUBREC: QoS 2 publish received (part 1), flags 0.
+        let p = PubRec { packet_id: 0x1234 };
+        let bytes = encode_packet(&Packet::PubRec(p)).expect("encode");
+        assert_eq!(&bytes[..], [0x50, 0x02, 0x12, 0x34].as_slice());
+        let (back, _) = decode_packet(&bytes).expect("decode");
+        assert_eq!(back, Packet::PubRec(p));
+    }
+
+    #[test]
+    fn pubrel_round_trip() {
+        // §3.6 PUBREL: QoS 2 publish release (part 2). §3.6.1 reserves the
+        // fixed-header flags as 0b0010.
+        let p = PubRel { packet_id: 0x1234 };
+        let bytes = encode_packet(&Packet::PubRel(p)).expect("encode");
+        assert_eq!(&bytes[..], [0x62, 0x02, 0x12, 0x34].as_slice());
+        let (back, _) = decode_packet(&bytes).expect("decode");
+        assert_eq!(back, Packet::PubRel(p));
+    }
+
+    #[test]
+    fn pubrel_rejects_wrong_reserved_flags() {
+        // §3.6.1: PUBREL fixed-header flags other than 0b0010 are malformed.
+        let frame = [0x60, 0x02, 0x12, 0x34];
+        assert!(matches!(
+            decode_packet(&frame),
+            Err(CodecError::BadReservedFlags(0))
+        ));
+    }
+
+    #[test]
+    fn pubcomp_round_trip() {
+        // §3.7 PUBCOMP: QoS 2 publish complete (part 3), flags 0.
+        let p = PubComp { packet_id: 0x1234 };
+        let bytes = encode_packet(&Packet::PubComp(p)).expect("encode");
+        assert_eq!(&bytes[..], [0x70, 0x02, 0x12, 0x34].as_slice());
+        let (back, _) = decode_packet(&bytes).expect("decode");
+        assert_eq!(back, Packet::PubComp(p));
+    }
+
+    #[test]
     fn pingreq_round_trip() {
         // §3.12: PINGREQ is a 2-byte packet with zero remaining length.
         let bytes = encode_packet(&Packet::PingReq).expect("encode");
