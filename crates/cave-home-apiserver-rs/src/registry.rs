@@ -680,4 +680,81 @@ mod tests {
         let err = r.create(&pods(), obj([("metadata", Value::object())])).expect_err("no name");
         assert_eq!(err.reason, StatusReason::Invalid);
     }
+
+    // --- /status subresource semantics (Kubernetes API conventions) ---------
+
+    #[test]
+    fn update_status_persists_only_status_and_ignores_spec() {
+        let mut r = Registry::new();
+        let mut o = pod("default", "web");
+        o.insert("spec", obj([("replicas", Value::from(1_i64))]));
+        let created = r.create(&pods(), o).expect("create"); // rv1, gen1
+
+        // A status write that ALSO tries to change spec: spec must be ignored.
+        let mut submit = created.clone();
+        submit.insert("spec", obj([("replicas", Value::from(99_i64))]));
+        submit.insert("status", obj([("readyReplicas", Value::from(1_i64))]));
+
+        let out = r.update_status(&pods(), submit).expect("update_status");
+        // Spec is preserved from the stored object, not the client's submission.
+        assert_eq!(out.pointer("spec.replicas"), Some(&Value::from(1_i64)));
+        // Status is taken from the submission.
+        assert_eq!(out.pointer("status.readyReplicas"), Some(&Value::from(1_i64)));
+    }
+
+    #[test]
+    fn update_status_bumps_rv_but_never_generation() {
+        let mut r = Registry::new();
+        let mut o = pod("default", "web");
+        o.insert("spec", obj([("replicas", Value::from(2_i64))]));
+        let created = r.create(&pods(), o).expect("create"); // rv1 gen1
+        assert_eq!(meta::read_meta(&created).generation, 1);
+
+        let mut submit = created.clone();
+        submit.insert("status", obj([("ready", Value::from(true))]));
+        let out = r.update_status(&pods(), submit).expect("update_status");
+        let m = meta::read_meta(&out);
+        assert_eq!(m.resource_version, "2"); // rv bumped
+        assert_eq!(m.generation, 1); // generation NOT bumped by a status write
+    }
+
+    #[test]
+    fn update_status_with_stale_rv_conflicts() {
+        let mut r = Registry::new();
+        let created = r.create(&pods(), pod("default", "web")).expect("create");
+        let mut stale = created.clone();
+        meta::write_meta(&mut stale, &ObjectMeta {
+            name: "web".into(),
+            namespace: "default".into(),
+            resource_version: "999".into(),
+            ..ObjectMeta::default()
+        });
+        stale.insert("status", obj([("ready", Value::from(true))]));
+        let err = r.update_status(&pods(), stale).expect_err("conflict");
+        assert_eq!(err.reason, StatusReason::Conflict);
+        assert_eq!(err.code, 409);
+    }
+
+    #[test]
+    fn update_status_on_missing_object_is_not_found() {
+        let mut r = Registry::new();
+        let mut o = pod("default", "ghost");
+        o.insert("status", obj([("ready", Value::from(true))]));
+        let err = r.update_status(&pods(), o).expect_err("missing");
+        assert_eq!(err.reason, StatusReason::NotFound);
+        assert_eq!(err.code, 404);
+    }
+
+    #[test]
+    fn update_status_emits_modified_watch_event() {
+        let mut r = Registry::new();
+        let created = r.create(&pods(), pod("default", "web")).expect("create"); // rv1 Added
+        let mut submit = created.clone();
+        submit.insert("status", obj([("ready", Value::from(true))]));
+        r.update_status(&pods(), submit).expect("update_status"); // rv2 Modified
+        let events = r.watch_since(&pods(), 1).expect("watch");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, WatchEventKind::Modified);
+        assert_eq!(events[0].resource_version, 2);
+    }
 }
