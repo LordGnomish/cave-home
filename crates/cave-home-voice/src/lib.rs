@@ -70,6 +70,7 @@ pub mod template;
 pub use config::{AssistantConfig, ConfigError, WakeWord};
 pub use label::Lang;
 pub use matcher::{match_intent, CompiledIntent, IntentMatch, MatchOutcome};
+pub use policy::{authorize, sensitivity, Decision, PermissionLevel, Sensitivity};
 pub use route::{IntentAction, RoutedAction};
 pub use slot::{SlotKind, SlotValue, ValueList};
 pub use template::Template;

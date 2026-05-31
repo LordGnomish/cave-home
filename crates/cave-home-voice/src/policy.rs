@@ -12,6 +12,91 @@
 //! audio/ML-bound and deferred (see `parity.manifest.toml`). This core takes the
 //! level as an input so it can be tested and reused independently.
 
+use crate::route::IntentAction;
+
+/// A household member's permission level, most-privileged first.
+///
+/// The speaker-identification layer (per-user voice profile, deferred) produces
+/// this; the policy here consumes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermissionLevel {
+    /// The home owner / a resident adult — full control.
+    Admin,
+    /// A trusted family member — everyday control; security needs confirming.
+    Member,
+    /// A child — comfort and information, but not climate or access changes.
+    Child,
+    /// A visitor — lights, scenes and questions only.
+    Guest,
+}
+
+/// How risky an action is, independent of who asked for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sensitivity {
+    /// Harmless and easily reversed: lights, brightness, scenes, questions.
+    Routine,
+    /// Affects comfort/energy for everyone: heating and cooling.
+    Sensitive,
+    /// Physical access or safety: covers, including the garage door.
+    Restricted,
+}
+
+/// What the house should do with a command once it knows who asked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Decision {
+    /// Carry it out.
+    Allow,
+    /// Carry it out only after an explicit confirmation.
+    Confirm,
+    /// Refuse it.
+    Deny,
+}
+
+impl Decision {
+    /// Whether the command may proceed without any further checks.
+    #[must_use]
+    pub fn is_allowed(self) -> bool {
+        matches!(self, Decision::Allow)
+    }
+}
+
+/// Classify an action by how risky it is to perform.
+#[must_use]
+pub fn sensitivity(action: &IntentAction) -> Sensitivity {
+    match action {
+        IntentAction::SetLight { .. }
+        | IntentAction::SetBrightness { .. }
+        | IntentAction::ActivateScene { .. }
+        | IntentAction::QueryState { .. } => Sensitivity::Routine,
+        IntentAction::SetTemperature { .. } => Sensitivity::Sensitive,
+        IntentAction::SetCover { .. } => Sensitivity::Restricted,
+    }
+}
+
+/// Decide whether `level` may perform `action`, using the default family policy.
+///
+/// The policy is the sensible grandma-friendly default; a future Phase-2 layer
+/// can make it configurable per household. The table is:
+///
+/// | level \ sensitivity | Routine | Sensitive | Restricted |
+/// |---------------------|---------|-----------|------------|
+/// | Admin               | Allow   | Allow     | Allow      |
+/// | Member              | Allow   | Allow     | Confirm    |
+/// | Child               | Allow   | Confirm   | Deny       |
+/// | Guest               | Allow   | Deny      | Deny       |
+#[must_use]
+pub fn authorize(action: &IntentAction, level: PermissionLevel) -> Decision {
+    use Decision::{Allow, Confirm, Deny};
+    use PermissionLevel::{Admin, Child, Guest, Member};
+    use Sensitivity::{Restricted, Routine, Sensitive};
+
+    match (sensitivity(action), level) {
+        (Routine, _) | (Sensitive, Admin | Member) | (Restricted, Admin) => Allow,
+        (Sensitive, Child) | (Restricted, Member) => Confirm,
+        (Sensitive, Guest) | (Restricted, Child | Guest) => Deny,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
