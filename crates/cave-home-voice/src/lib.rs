@@ -61,6 +61,7 @@ pub mod intents;
 pub mod label;
 pub mod matcher;
 pub mod number_words;
+pub mod policy;
 pub mod response;
 pub mod route;
 pub mod slot;
