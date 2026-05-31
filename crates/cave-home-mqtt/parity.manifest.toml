@@ -3,11 +3,13 @@
 # Upstream `eclipse/mosquitto` is EPL-2.0/EDL-1.0 — incompatible with the
 # Apache-2.0 unified binary. cave-home-mqtt is reimplemented from the
 # OASIS MQTT 3.1.1 and MQTT 5.0 specifications without reading Mosquitto
-# source. Phase 1 ships the 3.1.1 fixed-header + var-int codec plus
-# CONNECT / CONNACK / PUBLISH (QoS 0 + QoS 1) round-trip; SUBSCRIBE /
-# UNSUBSCRIBE / PING / DISCONNECT, the session router, retained
-# messages, will / LWT, persistent sessions, and the TCP listener land
-# in Phase 1b. MQTT 5.0 properties land in Phase 2.
+# source. Phase 1 ships the complete MQTT 3.1.1 control-packet wire
+# codec (all 14 packet types: CONNECT/CONNACK/PUBLISH, the QoS 1/2
+# PUBACK/PUBREC/PUBREL/PUBCOMP acks, SUBSCRIBE/SUBACK,
+# UNSUBSCRIBE/UNSUBACK, and PINGREQ/PINGRESP/DISCONNECT). The session
+# router, topic-filter wildcard matcher, retained messages, will / LWT,
+# persistent sessions, and the TCP listener land in Phase 1b. MQTT 5.0
+# properties land in Phase 2.
 
 [crate]
 name             = "cave-home-mqtt"
@@ -22,17 +24,17 @@ ported_at        = "2026-05-25"
 linux_min_kernel = "7.1"
 
 [ratios]
-# Phase 1 production LOC (~310: PacketType + QoS + Connect/ConnAck/
-# Publish models, var-int codec, fixed header, three packet codecs)
-# against the Phase 1 *target* slice of a 3.1.1 broker (fixed header
-# + var-int + the three packets needed for a CONNECT-ACK-PUBLISH
-# happy path, ~700 LOC equivalent of C in Mosquitto's net_mosq +
-# packet_mosq) = ~0.44. Against the full MQTT 3.1.1+5.0 spec surface
-# (broker + persistence + retained + LWT + bridge), Phase 1 is in the
-# low-percent range.
-fill_ratio              = 0.44
-fill_ratio_basis        = "phase-1 (3.1.1 fixed header + var-int + CONNECT/CONNACK/PUBLISH)"
-fill_ratio_full_spec    = 0.05
+# Production LOC now covers the complete MQTT 3.1.1 control-packet wire
+# codec (all 14 packet types: fixed header + var-int + UTF-8 string +
+# every CONNECT-through-DISCONNECT encode/decode, incl. reserved-flag
+# and malformed-frame validation) against the Phase 1 *target* slice of
+# a 3.1.1 broker (the full wire codec, ~equivalent of Mosquitto's
+# packet_mosq) = ~0.85. Against the full MQTT 3.1.1+5.0 spec surface
+# (broker session router + persistence + retained + LWT + TLS + bridge
+# + WebSocket + 5.0 properties), the wire codec is still a fraction.
+fill_ratio              = 0.85
+fill_ratio_basis        = "complete MQTT 3.1.1 control-packet wire codec (all 14 packet types); no broker runtime yet"
+fill_ratio_full_spec    = 0.10
 test_port_ratio         = 0.0     # clean-room: tests are designed from spec, not ported
 
 [[spec_section]]
@@ -63,15 +65,26 @@ ours = "src/packet.rs::Publish + src/codec.rs::{encode,decode}_publish"
 spec = "MQTT 3.1.1 §4.3 Quality of Service levels"
 ours = "src/packet.rs::QoS"
 
-[[unmapped]]
-area     = "SUBSCRIBE / SUBACK / UNSUBSCRIBE / UNSUBACK (§3.8-§3.11)"
-priority = "phase-1b"
-note     = "Lands with the topic router; requires topic-filter wildcard matcher."
+[[spec_section]]
+spec = "MQTT 3.1.1 §3.4-§3.7 PUBACK / PUBREC / PUBREL / PUBCOMP — QoS 1/2 acks (§3.6.1 PUBREL reserved flags 0b0010)"
+ours = "src/packet.rs::{PubAck,PubRec,PubRel,PubComp} + src/codec.rs::decode_packet_id + encode_packet/decode_packet"
+
+[[spec_section]]
+spec = "MQTT 3.1.1 §3.8 SUBSCRIBE / §3.9 SUBACK — topic filters + granted QoS / failure codes"
+ours = "src/packet.rs::{Subscribe,Subscription,SubAck,SubAckReturnCode} + src/codec.rs::{encode,decode}_subscribe + {encode,decode}_suback"
+
+[[spec_section]]
+spec = "MQTT 3.1.1 §3.10 UNSUBSCRIBE / §3.11 UNSUBACK"
+ours = "src/packet.rs::{Unsubscribe,UnsubAck} + src/codec.rs::{encode,decode}_unsubscribe + {encode,decode}_unsuback"
+
+[[spec_section]]
+spec = "MQTT 3.1.1 §3.12-§3.14 PINGREQ / PINGRESP / DISCONNECT — zero-length body"
+ours = "src/codec.rs::decode_empty + encode_packet/decode_packet dispatch"
 
 [[unmapped]]
-area     = "PINGREQ / PINGRESP / DISCONNECT (§3.12-§3.14)"
+area     = "Broker session router + topic-filter wildcard matcher (#, +, $SYS) + TCP listener"
 priority = "phase-1b"
-note     = "Trivial codec-wise; lands with the session state machine."
+note     = "The wire codec is complete; routing a PUBLISH to matching subscribers, retained delivery, and the async TCP accept loop are the next slice."
 
 [[unmapped]]
 area     = "Retained messages (§3.3.1.3) + Last Will & Testament (§3.1.2.5)"
@@ -117,3 +130,19 @@ ours         = "src/codec.rs::tests::publish_qos0_and_qos1_round_trip"
 [[spec_test]]
 designed_for = "MQTT 3.1.1 §3.1.2.2 reject unsupported protocol level"
 ours         = "src/codec.rs::tests::decode_rejects_non_mqtt_3_1_1_protocol_level"
+
+[[spec_test]]
+designed_for = "MQTT 3.1.1 §3.4-§3.7 PUBACK/PUBREC/PUBREL/PUBCOMP round-trip + §3.6.1 PUBREL reserved-flag rejection"
+ours         = "src/codec.rs::tests::{puback,pubrec,pubrel,pubcomp}_round_trip + pubrel_rejects_wrong_reserved_flags"
+
+[[spec_test]]
+designed_for = "MQTT 3.1.1 §3.8 SUBSCRIBE round-trip + §3.8.1 reserved-flag, §3.8.3 empty-filter and reserved-QoS rejections; §3.9 SUBACK return codes"
+ours         = "src/codec.rs::tests::{subscribe_round_trip,subscribe_rejects_wrong_reserved_flags,subscribe_rejects_empty_filter_list,subscribe_rejects_reserved_requested_qos,suback_round_trip}"
+
+[[spec_test]]
+designed_for = "MQTT 3.1.1 §3.10 UNSUBSCRIBE round-trip + reserved-flag and empty-filter rejections; §3.11 UNSUBACK round-trip"
+ours         = "src/codec.rs::tests::{unsubscribe_round_trip,unsubscribe_rejects_wrong_reserved_flags,unsubscribe_rejects_empty_filter_list,unsuback_round_trip}"
+
+[[spec_test]]
+designed_for = "MQTT 3.1.1 §3.12-§3.14 PINGREQ/PINGRESP/DISCONNECT round-trip + zero-length-body enforcement"
+ours         = "src/codec.rs::tests::{pingreq_round_trip,pingresp_round_trip,disconnect_round_trip,pingreq_rejects_nonzero_payload}"
