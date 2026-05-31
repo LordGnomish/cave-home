@@ -18,6 +18,7 @@
 //! - [`coordinator`] — coordinator init / form-network entry point.
 //! - [`network`]    — NWK + APS layers + routing table.
 //! - [`zcl`]        — ZCL frame format + Foundation commands.
+//! - [`onoff`]      — OnOff cluster (0x0006) commands + state.
 //! - [`pairing`]    — network steering / InstallCode / Touchlink.
 //! - [`attribute_reporting`] — Configure / Read / Report attributes.
 //! - [`groups`]     — Groups cluster (0x0004).
@@ -40,6 +41,7 @@ pub mod events;
 pub mod ezsp;
 pub mod groups;
 pub mod network;
+pub mod onoff;
 pub mod ota;
 pub mod pairing;
 pub mod prelude;
