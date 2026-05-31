@@ -30,16 +30,18 @@ ported_at        = "2026-05-16"
 linux_min_kernel = "7.1"
 
 [ratios]
-# Honest count: src LOC for Phase 1 MVP is ~3.6 kLOC. The Phase 1 MVP
+# Honest count: src LOC for Phase 1 MVP is ~6.9 kLOC. The Phase 1 MVP
 # *scope* (EZSP coordinator init + deCONZ coordinator init + transport +
-# ZCL foundation + APS + pairing + groups + scenes + OTA queue) is
-# roughly 8 kLOC equivalent of work, so the Phase 1 MVP fill_ratio is
-# ~0.45. Against the *full* Z2M-equivalent surface (~150 kLOC C
-# equivalent), the fill ratio is much smaller (~0.025) — Phase 1 is
-# deliberately the coordinator + ZCL foundation slice only.
-fill_ratio              = 0.45
-fill_ratio_basis        = "phase-1 MVP scope (coordinator + transport + ZCL foundation + pairing/groups/scenes/OTA queue)"
-fill_ratio_full_stack   = 0.025
+# ZCL foundation + APS + pairing + groups + scenes + OTA queue + the
+# application-cluster layer that makes the coordinator actually usable:
+# OnOff + Level Control + Color Control + IAS Zone + Occupancy Sensing) is
+# roughly 12.5 kLOC equivalent of work, so the Phase 1 MVP fill_ratio is
+# ~0.55. Against the *full* Z2M-equivalent surface (~150 kLOC C
+# equivalent), the fill ratio is much smaller (~0.046) — Phase 1 is
+# deliberately the coordinator + ZCL foundation + headline-cluster slice.
+fill_ratio              = 0.55
+fill_ratio_basis        = "phase-1 MVP scope (coordinator + transport + ZCL foundation + pairing/groups/scenes/OTA queue + OnOff/LevelControl/ColorControl/IasZone/OccupancySensing application clusters)"
+fill_ratio_full_stack   = 0.046
 test_port_ratio         = 0.0     # clean-room: tests are designed from spec, not ported
 
 # ---- spec_section (clean-room reimpl present in this crate) -----------------
@@ -107,6 +109,26 @@ ours = "src/scenes.rs::ScenesCluster"
 [[spec_section]]
 spec = "ZCL §11 OTA Upgrade cluster (0x0019)"
 ours = "src/ota.rs::OtaQueue"
+
+[[spec_section]]
+spec = "ZCL §3.8 OnOff cluster (0x0006): Off/On/Toggle/OffWithEffect/OnWithRecallGlobalScene/OnWithTimedOff + StartUpOnOff"
+ours = "src/onoff.rs::OnOffCommand + OnOffState"
+
+[[spec_section]]
+spec = "ZCL §3.10 Level Control cluster (0x0008): MoveToLevel/Move/Step/Stop (+WithOnOff) + StartUpCurrentLevel"
+ours = "src/level_control.rs::LevelCommand + LevelControlState"
+
+[[spec_section]]
+spec = "ZCL §3.2 Color Control cluster (0x0300): hue/saturation + CIE xy + colour-temperature command families + ColorMode"
+ours = "src/color_control.rs::ColorCommand + ColorControlState"
+
+[[spec_section]]
+spec = "ZCL §8.2 IAS Zone cluster (0x0500): ZoneType/ZoneStatus + Zone Status Change Notification + enrollment commands"
+ours = "src/ias_zone.rs::IasZoneCommand + ZoneStatusChangeNotification + ZoneEnrollRequest"
+
+[[spec_section]]
+spec = "ZCL §3.5 Occupancy Sensing cluster (0x0406): Occupancy bitmap + OccupancySensorType + sensor config attributes"
+ours = "src/occupancy_sensing.rs::Occupancy + OccupancySensorType + OccupancyState"
 
 [[spec_section]]
 spec = "Silicon Labs EZSP UG100 §3 — EZSP frame format"
