@@ -225,6 +225,69 @@ impl Registry {
         Ok(object)
     }
 
+    /// UPDATE the `/status` subresource. Per the Kubernetes API conventions, a
+    /// write to the status subresource persists **only** `.status`: `.spec`
+    /// (and every other field except a freshly-bumped `resourceVersion`) is
+    /// taken from the stored object, so a client cannot mutate spec — or any
+    /// field outside status — through this path. Because spec never changes
+    /// here, `.metadata.generation` is **never** bumped. Optimistic concurrency
+    /// applies: a stale `resourceVersion` yields `Conflict` (409). When the
+    /// submission omits `.status`, the stored status is cleared.
+    ///
+    /// # Errors
+    /// `NotFound`, `Conflict`, or `Invalid`.
+    pub fn update_status(&mut self, gvr: &GroupVersionResource, object: Value) -> Result<Value> {
+        Self::check_known(gvr)?;
+        let incoming = meta::read_meta(&object);
+        if incoming.name.is_empty() {
+            return Err(Status::invalid("metadata.name is required"));
+        }
+        let key = store_key(&incoming.namespace, &incoming.name);
+        let mut stored = self
+            .stores
+            .get(gvr)
+            .and_then(|s| s.get(&key))
+            .cloned()
+            .ok_or_else(|| Status::not_found(format!("{} \"{}\" not found", gvr.resource, incoming.name)))?;
+        let current = meta::read_meta(&stored);
+
+        // Optimistic concurrency: the client must supply the current rv.
+        if incoming.resource_version != current.resource_version {
+            return Err(Status::conflict(format!(
+                "Operation cannot be fulfilled on {} \"{}\": the object has been modified; please apply your changes to the latest version and try again",
+                gvr.resource, incoming.name
+            )));
+        }
+
+        // Persist only `.status`: take it out of the submission and graft it
+        // onto the stored object (clearing the stored status if absent). The
+        // submission is consumed here — nothing outside `.status` survives.
+        let new_status = match object {
+            Value::Object(mut m) => m.remove("status"),
+            _ => None,
+        };
+        match new_status {
+            Some(status) => stored.insert("status", status),
+            None => {
+                if let Some(m) = stored.as_object_mut() {
+                    m.remove("status");
+                }
+            }
+        }
+
+        // Bump resourceVersion; generation is left untouched (spec unchanged).
+        let rv = self.next_rv();
+        let mut new_meta = current;
+        new_meta.resource_version = rv.to_string();
+        meta::write_meta(&mut stored, &new_meta);
+        self.stores
+            .entry(gvr.clone())
+            .or_default()
+            .insert(key, stored.clone());
+        self.record(gvr, WatchEventKind::Modified, stored.clone(), rv);
+        Ok(stored)
+    }
+
     /// PATCH: apply a merge or JSON patch to the stored object, then run it
     /// through the same concurrency + generation path as update (the patched
     /// object inherits the stored resourceVersion, so it never self-conflicts).
