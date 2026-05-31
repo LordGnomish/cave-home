@@ -14,6 +14,7 @@ pub mod level_control;
 pub mod network_commissioning;
 pub mod on_off;
 pub mod thermostat;
+pub mod window_covering;
 
 use crate::error::Result;
 use crate::fabric::NodeId;
