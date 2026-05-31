@@ -123,12 +123,40 @@ pub struct Publish {
     pub payload: Bytes,
 }
 
+/// MQTT 3.1.1 §3.4 PUBACK — QoS 1 publish acknowledgement (packet id only).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PubAck {
+    pub packet_id: u16,
+}
+
+/// MQTT 3.1.1 §3.5 PUBREC — QoS 2 publish received, part 1 (packet id only).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PubRec {
+    pub packet_id: u16,
+}
+
+/// MQTT 3.1.1 §3.6 PUBREL — QoS 2 publish release, part 2 (packet id only).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PubRel {
+    pub packet_id: u16,
+}
+
+/// MQTT 3.1.1 §3.7 PUBCOMP — QoS 2 publish complete, part 3 (packet id only).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PubComp {
+    pub packet_id: u16,
+}
+
 /// Top-level decoded/encoded MQTT packet (Phase 1 subset).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Packet {
     Connect(Connect),
     ConnAck(ConnAck),
     Publish(Publish),
+    PubAck(PubAck),
+    PubRec(PubRec),
+    PubRel(PubRel),
+    PubComp(PubComp),
     Subscribe(Subscribe),
     SubAck(SubAck),
     Unsubscribe(Unsubscribe),
@@ -144,6 +172,10 @@ impl Packet {
             Self::Connect(_) => PacketType::Connect,
             Self::ConnAck(_) => PacketType::ConnAck,
             Self::Publish(_) => PacketType::Publish,
+            Self::PubAck(_) => PacketType::PubAck,
+            Self::PubRec(_) => PacketType::PubRec,
+            Self::PubRel(_) => PacketType::PubRel,
+            Self::PubComp(_) => PacketType::PubComp,
             Self::Subscribe(_) => PacketType::Subscribe,
             Self::SubAck(_) => PacketType::SubAck,
             Self::Unsubscribe(_) => PacketType::Unsubscribe,

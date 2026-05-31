@@ -2,8 +2,9 @@
 //! §2.2.3 variable-length integer, and §3.1/§3.2/§3.3 packet bodies.
 
 use crate::packet::{
-    ConnAck, ConnAckReturnCode, Connect, Packet, PacketType, Publish, QoS,
-    SubAck, SubAckReturnCode, Subscribe, Subscription, UnsubAck, Unsubscribe,
+    ConnAck, ConnAckReturnCode, Connect, Packet, PacketType, PubAck, PubComp,
+    PubRec, PubRel, Publish, QoS, SubAck, SubAckReturnCode, Subscribe,
+    Subscription, UnsubAck, Unsubscribe,
 };
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use thiserror::Error;
@@ -136,6 +137,23 @@ pub fn encode_packet(packet: &Packet) -> Result<BytesMut, CodecError> {
         Packet::PingReq => (0u8, PacketType::PingReq),
         Packet::PingResp => (0u8, PacketType::PingResp),
         Packet::Disconnect => (0u8, PacketType::Disconnect),
+        Packet::PubAck(p) => {
+            body.put_u16(p.packet_id);
+            (0u8, PacketType::PubAck)
+        }
+        Packet::PubRec(p) => {
+            body.put_u16(p.packet_id);
+            (0u8, PacketType::PubRec)
+        }
+        Packet::PubRel(p) => {
+            // §3.6.1: PUBREL reserved fixed-header flags are 0b0010.
+            body.put_u16(p.packet_id);
+            (0x02, PacketType::PubRel)
+        }
+        Packet::PubComp(p) => {
+            body.put_u16(p.packet_id);
+            (0u8, PacketType::PubComp)
+        }
     };
 
     let mut out = BytesMut::with_capacity(body.len() + 5);
@@ -211,7 +229,22 @@ pub fn decode_packet(input: &[u8]) -> Result<(Packet, usize), CodecError> {
             decode_empty(body)?;
             Packet::Disconnect
         }
-        other => return Err(CodecError::UnsupportedInPhase1(other)),
+        PacketType::PubAck => {
+            Packet::PubAck(PubAck { packet_id: decode_packet_id(&mut body)? })
+        }
+        PacketType::PubRec => {
+            Packet::PubRec(PubRec { packet_id: decode_packet_id(&mut body)? })
+        }
+        PacketType::PubRel => {
+            // §3.6.1: PUBREL reserved fixed-header flags MUST be 0b0010.
+            if flags != 0x02 {
+                return Err(CodecError::BadReservedFlags(flags));
+            }
+            Packet::PubRel(PubRel { packet_id: decode_packet_id(&mut body)? })
+        }
+        PacketType::PubComp => Packet::PubComp(PubComp {
+            packet_id: decode_packet_id(&mut body)?,
+        }),
     };
     Ok((packet, total))
 }
@@ -330,6 +363,17 @@ fn decode_suback(buf: &mut &[u8]) -> Result<SubAck, CodecError> {
         return_codes.push(code);
     }
     Ok(SubAck { packet_id, return_codes })
+}
+
+/// Read a 2-byte packet identifier (§2.3.1) — the entire variable header
+/// of PUBACK / PUBREC / PUBREL / PUBCOMP (§3.4-§3.7).
+fn decode_packet_id(buf: &mut &[u8]) -> Result<u16, CodecError> {
+    if buf.len() < 2 {
+        return Err(CodecError::Underflow { needed: 2 - buf.len() });
+    }
+    let id = u16::from_be_bytes([buf[0], buf[1]]);
+    buf.advance(2);
+    Ok(id)
 }
 
 /// Validate that a packet body is empty (§3.12-§3.14: PINGREQ, PINGRESP
