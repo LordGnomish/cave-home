@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
-//! Error type for the ESPHome native-API codec.
+//! Error type for the `ESPHome` native-API codec.
 
 use core::fmt;
 
-/// A decode/parse failure in the ESPHome native-API wire layer.
+/// A decode/parse failure in the `ESPHome` native-API wire layer.
 ///
 /// These are *protocol* errors — a frame that cannot be a valid plaintext
 /// native-API frame. Running out of bytes mid-frame is **not** an error: the
