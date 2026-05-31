@@ -3,7 +3,7 @@
 
 use crate::packet::{
     ConnAck, ConnAckReturnCode, Connect, Packet, PacketType, Publish, QoS,
-    SubAck, SubAckReturnCode, Subscribe, Subscription,
+    SubAck, SubAckReturnCode, Subscribe, Subscription, UnsubAck, Unsubscribe,
 };
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use thiserror::Error;
@@ -123,6 +123,14 @@ pub fn encode_packet(packet: &Packet) -> Result<BytesMut, CodecError> {
             encode_suback(a, &mut body);
             (0u8, PacketType::SubAck)
         }
+        Packet::Unsubscribe(u) => {
+            let flags = encode_unsubscribe(u, &mut body);
+            (flags, PacketType::Unsubscribe)
+        }
+        Packet::UnsubAck(a) => {
+            encode_unsuback(a, &mut body);
+            (0u8, PacketType::UnsubAck)
+        }
     };
 
     let mut out = BytesMut::with_capacity(body.len() + 5);
@@ -182,6 +190,10 @@ pub fn decode_packet(input: &[u8]) -> Result<(Packet, usize), CodecError> {
             Packet::Subscribe(decode_subscribe(&mut body, flags)?)
         }
         PacketType::SubAck => Packet::SubAck(decode_suback(&mut body)?),
+        PacketType::Unsubscribe => {
+            Packet::Unsubscribe(decode_unsubscribe(&mut body, flags)?)
+        }
+        PacketType::UnsubAck => Packet::UnsubAck(decode_unsuback(&mut body)?),
         other => return Err(CodecError::UnsupportedInPhase1(other)),
     };
     Ok((packet, total))
@@ -301,6 +313,54 @@ fn decode_suback(buf: &mut &[u8]) -> Result<SubAck, CodecError> {
         return_codes.push(code);
     }
     Ok(SubAck { packet_id, return_codes })
+}
+
+/// MQTT 3.1.1 §3.10 UNSUBSCRIBE — packet id + a payload of topic filters
+/// (no per-filter QoS). Returns the reserved fixed-header flags (0b0010).
+fn encode_unsubscribe(u: &Unsubscribe, out: &mut BytesMut) -> u8 {
+    out.put_u16(u.packet_id);
+    for filter in &u.topic_filters {
+        encode_str(filter, out);
+    }
+    0x02
+}
+
+fn decode_unsubscribe(
+    buf: &mut &[u8],
+    flags: u8,
+) -> Result<Unsubscribe, CodecError> {
+    // §3.10.1: bits 3-0 of byte 1 are reserved and MUST be 0b0010.
+    if flags != 0x02 {
+        return Err(CodecError::BadReservedFlags(flags));
+    }
+    if buf.len() < 2 {
+        return Err(CodecError::Underflow { needed: 2 - buf.len() });
+    }
+    let packet_id = u16::from_be_bytes([buf[0], buf[1]]);
+    buf.advance(2);
+    let mut topic_filters = Vec::new();
+    while !buf.is_empty() {
+        topic_filters.push(decode_str(buf)?);
+    }
+    // §3.10.3: an UNSUBSCRIBE with no topic filters is a protocol violation.
+    if topic_filters.is_empty() {
+        return Err(CodecError::EmptySubscription);
+    }
+    Ok(Unsubscribe { packet_id, topic_filters })
+}
+
+/// MQTT 3.1.1 §3.11 UNSUBACK — a packet identifier only.
+fn encode_unsuback(a: &UnsubAck, out: &mut BytesMut) {
+    out.put_u16(a.packet_id);
+}
+
+fn decode_unsuback(buf: &mut &[u8]) -> Result<UnsubAck, CodecError> {
+    if buf.len() < 2 {
+        return Err(CodecError::Underflow { needed: 2 - buf.len() });
+    }
+    let packet_id = u16::from_be_bytes([buf[0], buf[1]]);
+    buf.advance(2);
+    Ok(UnsubAck { packet_id })
 }
 
 #[cfg(test)]

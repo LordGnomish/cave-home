@@ -131,6 +131,8 @@ pub enum Packet {
     Publish(Publish),
     Subscribe(Subscribe),
     SubAck(SubAck),
+    Unsubscribe(Unsubscribe),
+    UnsubAck(UnsubAck),
 }
 
 impl Packet {
@@ -141,6 +143,8 @@ impl Packet {
             Self::Publish(_) => PacketType::Publish,
             Self::Subscribe(_) => PacketType::Subscribe,
             Self::SubAck(_) => PacketType::SubAck,
+            Self::Unsubscribe(_) => PacketType::Unsubscribe,
+            Self::UnsubAck(_) => PacketType::UnsubAck,
         }
     }
 }
@@ -186,4 +190,17 @@ impl SubAckReturnCode {
 pub struct SubAck {
     pub packet_id: u16,
     pub return_codes: Vec<SubAckReturnCode>,
+}
+
+/// MQTT 3.1.1 §3.10 UNSUBSCRIBE.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Unsubscribe {
+    pub packet_id: u16,
+    pub topic_filters: Vec<String>,
+}
+
+/// MQTT 3.1.1 §3.11 UNSUBACK — a packet identifier only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UnsubAck {
+    pub packet_id: u16,
 }
