@@ -29,6 +29,7 @@ pub mod solar;
 pub mod unifi;
 pub mod hue;
 pub mod knx;
+pub mod esphome;
 pub mod free_home;
 
 // Phase 1 G8 (4-track) stubs — one verb per user-facing crate. Each

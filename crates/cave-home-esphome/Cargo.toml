@@ -15,10 +15,10 @@ adr          = "ADR-032"
 
 [package.metadata.clean-room]
 component         = "ESPHome firmware compiler / YAML config / on-device drivers (the device side)"
-reason            = "The esphome/esphome firmware + codegen is GPL-3.0 — license-incompatible with cave-home Apache-2.0. cave-home is the HUB; it needs to SPEAK the native API, not BE an ESPHome firmware."
+reason            = "The esphome/esphome firmware + codegen is GPL-3.0 (NOT read — clean-room recusal); license-incompatible with cave-home Apache-2.0. cave-home is the HUB; it needs to SPEAK the native API, not BE an ESPHome firmware."
 spec-source       = "Public native-API wire format (plaintext frame: 0x00 preamble + varint length + varint type + payload) and the public api.proto message-ID table; aioesphomeapi (MIT) public client behaviour."
-prohibited-source = ["esphome/esphome firmware C++ (GPL-3.0)", "ESPHome Python codegen (GPL-3.0)"]
-attestation       = "No esphome/esphome GPL-3.0 firmware or codegen source consulted at any point. Protocol facts (frame layout, varint, message IDs) are from the public api.proto and the MIT aioesphomeapi client."
+prohibited-source = ["esphome/esphome firmware C++ (GPL-3.0, clean-room — NOT read)", "ESPHome Python codegen (GPL-3.0, clean-room — NOT read)"]
+attestation       = "No esphome/esphome GPL-3.0 firmware or codegen source was ever read / consulted (clean-room). Protocol facts (frame layout, varint, message IDs) are from the public api.proto and the MIT aioesphomeapi client."
 
 # Phase-1 MVP is pure logic: std-only, no external crates, no network/TLS/Noise.
 # The TCP transport, Noise (encrypted) frame helper, full protobuf message bodies,

@@ -11,9 +11,10 @@
 use clap::{Arg, ArgAction, Command};
 
 use cave_home_cli::commands::{
-    alarm, automation, calendar, camera, cover, destroy, device, display, doorbell, free_home,
-    garden, history, household, hue, hvac, init, join, knx, lights, lock, matter, mobile, music,
-    notify, pool, room, scene, solar, status, unifi, vacuum, voice, water, wellness, zigbee, zwave,
+    alarm, automation, calendar, camera, cover, destroy, device, display, doorbell, esphome,
+    free_home, garden, history, household, hue, hvac, init, join, knx, lights, lock, matter, mobile,
+    music, notify, pool, room, scene, solar, status, unifi, vacuum, voice, water, wellness, zigbee,
+    zwave,
 };
 
 fn build_cli() -> Command {
@@ -42,6 +43,7 @@ fn build_cli() -> Command {
         .subcommand(unifi::cmd())
         .subcommand(hue::cmd())
         .subcommand(knx::cmd())
+        .subcommand(esphome::cmd())
         .subcommand(free_home::cmd())
         // G8 stubs (Phase 1 4-track completeness) — backend not yet attached.
         .subcommand(lights::cmd())
@@ -97,6 +99,7 @@ where
         Some(("unifi", _)) => unifi::run(),
         Some(("hue", _)) => hue::run(),
         Some(("knx", _)) => knx::run(),
+        Some(("esphome", _)) => esphome::run(),
         Some(("free-home", _)) => free_home::run(),
         // G8 stubs (Phase 1 4-track completeness) — see commands/*.rs.
         Some(("lights", _)) => lights::run(),
@@ -139,7 +142,7 @@ mod tests {
         let names: Vec<_> = cli.get_subcommands().map(|s| s.get_name()).collect();
         for required in [
             "init", "join", "status", "destroy", "device", "room", "automation", "scene",
-            "solar", "unifi", "hue", "knx", "free-home",
+            "solar", "unifi", "hue", "knx", "esphome", "free-home",
             // G8 stubs:
             "lights", "cover", "lock", "vacuum", "hvac", "camera", "doorbell", "alarm",
             "water", "garden", "pool", "voice", "music", "notify", "display", "history",
