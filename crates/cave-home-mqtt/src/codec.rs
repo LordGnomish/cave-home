@@ -227,6 +227,67 @@ mod tests {
     use super::*;
 
     #[test]
+    fn subscribe_round_trip() {
+        // §3.8 SUBSCRIBE: packet id 10, "a/b" QoS 1, "c/d" QoS 2.
+        let s = Subscribe {
+            packet_id: 10,
+            subscriptions: vec![
+                Subscription { topic_filter: "a/b".into(), qos: QoS::AtLeastOnce },
+                Subscription { topic_filter: "c/d".into(), qos: QoS::ExactlyOnce },
+            ],
+        };
+        let bytes = encode_packet(&Packet::Subscribe(s.clone())).expect("encode");
+        // §3.8.1: SUBSCRIBE reserved fixed-header flags are 0b0010.
+        assert_eq!(bytes[0], 0x82);
+        let (back, used) = decode_packet(&bytes).expect("decode");
+        assert_eq!(used, bytes.len());
+        assert_eq!(back, Packet::Subscribe(s));
+    }
+
+    #[test]
+    fn subscribe_rejects_wrong_reserved_flags() {
+        // §3.8.1: byte-1 flags must be 0b0010; here they are 0b0000.
+        let frame = [0x80, 0x06, 0x00, 0x01, 0x00, 0x01, b'x', 0x00];
+        assert!(matches!(
+            decode_packet(&frame),
+            Err(CodecError::BadReservedFlags(0))
+        ));
+    }
+
+    #[test]
+    fn subscribe_rejects_empty_filter_list() {
+        // §3.8.3: a SUBSCRIBE MUST carry at least one topic filter.
+        let frame = [0x82, 0x02, 0x00, 0x0a];
+        assert!(matches!(
+            decode_packet(&frame),
+            Err(CodecError::EmptySubscription)
+        ));
+    }
+
+    #[test]
+    fn subscribe_rejects_reserved_requested_qos() {
+        // §3.8.3: a requested QoS of 3 is a protocol violation.
+        let frame = [0x82, 0x06, 0x00, 0x0a, 0x00, 0x01, b'x', 0x03];
+        assert!(matches!(decode_packet(&frame), Err(CodecError::BadQoS(3))));
+    }
+
+    #[test]
+    fn suback_round_trip() {
+        // §3.9.3: granted QoS 1, then a failure return code (0x80).
+        let a = SubAck {
+            packet_id: 10,
+            return_codes: vec![
+                SubAckReturnCode::MaxQoS1,
+                SubAckReturnCode::Failure,
+            ],
+        };
+        let bytes = encode_packet(&Packet::SubAck(a.clone())).expect("encode");
+        assert_eq!(&bytes[..], [0x90, 0x04, 0x00, 0x0a, 0x01, 0x80].as_slice());
+        let (back, _) = decode_packet(&bytes).expect("decode");
+        assert_eq!(back, Packet::SubAck(a));
+    }
+
+    #[test]
     fn var_int_round_trip_at_spec_boundaries() {
         // MQTT 3.1.1 §2.2.3 examples: 0, 127, 128, 16383, 16384, 2_097_151, 2_097_152.
         for v in [0u32, 127, 128, 16_383, 16_384, 2_097_151, 2_097_152, 268_435_455] {
