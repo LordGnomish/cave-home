@@ -1,0 +1,120 @@
+# cave-home-esphome — parity manifest.
+#
+# Phase 1 ships the ESPHome native-API *wire codec*: the plaintext frame
+# framing, the protobuf base-128 (LEB128) varint used by every field, the
+# message-type registry for the core handshake / entity-listing / state / log
+# message block (api.proto IDs 1–29), the FNV-1 entity-key hash, a small entity
+# data model, and EN/DE/TR grandma-friendly labels. All of it is pure byte/logic
+# code — std-only, no network, no TLS, no Noise crypto.
+#
+# This is the layer every higher ESPHome feature consumes: a TCP transport only
+# moves these frames; the encrypted (Noise) helper only wraps the same frames;
+# the protobuf message bodies only fill the payload these frames carry. Those
+# I/O- and codegen-bound layers are deferred (Phase 1b / Phase 2), each
+# enumerated below with an ADR-032 disposition.
+#
+# Port method: BEHAVIOURAL reimplementation of the PUBLIC native-API wire format
+# (plaintext frame = 0x00 preamble + varint length + varint message-type +
+# payload) and the public api.proto message-ID table, cross-checked against the
+# MIT aioesphomeapi client. The GPL-3.0 esphome/esphome firmware + Python
+# codegen was NOT read — cave-home is the HUB and only needs to SPEAK the API,
+# not BE an ESPHome firmware (Charter §6.1 / ADR-002 / ADR-032). No
+# backward-compatibility / legacy mode is shipped (Charter §8 no-backcompat).
+
+[crate]
+name             = "cave-home-esphome"
+upstream_repo    = "ESPHome native-API protocol (public api.proto message IDs + plaintext frame format); aioesphomeapi (MIT, public client behaviour referenced); esphome/esphome firmware (GPL-3.0, NOT read — clean-room recusal)"
+port_method      = "behavioural-reimplementation (public ESPHome native-API plaintext wire format) + spec-based (protobuf base-128/LEB128 varint)"
+upstream_license = "Apache-2.0 (own) / MIT (aioesphomeapi, referenced)"
+spec_sources     = [
+    "ESPHome native-API plaintext frame: <0x00 preamble> <varint payload-length> <varint message-type> <payload bytes>; 0x01 preamble indicates a Noise-encrypted frame",
+    "Protobuf base-128 (LEB128) unsigned varint: little-endian groups of 7 bits, high bit = continuation",
+    "ESPHome api.proto message-ID table, core block: 1 HelloRequest .. 29 SubscribeLogsResponse (handshake, device-info, list-entities, subscribe-states, state responses, subscribe-logs)",
+    "ESPHome fnv1_hash (esphome/core/helpers.cpp): 32-bit FNV-1 (offset 2166136261, prime 16777619, multiply-then-xor) — derives the per-entity API key from the object_id",
+    "ESPHome EntityCategory enum: 0 = none, 1 = config, 2 = diagnostic",
+]
+ported_at        = "2026-05-31"
+
+[ratios]
+# fill_ratio is against the FULL native-API *client* scope (wire codec + TCP
+# transport + Noise encrypted helper + full protobuf message bodies + connection
+# state machine + reconnection + mDNS discovery + cave-home-core integration).
+# The wire codec — framing, varint, message-ID registry, entity-key hash, entity
+# model, EN/DE/TR UX — is implemented and tested in full; the I/O / crypto /
+# codegen layers remain and are all ADR-032 justified Phase-1b/Phase-2. The
+# ESPHome *firmware* side (YAML config, on-device drivers, OTA, web UI) is a
+# permanent scope-cut: cave-home is the hub, not an ESPHome firmware.
+fill_ratio              = 0.20
+fill_ratio_basis        = "plaintext frame codec + base-128 varint + api.proto message-ID registry (1–29) + FNV-1 entity-key hash + entity model + EN/DE/TR UX, fully implemented & tested; TCP/Noise/protobuf-bodies/discovery/core-integration deferred; firmware side scope-cut"
+test_port_ratio         = 0.0   # tests designed from the spec & independent reference vectors, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-032 disposition
+honest_ratio            = 1.00  # 0.20 / (0.20 + unjustified_gap=0)
+
+# ---- mapped (real implementation present in this crate) --------------------
+
+[[mapped]]
+spec = "Protobuf base-128 (LEB128) unsigned varint — encode, encoded-length, and decode with incomplete/overflow signalling"
+ours = "src/varint.rs"
+
+[[mapped]]
+spec = "ESPHome plaintext native-API frame — encode (0x00 + varint len + varint type + payload) and streaming decode (partial-buffer aware, returns bytes-consumed)"
+ours = "src/frame.rs::ApiFrame"
+
+[[mapped]]
+spec = "Noise / bad-preamble detection — 0x01 → EncryptedFrame, other non-0x00 → BadPreamble"
+ours = "src/frame.rs (decode preamble handling) + src/error.rs::EsphomeError"
+
+[[mapped]]
+spec = "ESPHome api.proto message-type registry, core block (IDs 1–29): id ⇄ variant ⇄ name"
+ours = "src/message.rs::MessageType"
+
+[[mapped]]
+spec = "ESPHome fnv1_hash — 32-bit FNV-1 entity-key derivation from object_id"
+ours = "src/hash.rs::fnv1_hash"
+
+[[mapped]]
+spec = "Entity data model — EntityKind, EntityCategory (0/1/2), EntityInfo with FNV-1 key()"
+ours = "src/entity.rs"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR descriptions of entity kinds (Charter §2 persona-1, ADR-007)"
+ours = "src/label.rs"
+
+# ---- unmapped (deferred, each with an ADR-032 disposition) -----------------
+
+[[unmapped]]
+spec     = "TCP transport (connect to port 6053, frame the byte stream off the socket)"
+priority = "phase-1b"
+note     = "Network/IO-bound: this crate is the pure framing engine the transport drives. The transport only moves the frames decoded here; it adds no protocol logic. Deferred to the async-runtime integration (ADR-032)."
+
+[[unmapped]]
+spec     = "Noise-encrypted frame helper (the 0x01 indicator path: handshake + per-frame ChaCha20-Poly1305)"
+priority = "phase-1b"
+note     = "Crypto-bound: requires a Noise/ChaCha20-Poly1305 implementation. The plaintext path is complete and the encrypted path wraps the SAME message frames (this crate already detects and reports the 0x01 indicator). Deferred per ADR-032."
+
+[[unmapped]]
+spec     = "Full protobuf message bodies (HelloResponse fields, DeviceInfoResponse, ListEntities*/*StateResponse field decoding)"
+priority = "phase-2"
+note     = "Codegen-bound: the per-message field schemas are a large generated surface. The framing + message-ID registry that route to them is complete; the bodies fill the payload these frames carry. Deferred per ADR-032."
+
+[[unmapped]]
+spec     = "Connection state machine (Hello → Connect → DeviceInfo → ListEntities → SubscribeStates) + reconnection/backoff"
+priority = "phase-2"
+note     = "Sits on top of the transport (also deferred) and sequences the framed messages this crate produces. No new wire logic. Deferred per ADR-032."
+
+[[unmapped]]
+spec     = "mDNS discovery of _esphomelib._tcp devices on the LAN"
+priority = "phase-2"
+note     = "Network/IO-bound device discovery; shares the cave-home mDNS responder. Independent of the wire codec. Deferred per ADR-032."
+
+[[unmapped]]
+spec     = "cave-home-core integration (surface ESPHome entities as cave-home devices)"
+priority = "phase-2"
+note     = "Integration-bound: maps decoded entities onto the cave-home device model. Consumes this crate's entity model unchanged; lands with the core device-registry work. Deferred per ADR-032."
+
+# ---- scope_cut (deliberately NOT in this crate's scope) --------------------
+
+[[scope_cut]]
+spec     = "ESPHome firmware compiler, YAML configuration parser, on-device component framework + 500+ on-device drivers, on-device OTA, on-device web UI, captive portal"
+priority = "permanent"
+note     = "Device-side / GPL-3.0: this is the esphome/esphome FIRMWARE (GPL-3.0, NOT read). cave-home is the HUB — it SPEAKS the native API to talk to ESPHome devices; it does not BE an ESPHome firmware. Permanently out of scope per ADR-032 / ADR-002 (no GPL line-port, no-backcompat Charter §8)."
