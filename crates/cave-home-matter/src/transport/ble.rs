@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! BLE commissioning transport.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/transport/raw/BLE.cpp
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/transport/raw/BLE.cpp
 //! + src/ble/BleLayer.cpp
 //!
 //! Phase 1 ships an **in-memory BLE channel** built on top of

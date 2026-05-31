@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Access control list.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/access/AccessControl.cpp
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/access/AccessControl.cpp
 //!
 //! Phase 1 ports the in-memory `AccessControl::Check` decision plus
 //! the four privilege levels (View / Operate / Manage / Administer)

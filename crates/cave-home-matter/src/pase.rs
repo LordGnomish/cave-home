@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! PASE — Password-Authenticated Session Establishment (Spake2+ flavour).
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/protocols/secure_channel/PASESession.cpp
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/protocols/secure_channel/PASESession.cpp
 //!
 //! Phase 1 port: protocol shape (PBKDFParamRequest → PBKDFParamResponse →
 //! Pake1 → Pake2 → Pake3) and the resulting `DeriveSecureSession` step

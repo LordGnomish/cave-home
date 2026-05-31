@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Thermostat cluster (0x0201) client.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/app/clusters/thermostat-server/thermostat-server.cpp
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/app/clusters/thermostat-server/thermostat-server.cpp
 
 use std::collections::BTreeMap;
 

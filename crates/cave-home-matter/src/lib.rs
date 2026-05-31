@@ -2,7 +2,7 @@
 //! cave-home-matter — Matter 1.3+ stack.
 //!
 //! Line-by-line port of `src/` from `project-chip/connectedhomeip`
-//! v1.3.0.0 (SHA `5af45c5cd17ee8df03b8c8e7f6b1f7d3f6e1a4d8`). The
+//! v1.3.0.0 (SHA `5bb5c9e23d532cea40476fc0bd1d3008522792ba`). The
 //! upstream license is Apache-2.0 → permissive, so line-by-line is
 //! the agreed port method per ADR-002.
 //!

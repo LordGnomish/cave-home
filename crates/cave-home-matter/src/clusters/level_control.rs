@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! LevelControl cluster (0x0008) client.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/app/clusters/level-control/level-control.cpp
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/app/clusters/level-control/level-control.cpp
 
 use std::collections::BTreeMap;
 

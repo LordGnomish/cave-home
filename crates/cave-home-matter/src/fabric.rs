@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fabric (household) table.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/credentials/FabricTable.cpp
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/credentials/FabricTable.cpp
 //!
 //! Hand-port of the FabricTable + FabricInfo + pending-commit
 //! machinery. In Matter, a **fabric** is the set of devices an admin

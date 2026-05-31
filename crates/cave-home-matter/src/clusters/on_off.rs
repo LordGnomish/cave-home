@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! OnOff cluster (0x0006) client.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/app/clusters/on-off-server/on-off.cpp
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/app/clusters/on-off-server/on-off.cpp
 //!
 //! Phase 1 caches the OnOff attribute per-node and emits the three
 //! commands (On / Off / Toggle). The transport binding into the

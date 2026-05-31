@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! CASE — Certificate-Authenticated Session Establishment.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/protocols/secure_channel/CASESession.cpp
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/protocols/secure_channel/CASESession.cpp
 //!
 //! CASE replaces the PAKE proofs with **mutual certificate-chain
 //! validation**: both sides carry an NOC (Node Operational

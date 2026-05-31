@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! NetworkCommissioning cluster (0x0031) client.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/app/clusters/network-commissioning/network-commissioning.cpp
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/app/clusters/network-commissioning/network-commissioning.cpp
 //!
 //! Phase 1 ports the Thread provisioning subset: AddOrUpdateThreadNetwork
 //! + ConnectNetwork. Wi-Fi provisioning lives behind the same trait and

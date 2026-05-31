@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Per-cluster client implementations.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/app/clusters/
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/app/clusters/
 //!
 //! Phase 1 ships **commissioner-perspective clients** for the 5
 //! essential lighting/HVAC/lock clusters plus Network Commissioning

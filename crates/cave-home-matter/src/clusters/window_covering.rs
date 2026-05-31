@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! WindowCovering cluster (0x0102) client.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/app/clusters/window-covering-server/window-covering-server.cpp
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/app/clusters/window-covering-server/window-covering-server.cpp
 //!
 //! Roller-shutter / blind control from the commissioner perspective.
 //! Positions use the Matter `Percent100ths` convention: `0` is fully

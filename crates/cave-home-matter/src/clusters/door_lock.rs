@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! DoorLock cluster (0x0101) client.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/app/clusters/door-lock-server/door-lock-server.cpp
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/app/clusters/door-lock-server/door-lock-server.cpp
 
 use std::collections::BTreeMap;
 

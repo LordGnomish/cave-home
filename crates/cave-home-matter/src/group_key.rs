@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Group Data Provider — multicast group keys + group info.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/credentials/GroupDataProvider.cpp
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/credentials/GroupDataProvider.cpp
 //!
 //! Phase 1 ports the in-memory variant used by chip's unit tests.
 //! Persistent KVS backing is Phase 1b.

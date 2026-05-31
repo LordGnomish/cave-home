@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! OTA Requestor cluster client.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/app/clusters/ota-requestor/DefaultOTARequestor.cpp
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/app/clusters/ota-requestor/DefaultOTARequestor.cpp
 //!
 //! Phase 1 ports the requestor state machine: QueryImage ->
 //! ApplyUpdate -> Notify. The BDX bulk transfer that fetches the

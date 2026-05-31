@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Top-level `Controller` composition — the Phase 1 cave-home Matter entry point.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/controller/CHIPDeviceControllerFactory.cpp
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/controller/CHIPDeviceControllerFactory.cpp
 //!
 //! The Controller bundles the long-lived pieces of state a commissioner
 //! needs (FabricTable, AccessControl, GroupDataProvider,
