@@ -19,6 +19,7 @@
 //! - [`network`]    — NWK + APS layers + routing table.
 //! - [`zcl`]        — ZCL frame format + Foundation commands.
 //! - [`onoff`]      — OnOff cluster (0x0006) commands + state.
+//! - [`level_control`] — Level Control cluster (0x0008) dimming.
 //! - [`pairing`]    — network steering / InstallCode / Touchlink.
 //! - [`attribute_reporting`] — Configure / Read / Report attributes.
 //! - [`groups`]     — Groups cluster (0x0004).
@@ -40,6 +41,7 @@ pub mod error;
 pub mod events;
 pub mod ezsp;
 pub mod groups;
+pub mod level_control;
 pub mod network;
 pub mod onoff;
 pub mod ota;
