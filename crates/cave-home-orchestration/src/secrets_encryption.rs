@@ -58,6 +58,8 @@
 //!
 //! This is **infrastructure**, hidden from end users (Charter §6.3, ADR-007).
 
+pub mod encryption_config;
 pub mod envelope;
 pub mod keyring;
 pub mod provider;
+pub mod transformer;
