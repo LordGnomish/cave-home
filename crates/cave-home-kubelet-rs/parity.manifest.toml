@@ -68,11 +68,11 @@ linux_min_kernel = "7.1"  # ADR-003: Linux-only deployment baseline.
 # lifecycle decision a node makes about a pod is implemented and exhaustively
 # tested here today; what remains is the runtime/syscall/server plumbing that
 # executes those decisions against the kernel.
-fill_ratio          = 0.20
-fill_ratio_basis    = "node-lifecycle decision core (phase + restart/backoff + probes + sync diff + eviction QoS ranking + admission/resource accounting) fully implemented & tested, plus the syncPod execution slice (CRI trait+mock, PLEG, PodWorker, emptyDir/hostPath volumes, status manager); CRI runtime exec, cgroup + eviction-manager syscalls, kubelet HTTP server, image/secret/configmap managers, device plugins, full volume manager deferred (ADR-004 phase-1b), all enumerated below"
+fill_ratio          = 0.22
+fill_ratio_basis    = "node-lifecycle decision core (phase + restart/backoff + probes + sync diff + eviction QoS ranking + admission/resource accounting) fully implemented & tested, plus the syncPod execution slice (CRI trait+mock, PLEG, PodWorker, emptyDir/hostPath volumes, status manager) and the cgroup v2 resource-conversion + QoS cgroupfs-hierarchy decision (cpu.weight/cpu.max/memory.max + /kubepods tree); CRI runtime exec, cgroup sysfs actuation + eviction-manager syscalls, kubelet HTTP server, image/secret/configmap managers, device plugins, full volume manager deferred (ADR-004 phase-1b), all enumerated below"
 test_port_ratio     = 0.0   # tests are designed from the documented kubelet contract, not ported from upstream _test.go
 adr_justified_ratio = 1.00  # every [[unmapped]] gap below carries a justified priority + a note
-honest_ratio        = 1.00  # 0.20 / (0.20 + (1-0.20)*(1-1.00)) = 0.20/0.20 = 1.00
+honest_ratio        = 1.00  # 0.22 / (0.22 + (1-0.22)*(1-1.00)) = 0.22/0.22 = 1.00
 
 # ---- mapped (behavioural reference -> cave-home Rust path) ------------------
 # `upstream`/`spec` names the documented reference for each item, not a claim of
@@ -174,6 +174,14 @@ ours     = "src/status/manager.rs::PodStatusManager"
 upstream = "k8s.io/api/core/v1/types.go::{Pod, PodSpec, PodStatus, Volume, ContainerStatus, ContainerState, PodPhase, RestartPolicy}"
 ours     = "src/api/mod.rs"
 
+[[mapped]]
+upstream = "pkg/kubelet/cm/helpers_linux.go::{MilliCPUToShares, MilliCPUToQuota} + libcontainer/systemd cgroup-v2 cpu.weight conversion (1 + (shares-2)*9999/262142) + cgroup_manager_linux.go cpu.max/memory.max unified-hierarchy values"
+ours     = "src/cgroup.rs::{milli_cpu_to_shares, shares_to_cpu_weight, milli_cpu_to_cpu_weight, milli_cpu_to_quota_us, cpu_max, memory_max, CgroupV2Resources}"
+
+[[mapped]]
+upstream = "pkg/kubelet/cm/qos_container_manager_linux.go + pod_container_manager_linux.go (the /kubepods{,/burstable,/besteffort}/pod<uid> cgroupfs QoS hierarchy; Guaranteed under root, Burstable/BestEffort under their subtree)"
+ours     = "src/cgroup.rs::{CgroupHierarchy, qos_subpath, pod_path, container_path}"
+
 # ---- unmapped (NOT in this crate; each carries an ADR-004 phase disposition)-
 
 [[unmapped]]
@@ -197,9 +205,9 @@ priority = "phase-1b"
 note     = "ADR-004: the QoS ranking + ordering decision is implemented & tested in src/eviction.rs; collecting live memory/disk pressure signals (cadvisor/summary API), evaluating eviction thresholds, and actually killing the ranked pods are deferred kernel-side work."
 
 [[unmapped]]
-area     = "pkg/kubelet/cm (cgroup v2 manager + per-pod cgroup creation)"
+area     = "pkg/kubelet/cm (cgroup v2 sysfs actuation + cpumanager/memorymanager/topologymanager)"
 priority = "phase-1b"
-note     = "ADR-004 + ADR-003: cgroup v2 manager, cpumanager, memorymanager, topologymanager — Linux 7.1+ syscalls that enforce the admitted resource accounting. cgroup v1 is permanently out per ADR-003."
+note     = "ADR-004 + ADR-003: the cgroup v2 *value + path decision* (milli-cpu -> cpu.weight/cpu.max, memory.max, the /kubepods QoS cgroupfs hierarchy) is now implemented & tested in src/cgroup.rs. What remains deferred is the sysfs actuation that consumes it — the mkdir of each cgroup dir, writing the control files, the cgroup.subtree_control delegation, plus cpumanager/memorymanager/topologymanager pinning. Linux 7.1+ syscalls; cgroup v1 is permanently out per ADR-003."
 
 [[unmapped]]
 area     = "pkg/kubelet/cm/devicemanager + pkg/kubelet/cm/dra"

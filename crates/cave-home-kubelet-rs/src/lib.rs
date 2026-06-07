@@ -59,6 +59,7 @@
 
 pub mod admission;
 pub mod api;
+pub mod cgroup;
 pub mod cri;
 pub mod eviction;
 pub mod kubelet;
