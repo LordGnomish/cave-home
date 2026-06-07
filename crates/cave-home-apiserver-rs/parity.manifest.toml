@@ -69,11 +69,11 @@ linux_min_kernel = "7.1"  # ADR-003: Linux-only deployment baseline.
 # of what remains in scope. (The fill is reported against capability, not raw
 # Go LOC: the decision core is disproportionately load-bearing relative to its
 # size — it is the part that every other path is a transport/storage lowering of.)
-fill_ratio          = 0.24
-fill_ratio_basis    = "REST decision core (GVK/GVR+RESTMapper, path grammar, ObjectMeta optimistic concurrency + generation + finalizers + ownerRefs, CRUD+list+watch verb semantics with correct status codes + pagination, the /status subresource write path, label/field selectors, RFC-7396/6902 patch, metav1.Status, mutating+validating admission pipeline) PLUS the additive RBAC authorizer (Role/ClusterRole/RoleBinding/ClusterRoleBinding rule matching with wildcard/subresource/resourceName/non-resource-URL semantics + cluster-vs-namespaced binding scope) implemented & tested std-only; HTTP server, etcd/kine storage, TLS/authn, Node-authorizer + RBAC aggregation + SubjectAccessReview/webhook-authz, admission webhooks, CRDs, aggregation, audit deferred"
+fill_ratio          = 0.27
+fill_ratio_basis    = "REST decision core (GVK/GVR+RESTMapper, path grammar, ObjectMeta optimistic concurrency + generation + finalizers + ownerRefs, CRUD+list+watch verb semantics with correct status codes + pagination, the /status subresource write path, label/field selectors, RFC-7396/6902 patch, metav1.Status, mutating+validating admission pipeline) PLUS the additive RBAC authorizer (Role/ClusterRole/RoleBinding/ClusterRoleBinding rule matching with wildcard/subresource/resourceName/non-resource-URL semantics + cluster-vs-namespaced binding scope) PLUS the group/version/resource discovery surface (APIVersions/APIGroupList/APIResourceList over the static kind table) implemented & tested std-only; HTTP server, etcd/kine storage, TLS/authn, Node-authorizer + RBAC aggregation + SubjectAccessReview/webhook-authz, admission webhooks, CRDs, OpenAPI + aggregated/subresource discovery, API aggregation, audit deferred"
 test_port_ratio     = 0.0   # tests designed from the documented spec, not ported
 adr_justified_ratio = 1.00  # every unfilled item below carries an ADR-004 phase disposition + note
-honest_ratio        = 1.00  # 0.24 / (0.24 + (1-0.24)*(1-1.0)) = 1.00
+honest_ratio        = 1.00  # 0.27 / (0.27 + (1-0.27)*(1-1.0)) = 1.00
 
 # ---------------------------------------------------------------------------
 # [[mapped]] — documented k8s REST/admission concept -> cave-home Rust path
@@ -156,6 +156,10 @@ spec = "RBAC authorization: additive Role/ClusterRole + RoleBinding/ClusterRoleB
 ours = "src/rbac.rs::{RbacAuthorizer, PolicyRule, Role, ClusterRole, RoleBinding, ClusterRoleBinding, Subject, RoleRef, Attributes, UserInfo, Decision}"
 
 [[mapped]]
+spec = "Discovery API: /api -> core-group APIVersions; /apis -> APIGroupList (non-core groups, each with versions + a preferred version; core group excluded); /api/{v} + /apis/{g}/{v} -> APIResourceList (per-kind name/singularName/namespaced/kind/verbs) computed over the static RESTMapper kind table; deterministic (sorted) ordering"
+ours = "src/discovery.rs::{api_versions, api_groups, api_resources, ApiGroup, ApiResource, GroupVersionEntry}; src/gvk.rs::{registered, RegisteredKind}"
+
+[[mapped]]
 spec = "JSON object model the REST/patch/selector logic operates on (std-only value tree; no serialization-framework dependency)"
 ours = "src/json.rs::Value"
 
@@ -197,6 +201,11 @@ note     = "ADR-004: the in-process two-phase pipeline (mutating then validating
 area     = "CustomResourceDefinitions (dynamic kind registration + structural schema validation + conversion webhooks)"
 priority = "phase-1b"
 note     = "ADR-004: the RESTMapper ships a static built-in kind table; CRD-driven dynamic registration + OpenAPI structural validation is deferred. The registry already stores arbitrary value-tree objects, so CRDs are a registration/validation overlay, not a storage change."
+
+[[unmapped]]
+area     = "Discovery remainder: OpenAPI v2/v3 schema documents, aggregated discovery (APIGroupDiscoveryList), and subresource/CRD-contributed discovery entries"
+priority = "phase-1b"
+note     = "ADR-004: the group/version/resource discovery surface (APIVersions / APIGroupList / APIResourceList over the static kind table) is implemented in src/discovery.rs. Still deferred: the OpenAPI v2/v3 schema documents, the v2 aggregated-discovery document, and listing subresources (pods/status, pods/log) + CRD-contributed groups — these follow once the structural-schema / CRD registration overlay lands."
 
 [[unmapped]]
 area     = "API aggregation layer (APIService delegation to extension apiservers)"
@@ -274,6 +283,10 @@ ours         = "src/admission.rs::tests (9 cases)"
 [[spec_test]]
 designed_for = "std-only JSON value tree: dotted pointer resolution, canonical sorted-key rendering, integer vs float rendering, string escaping"
 ours         = "src/json.rs::tests (4 cases)"
+
+[[spec_test]]
+designed_for = "Discovery: core APIVersions = [v1]; /apis lists non-core groups only (core absent); preferred version reported (apps/v1); APIResourceList carries kind/singularName(lowercased kind)/namespaced/group/version + standard 8-verb set; cluster-scoped resources flagged (nodes); core resources do not leak into grouped lists; unknown group/version empty; groups + resources sorted"
+ours         = "src/discovery.rs::tests (10 cases)"
 
 [[spec_test]]
 designed_for = "RBAC matching: ClusterRoleBinding cluster-wide grant; no-binding NoOpinion; wildcard verb/resource/apiGroup; verb/apiGroup/resource mismatch NoOpinion; RoleBinding namespace scoping (allow in-ns, NoOpinion cross-ns); RoleBinding->ClusterRole scoped to namespace; Group + ServiceAccount subject matching; resourceNames restriction (named allow, other/empty NoOpinion); subresource (pods/log) + */status wildcard (and bare-resource/other-subresource rejection); non-resource URL exact + trailing-* prefix; non-resource & cluster-scoped not grantable via RoleBinding; rule union within a role; authorize_or_forbid -> Forbidden(403)"

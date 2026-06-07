@@ -159,6 +159,38 @@ pub fn is_known(gvr: &GroupVersionResource) -> bool {
     kind_for(gvr).is_some()
 }
 
+/// One registered built-in kind, exposed for discovery enumeration: its group,
+/// version, plural resource, CamelCase kind, and namespaced flag.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RegisteredKind {
+    /// API group; empty for the core group.
+    pub group: &'static str,
+    /// API version.
+    pub version: &'static str,
+    /// Lowercase plural resource name.
+    pub resource: &'static str,
+    /// CamelCase kind name.
+    pub kind: &'static str,
+    /// Whether the kind is namespaced.
+    pub namespaced: bool,
+}
+
+/// All registered built-in kinds (the static RESTMapper table). Used by the
+/// discovery surface to enumerate served groups/versions/resources.
+#[must_use]
+pub fn registered() -> Vec<RegisteredKind> {
+    KINDS
+        .iter()
+        .map(|e| RegisteredKind {
+            group: e.group,
+            version: e.version,
+            resource: e.resource,
+            kind: e.kind,
+            namespaced: e.namespaced,
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

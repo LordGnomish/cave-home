@@ -25,6 +25,8 @@
 //!   couple of built-in rules.
 //! - [`rbac`]     — the additive RBAC authorizer: Role/ClusterRole +
 //!   RoleBinding/ClusterRoleBinding rule matching → Allow / NoOpinion.
+//! - [`discovery`]— the discovery surface: served groups/versions/resources
+//!   (`APIVersions` / `APIGroupList` / `APIResourceList`) over the kind table.
 //! - [`status`]   — the `metav1.Status` error model (code / reason / message).
 //! - [`json`]     — a small std-only JSON value tree the above operate on.
 //!
@@ -83,7 +85,8 @@ pub use admission::{
     AdmissionChain, AdmissionRequest, DefaultFields, MutatingPlugin, NamespaceExists, Operation,
     RequireName, ValidatingPlugin,
 };
-pub use gvk::{GroupVersionKind, GroupVersionResource};
+pub use discovery::{ApiGroup, ApiResource, GroupVersionEntry};
+pub use gvk::{GroupVersionKind, GroupVersionResource, RegisteredKind};
 pub use json::Value;
 pub use meta::{ObjectMeta, OwnerReference};
 pub use patch::PatchOp;
