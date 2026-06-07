@@ -18,7 +18,7 @@
 //!   * `diff == 0` → in sync.
 
 use cave_home_controller_manager_rs::controllers::replicaset::{
-    reconcile, PodPhase, PodView, ReplicaSetAction, ReplicaSetSpec,
+    PodPhase, PodView, ReplicaSetAction, ReplicaSetSpec, reconcile,
 };
 
 fn spec(replicas: i32) -> ReplicaSetSpec {
@@ -34,10 +34,7 @@ fn web(uid: &str) -> PodView {
 fn scale_up_creates_the_missing_pods() {
     // 1 active, want 3 → create 2.
     let pods = [web("a")];
-    assert_eq!(
-        reconcile(&spec(3), &pods),
-        ReplicaSetAction::CreatePods(2)
-    );
+    assert_eq!(reconcile(&spec(3), &pods), ReplicaSetAction::CreatePods(2));
 }
 
 #[test]
@@ -149,7 +146,10 @@ fn scale_down_prefers_lower_deletion_cost() {
 
 #[test]
 fn scale_down_prefers_higher_restart_count() {
-    let pods = [web("stable").with_restarts(0), web("flapping").with_restarts(7)];
+    let pods = [
+        web("stable").with_restarts(0),
+        web("flapping").with_restarts(7),
+    ];
     assert_eq!(
         reconcile(&spec(1), &pods),
         ReplicaSetAction::DeletePods(vec!["flapping".to_owned()])
@@ -171,8 +171,12 @@ fn deletion_preference_is_ordered_unassigned_before_phase() {
     // Unassigned-but-Running must still outrank assigned-Pending: the
     // unassigned key dominates the phase key.
     let pods = [
-        web("assigned-pending").on_node("n1").with_phase(PodPhase::Pending),
-        web("unassigned-running").unassigned().with_phase(PodPhase::Running),
+        web("assigned-pending")
+            .on_node("n1")
+            .with_phase(PodPhase::Pending),
+        web("unassigned-running")
+            .unassigned()
+            .with_phase(PodPhase::Running),
     ];
     assert_eq!(
         reconcile(&spec(1), &pods),

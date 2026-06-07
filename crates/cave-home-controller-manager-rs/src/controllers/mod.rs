@@ -12,3 +12,4 @@
 pub mod cleanup;
 pub mod gc;
 pub mod node_lifecycle;
+pub mod replicaset;
