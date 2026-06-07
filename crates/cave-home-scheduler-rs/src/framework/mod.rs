@@ -70,6 +70,18 @@ impl Status {
         }
     }
 
+    /// Upstream: `framework.NewStatus(framework.Skip)` — a plugin abstains.
+    /// Used by [`BindPlugin`] to decline a pod so the next bind plugin (or the
+    /// `DefaultBinder`) handles it.
+    #[must_use]
+    pub fn skip(plugin: &str) -> Self {
+        Self {
+            code: Code::Skip,
+            plugin: plugin.into(),
+            reasons: Vec::new(),
+        }
+    }
+
     /// Upstream: `framework.AsStatus(err)` — error-class status.
     #[must_use]
     pub fn error(plugin: &str, reason: impl Into<String>) -> Self {
@@ -227,6 +239,35 @@ pub trait PermitPlugin: Send + Sync {
 pub trait PreBindPlugin: Send + Sync {
     fn name(&self) -> &'static str;
     fn pre_bind(&self, state: &mut CycleState, pod: &Pod, node_name: &str) -> Status;
+}
+
+/// Upstream: `pkg/scheduler/framework/interface.go::BindPlugin`.
+///
+/// The terminal binding-cycle extension point: it writes the pod→node
+/// assignment (upstream POSTs a `core/v1.Binding`). Bind plugins run in
+/// registration order; the first to return a non-[`Code::Skip`] status owns the
+/// bind — its [`Status`] decides success or failure and no later bind plugin is
+/// consulted. A plugin returns [`Code::Skip`] to abstain (it does not handle
+/// this pod). If every bind plugin skips, or none is registered, the scheduler
+/// falls back to its built-in `DefaultBinder` (the `SchedulerSink::bind` POST).
+///
+/// Bind is the one inherently-I/O extension point, so — unlike the CPU-only
+/// Filter/Score/Reserve/Permit/PreBind traits — it is `async`.
+#[async_trait::async_trait]
+pub trait BindPlugin: Send + Sync {
+    fn name(&self) -> &'static str;
+    async fn bind(&self, state: &mut CycleState, pod: &Pod, node_name: &str) -> Status;
+}
+
+/// Upstream: `pkg/scheduler/framework/interface.go::PostBindPlugin`.
+///
+/// Best-effort callback after a pod is successfully bound — e.g. to release
+/// cycle-scoped state or emit a notification. It cannot fail the cycle (the bind
+/// already happened) so it returns nothing, and it runs only on the success
+/// path.
+pub trait PostBindPlugin: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn post_bind(&self, state: &mut CycleState, pod: &Pod, node_name: &str);
 }
 
 /// Per-pod, per-node filter result map.

@@ -11,7 +11,7 @@ use tokio::sync::Notify;
 
 use crate::cache::SchedulerCache;
 use crate::config::SchedulerConfig;
-use crate::framework::{ActionType, ClusterEvent, CycleState, Gvk, PluginRegistry};
+use crate::framework::{ActionType, ClusterEvent, Code, CycleState, Gvk, PluginRegistry};
 use crate::queue::{PriorityQueue, QueuedPodInfo, SchedulingQueue};
 use crate::schedule_one::{schedule_one_limited, ScheduleResult};
 use crate::source_sink::{NodeEvent, PodEvent, Result, SchedulerSink, SchedulerSource};
@@ -98,46 +98,28 @@ impl Scheduler {
         let limit = self.config.num_feasible_nodes_to_find(self.cache.node_count());
         let result = schedule_one_limited(&pod, &self.cache, &self.registry, limit);
 
-        if let Some(host) = &result.suggested_host {
-            // Assume the pod into the cache and emit the bind.
-            // If the cache rejects (e.g. the node disappeared), we
-            // surface as Schedulable=false and re-queue with backoff.
-            match self.cache.assume_pod(pod.clone(), host) {
-                Ok(()) => match self.sink.bind(&pod, host).await {
-                    Ok(()) => {
-                        let _ = self
-                            .sink
-                            .record_event(
-                                &pod,
-                                "Scheduled",
-                                &format!(
-                                    "Successfully assigned {} to {host} (profile={})",
-                                    full, self.profile_name
-                                ),
-                            )
-                            .await;
-                    }
-                    Err(e) => {
-                        self.cache.forget_pod(&pod.metadata.uid);
-                        let _ = self
-                            .sink
-                            .record_event(
-                                &pod,
-                                "FailedScheduling",
-                                &format!("bind failed: {e}"),
-                            )
-                            .await;
-                        self.queue.add_unschedulable(info);
-                    }
-                },
-                Err(e) => {
+        if let Some(host) = result.suggested_host.clone() {
+            // Drive the full binding cycle (Reserve → Permit → PreBind → Bind →
+            // PostBind, with Unreserve rollback). On failure we re-queue with
+            // backoff via the unschedulable set.
+            match self.run_binding_cycle(&pod, &host).await {
+                Ok(()) => {
                     let _ = self
                         .sink
                         .record_event(
                             &pod,
-                            "FailedScheduling",
-                            &format!("assume failed: {e}"),
+                            "Scheduled",
+                            &format!(
+                                "Successfully assigned {full} to {host} (profile={})",
+                                self.profile_name
+                            ),
                         )
+                        .await;
+                }
+                Err(reason) => {
+                    let _ = self
+                        .sink
+                        .record_event(&pod, "FailedScheduling", &reason)
                         .await;
                     self.queue.add_unschedulable(info);
                 }
@@ -413,10 +395,28 @@ impl Scheduler {
             }
         }
 
-        // ---------- Bind (DefaultBinder -> sink) ----------
-        if let Err(e) = self.sink.bind(pod, host).await {
-            self.unwind(&mut state, pod, host, reserved);
-            return Err(format!("bind failed: {e}"));
+        // ---------- Bind ----------
+        // Bind plugins run in registration order; the first to return a non-Skip
+        // status owns the bind. If every plugin abstains (or none is registered)
+        // the built-in DefaultBinder — the sink's Binding POST — performs it.
+        let mut bound = false;
+        for plugin in self.registry.binds() {
+            let status = plugin.bind(&mut state, pod, host).await;
+            if status.code == Code::Skip {
+                continue;
+            }
+            if !status.is_success() {
+                self.unwind(&mut state, pod, host, reserved);
+                return Err(format!("bind {} failed: {}", plugin.name(), status.message()));
+            }
+            bound = true;
+            break;
+        }
+        if !bound {
+            if let Err(e) = self.sink.bind(pod, host).await {
+                self.unwind(&mut state, pod, host, reserved);
+                return Err(format!("bind failed: {e}"));
+            }
         }
         Ok(())
     }
@@ -604,6 +604,73 @@ mod tests {
         let log = calls.snapshot();
         assert!(log.contains(&"reserve:alpha:n1".to_string()));
         assert!(!log.iter().any(|s| s.starts_with("unreserve")));
+    }
+
+    use crate::framework::{BindPlugin, Code, PostBindPlugin};
+
+    struct RecordingBind(Arc<Calls>);
+    #[async_trait::async_trait]
+    impl BindPlugin for RecordingBind {
+        fn name(&self) -> &'static str {
+            "RecordingBind"
+        }
+        async fn bind(&self, _: &mut CycleState, pod: &Pod, node_name: &str) -> Status {
+            self.0.push(format!("bind:{}:{node_name}", pod.metadata.name));
+            Status::success()
+        }
+    }
+
+    struct SkipBind(Arc<Calls>);
+    #[async_trait::async_trait]
+    impl BindPlugin for SkipBind {
+        fn name(&self) -> &'static str {
+            "SkipBind"
+        }
+        async fn bind(&self, _: &mut CycleState, pod: &Pod, _: &str) -> Status {
+            self.0.push(format!("skip:{}", pod.metadata.name));
+            Status::skip(self.name())
+        }
+    }
+
+    #[tokio::test]
+    async fn custom_bind_plugin_intercepts_default_binder() {
+        let src = Arc::new(InMemorySource::new());
+        let sink = Arc::new(InMemorySink::new());
+        let calls = Arc::new(Calls::default());
+        let reg = PluginRegistry::builder()
+            .with_bind(Arc::new(RecordingBind(calls.clone())))
+            .build();
+        let sched = Scheduler::new(src.clone(), sink.clone()).with_registry(reg);
+        sched.cache.add_node(node("n1", 1000, 1024));
+
+        let info = QueuedPodInfo::new(pod("gamma", 100, 256));
+        sched.schedule_and_bind(info, 0).await;
+
+        // The custom bind plugin owned the bind; the DefaultBinder (sink) was
+        // never consulted.
+        assert!(calls.snapshot().contains(&"bind:gamma:n1".to_string()));
+        assert!(sink.binds().is_empty());
+        // Success still surfaces a Scheduled event.
+        assert!(sink.events().iter().any(|(_, r, _)| r == "Scheduled"));
+    }
+
+    #[tokio::test]
+    async fn bind_plugin_skip_falls_through_to_default_binder() {
+        let src = Arc::new(InMemorySource::new());
+        let sink = Arc::new(InMemorySink::new());
+        let calls = Arc::new(Calls::default());
+        let reg = PluginRegistry::builder()
+            .with_bind(Arc::new(SkipBind(calls.clone())))
+            .build();
+        let sched = Scheduler::new(src.clone(), sink.clone()).with_registry(reg);
+        sched.cache.add_node(node("n1", 1000, 1024));
+
+        let info = QueuedPodInfo::new(pod("delta", 100, 256));
+        sched.schedule_and_bind(info, 0).await;
+
+        // The skip plugin was consulted but abstained, so the DefaultBinder bound.
+        assert!(calls.snapshot().contains(&"skip:delta".to_string()));
+        assert_eq!(sink.binds(), vec![("default/delta".into(), "n1".into())]);
     }
 
     #[tokio::test]

@@ -8,8 +8,8 @@
 use std::sync::Arc;
 
 use super::{
-    FilterPlugin, PermitPlugin, PostFilterPlugin, PreBindPlugin, PreFilterPlugin, PreScorePlugin,
-    ReservePlugin, ScorePlugin,
+    BindPlugin, FilterPlugin, PermitPlugin, PostBindPlugin, PostFilterPlugin, PreBindPlugin,
+    PreFilterPlugin, PreScorePlugin, ReservePlugin, ScorePlugin,
 };
 
 /// Upstream: `pkg/scheduler/framework/runtime/framework.go::frameworkImpl`.
@@ -28,6 +28,8 @@ pub struct PluginRegistry {
     reserves: Vec<Arc<dyn ReservePlugin>>,
     permits: Vec<Arc<dyn PermitPlugin>>,
     pre_binds: Vec<Arc<dyn PreBindPlugin>>,
+    binds: Vec<Arc<dyn BindPlugin>>,
+    post_binds: Vec<Arc<dyn PostBindPlugin>>,
 }
 
 impl PluginRegistry {
@@ -39,6 +41,16 @@ impl PluginRegistry {
     #[must_use]
     pub fn reserves(&self) -> &[Arc<dyn ReservePlugin>] {
         &self.reserves
+    }
+
+    #[must_use]
+    pub fn binds(&self) -> &[Arc<dyn BindPlugin>] {
+        &self.binds
+    }
+
+    #[must_use]
+    pub fn post_binds(&self) -> &[Arc<dyn PostBindPlugin>] {
+        &self.post_binds
     }
 
     #[must_use]
@@ -88,12 +100,26 @@ pub struct RegistryBuilder {
     reserves: Vec<Arc<dyn ReservePlugin>>,
     permits: Vec<Arc<dyn PermitPlugin>>,
     pre_binds: Vec<Arc<dyn PreBindPlugin>>,
+    binds: Vec<Arc<dyn BindPlugin>>,
+    post_binds: Vec<Arc<dyn PostBindPlugin>>,
 }
 
 impl RegistryBuilder {
     #[must_use]
     pub fn with_pre_filter(mut self, p: Arc<dyn PreFilterPlugin>) -> Self {
         self.pre_filters.push(p);
+        self
+    }
+
+    #[must_use]
+    pub fn with_bind(mut self, p: Arc<dyn BindPlugin>) -> Self {
+        self.binds.push(p);
+        self
+    }
+
+    #[must_use]
+    pub fn with_post_bind(mut self, p: Arc<dyn PostBindPlugin>) -> Self {
+        self.post_binds.push(p);
         self
     }
 
@@ -150,6 +176,8 @@ impl RegistryBuilder {
             reserves: self.reserves,
             permits: self.permits,
             pre_binds: self.pre_binds,
+            binds: self.binds,
+            post_binds: self.post_binds,
         }
     }
 }

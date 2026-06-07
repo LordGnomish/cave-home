@@ -45,8 +45,9 @@ pub mod types;
 
 pub use cache::{NodeInfo, SchedulerCache};
 pub use framework::{
-    ActionType, ClusterEvent, CycleState, Gvk, PermitPlugin, PluginRegistry, PreBindPlugin,
-    PreFilterPlugin, PreFilterResult, PreScorePlugin, RegistryBuilder, ReservePlugin, Status,
+    ActionType, BindPlugin, ClusterEvent, CycleState, Gvk, NodeScore, PermitPlugin, PluginRegistry,
+    PostBindPlugin, PreBindPlugin, PreFilterPlugin, PreFilterResult, PreScorePlugin, RegistryBuilder,
+    ReservePlugin, Status,
 };
 pub use plugins::default_registry;
 pub use preemption::DefaultPreemption;
