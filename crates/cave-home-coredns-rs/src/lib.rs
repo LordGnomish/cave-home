@@ -109,6 +109,7 @@ pub use file::{FilePlugin, Zone, ZoneReply};
 // avoid colliding with `rewrite::Policy` (rule continue/stop).
 pub use forward::{Forward, Policy as ForwardPolicy, Pool};
 pub use hosts::Hosts;
+pub use k8s::{ApiSource, StaticSource, kubernetes_from_api, kubernetes_from_source};
 pub use kubernetes::{Endpoint, Kubernetes, Port, Protocol, Service};
 pub use message::{Message, Question};
 pub use name::Name;
