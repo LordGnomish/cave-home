@@ -25,6 +25,7 @@
 //! minimisation in `DefaultPreemption`.
 
 pub mod cache;
+pub mod config;
 pub mod framework;
 pub mod plugins;
 pub mod preemption;
