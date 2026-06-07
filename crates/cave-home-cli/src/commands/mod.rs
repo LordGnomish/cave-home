@@ -16,6 +16,7 @@
 //! * `cmd() -> clap::Command` — the clap subtree for the dispatcher.
 //! * `run(matches: &clap::ArgMatches) -> i32` — the handler.
 
+pub mod get;
 pub mod init;
 pub mod join;
 pub mod status;
