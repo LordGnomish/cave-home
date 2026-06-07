@@ -60,6 +60,7 @@
 
 pub mod arpa;
 pub mod cache;
+pub mod corefile;
 pub mod error;
 pub mod file;
 pub mod forward;
@@ -73,6 +74,7 @@ pub mod rr;
 pub mod wire;
 
 pub use cache::{Cache, CacheKey, CachePlugin};
+pub use corefile::{Corefile, Directive, ServerBlock};
 pub use error::{Result, WireError};
 pub use file::{FilePlugin, Zone, ZoneReply};
 // `forward::Policy` (load-balancing) is re-exported under a distinct name to
