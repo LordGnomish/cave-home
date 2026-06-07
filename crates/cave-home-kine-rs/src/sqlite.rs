@@ -25,9 +25,506 @@
 
 use std::path::Path;
 
-use crate::error::KineError;
-use crate::range::{RangeRequest, RangeResponse};
-use crate::watch::EventKind;
+use rusqlite::Connection;
+
+use crate::dialect::{Dialect, Driver, COMPACT_REV_KEY};
+use crate::error::{KineError, Result};
+use crate::range::{RangeEnd, RangeRequest, RangeResponse};
+use crate::revision::Revision;
+use crate::store::Row;
+use crate::watch::{EventKind, WatchEvent};
+
+/// A live `SQLite`-backed kine datastore.
+pub struct SqliteStore {
+    conn: Connection,
+    dialect: Dialect,
+}
+
+/// The latest row for a key: `(id, create_revision, deleted, value)`.
+type LatestRow = (i64, i64, bool, Vec<u8>);
+
+impl SqliteStore {
+    /// Open an in-memory store (each instance is independent). Used for tests
+    /// and ephemeral nodes.
+    ///
+    /// # Errors
+    /// [`KineError::Backend`] if the database cannot be opened or migrated.
+    pub fn open_in_memory() -> Result<Self> {
+        let conn = Connection::open_in_memory().map_err(backend)?;
+        Self::bootstrap(conn)
+    }
+
+    /// Open (creating if absent) a file-backed store at `path` — the persistent
+    /// single-binary datastore.
+    ///
+    /// # Errors
+    /// [`KineError::Backend`] if the file cannot be opened or migrated.
+    pub fn open(path: &Path) -> Result<Self> {
+        let conn = Connection::open(path).map_err(backend)?;
+        Self::bootstrap(conn)
+    }
+
+    /// Run the DDL + seed the compacted-floor sentinel row.
+    fn bootstrap(conn: Connection) -> Result<Self> {
+        let dialect = Dialect::new(Driver::Sqlite);
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
+            .map_err(backend)?;
+        conn.execute(&dialect.create_table_sql(), []).map_err(backend)?;
+        for ix in dialect.index_sqls() {
+            conn.execute(&ix, []).map_err(backend)?;
+        }
+        let store = Self { conn, dialect };
+        store.ensure_compact_sentinel()?;
+        Ok(store)
+    }
+
+    /// Ensure the `compact_rev_key` sentinel row exists (floor starts at 0).
+    fn ensure_compact_sentinel(&self) -> Result<()> {
+        let exists: bool = self
+            .conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM kine WHERE name = ?)",
+                [COMPACT_REV_KEY],
+                |r| r.get(0),
+            )
+            .map_err(backend)?;
+        if !exists {
+            // The sentinel is pinned at id 0 (explicit rowid) so it does NOT
+            // consume revision 1: user writes auto-increment from 1, matching
+            // etcd's "first write is revision 1". deleted=1 keeps it out of
+            // every current-state read; prev_revision holds the compacted floor.
+            self.conn
+                .execute(
+                    "INSERT INTO kine(id, name, created, deleted, create_revision, \
+                     prev_revision, lease, value, old_value) \
+                     VALUES(0, ?, 0, 1, 0, 0, 0, x'', x'')",
+                    [COMPACT_REV_KEY],
+                )
+                .map_err(backend)?;
+        }
+        Ok(())
+    }
+
+    /// The current store header revision (`MAX(id)` over real rows).
+    ///
+    /// # Errors
+    /// [`KineError::Backend`] on a query failure.
+    pub fn current_revision(&self) -> Result<Revision> {
+        // The sentinel row occupies an id but is not a user revision; the
+        // header is the max id of any real row, or 0 if only the sentinel.
+        let rev: i64 = self
+            .conn
+            .query_row(
+                "SELECT COALESCE(MAX(id), 0) FROM kine WHERE name <> ?",
+                [COMPACT_REV_KEY],
+                |r| r.get(0),
+            )
+            .map_err(backend)?;
+        Ok(rev)
+    }
+
+    /// The compacted-revision floor (`0` if never compacted).
+    ///
+    /// # Errors
+    /// [`KineError::Backend`] on a query failure.
+    pub fn compacted_revision(&self) -> Result<Revision> {
+        let floor: i64 = self
+            .conn
+            .query_row(
+                "SELECT COALESCE(MAX(prev_revision), 0) FROM kine WHERE name = ?",
+                [COMPACT_REV_KEY],
+                |r| r.get(0),
+            )
+            .map_err(backend)?;
+        Ok(floor)
+    }
+
+    /// The latest row (live or tombstone) for `key`: `(id, create_revision,
+    /// deleted, value)`. `None` if the key was never written.
+    fn latest(&self, key: &str) -> Result<Option<LatestRow>> {
+        self.conn
+            .query_row(
+                "SELECT id, create_revision, deleted, value FROM kine \
+                 WHERE name = ? ORDER BY id DESC LIMIT 1",
+                [key],
+                |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, i64>(2)? != 0,
+                        r.get::<_, Vec<u8>>(3)?,
+                    ))
+                },
+            )
+            .map(Some)
+            .or_else(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                other => Err(backend(other)),
+            })
+    }
+
+    /// Insert one append-only row and return its id (the new revision). For a
+    /// brand-new generation (`created`), `create_revision` is fixed up to the
+    /// inserted id after the fact, reproducing kine's "id is the create rev".
+    ///
+    /// The argument list is the kine row's column set (name + the eight value
+    /// columns); grouping them into a struct would only obscure the 1:1 mapping
+    /// onto the `INSERT` bind order.
+    #[allow(clippy::too_many_arguments)]
+    fn insert(
+        &self,
+        key: &str,
+        created: bool,
+        deleted: bool,
+        create_revision: i64,
+        prev_revision: i64,
+        lease: i64,
+        value: &[u8],
+        old_value: &[u8],
+    ) -> Result<i64> {
+        self.conn
+            .execute(
+                &self.dialect.insert_sql(),
+                rusqlite::params![
+                    key,
+                    i64::from(created),
+                    i64::from(deleted),
+                    create_revision,
+                    prev_revision,
+                    lease,
+                    value,
+                    old_value,
+                ],
+            )
+            .map_err(backend)?;
+        let id = self.conn.last_insert_rowid();
+        if created {
+            self.conn
+                .execute("UPDATE kine SET create_revision = ? WHERE id = ?", [id, id])
+                .map_err(backend)?;
+        }
+        Ok(id)
+    }
+
+    /// Create `key` only if it has no live row. Returns the new revision, or
+    /// `None` if a live row already exists (etcd create-if-absent).
+    ///
+    /// # Errors
+    /// [`KineError::EmptyKey`] / [`KineError::Backend`].
+    pub fn create(&mut self, key: &[u8], value: &[u8], lease: i64) -> Result<Option<Revision>> {
+        let k = key_str(key)?;
+        let latest = self.latest(&k)?;
+        if latest.as_ref().is_some_and(|(_, _, deleted, _)| !deleted) {
+            return Ok(None);
+        }
+        // prev_revision points at the row this one supersedes — the prior
+        // tombstone when re-creating a deleted key, else 0. This keeps the
+        // unique (name, prev_revision) chain intact across generations.
+        let prev_id = latest.map_or(0, |(id, _, _, _)| id);
+        let rev = self.insert(&k, true, false, 0, prev_id, lease, value, &[])?;
+        Ok(Some(rev))
+    }
+
+    /// Update `key` only if it has a live row (etcd compare-and-put). Keeps the
+    /// generation's `create_revision`; carries the previous value as `old_value`.
+    ///
+    /// # Errors
+    /// [`KineError::EmptyKey`] / [`KineError::Backend`].
+    pub fn update(&mut self, key: &[u8], value: &[u8], lease: i64) -> Result<Option<Revision>> {
+        let k = key_str(key)?;
+        let Some((prev_id, create_rev, deleted, old)) = self.latest(&k)? else {
+            return Ok(None);
+        };
+        if deleted {
+            return Ok(None);
+        }
+        let rev = self.insert(&k, false, false, create_rev, prev_id, lease, value, &old)?;
+        Ok(Some(rev))
+    }
+
+    /// Unconditional put: create if absent, else update. Always writes a row.
+    ///
+    /// # Errors
+    /// [`KineError::EmptyKey`] / [`KineError::Backend`].
+    pub fn put(&mut self, key: &[u8], value: &[u8], lease: i64) -> Result<Revision> {
+        let k = key_str(key)?;
+        match self.latest(&k)? {
+            Some((prev_id, create_rev, false, old)) => {
+                self.insert(&k, false, false, create_rev, prev_id, lease, value, &old)
+            }
+            // Absent or tombstoned: start a new generation, superseding the
+            // tombstone row (prev_id) when one exists so the unique chain holds.
+            other => {
+                let prev_id = other.map_or(0, |(id, _, _, _)| id);
+                self.insert(&k, true, false, 0, prev_id, lease, value, &[])
+            }
+        }
+    }
+
+    /// Delete `key` by appending a tombstone, if it has a live row. Returns the
+    /// tombstone revision, or `None` if the key was already absent.
+    ///
+    /// # Errors
+    /// [`KineError::EmptyKey`] / [`KineError::Backend`].
+    pub fn delete(&mut self, key: &[u8]) -> Result<Option<Revision>> {
+        let k = key_str(key)?;
+        let Some((prev_id, create_rev, deleted, old)) = self.latest(&k)? else {
+            return Ok(None);
+        };
+        if deleted {
+            return Ok(None);
+        }
+        let rev = self.insert(&k, false, true, create_rev, prev_id, 0, &[], &old)?;
+        Ok(Some(rev))
+    }
+
+    /// Execute a [`RangeRequest`] as live SQL and return the current-state (or
+    /// historical) view, sorted by key, with etcd's `count`/`more` flags.
+    ///
+    /// # Errors
+    /// Validation errors from the request, revision guards
+    /// ([`KineError::FutureRevision`] / [`KineError::Compacted`]), or
+    /// [`KineError::Backend`].
+    pub fn range(&self, req: &RangeRequest) -> Result<RangeResponse> {
+        validate_range(req)?;
+        let header = self.current_revision()?;
+        let read_rev = resolve_read(req.revision, header)?;
+        let floor = self.compacted_revision()?;
+        if req.revision != 0 && req.revision < floor {
+            return Err(KineError::Compacted { requested: req.revision, compacted: floor });
+        }
+
+        let mut rows = self.list_rows(req, read_rev)?;
+        rows.sort_by(|a, b| a.key.cmp(&b.key));
+        let count = rows.len() as i64;
+        let (kvs, more) = if req.limit > 0 && count > req.limit {
+            let take = usize::try_from(req.limit).unwrap_or(usize::MAX);
+            (rows[..take].to_vec(), true)
+        } else {
+            (rows, false)
+        };
+        Ok(RangeResponse { revision: read_rev, kvs, more, count })
+    }
+
+    /// Run the latest-row-per-key list query for `req` at `read_rev`.
+    fn list_rows(&self, req: &RangeRequest, read_rev: Revision) -> Result<Vec<Row>> {
+        let at_rev = req.revision != 0;
+        let sql = if at_rev { self.dialect.list_revision_sql() } else { self.dialect.list_current_sql() };
+        let pattern = like_pattern(req);
+        let mut stmt = self.conn.prepare(&sql).map_err(backend)?;
+
+        let map_row = |r: &rusqlite::Row<'_>| -> rusqlite::Result<Row> {
+            // projection: crev, compact, theid, name, created, deleted,
+            // create_revision, prev_revision, lease, value, old_value
+            Ok(Row {
+                key: r.get::<_, String>(3)?.into_bytes(),
+                create_revision: r.get(6)?,
+                mod_revision: r.get(2)?,
+                value: r.get(9)?,
+                lease: r.get(8)?,
+                deleted: r.get::<_, i64>(5)? != 0,
+            })
+        };
+
+        let collected: rusqlite::Result<Vec<Row>> = if at_rev {
+            // binds: pattern, read_rev, include_deleted(0)
+            stmt.query_map(rusqlite::params![pattern, read_rev, 0_i64], map_row)
+                .map_err(backend)?
+                .collect()
+        } else {
+            stmt.query_map(rusqlite::params![pattern, 0_i64], map_row)
+                .map_err(backend)?
+                .collect()
+        };
+        let mut rows = collected.map_err(backend)?;
+        // The sentinel and out-of-interval keys are filtered here (LIKE handles
+        // Single/Prefix/AllKeys; Explicit intervals are post-filtered).
+        rows.retain(|row| row.key != COMPACT_REV_KEY.as_bytes() && contains(req, &row.key));
+        Ok(rows)
+    }
+
+    /// The watch poll: every change in `filter` with `mod_revision >
+    /// start_revision`, as ordered `PUT`/`DELETE` events. Faithful to kine's
+    /// `After`.
+    ///
+    /// # Errors
+    /// [`KineError::NegativeRevision`] / [`KineError::Compacted`], filter
+    /// validation, or [`KineError::Backend`].
+    pub fn watch_after(&self, filter: &RangeRequest, start_revision: Revision) -> Result<Vec<WatchEvent>> {
+        if start_revision < 0 {
+            return Err(KineError::NegativeRevision { revision: start_revision });
+        }
+        let floor = self.compacted_revision()?;
+        if start_revision != 0 && start_revision < floor {
+            return Err(KineError::Compacted { requested: start_revision, compacted: floor });
+        }
+        validate_range(filter)?;
+
+        let pattern = like_pattern(filter);
+        let mut stmt = self.conn.prepare(&self.dialect.after_sql()).map_err(backend)?;
+        let rows: rusqlite::Result<Vec<WatchEvent>> = stmt
+            .query_map(rusqlite::params![pattern, start_revision], |r| {
+                let deleted = r.get::<_, i64>(5)? != 0;
+                Ok(WatchEvent {
+                    kind: if deleted { EventKind::Delete } else { EventKind::Put },
+                    key: r.get::<_, String>(3)?.into_bytes(),
+                    value: r.get(9)?,
+                    revision: r.get(2)?,
+                    create_revision: r.get(6)?,
+                })
+            })
+            .map_err(backend)?
+            .collect();
+        let mut events = rows.map_err(backend)?;
+        events.retain(|e| e.key != COMPACT_REV_KEY.as_bytes() && contains(filter, &e.key));
+        Ok(events)
+    }
+
+    /// Compact history up to and including `target`: physically delete every
+    /// superseded / tombstoned row at or below `target` that is not the surviving
+    /// live row of its key, then advance the recorded floor.
+    ///
+    /// # Errors
+    /// [`KineError::NegativeRevision`] / [`KineError::CompactFutureRevision`] /
+    /// [`KineError::CompactionNotForward`] / [`KineError::Backend`].
+    pub fn compact(&mut self, target: Revision) -> Result<crate::compact::CompactReport> {
+        if target < 0 {
+            return Err(KineError::NegativeRevision { revision: target });
+        }
+        let current = self.current_revision()?;
+        if target > current {
+            return Err(KineError::CompactFutureRevision { requested: target, current });
+        }
+        let floor = self.compacted_revision()?;
+        if target <= floor {
+            return Err(KineError::CompactionNotForward { requested: target, current: floor });
+        }
+
+        let before: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM kine WHERE name <> ?", [COMPACT_REV_KEY], |r| r.get(0))
+            .map_err(backend)?;
+
+        // Delete rows at/below target that are NOT the surviving live row of
+        // their key: superseded values, and tombstones whose key has no later
+        // generation. The protected set is the *latest* row per key, but only
+        // when that latest row is live — a key whose newest row is a tombstone
+        // is dead and protects nothing (both its rows are compactable). This
+        // mirrors the decision core's `latest_row_revision_per_key` + is_live
+        // survivor rule.
+        let tx = self.conn.unchecked_transaction().map_err(backend)?;
+        tx.execute(
+            "DELETE FROM kine WHERE name <> ?1 AND id <= ?2 AND id NOT IN ( \
+                 SELECT kv.id FROM kine AS kv \
+                 JOIN (SELECT name, MAX(id) AS mid FROM kine GROUP BY name) AS latest \
+                   ON kv.name = latest.name AND kv.id = latest.mid \
+                 WHERE kv.deleted = 0 \
+             )",
+            rusqlite::params![COMPACT_REV_KEY, target],
+        )
+        .map_err(backend)?;
+        tx.execute(&self.dialect.update_compact_sql(), [target]).map_err(backend)?;
+        tx.commit().map_err(backend)?;
+
+        let after: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM kine WHERE name <> ?", [COMPACT_REV_KEY], |r| r.get(0))
+            .map_err(backend)?;
+        let removed = usize::try_from(before - after).unwrap_or(0);
+        Ok(crate::compact::CompactReport {
+            compacted: target,
+            removed,
+            remaining: usize::try_from(after).unwrap_or(0),
+        })
+    }
+}
+
+/// Map a key's bytes to the UTF-8 string the `name` column stores.
+fn key_str(key: &[u8]) -> Result<String> {
+    if key.is_empty() {
+        return Err(KineError::EmptyKey);
+    }
+    String::from_utf8(key.to_vec())
+        .map_err(|_| KineError::Backend { message: "key is not valid UTF-8".into() })
+}
+
+/// The `LIKE` pattern for a request's interval: exact for a point get, `p%` for
+/// a prefix, `%` for the whole keyspace, and the broadest safe prefix for an
+/// explicit interval (which is then post-filtered in [`contains`]).
+fn like_pattern(req: &RangeRequest) -> String {
+    match &req.end {
+        RangeEnd::Single => String::from_utf8_lossy(&req.key).into_owned(),
+        RangeEnd::Prefix => format!("{}%", String::from_utf8_lossy(&req.key)),
+        RangeEnd::AllKeys => "%".to_string(),
+        RangeEnd::Explicit(end) => {
+            let common = common_prefix(&req.key, end);
+            format!("{}%", String::from_utf8_lossy(common))
+        }
+    }
+}
+
+/// The shared leading bytes of two keys.
+fn common_prefix<'a>(a: &'a [u8], b: &[u8]) -> &'a [u8] {
+    let n = a.iter().zip(b).take_while(|(x, y)| x == y).count();
+    &a[..n]
+}
+
+/// Does `candidate` fall in `req`'s interval? Mirrors `RangeRequest::contains`.
+fn contains(req: &RangeRequest, candidate: &[u8]) -> bool {
+    match &req.end {
+        RangeEnd::Single => candidate == req.key.as_slice(),
+        RangeEnd::Prefix => candidate.starts_with(&req.key),
+        RangeEnd::AllKeys => true,
+        RangeEnd::Explicit(end) => candidate >= req.key.as_slice() && candidate < end.as_slice(),
+    }
+}
+
+/// Validate a range request the same way [`crate::range::execute`] does.
+fn validate_range(req: &RangeRequest) -> Result<()> {
+    if req.limit < 0 {
+        return Err(KineError::NegativeLimit { limit: req.limit });
+    }
+    match &req.end {
+        RangeEnd::AllKeys => Ok(()),
+        RangeEnd::Single | RangeEnd::Prefix => {
+            if req.key.is_empty() {
+                Err(KineError::EmptyKey)
+            } else {
+                Ok(())
+            }
+        }
+        RangeEnd::Explicit(end) => {
+            if req.key.is_empty() {
+                Err(KineError::EmptyKey)
+            } else if end.as_slice() <= req.key.as_slice() {
+                Err(KineError::InvalidRange)
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Resolve a request revision against the header (mirrors `Clock::resolve_read`).
+const fn resolve_read(requested: Revision, header: Revision) -> Result<Revision> {
+    if requested < 0 {
+        return Err(KineError::NegativeRevision { revision: requested });
+    }
+    if requested == 0 {
+        return Ok(header);
+    }
+    if requested > header {
+        return Err(KineError::FutureRevision { requested, current: header });
+    }
+    Ok(requested)
+}
+
+/// Wrap a rusqlite error as a backend error. Takes the error by value so it can
+/// be used directly as a `Result::map_err` argument.
+#[allow(clippy::needless_pass_by_value)]
+fn backend(e: rusqlite::Error) -> KineError {
+    KineError::Backend { message: e.to_string() }
+}
 
 #[cfg(test)]
 mod tests {
