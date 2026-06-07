@@ -18,7 +18,7 @@ use crate::revision::Revision;
 
 /// Map a key's bytes to the UTF-8 string the `name` column stores (kine keys are
 /// always valid UTF-8 registry paths). Rejects an empty or non-UTF-8 key.
-pub(crate) fn key_str(key: &[u8]) -> Result<String> {
+pub fn key_str(key: &[u8]) -> Result<String> {
     if key.is_empty() {
         return Err(KineError::EmptyKey);
     }
@@ -29,7 +29,7 @@ pub(crate) fn key_str(key: &[u8]) -> Result<String> {
 /// The `LIKE` pattern for a request's interval: exact for a point get, `p%` for a
 /// prefix, `%` for the whole keyspace, and the broadest safe prefix for an
 /// explicit interval (then post-filtered in [`contains`]).
-pub(crate) fn like_pattern(req: &RangeRequest) -> String {
+pub fn like_pattern(req: &RangeRequest) -> String {
     match &req.end {
         RangeEnd::Single => String::from_utf8_lossy(&req.key).into_owned(),
         RangeEnd::Prefix => format!("{}%", String::from_utf8_lossy(&req.key)),
@@ -48,7 +48,7 @@ fn common_prefix<'a>(a: &'a [u8], b: &[u8]) -> &'a [u8] {
 }
 
 /// Does `candidate` fall in `req`'s interval? Mirrors `RangeRequest::contains`.
-pub(crate) fn contains(req: &RangeRequest, candidate: &[u8]) -> bool {
+pub fn contains(req: &RangeRequest, candidate: &[u8]) -> bool {
     match &req.end {
         RangeEnd::Single => candidate == req.key.as_slice(),
         RangeEnd::Prefix => candidate.starts_with(&req.key),
@@ -58,7 +58,7 @@ pub(crate) fn contains(req: &RangeRequest, candidate: &[u8]) -> bool {
 }
 
 /// Validate a range request the same way [`crate::range::execute`] does.
-pub(crate) fn validate_range(req: &RangeRequest) -> Result<()> {
+pub fn validate_range(req: &RangeRequest) -> Result<()> {
     if req.limit < 0 {
         return Err(KineError::NegativeLimit { limit: req.limit });
     }
@@ -84,7 +84,7 @@ pub(crate) fn validate_range(req: &RangeRequest) -> Result<()> {
 }
 
 /// Resolve a request revision against the header (mirrors `Clock::resolve_read`).
-pub(crate) const fn resolve_read(requested: Revision, header: Revision) -> Result<Revision> {
+pub const fn resolve_read(requested: Revision, header: Revision) -> Result<Revision> {
     if requested < 0 {
         return Err(KineError::NegativeRevision { revision: requested });
     }
