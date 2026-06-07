@@ -132,3 +132,15 @@ pub mod retry;
 /// Token-bucket rate limiting.
 #[cfg(feature = "runtime")]
 pub mod ratelimit;
+
+/// HTTP Basic-auth enforcement.
+#[cfg(feature = "runtime")]
+pub mod auth;
+
+/// CORS preflight + response decoration.
+#[cfg(feature = "runtime")]
+pub mod cors;
+
+/// Response compression (gzip / deflate negotiation).
+#[cfg(feature = "runtime")]
+pub mod compress;
