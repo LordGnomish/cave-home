@@ -769,6 +769,75 @@ mod tests {
         assert_eq!(resp.status, 403);
     }
 
+    // --- admission integration ---------------------------------------------
+
+    use crate::admission::{AdmissionChain, AdmissionRequest, MutatingPlugin, Operation, RequireName};
+
+    struct AnnotateOwner;
+    impl MutatingPlugin for AnnotateOwner {
+        fn name(&self) -> &str {
+            "AnnotateOwner"
+        }
+        fn admit(&self, request: &mut AdmissionRequest) -> crate::status::Result<()> {
+            if let Some(object) = request.object.as_mut() {
+                let m = object.as_object_mut().expect("object");
+                let metadata = m.entry("metadata".to_string()).or_insert_with(Value::object);
+                let mm = metadata.as_object_mut().expect("metadata obj");
+                let ann = mm.entry("annotations".to_string()).or_insert_with(Value::object);
+                ann.insert("owner", Value::from("cave"));
+            }
+            Ok(())
+        }
+    }
+
+    struct RejectUpdates;
+    impl crate::admission::ValidatingPlugin for RejectUpdates {
+        fn name(&self) -> &str {
+            "RejectUpdates"
+        }
+        fn validate(&self, request: &AdmissionRequest) -> crate::status::Result<()> {
+            if request.operation == Operation::Update {
+                return Err(crate::status::Status::invalid("updates are not permitted"));
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn validating_plugin_rejects_nameless_create_422() {
+        let chain = AdmissionChain::new().with_validating(Box::new(RequireName));
+        let mut s = ApiServer::new().with_admission(chain);
+        let nameless = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"namespace":"default"}}"#;
+        let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", nameless));
+        assert_eq!(resp.status, 422);
+    }
+
+    #[test]
+    fn mutating_plugin_applies_before_storage() {
+        let chain = AdmissionChain::new().with_mutating(Box::new(AnnotateOwner));
+        let mut s = ApiServer::new().with_admission(chain);
+        let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        assert_eq!(resp.status, 201);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert_eq!(v.pointer("metadata.annotations.owner"), Some(&Value::from("cave")));
+    }
+
+    #[test]
+    fn admission_runs_on_update() {
+        let chain = AdmissionChain::new().with_validating(Box::new(RejectUpdates));
+        let mut s = ApiServer::new().with_admission(chain);
+        // Seed directly (bypass admission), then attempt an update through the handler.
+        s.registry
+            .create(
+                &GroupVersionResource::new("", "v1", "pods"),
+                crate::json::parse(&pod_json("default", "nginx")).expect("json"),
+            )
+            .expect("seed");
+        let body = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default","resourceVersion":"1"}}"#;
+        let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx", "application/json", body));
+        assert_eq!(resp.status, 422);
+    }
+
     // --- non-resource endpoints: health, discovery, version ----------------
 
     #[test]
