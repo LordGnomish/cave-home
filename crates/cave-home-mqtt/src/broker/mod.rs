@@ -5,4 +5,6 @@
 //! core but contain no protocol logic, which keeps the broker fully
 //! unit-testable without sockets.
 
+pub mod auth;
+pub mod retain;
 pub mod topic;
