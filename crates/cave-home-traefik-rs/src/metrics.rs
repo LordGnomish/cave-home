@@ -46,33 +46,65 @@ impl Metrics {
     /// Build and register the metric set.
     #[must_use]
     pub fn new() -> Self {
-        unimplemented!()
+        let mut registry = Registry::default();
+
+        let requests_total = Family::<RequestLabels, Counter>::default();
+        registry.register(
+            "traefik_requests_total",
+            "Total HTTP requests handled by the proxy",
+            requests_total.clone(),
+        );
+
+        let request_duration_seconds = Histogram::new(exponential_buckets(0.005, 2.0, 12));
+        registry.register(
+            "traefik_request_duration_seconds",
+            "HTTP request duration in seconds",
+            request_duration_seconds.clone(),
+        );
+
+        let open_connections = Gauge::default();
+        registry.register(
+            "traefik_open_connections",
+            "In-flight requests currently being served",
+            open_connections.clone(),
+        );
+
+        Self { registry, requests_total, request_duration_seconds, open_connections }
     }
 
     /// Count a handled request.
     pub fn record_request(&self, router: &str, service: &str, method: &str, code: u16) {
-        unimplemented!()
+        self.requests_total
+            .get_or_create(&RequestLabels {
+                router: router.to_string(),
+                service: service.to_string(),
+                method: method.to_string(),
+                code: code.to_string(),
+            })
+            .inc();
     }
 
     /// Observe a request's duration in seconds.
     pub fn observe_duration(&self, seconds: f64) {
-        unimplemented!()
+        self.request_duration_seconds.observe(seconds);
     }
 
     /// Increment the in-flight connection gauge.
     pub fn inc_open(&self) {
-        unimplemented!()
+        self.open_connections.inc();
     }
 
     /// Decrement the in-flight connection gauge.
     pub fn dec_open(&self) {
-        unimplemented!()
+        self.open_connections.dec();
     }
 
     /// Render the registry in the Prometheus text exposition format.
     #[must_use]
     pub fn render(&self) -> String {
-        unimplemented!()
+        let mut buf = String::new();
+        let _ = encode(&mut buf, &self.registry);
+        buf
     }
 }
 

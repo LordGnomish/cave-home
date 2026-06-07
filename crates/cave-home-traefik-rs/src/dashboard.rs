@@ -58,7 +58,43 @@ impl Snapshot {
     /// Build a snapshot from a validated config.
     #[must_use]
     pub fn from_config(config: &DynamicConfig) -> Self {
-        unimplemented!()
+        let routers: Vec<RouterView> = config
+            .routers()
+            .iter()
+            .map(|r| RouterView {
+                name: r.name.clone(),
+                rule: r.rule_text.clone(),
+                service: r.service.clone(),
+                tls: r.tls,
+                entrypoints: r.entrypoints.clone(),
+                middlewares: r.middlewares.clone(),
+                priority: r.priority,
+            })
+            .collect();
+
+        // Services and middlewares are surfaced via the routers that reference
+        // them (the config exposes lookups, not iterators).
+        let mut service_names: BTreeSet<&str> = BTreeSet::new();
+        let mut middleware_names: BTreeSet<String> = BTreeSet::new();
+        for r in config.routers() {
+            service_names.insert(r.service.as_str());
+            for m in &r.middlewares {
+                middleware_names.insert(m.clone());
+            }
+        }
+
+        let services: Vec<ServiceView> = service_names
+            .into_iter()
+            .filter_map(|name| config.service(name))
+            .map(|svc| ServiceView {
+                name: svc.name.clone(),
+                servers: svc.servers.iter().map(|s| s.url.clone()).collect(),
+                healthy: svc.healthy().len(),
+                total: svc.servers.len(),
+            })
+            .collect();
+
+        Self { routers, services, middlewares: middleware_names.into_iter().collect() }
     }
 
     /// Serialize the snapshot to JSON.
@@ -67,7 +103,7 @@ impl Snapshot {
     /// Returns the `serde_json` error if serialization fails (it should not for
     /// this plain data).
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
-        unimplemented!()
+        serde_json::to_string(self)
     }
 }
 
