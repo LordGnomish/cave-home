@@ -80,6 +80,8 @@ pub mod lease;
 pub mod range;
 pub mod revision;
 pub mod sql;
+#[cfg(feature = "sqlite")]
+pub mod sqlite;
 pub mod store;
 pub mod watch;
 

@@ -13,5 +13,16 @@ upstream    = "k3s-io/kine"
 port-method = "spec-based (behavioural reimplementation of etcd-MVCC + kine semantics; NOT verbatim line-by-line)"
 phase       = "orchestration-phase-3"
 
+[features]
+# The pure decision core has no deps; storage backends and the gRPC transport
+# are opt-in so the default build (and the single binary) stays lean. SQLite is
+# k3s's default datastore, so it is on by default.
+default  = ["sqlite"]
+sqlite   = ["dep:rusqlite"]
+
+[dependencies]
+# Embedded, bundled SQLite — compiled into the binary, no server, one file.
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+
 [lints]
 workspace = true
