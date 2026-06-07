@@ -15,5 +15,6 @@
 pub mod cleanup;
 pub mod deployment;
 pub mod gc;
+pub mod job;
 pub mod node_lifecycle;
 pub mod replicaset;
