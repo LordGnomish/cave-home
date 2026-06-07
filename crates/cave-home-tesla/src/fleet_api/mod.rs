@@ -9,6 +9,7 @@
 //! - [`types`] — the wire DTOs returned by those endpoints.
 
 pub mod auth;
+pub mod client;
 pub mod endpoints;
 pub mod types;
 
