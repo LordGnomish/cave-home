@@ -72,6 +72,7 @@
 pub mod admission;
 pub mod discovery;
 pub mod gvk;
+pub mod http;
 pub mod json;
 pub mod meta;
 pub mod patch;
