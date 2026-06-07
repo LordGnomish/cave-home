@@ -246,3 +246,137 @@ ours         = "src/shutdown.rs::tests"
 # K3s bootstrap contract only. No pre-Linux-5.0 / Windows bring-up path and no
 # historical (pre-kine / etcd-only) datastore-default mode are carried; the
 # relevant items are listed as `permanent` [[unmapped]] above.
+
+# =============================================================================
+# local-path-provisioner port (src/local_path_provisioner/) — ADDED 2026-06-07
+# =============================================================================
+# A SECOND upstream is ported into this crate as the `local_path_provisioner`
+# module: rancher/local-path-provisioner (NOT k3s-io/k3s). K3s bundles it as the
+# default StorageClass; the cave-home single-binary mandate (Charter §5, ADR-004)
+# makes it a MODULE here, not a separate Deployment/pod (no local-path-storage
+# manifest, no per-crate Helm chart). Provenance is FAITHFUL line-by-line:
+# provisioner.go + util.go + the default configmap setup/teardown scripts at tag
+# v0.0.36 were READ and the DECISION half reimplemented in Rust. The RUNTIME half
+# (K8s informer/watch, helper-pod create+poll, config-file load+watch, pod-log
+# streaming, leader election) is I/O-bound and deferred to ADR-004 phase-1b —
+# every item enumerated under [[lpp_unmapped]]. rancher/local-path-provisioner is
+# Apache-2.0 (same as this crate); the port is licence-clean.
+
+[lpp_crate]
+upstream_repo    = "rancher/local-path-provisioner"
+upstream_license = "Apache-2.0"
+upstream_tag     = "v0.0.36"   # latest release at port time (always-latest mandate)
+port_method      = "line-by-line behavioural port of the DECISION half from READ v0.0.36 source (provisioner.go + util.go + configmap setup/teardown)"
+source_files     = ["provisioner.go", "util.go", "deploy/local-path-storage.yaml (setup/teardown)"]
+ported_at        = "2026-06-07"
+
+[lpp_ratios]
+# Measured against the FULL provisioner scope (decision + runtime). The DECISION
+# half — config canonicalization + validation, getPathOnNode path selection,
+# Provision PVC-validation + PV-spec assembly, the helper-pod command/env/args
+# construction, and the Delete/reclaim decision — is implemented and tested in
+# full (53 integration tests, 8 strict test-first RED/GREEN pairs). The RUNTIME
+# half is deferred (see below). Weighing the complete decision spine against the
+# full controller lands ~0.45; deliberately conservative (a raw Go-LOC ratio
+# against provisioner.go's I/O-heavy 946 lines would read lower because the I/O
+# is intentionally out of scope for a decision core).
+fill_ratio          = 0.45
+fill_ratio_basis    = "config canonicalize/validate (lexical path clean, dedup, relative/root rejection, dup-node, shared-vs-local table, pickConfig), getPathOnNode (node fallback, requested-path, deterministic selector), pathFromPattern safe-prefix + filepath.IsLocal, Provision validation (selector/access-mode/node) + volume-type resolution + node-affinity + PvSpec, createHelperPod command/env/args/name/split, deleteFor + getPathAndNodeForPV — all implemented & tested; runtime (watch/pod-create-poll/config-watch/log-stream) deferred (ADR-004 phase-1b)"
+test_port_ratio     = 0.0   # tests designed from the read v0.0.36 source behaviour, not ported from upstream _test.go
+adr_justified_ratio = 1.00  # every [[lpp_unmapped]] gap carries a priority + note
+honest_ratio        = 1.00
+
+# ---- mapped (local-path-provisioner decision logic present here) ------------
+
+[[lpp_mapped]]
+spec = "canonicalizeStorageClassConfig/canonicalizeConfig: lexical path clean, abs/root rejection, dup path/node, cmdTimeoutSeconds=120 default"
+ours = "src/local_path_provisioner/config.rs::{NodePathMap,StorageClassConfig,ProvisionerConfig}"
+
+[[lpp_mapped]]
+spec = "isSharedFilesystem decision table (both/local/shared/neither) + pickConfig (default-vs-named storage class)"
+ours = "src/local_path_provisioner/config.rs::{StorageClassConfig::is_shared_filesystem,ProvisionerConfig::pick}"
+
+[[lpp_mapped]]
+spec = "getPathOnNode: shared short-circuit, node fallback to DEFAULT_PATH_FOR_NON_LISTED_NODES, empty-paths rejection, requested-path membership, candidate selection (rand.IntN externalized to a selector index)"
+ours = "src/local_path_provisioner/path.rs::base_path_on_node"
+
+[[lpp_mapped]]
+spec = "folder name pvName_namespace_pvcName, filepath.Join volume path, pathFromPattern safe-prefix (<ns>/<pvc>/) + filepath.IsLocal guard"
+ours = "src/local_path_provisioner/path.rs::{folder_name,volume_path,validate_pattern_path,is_local}"
+
+[[lpp_mapped]]
+spec = "provisionFor PVC validation (selector unsupported; only RWO/RWOP; node required on local FS) + volume-type resolution (PVC>SC>hostPath) + node affinity + PV spec (reclaim/capacity/Filesystem/source)"
+ours = "src/local_path_provisioner/provision.rs::decide_provision"
+
+[[lpp_mapped]]
+spec = "createHelperPod pure construction: command selection, VOL_DIR/VOL_MODE/VOL_SIZE_BYTES env, -p/-s/-m/-a args, {base}-{action}-{name} name (<=128 bytes), parent/volume-dir split validation, default mkdir/rm scripts"
+ours = "src/local_path_provisioner/helper.rs::build_helper_command"
+
+[[lpp_mapped]]
+spec = "deleteFor + getPathAndNodeForPV: Retain-vs-teardown, path from hostPath/local source, node from node-affinity term (single-value/empty checks)"
+ours = "src/local_path_provisioner/reclaim.rs::{delete_decision,path_and_node_for_pv}"
+
+[[lpp_mapped]]
+spec = "Track-4 observability (PV count by status, provision/deletion/reconcile-error counters, provisioning-latency summary) + Prometheus exposition"
+ours = "src/local_path_provisioner/metrics.rs::LocalPathMetrics"
+
+[[lpp_mapped]]
+spec = "Track 2/3 view-model: PV/PVC rows (name, pvc ns/name, node, hostPath, phase, capacity, reclaim) for cavectl list-pvs/describe + Portal Storage page"
+ours = "src/local_path_provisioner/report.rs::{PvRow,StorageReport}; crates/cave-home-cli/src/storage.rs; crates/cave-home-portal/src/card.rs::Card::Storage"
+
+# ---- unmapped (runtime half; ADR-004 phase-1b) ------------------------------
+
+[[lpp_unmapped]]
+area     = "K8s informer/watch loop (PVC/PV/StorageClass/Node) driving Provision/Delete"
+priority = "phase-1b"
+note     = "sig-storage-lib-external-provisioner controller is network-bound; this crate decides per-claim, a future supervisor wires the watch."
+
+[[lpp_unmapped]]
+area     = "Helper-pod create + poll-to-completion + log streaming + delete"
+priority = "phase-1b"
+note     = "createHelperPod's I/O tail (kubeClient Pods Create/Get/Delete + GetLogs). This crate builds the exact pod COMMAND/env/args/name; the kubelet/apiserver path runs it."
+
+[[lpp_unmapped]]
+area     = "Config-file JSON load + 30s watch/refresh + helper-pod template (loadConfigFile/refreshConfig/loadHelperPodFile)"
+priority = "phase-1b"
+note     = "this crate models the CANONICALIZED config + validation; JSON/YAML parsing + file watch + unsafe-template validation are loader concerns (std-only crate carries no serde)."
+
+[[lpp_unmapped]]
+area     = "Go text/template pathPattern rendering"
+priority = "phase-1b"
+note     = "pathPattern uses Go text/template ({{.PVName}}/{{.PVC.*}}); this crate ports the SAFETY guard (validate_pattern_path) on the rendered result, not the template engine."
+
+[[lpp_unmapped]]
+area     = "Verbatim byte-for-byte Go transcription"
+priority = "permanent"
+note     = "Charter §6: a behavioural Rust port of the read source, not a Go transcription. Idiomatic Result errors replace Go error strings; rand.IntN path choice is externalized to a deterministic selector."
+
+# ---- spec_test (designed from the read v0.0.36 behaviour) --------------------
+
+[[lpp_spec_test]]
+designed_for = "config canonicalization + shared/local table + pick"
+ours         = "tests/lpp_config.rs (9 tests)"
+
+[[lpp_spec_test]]
+designed_for = "path selection + folder name + pattern safe-prefix/IsLocal + volume join"
+ours         = "tests/lpp_path.rs (10 tests)"
+
+[[lpp_spec_test]]
+designed_for = "Provision validation + volume-type + affinity + PV spec"
+ours         = "tests/lpp_provision.rs (7 tests)"
+
+[[lpp_spec_test]]
+designed_for = "helper-pod command/env/args/name/split validation"
+ours         = "tests/lpp_helper.rs (9 tests)"
+
+[[lpp_spec_test]]
+designed_for = "Delete/reclaim retain-vs-teardown + path/node recovery"
+ours         = "tests/lpp_reclaim.rs (8 tests)"
+
+[[lpp_spec_test]]
+designed_for = "observability metrics + Prometheus exposition"
+ours         = "tests/lpp_metrics.rs (6 tests)"
+
+[[lpp_spec_test]]
+designed_for = "storage report view-model (list/describe)"
+ours         = "tests/lpp_report.rs (4 tests)"
