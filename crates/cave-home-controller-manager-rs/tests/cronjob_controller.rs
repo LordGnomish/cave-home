@@ -48,7 +48,7 @@ fn not_due_does_nothing() {
     let cj = c.cronjobs.create(cronjob(ConcurrencyPolicy::Allow, false));
     let mut ctrl = CronJobController::new();
     ctrl.reconcile("prod/nightly", &mut c, 100); // started
-    ctrl.reconcile("prod/nightly", &mut c, 100 + PERIOD - 1); // before next tick
+    ctrl.reconcile("prod/nightly", &mut c, 100 + PERIOD as u64 - 1); // before next tick
     assert_eq!(c.jobs.list_owned_by(&cj.meta().uid).len(), 1, "no extra job before the period elapses");
 }
 
@@ -58,7 +58,7 @@ fn due_again_after_the_period_starts_another() {
     let cj = c.cronjobs.create(cronjob(ConcurrencyPolicy::Allow, false));
     let mut ctrl = CronJobController::new();
     ctrl.reconcile("prod/nightly", &mut c, 100);
-    ctrl.reconcile("prod/nightly", &mut c, 100 + PERIOD); // next tick
+    ctrl.reconcile("prod/nightly", &mut c, 100 + PERIOD as u64); // next tick
     assert_eq!(c.jobs.list_owned_by(&cj.meta().uid).len(), 2, "second run started");
 }
 
@@ -77,7 +77,7 @@ fn forbid_skips_while_a_job_is_active() {
     let cj = c.cronjobs.create(cronjob(ConcurrencyPolicy::Forbid, false));
     let mut ctrl = CronJobController::new();
     ctrl.reconcile("prod/nightly", &mut c, 100); // run 1 active
-    ctrl.reconcile("prod/nightly", &mut c, 100 + PERIOD); // due, but run 1 still active
+    ctrl.reconcile("prod/nightly", &mut c, 100 + PERIOD as u64); // due, but run 1 still active
     assert_eq!(active_jobs(&c, &cj.meta().uid), 1, "Forbid does not start a concurrent run");
 }
 
@@ -88,7 +88,7 @@ fn replace_deletes_the_active_run_then_starts_a_new_one() {
     let mut ctrl = CronJobController::new();
     ctrl.reconcile("prod/nightly", &mut c, 100);
     let first: Vec<_> = c.jobs.list_owned_by(&cj.meta().uid).iter().map(|j| j.meta().uid.clone()).collect();
-    ctrl.reconcile("prod/nightly", &mut c, 100 + PERIOD);
+    ctrl.reconcile("prod/nightly", &mut c, 100 + PERIOD as u64);
     let now_jobs: Vec<_> = c.jobs.list_owned_by(&cj.meta().uid).iter().map(|j| j.meta().uid.clone()).collect();
     assert_eq!(active_jobs(&c, &cj.meta().uid), 1, "exactly one active run");
     assert!(!now_jobs.contains(&first[0]), "the previous run was replaced");
@@ -100,7 +100,7 @@ fn allow_starts_even_with_an_active_run() {
     let cj = c.cronjobs.create(cronjob(ConcurrencyPolicy::Allow, false));
     let mut ctrl = CronJobController::new();
     ctrl.reconcile("prod/nightly", &mut c, 100);
-    ctrl.reconcile("prod/nightly", &mut c, 100 + PERIOD);
+    ctrl.reconcile("prod/nightly", &mut c, 100 + PERIOD as u64);
     assert_eq!(active_jobs(&c, &cj.meta().uid), 2, "Allow permits concurrent runs");
 }
 

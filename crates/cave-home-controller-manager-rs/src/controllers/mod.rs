@@ -13,6 +13,7 @@
 //! network transport deferred.
 
 pub mod cleanup;
+pub mod cronjob;
 pub mod deployment;
 pub mod gc;
 pub mod job;
