@@ -69,6 +69,7 @@
 //! ```
 
 pub mod config;
+pub mod gateway;
 pub mod ingress;
 pub mod loadbalancer;
 pub mod matcher;
