@@ -28,9 +28,15 @@
 # across 30+ sub-controllers plus the shared informer/client-go watch loop,
 # leader election, and metrics). This crate ships the load-bearing decision
 # spine — the work queue + reconcile loop policy + informer cache/delta model —
-# plus three representative controllers, all std-only and exhaustively tested.
-# The informer/client-go watch, the apiserver client, leader election, the
-# dozens of other controllers, and metrics are all deferred to Phase 2b and
+# AND (as of the 2026-06-07 reconciler uplift) an in-memory apiserver, the core
+# workload controller set implemented as *real reconcilers* (ReplicaSet,
+# Deployment, StatefulSet, DaemonSet, Job, CronJob, Namespace, ServiceAccount,
+# Endpoints, plus the original GC/node-lifecycle/cleanup = 12 controllers), a
+# manager run loop, and lease-based leader election — all std-only and
+# exhaustively tested, including an end-to-end Deployment->ReplicaSet->Pod
+# rollout. What remains deferred to Phase 2b is the *networked* transport (the
+# client-go REST clientset + watch reflector — the in-memory apiserver stands in
+# today), EndpointSlice/HPA/quota/PV/cert/cloud controllers, and metrics; all
 # enumerated under [[unmapped]] with an ADR-004 disposition.
 
 [crate]
@@ -77,15 +83,20 @@ linux_min_kernel = "7.1"
 #     ~30 upstream controllers, the three that exercise the distinct controller
 #     shapes (graph / condition+heartbeat / finalizer+TTL).
 # Weighing the fully-implemented framework spine + the three controllers
-# against the full controller-manager scope lands at ~0.18. This is deliberately
-# conservative and defensible: the reconcile/workqueue/cache machinery that all
-# real controllers depend on is complete and correct, and three end-to-end
-# controller decision functions run today against an in-memory object set.
-fill_ratio          = 0.18
-fill_ratio_basis    = "controller-framework decision spine (rate-limited delaying workqueue + reconcile loop policy + informer Store/DeltaFifo cache) fully implemented & tested, plus 3/~30 concrete controllers (GC owner-graph cascade, node-lifecycle classify+taint+evict, TTL/namespace cleanup); informer/client-go watch, apiserver client, leader election, remaining controllers + metrics deferred (ADR-004 Phase 2b), all enumerated below"
+# against the full controller-manager scope. The 2026-06-07 reconciler uplift
+# took this from 0.18 to ~0.45: the framework spine is joined by a real
+# in-memory apiserver (the client-go ObjectTracker/fake.Clientset analogue), the
+# full core workload controller set as *reconcilers* (ReplicaSet, Deployment,
+# StatefulSet, DaemonSet, Job, CronJob, Namespace, ServiceAccount, Endpoints —
+# 9 added, on top of GC/node-lifecycle/cleanup = 12 controllers), a manager run
+# loop wiring controllers to per-controller work queues, and lease-based leader
+# election. An end-to-end Deployment -> ReplicaSet -> Pod rollout (create, scale
+# up/down, rolling update) converges through this stack today.
+fill_ratio          = 0.45
+fill_ratio_basis    = "controller-framework decision spine (rate-limited delaying workqueue + reconcile loop policy + informer Store/DeltaFifo cache) + in-memory apiserver (Api<T>/Cluster, the fake.Clientset/ObjectTracker analogue) + 12 concrete controllers as real reconcilers (replicaset, deployment, statefulset, daemonset, job, cronjob, namespace, serviceaccount, endpoints, gc, node-lifecycle, cleanup) + manager run loop (per-controller WorkQueue + resync + apply_outcome) + lease-based leader election, all implemented & tested incl. an e2e Deployment->RS->Pod convergence; networked REST clientset + watch reflector, EndpointSlice, HPA/quota/PV/cert/cloud controllers + metrics deferred (ADR-004 Phase 2b), all enumerated below"
 test_port_ratio     = 0.0   # tests are designed from the documented controller contracts, not ported from upstream _test.go
 adr_justified_ratio = 1.00  # every [[unmapped]] gap below carries a justified priority + a note
-honest_ratio        = 1.00  # 0.18 / (0.18 + (1-0.18)*(1-1.00)) = 0.18/0.18 = 1.00
+honest_ratio        = 1.00  # 0.45 / (0.45 + (1-0.45)*(1-1.00)) = 0.45/0.45 = 1.00
 
 # ---- mapped (behavioural reimplementation present in this crate) ------------
 
@@ -161,6 +172,60 @@ ours     = "src/types.rs::ObjectMeta"
 upstream = "staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go::OwnerReference (uid/controller/blockOwnerDeletion)"
 ours     = "src/types.rs::OwnerReference"
 
+# ---- mapped: reconciler uplift (2026-06-07) --------------------------------
+
+[[mapped]]
+upstream = "staging/src/k8s.io/client-go/testing/fixture.go::ObjectTracker + kubernetes/fake.Clientset (in-memory create/get/update/delete/list, UID assignment, selector/owner queries)"
+ours     = "src/apis/client.rs::{Api, Cluster}"
+
+[[mapped]]
+upstream = "core/v1 + apps/v1 + batch/v1 object shapes (Pod/Service/Namespace/Node/Endpoints/ServiceAccount, ReplicaSet/Deployment/StatefulSet/DaemonSet, Job/CronJob — fields the controllers read)"
+ours     = "src/apis/{core.rs,apps.rs,batch.rs}"
+
+[[mapped]]
+upstream = "pkg/controller/replicaset (claim/release pods, create/delete to spec.replicas, ActivePodsWithRanks.Less scale-down victim order, status)"
+ours     = "src/controllers/replicaset.rs::ReplicaSetController"
+
+[[mapped]]
+upstream = "pkg/controller/deployment (pod-template-hash new/old RS, Recreate + RollingUpdate NewRSNewReplicas/reconcileOldReplicaSets, dc.scale pure-scaling path, status rollup)"
+ours     = "src/controllers/deployment.rs::DeploymentController"
+
+[[mapped]]
+upstream = "pkg/controller/statefulset (OrderedReady: create lowest missing ordinal gated on predecessor readiness; scale down highest-first)"
+ours     = "src/controllers/statefulset.rs::StatefulSetController"
+
+[[mapped]]
+upstream = "pkg/controller/daemonset (one pod per node; create on uncovered nodes, delete on vanished nodes)"
+ours     = "src/controllers/daemonset.rs::DaemonSetController"
+
+[[mapped]]
+upstream = "pkg/controller/job (count by phase, complete at completions, fail past backoffLimit, backfill up to min(parallelism, remaining), status)"
+ours     = "src/controllers/job.rs::JobController"
+
+[[mapped]]
+upstream = "pkg/controller/cronjob (due-on-period, startingDeadlineSeconds skip-and-advance, Allow/Forbid/Replace concurrency, lastScheduleTime)"
+ours     = "src/controllers/cronjob.rs::CronJobController"
+
+[[mapped]]
+upstream = "pkg/controller/namespace (drain all namespaced content, then drop the kubernetes finalizer)"
+ours     = "src/controllers/namespace.rs::NamespaceController"
+
+[[mapped]]
+upstream = "pkg/controller/serviceaccount (ensure the default ServiceAccount per active namespace)"
+ours     = "src/controllers/serviceaccount.rs::ServiceAccountController"
+
+[[mapped]]
+upstream = "pkg/controller/endpoint (ready, selector-matched pod addresses -> Endpoints object of the service name)"
+ours     = "src/controllers/endpoints.rs::EndpointsController"
+
+[[mapped]]
+upstream = "cmd/kube-controller-manager run loop (per-controller workqueue + resync + reconcile + apply result)"
+ours     = "src/manager.rs::Manager"
+
+[[mapped]]
+upstream = "client-go/tools/leaderelection + coordination.k8s.io/v1 Lease (acquire/renew/take-over-expired/lose, leaseTransitions)"
+ours     = "src/leaderelection.rs::{try_acquire_or_renew, LeaderElector, Lease}"
+
 # ---- unmapped (NOT in this crate; ADR-004 Phase 2b disposition) -------------
 
 [[unmapped]]
@@ -169,24 +234,19 @@ priority = "phase-2"
 note     = "Reflector/ListWatch is pure apiserver I/O (List+Watch, resourceVersion bookmarks, relist on expiry). This crate is the consumer side: it is pure over deltas handed in, so the Store/DeltaFifo are already correct; only the network producer is deferred."
 
 [[unmapped]]
-area     = "staging/src/k8s.io/client-go/kubernetes (the apiserver Clientset / REST client)"
+area     = "staging/src/k8s.io/client-go/kubernetes (the *networked* apiserver Clientset / REST client)"
 priority = "phase-2"
-note     = "All controllers here compute a decision (delete set, taint actions, finalizer/TTL outcome) over an in-memory object set; actually applying it (DELETE/PATCH against the apiserver) needs the typed REST client, which is network-bound and lands with the apiserver crate."
+note     = "RESOLVED-IN-MEMORY 2026-06-07: the create/get/update/delete/list contract is now implemented as `apis::Api<T>` / `apis::Cluster` — the in-memory ObjectTracker/fake.Clientset analogue every upstream controller test runs against — and all controllers reconcile through it. Only the *network transport* (REST + watch over the wire, with resourceVersion optimistic concurrency) remains, landing with the apiserver crate; the controllers are transport-agnostic."
 
 [[unmapped]]
-area     = "pkg/controller leader election (client-go/tools/leaderelection)"
+area     = "pkg/controller/cronjob cron-expression parsing"
 priority = "phase-2"
-note     = "Lease-based single-active-manager election. Needed only once more than one controller-manager replica runs; the home cluster runs a single manager in Phase 2, so leader election is deferred."
+note     = "The CronJob controller is implemented (concurrency policy, starting deadline, schedule advance) but consumes an already-resolved `period`; parsing the cron *expression* into fire times is the scheduler crate's job."
 
 [[unmapped]]
-area     = "pkg/controller workload controllers (deployment, replicaset, daemonset, statefulset, job, cronjob, serviceaccount+token)"
+area     = "pkg/controller/podautoscaler (HPA), endpointslice (EndpointSlice + per-port subsets), resourcequota, disruption (PDB), volume (PV/PVC), certificates, bootstrap"
 priority = "phase-2"
-note     = "The dozens of other controllers reuse the framework spine shipped here (workqueue + reconcile + informer). They were previously stubbed against an unreal async client; they are deferred until the apiserver client lands so they can be implemented and tested end-to-end rather than against a phantom backend."
-
-[[unmapped]]
-area     = "pkg/controller/podautoscaler (HPA), endpoint/endpointslice, resourcequota, disruption (PDB), volume (PV/PVC), certificates, bootstrap"
-priority = "phase-2"
-note     = "Secondary controllers; several depend on other subsystems (metrics-server for HPA, cave-home-kube-proxy-rs for endpoints, CSI for volumes). Deferred behind the core workload set."
+note     = "Secondary controllers; several depend on other subsystems (metrics-server for HPA, CSI for volumes). The core Endpoints controller IS implemented (ready-address set from a Service selector); the EndpointSlice sharding + per-port subsets are deferred behind it."
 
 [[unmapped]]
 area     = "pkg/controller/cloud (cloud-provider controllers) + Service cloud-LB controller"
@@ -257,6 +317,56 @@ ours         = "src/controllers/cleanup.rs::tests"
 [[spec_test]]
 designed_for = "Object model: namespaced vs cluster-scoped key derivation, owner-reference builders, terminating reflects deletionTimestamp, label/finalizer builders (apimachinery ObjectMeta/OwnerReference contract)"
 ours         = "src/types.rs::tests"
+
+# ---- spec_test: reconciler uplift (2026-06-07) -----------------------------
+
+[[spec_test]]
+designed_for = "In-memory apiserver: create assigns/preserves UID, update/delete round-trip, list_matching (namespace AND selector), list_owned_by (controller owner only) (ObjectTracker/fake.Clientset contract)"
+ours         = "tests/apiserver.rs"
+
+[[spec_test]]
+designed_for = "ReplicaSet controller: scale up owns pods, steady-state noop, scale-down least-ready-first, adopt orphan, release drifted, missing-RS noop (pkg/controller/replicaset contract)"
+ours         = "tests/replicaset_controller.rs"
+
+[[spec_test]]
+designed_for = "Deployment controller: fresh RS at desired, steady noop, rolling surge-before-cut, cut-once-available, recreate drain-then-up, status rollup, missing noop (pkg/controller/deployment contract)"
+ours         = "tests/deployment_controller.rs"
+
+[[spec_test]]
+designed_for = "End-to-end: Deployment -> ReplicaSet -> Pod convergence (create, scale up/down, full rolling update v1->v2) through the manager work-queue loop with kubelet pod admission simulated"
+ours         = "tests/e2e_deployment.rs"
+
+[[spec_test]]
+designed_for = "StatefulSet controller: OrderedReady ordinal creation gated on predecessor readiness, fill-in-order, highest-ordinal-first scale-down, steady noop (pkg/controller/statefulset contract)"
+ours         = "tests/statefulset_controller.rs"
+
+[[spec_test]]
+designed_for = "DaemonSet controller: one pod per node, new node covered, removed-node pod deleted, steady noop (pkg/controller/daemonset contract)"
+ours         = "tests/daemonset_controller.rs"
+
+[[spec_test]]
+designed_for = "Job controller: parallelism bound, remaining-completions cap, backfill after successes, complete at completions, fail past backoffLimit, idempotent finish (pkg/controller/job contract)"
+ours         = "tests/job_controller.rs"
+
+[[spec_test]]
+designed_for = "CronJob controller: first-run/period due-detection, suspend, Allow/Forbid/Replace concurrency, startingDeadline skip-and-advance (pkg/controller/cronjob contract)"
+ours         = "tests/cronjob_controller.rs"
+
+[[spec_test]]
+designed_for = "Namespace controller: active untouched, terminating drains content then drops finalizer over two reconciles, other namespaces untouched (pkg/controller/namespace contract)"
+ours         = "tests/namespace_controller.rs"
+
+[[spec_test]]
+designed_for = "ServiceAccount controller: create default SA per active namespace, idempotent, none for terminating namespace (pkg/controller/serviceaccount contract)"
+ours         = "tests/serviceaccount_controller.rs"
+
+[[spec_test]]
+designed_for = "Endpoints controller: collect ready matching pods, drop on unready, empty when none, missing-service noop (pkg/controller/endpoint contract)"
+ours         = "tests/endpoints_controller.rs"
+
+[[spec_test]]
+designed_for = "Leader election: empty-lease acquire, reject while valid, renew extends, expired take-over increments transitions, lock-out after takeover, at-most-one leader under contention (client-go leaderelection contract)"
+ours         = "tests/leader_election.rs + src/leaderelection.rs::tests"
 
 # ---- no-backcompat (Charter §8) ---------------------------------------------
 # Recorded explicitly so the stance is auditable: this crate ships against the
