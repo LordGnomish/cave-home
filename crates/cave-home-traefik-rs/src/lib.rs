@@ -99,3 +99,16 @@ pub use middleware::{Applied, Middleware, MiddlewareChain};
 pub use request::{RequestDescriptor, ResponseDescriptor};
 pub use router::{select, Router};
 pub use rule::{parse, ParseError, Rule};
+
+// ── Real runtime (feature = "runtime", default-on) ───────────────────────────
+//
+// Everything below is the actual HTTP/HTTPS reverse-proxy + Kubernetes-Ingress
+// runtime that consults the decision core above: the async TCP/TLS listener,
+// the reverse-proxy forwarding engine (retries, circuit breaking), the
+// middleware-enforcement layer (auth, rate-limit, compression, CORS), service
+// discovery, the ACME client, Prometheus metrics and the dashboard. It is
+// gated so that `--no-default-features` still builds the std-only decision core.
+
+/// Bridge between `hyper`/`http` wire types and the core descriptors.
+#[cfg(feature = "runtime")]
+pub mod wire;
