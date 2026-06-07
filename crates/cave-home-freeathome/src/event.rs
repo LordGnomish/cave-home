@@ -1,6 +1,145 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //! WebSocket push-event parsing.
+//!
+//! The SysAP `fhapi` WebSocket pushes a JSON object keyed by SysAP UUID. Each
+//! value carries the datapoints that changed (keyed `serial/channel/datapoint`
+//! → wire value) plus added/removed device serials. We flatten that into a list
+//! of typed [`FreeAtHomeEvent`]s and silently drop addresses that don't parse,
+//! so one bad key never sinks an otherwise-good frame.
+
+use std::collections::BTreeMap;
+
+use cave_home_free_home::{ChannelId, DatapointId, DeviceSerial};
+use serde::Deserialize;
+
+use crate::error::Result;
+
+/// A single datapoint value change.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DatapointUpdate {
+    serial: DeviceSerial,
+    channel: ChannelId,
+    datapoint: DatapointId,
+    value: String,
+}
+
+impl DatapointUpdate {
+    /// Construct an update.
+    pub const fn new(
+        serial: DeviceSerial,
+        channel: ChannelId,
+        datapoint: DatapointId,
+        value: String,
+    ) -> Self {
+        Self {
+            serial,
+            channel,
+            datapoint,
+            value,
+        }
+    }
+
+    /// The owning device serial.
+    pub const fn serial(&self) -> &DeviceSerial {
+        &self.serial
+    }
+
+    /// The channel that changed.
+    pub const fn channel(&self) -> ChannelId {
+        self.channel
+    }
+
+    /// The datapoint that changed.
+    pub const fn datapoint(&self) -> DatapointId {
+        self.datapoint
+    }
+
+    /// The new wire value.
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+
+    /// The canonical `serial/channel/datapoint` address.
+    pub fn address(&self) -> String {
+        format!("{}/{}/{}", self.serial, self.channel, self.datapoint)
+    }
+}
+
+/// A typed event decoded from a WebSocket frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FreeAtHomeEvent {
+    /// A datapoint reported a new value.
+    DatapointUpdate(DatapointUpdate),
+    /// A device joined the SysAP.
+    DeviceAdded(DeviceSerial),
+    /// A device left the SysAP.
+    DeviceRemoved(DeviceSerial),
+}
+
+impl FreeAtHomeEvent {
+    /// Borrow the inner [`DatapointUpdate`] if this is one.
+    pub const fn as_datapoint_update(&self) -> Option<&DatapointUpdate> {
+        match self {
+            Self::DatapointUpdate(u) => Some(u),
+            _ => None,
+        }
+    }
+}
+
+/// The per-SysAP body of a WebSocket frame.
+#[derive(Debug, Default, Deserialize)]
+struct WsBody {
+    #[serde(default)]
+    datapoints: BTreeMap<String, String>,
+    #[serde(rename = "devicesAdded", default)]
+    devices_added: Vec<String>,
+    #[serde(rename = "devicesRemoved", default)]
+    devices_removed: Vec<String>,
+}
+
+/// Split a `serial/channel/datapoint` address into typed ids.
+///
+/// Returns `None` if the shape or any component is invalid.
+pub fn parse_datapoint_address(addr: &str) -> Option<(DeviceSerial, ChannelId, DatapointId)> {
+    let mut parts = addr.split('/');
+    let serial = DeviceSerial::parse(parts.next()?).ok()?;
+    let channel = ChannelId::parse(parts.next()?).ok()?;
+    let datapoint = DatapointId::parse(parts.next()?).ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((serial, channel, datapoint))
+}
+
+/// Parse a raw WebSocket text frame into a flat list of events.
+pub fn parse_ws_frame(json: &str) -> Result<Vec<FreeAtHomeEvent>> {
+    let frame: BTreeMap<String, WsBody> = serde_json::from_str(json)?;
+    let mut events = Vec::new();
+    for body in frame.values() {
+        for (addr, value) in &body.datapoints {
+            if let Some((serial, channel, datapoint)) = parse_datapoint_address(addr) {
+                events.push(FreeAtHomeEvent::DatapointUpdate(DatapointUpdate::new(
+                    serial,
+                    channel,
+                    datapoint,
+                    value.clone(),
+                )));
+            }
+        }
+        for serial in &body.devices_added {
+            if let Ok(s) = DeviceSerial::parse(serial) {
+                events.push(FreeAtHomeEvent::DeviceAdded(s));
+            }
+        }
+        for serial in &body.devices_removed {
+            if let Ok(s) = DeviceSerial::parse(serial) {
+                events.push(FreeAtHomeEvent::DeviceRemoved(s));
+            }
+        }
+    }
+    Ok(events)
+}
 
 #[cfg(test)]
 mod tests {

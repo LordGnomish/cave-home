@@ -33,15 +33,18 @@
 pub mod auth;
 pub mod config;
 pub mod error;
-mod event;
+pub mod event;
 pub mod model;
-mod reconnect;
+pub mod reconnect;
 pub mod rest;
-mod state;
+pub mod state;
 
 pub use auth::{AuthMethod, ClientCertConfig, Credentials};
 pub use config::ClientConfig;
 pub use error::{FreeAtHomeError, Result};
+pub use event::{parse_datapoint_address, parse_ws_frame, DatapointUpdate, FreeAtHomeEvent};
+pub use reconnect::Backoff;
+pub use state::StateCache;
 pub use model::{
     ChannelDto, ConfigurationResponse, DatapointDto, DeviceDto, DeviceListResponse, SysApConfig,
 };

@@ -1,6 +1,55 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //! Local datapoint state cache, fed by REST polls and WebSocket pushes.
+//!
+//! The cache is the single source of truth the bridges read from: a REST poll
+//! seeds it, then WebSocket pushes keep it live. It is keyed by the canonical
+//! `serial/channel/datapoint` address so REST and WS agree on identity.
+
+use std::collections::BTreeMap;
+
+use crate::event::{DatapointUpdate, FreeAtHomeEvent};
+
+/// The last-known wire value of every datapoint we've observed.
+#[derive(Debug, Clone, Default)]
+pub struct StateCache {
+    values: BTreeMap<String, String>,
+}
+
+impl StateCache {
+    /// An empty cache.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Apply one datapoint update, returning the previous value if any.
+    pub fn apply(&mut self, update: &DatapointUpdate) -> Option<String> {
+        self.values
+            .insert(update.address(), update.value().to_string())
+    }
+
+    /// Apply any event; only datapoint updates change cached values.
+    pub fn apply_event(&mut self, event: &FreeAtHomeEvent) {
+        if let Some(update) = event.as_datapoint_update() {
+            self.apply(update);
+        }
+    }
+
+    /// The current value at a canonical `serial/channel/datapoint` address.
+    pub fn get_by_address(&self, address: &str) -> Option<&str> {
+        self.values.get(address).map(String::as_str)
+    }
+
+    /// Number of distinct datapoints tracked.
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    /// Whether the cache is empty.
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+}
 
 #[cfg(test)]
 mod tests {
