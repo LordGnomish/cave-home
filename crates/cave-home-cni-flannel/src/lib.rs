@@ -68,6 +68,7 @@
 pub mod backend;
 pub mod cidr;
 pub mod cni;
+pub mod cni_delegate;
 pub mod datapath;
 pub mod device;
 pub mod hostgw;
