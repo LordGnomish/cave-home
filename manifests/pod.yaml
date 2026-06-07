@@ -1,0 +1,20 @@
+# Example workload for the single-binary cave-home control plane.
+#
+#   cargo run --bin cave-home server          # start the node (apiserver :8123)
+#   export KUBECONFIG=/dev/null
+#   kubectl --server=http://127.0.0.1:8123 apply -f manifests/pod.yaml
+#   kubectl --server=http://127.0.0.1:8123 get pods        # → nginx 1/1 Running
+#   kubectl --server=http://127.0.0.1:8123 logs nginx
+#   kubectl --server=http://127.0.0.1:8123 get pods --watch
+#
+# The pod is scheduled to the local node and run through the in-process mock CRI.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  containers:
+    - name: web
+      image: nginx:1.27
