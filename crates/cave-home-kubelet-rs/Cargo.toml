@@ -17,17 +17,41 @@ upstream    = "kubernetes/kubernetes (K3s-vendored), public docs only"
 # verbatim k3s port is ADR-004 phase-1b deferred work.
 port-method = "behavioural-reimplementation"
 phase       = "orchestration-phase-1"
+# The `remote-cri` feature is the exception: it is a VERBATIM port of the CRI
+# v1 wire contract (proto/api.proto, copied from kubernetes-1.30.0 minus gogo
+# annotations) plus a line-by-line port of the gRPC client in
+# k8s.io/kubernetes/pkg/kubelet/cri/remote/{remote_runtime.go,remote_image.go}.
+# It is gated off by default so the decision core stays dependency-free.
+remote-cri-upstream = "k8s.io/cri-api/pkg/apis/runtime/v1@kubernetes-1.30.0; pkg/kubelet/cri/remote (kubernetes-1.30)"
+
+[features]
+default = []
+# Real CRI v1 gRPC client (tonic) talking to containerd / any CRI runtime.
+# OFF by default: the kubelet decision core needs no async-gRPC stack; only
+# the node bring-up path that actually drives a runtime turns this on.
+remote-cri = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tower", "dep:hyper-util"]
 
 [dependencies]
 async-trait = "0.1"
 futures     = "0.3"
 parking_lot = "0.12"
 thiserror   = "2"
-tokio       = { version = "1", features = ["rt-multi-thread", "sync", "macros", "fs", "time"] }
+tokio       = { version = "1", features = ["rt-multi-thread", "sync", "macros", "fs", "time", "net"] }
+
+# --- remote-cri (optional) gRPC transport stack ---------------------------
+tonic       = { version = "0.14", optional = true }
+tonic-prost = { version = "0.14", optional = true }
+prost       = { version = "0.14", optional = true }
+tower       = { version = "0.5",  optional = true, features = ["util"] }
+hyper-util  = { version = "0.1",  optional = true, features = ["tokio"] }
+
+[build-dependencies]
+tonic-prost-build = "0.14"
 
 [dev-dependencies]
-tempfile = "3"
-tokio    = { version = "1", features = ["rt-multi-thread", "sync", "macros", "fs", "time", "test-util"] }
+tempfile     = "3"
+tokio        = { version = "1", features = ["rt-multi-thread", "sync", "macros", "fs", "time", "net", "test-util"] }
+tokio-stream = { version = "0.1", features = ["net"] }
 
 [lints]
 workspace = true

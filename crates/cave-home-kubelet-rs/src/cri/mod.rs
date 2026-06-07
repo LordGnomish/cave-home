@@ -10,5 +10,9 @@ pub mod client;
 pub mod mock;
 pub mod types;
 
+/// Real CRI v1 gRPC transport (tonic). Gated behind the `remote-cri` feature.
+#[cfg(feature = "remote-cri")]
+pub mod remote;
+
 pub use client::{CriClient, CriError, CriResult};
 pub use mock::MockCriClient;
