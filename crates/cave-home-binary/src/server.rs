@@ -69,15 +69,33 @@ impl RuntimeConfig {
     }
 }
 
-/// Build the shared registry with the local node already registered, exactly as
-/// the kubelet would on join.
+/// Build the shared registry with the local node already registered.
+///
+/// Registers the node exactly as the kubelet would on join, plus the bootstrap
+/// namespaces (`default`, `kube-system`, …) every cluster ships, so a fresh
+/// `kubectl apply` lands in a namespace that already exists.
 #[must_use]
 pub fn seeded_registry(node: &LocalNode) -> SharedRegistry {
     let mut reg = Registry::new();
     let nodes = GroupVersionResource::new("", "v1", "nodes");
     // create() only fails on a duplicate; a fresh registry never has one.
     let _ = reg.create(&nodes, node.to_object());
+    let namespaces = GroupVersionResource::new("", "v1", "namespaces");
+    for ns in ["default", "kube-system", "kube-public", "kube-node-lease"] {
+        let _ = reg.create(&namespaces, namespace_object(ns));
+    }
     Arc::new(Mutex::new(reg))
+}
+
+/// A minimal `Namespace` object in the `Active` phase.
+fn namespace_object(name: &str) -> cave_home_apiserver_rs::json::Value {
+    use cave_home_apiserver_rs::json::{obj, Value};
+    obj([
+        ("apiVersion", Value::from("v1")),
+        ("kind", Value::from("Namespace")),
+        ("metadata", obj([("name", Value::from(name))])),
+        ("status", obj([("phase", Value::from("Active"))])),
+    ])
 }
 
 /// The dependency-ordered components this role brings up locally.

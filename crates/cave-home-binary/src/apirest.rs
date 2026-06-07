@@ -17,7 +17,7 @@
 use cave_home_apiserver_rs::gvk;
 use cave_home_apiserver_rs::json::{self, Value};
 use cave_home_apiserver_rs::path;
-use cave_home_apiserver_rs::registry::{ListOptions, Registry};
+use cave_home_apiserver_rs::registry::{ListOptions, ListResult, Registry};
 use cave_home_apiserver_rs::status::{Status, StatusReason};
 
 use crate::http::{HttpRequest, HttpResponse};
@@ -26,54 +26,254 @@ use crate::version::BuildInfo;
 /// Route and serve one request against the registry.
 #[must_use]
 pub fn handle(reg: &mut Registry, req: &HttpRequest) -> HttpResponse {
-    // Non-resource endpoints (liveness/readiness/version/metrics) come first.
+    // Non-resource endpoints (liveness/readiness/version/metrics/discovery).
     match req.path.as_str() {
         "/healthz" | "/readyz" | "/livez" => return HttpResponse::text(200, "ok"),
         "/version" => return version_response(),
         "/metrics" => return metrics_response(reg),
+        "/api" => return api_versions_response(),
+        "/apis" => return api_groups_response(),
+        "/api/v1" => return resource_list_response("", "v1"),
         _ => {}
     }
-
-    // Everything else is a resource path. Only the read verbs are served.
-    if req.method != "GET" {
-        return status_response(&Status::new(
-            StatusReason::MethodNotAllowed,
-            format!("{} is not supported on {}", req.method, req.path),
-        ));
+    // Grouped discovery: GET /apis/{group}/{version} → its APIResourceList.
+    if let Some(rest) = req.path.strip_prefix("/apis/") {
+        let segs: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
+        if segs.len() == 2 {
+            return resource_list_response(segs[0], segs[1]);
+        }
+    }
+    // OpenAPI schema probes: served as a clean 404 so kubectl skips client-side
+    // schema validation gracefully instead of erroring on a malformed-path 400.
+    if req.path.starts_with("/openapi") {
+        return status_response(&Status::not_found("openapi schema is not served"));
     }
 
+    // Everything else is a resource path, dispatched by verb.
     let rp = match path::parse(&req.path) {
         Ok(rp) => rp,
         Err(s) => return status_response(&s),
     };
     let gvr = rp.gvr();
 
+    match req.method.as_str() {
+        "GET" => get_or_list(reg, &rp, &gvr),
+        "POST" => create(reg, &rp, &gvr, req),
+        "PUT" => replace(reg, &gvr, req),
+        "PATCH" => patch(reg, &rp, &gvr, req),
+        "DELETE" => remove(reg, &rp, &gvr),
+        other => status_response(&Status::new(
+            StatusReason::MethodNotAllowed,
+            format!("{other} is not supported on {}", req.path),
+        )),
+    }
+}
+
+/// GET: a single named object, or a (optionally namespace-scoped) collection.
+fn get_or_list(reg: &Registry, rp: &path::ResourcePath, gvr: &gvk::GroupVersionResource) -> HttpResponse {
     if rp.is_named() {
-        match reg.get(&gvr, &rp.namespace, &rp.name) {
+        return match reg.get(gvr, &rp.namespace, &rp.name) {
             Ok(obj) => HttpResponse::json(200, obj.to_json_string()),
             Err(s) => status_response(&s),
-        }
-    } else {
-        let opts = ListOptions {
-            namespace: (!rp.namespace.is_empty()).then(|| rp.namespace.clone()),
-            ..ListOptions::default()
         };
-        match reg.list(&gvr, &opts) {
-            Ok(list) => {
-                let kind = gvk::kind_for(&gvr).map_or_else(|| "List".to_string(), |k| format!("{}List", k.kind));
-                let body = json::obj([
-                    ("apiVersion", Value::from("v1")),
-                    ("kind", Value::from(kind.as_str())),
-                    (
-                        "metadata",
-                        json::obj([("resourceVersion", Value::from(list.resource_version.to_string()))]),
-                    ),
-                    ("items", Value::Array(list.items)),
-                ]);
-                HttpResponse::json(200, body.to_json_string())
-            }
-            Err(s) => status_response(&s),
+    }
+    let opts = ListOptions {
+        namespace: (!rp.namespace.is_empty()).then(|| rp.namespace.clone()),
+        ..ListOptions::default()
+    };
+    match reg.list(gvr, &opts) {
+        Ok(list) => HttpResponse::json(200, list_envelope(gvr, &list).to_json_string()),
+        Err(s) => status_response(&s),
+    }
+}
+
+/// Wrap a list result in its `{Kind}List` envelope.
+fn list_envelope(gvr: &gvk::GroupVersionResource, list: &ListResult) -> Value {
+    let kind = gvk::kind_for(gvr).map_or_else(|| "List".to_string(), |k| format!("{}List", k.kind));
+    json::obj([
+        ("apiVersion", Value::from(api_version_of(gvr).as_str())),
+        ("kind", Value::from(kind.as_str())),
+        (
+            "metadata",
+            json::obj([("resourceVersion", Value::from(list.resource_version.to_string()))]),
+        ),
+        ("items", Value::Array(list.items.clone())),
+    ])
+}
+
+/// POST: create an object from the request body on a collection path.
+fn create(reg: &mut Registry, rp: &path::ResourcePath, gvr: &gvk::GroupVersionResource, req: &HttpRequest) -> HttpResponse {
+    if rp.is_named() {
+        return status_response(&Status::new(
+            StatusReason::MethodNotAllowed,
+            "POST is not supported on an individual object path; create posts to the collection",
+        ));
+    }
+    let mut object = match parse_object_body(req) {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
+    // The path namespace is authoritative for namespaced resources.
+    if !rp.namespace.is_empty() {
+        inject_namespace(&mut object, &rp.namespace);
+    }
+    match reg.create(gvr, object) {
+        Ok(obj) => HttpResponse::json(201, obj.to_json_string()),
+        Err(s) => status_response(&s),
+    }
+}
+
+/// PUT: replace an existing object with the request body.
+fn replace(reg: &mut Registry, gvr: &gvk::GroupVersionResource, req: &HttpRequest) -> HttpResponse {
+    let object = match parse_object_body(req) {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
+    match reg.update(gvr, object) {
+        Ok(obj) => HttpResponse::json(200, obj.to_json_string()),
+        Err(s) => status_response(&s),
+    }
+}
+
+/// PATCH: apply a merge patch (RFC 7396) to a named object. Strategic-merge is
+/// treated as a merge patch for the flat objects this surface serves; JSON Patch
+/// (`application/json-patch+json`) is not yet wired over the wire.
+fn patch(reg: &mut Registry, rp: &path::ResourcePath, gvr: &gvk::GroupVersionResource, req: &HttpRequest) -> HttpResponse {
+    if !rp.is_named() {
+        return status_response(&Status::bad_request("PATCH requires a named object"));
+    }
+    let ctype = req.header("content-type").unwrap_or("application/merge-patch+json");
+    if ctype.contains("json-patch") {
+        return status_response(&Status::new(
+            StatusReason::MethodNotAllowed,
+            "application/json-patch+json is not supported; use a merge patch",
+        ));
+    }
+    let patch_doc = match parse_object_body(req) {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
+    match reg.patch_merge(gvr, &rp.namespace, &rp.name, &patch_doc) {
+        Ok(obj) => HttpResponse::json(200, obj.to_json_string()),
+        Err(s) => status_response(&s),
+    }
+}
+
+/// DELETE: remove a named object, returning the deleted object.
+fn remove(reg: &mut Registry, rp: &path::ResourcePath, gvr: &gvk::GroupVersionResource) -> HttpResponse {
+    if !rp.is_named() {
+        return status_response(&Status::bad_request("DELETE requires a named object"));
+    }
+    match reg.delete(gvr, &rp.namespace, &rp.name) {
+        Ok((obj, _removed)) => HttpResponse::json(200, obj.to_json_string()),
+        Err(s) => status_response(&s),
+    }
+}
+
+/// Parse a request body into a JSON object `Value`, mapping failures onto the
+/// HTTP responses a client expects (`400` for bad bytes/JSON, `400` for a
+/// non-object top-level value).
+fn parse_object_body(req: &HttpRequest) -> Result<Value, HttpResponse> {
+    let text = std::str::from_utf8(&req.body)
+        .map_err(|_| HttpResponse::json(400, bad_request_body("request body is not valid UTF-8")))?;
+    let value = Value::parse(text)
+        .map_err(|e| HttpResponse::json(400, bad_request_body(&format!("malformed JSON body: {e}"))))?;
+    if value.as_object().is_none() {
+        return Err(HttpResponse::json(400, bad_request_body("request body must be a JSON object")));
+    }
+    Ok(value)
+}
+
+/// Render a `BadRequest` Status body (used for transport-level parse failures
+/// before a `Registry` verb is ever reached).
+fn bad_request_body(message: &str) -> String {
+    status_body(&Status::bad_request(message))
+}
+
+/// Force `metadata.namespace` to the path-derived namespace, creating the
+/// `metadata` object if the body omitted it.
+fn inject_namespace(object: &mut Value, namespace: &str) {
+    if let Value::Object(map) = object {
+        let meta = map.entry("metadata".to_string()).or_insert_with(Value::object);
+        if let Value::Object(m) = meta {
+            m.insert("namespace".to_string(), Value::from(namespace));
         }
+    }
+}
+
+/// `GET /api` → the core `APIVersions` document.
+fn api_versions_response() -> HttpResponse {
+    let body = json::obj([
+        ("kind", Value::from("APIVersions")),
+        ("versions", Value::Array(vec![Value::from("v1")])),
+    ]);
+    HttpResponse::json(200, body.to_json_string())
+}
+
+/// `GET /apis` → the `APIGroupList` of every non-core group the core serves.
+fn api_groups_response() -> HttpResponse {
+    let mut groups: Vec<Value> = Vec::new();
+    for (group, version) in gvk::registered_group_versions() {
+        if group.is_empty() {
+            continue; // the core group is discovered via /api, not /apis
+        }
+        let gv = format!("{group}/{version}");
+        let version_entry = json::obj([
+            ("groupVersion", Value::from(gv.as_str())),
+            ("version", Value::from(version)),
+        ]);
+        groups.push(json::obj([
+            ("name", Value::from(group)),
+            ("versions", Value::Array(vec![version_entry.clone()])),
+            ("preferredVersion", version_entry),
+        ]));
+    }
+    let body = json::obj([
+        ("kind", Value::from("APIGroupList")),
+        ("apiVersion", Value::from("v1")),
+        ("groups", Value::Array(groups)),
+    ]);
+    HttpResponse::json(200, body.to_json_string())
+}
+
+/// `GET /api/v1` or `GET /apis/{group}/{version}` → the `APIResourceList`
+/// `kubectl` reads to map a CLI noun (`pods`) onto its REST path + scope.
+fn resource_list_response(group: &str, version: &str) -> HttpResponse {
+    let gv = if group.is_empty() { version.to_string() } else { format!("{group}/{version}") };
+    let resources: Vec<Value> = gvk::registered_resources()
+        .into_iter()
+        .filter(|r| r.group == group && r.version == version)
+        .map(|r| {
+            json::obj([
+                ("name", Value::from(r.resource)),
+                ("singularName", Value::from(r.kind.to_ascii_lowercase().as_str())),
+                ("namespaced", Value::from(r.namespaced)),
+                ("kind", Value::from(r.kind)),
+                ("verbs", Value::Array(VERBS.iter().map(|v| Value::from(*v)).collect())),
+            ])
+        })
+        .collect();
+    if resources.is_empty() {
+        return status_response(&Status::not_found(format!("no resources for group/version {gv}")));
+    }
+    let body = json::obj([
+        ("kind", Value::from("APIResourceList")),
+        ("apiVersion", Value::from("v1")),
+        ("groupVersion", Value::from(gv.as_str())),
+        ("resources", Value::Array(resources)),
+    ]);
+    HttpResponse::json(200, body.to_json_string())
+}
+
+/// The verbs every served resource supports (used in discovery).
+const VERBS: &[&str] = &["get", "list", "create", "update", "patch", "delete", "watch"];
+
+/// The `apiVersion` string for a GVR (`v1`, or `group/version`).
+fn api_version_of(gvr: &gvk::GroupVersionResource) -> String {
+    if gvr.group.is_empty() {
+        gvr.version.clone()
+    } else {
+        format!("{}/{}", gvr.group, gvr.version)
     }
 }
 
@@ -108,17 +308,22 @@ fn metrics_response(reg: &Registry) -> HttpResponse {
     HttpResponse::text(200, out)
 }
 
-/// Render a `Status` failure object as its HTTP response.
-fn status_response(status: &Status) -> HttpResponse {
-    let body = json::obj([
+/// Render a `Status` failure object as its canonical JSON string.
+fn status_body(status: &Status) -> String {
+    json::obj([
         ("apiVersion", Value::from("v1")),
         ("kind", Value::from("Status")),
         ("status", Value::from("Failure")),
         ("reason", Value::from(status.reason.as_str())),
         ("code", Value::from(i64::from(status.code))),
         ("message", Value::from(status.message.as_str())),
-    ]);
-    HttpResponse::json(status.code, body.to_json_string())
+    ])
+    .to_json_string()
+}
+
+/// Render a `Status` failure object as its HTTP response.
+fn status_response(status: &Status) -> HttpResponse {
+    HttpResponse::json(status.code, status_body(status))
 }
 
 #[cfg(test)]
@@ -196,10 +401,147 @@ mod tests {
         assert!(body.contains("\"items\":[]"), "{body}");
     }
 
+    /// Build a request with a method, path and JSON body.
+    fn req_body(method: &str, path: &str, ctype: &str, body: &str) -> HttpRequest {
+        let raw = format!(
+            "{method} {path} HTTP/1.1\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        HttpRequest::parse(raw.as_bytes()).expect("parse")
+    }
+
+    const POD_JSON: &str =
+        r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx"},"spec":{"containers":[{"name":"web","image":"nginx:1.27"}]}}"#;
+
     #[test]
-    fn non_get_on_resource_is_405() {
+    fn post_creates_a_pod_and_returns_201() {
         let mut reg = Registry::new();
-        let req = HttpRequest::parse(b"POST /api/v1/nodes HTTP/1.1\r\n\r\n").unwrap();
+        let resp = handle(
+            &mut reg,
+            &req_body("POST", "/api/v1/namespaces/default/pods", "application/json", POD_JSON),
+        );
+        assert_eq!(resp.status, 201, "{}", String::from_utf8_lossy(&resp.body));
+        let body = String::from_utf8(resp.body).unwrap();
+        assert!(body.contains("\"name\":\"nginx\""), "{body}");
+        // namespace from the path was injected, server stamped uid + rv.
+        assert!(body.contains("\"namespace\":\"default\""), "{body}");
+        assert!(body.contains("\"uid\":\"uid-"), "{body}");
+        // and it is now retrievable.
+        let got = handle(&mut reg, &get("/api/v1/namespaces/default/pods/nginx"));
+        assert_eq!(got.status, 200);
+    }
+
+    #[test]
+    fn post_duplicate_is_409() {
+        let mut reg = Registry::new();
+        let make = || req_body("POST", "/api/v1/namespaces/default/pods", "application/json", POD_JSON);
+        assert_eq!(handle(&mut reg, &make()).status, 201);
+        assert_eq!(handle(&mut reg, &make()).status, 409);
+    }
+
+    #[test]
+    fn post_malformed_json_is_400() {
+        let mut reg = Registry::new();
+        let resp = handle(
+            &mut reg,
+            &req_body("POST", "/api/v1/namespaces/default/pods", "application/json", "{not json"),
+        );
+        assert_eq!(resp.status, 400);
+    }
+
+    #[test]
+    fn delete_removes_the_pod() {
+        let mut reg = Registry::new();
+        let _ = handle(&mut reg, &req_body("POST", "/api/v1/namespaces/default/pods", "application/json", POD_JSON));
+        let del = HttpRequest::parse(b"DELETE /api/v1/namespaces/default/pods/nginx HTTP/1.1\r\n\r\n").unwrap();
+        let resp = handle(&mut reg, &del);
+        assert_eq!(resp.status, 200, "{}", String::from_utf8_lossy(&resp.body));
+        assert_eq!(handle(&mut reg, &get("/api/v1/namespaces/default/pods/nginx")).status, 404);
+    }
+
+    #[test]
+    fn patch_merge_updates_a_field() {
+        let mut reg = Registry::new();
+        let _ = handle(&mut reg, &req_body("POST", "/api/v1/namespaces/default/pods", "application/json", POD_JSON));
+        let patch = r#"{"metadata":{"labels":{"tier":"frontend"}}}"#;
+        let resp = handle(
+            &mut reg,
+            &req_body(
+                "PATCH",
+                "/api/v1/namespaces/default/pods/nginx",
+                "application/merge-patch+json",
+                patch,
+            ),
+        );
+        assert_eq!(resp.status, 200, "{}", String::from_utf8_lossy(&resp.body));
+        let body = String::from_utf8(resp.body).unwrap();
+        assert!(body.contains("\"tier\":\"frontend\""), "{body}");
+    }
+
+    #[test]
+    fn discovery_api_lists_v1() {
+        let mut reg = Registry::new();
+        let resp = handle(&mut reg, &get("/api"));
+        assert_eq!(resp.status, 200);
+        let body = String::from_utf8(resp.body).unwrap();
+        assert!(body.contains("\"kind\":\"APIVersions\""), "{body}");
+        assert!(body.contains("\"v1\""), "{body}");
+    }
+
+    #[test]
+    fn discovery_apis_lists_groups() {
+        let mut reg = Registry::new();
+        let resp = handle(&mut reg, &get("/apis"));
+        assert_eq!(resp.status, 200);
+        let body = String::from_utf8(resp.body).unwrap();
+        assert!(body.contains("\"kind\":\"APIGroupList\""), "{body}");
+        assert!(body.contains("apps/v1"), "{body}");
+        assert!(body.contains("batch/v1"), "{body}");
+    }
+
+    #[test]
+    fn discovery_core_resourcelist_maps_pods() {
+        let mut reg = Registry::new();
+        let resp = handle(&mut reg, &get("/api/v1"));
+        assert_eq!(resp.status, 200);
+        let body = String::from_utf8(resp.body).unwrap();
+        assert!(body.contains("\"kind\":\"APIResourceList\""), "{body}");
+        assert!(body.contains("\"groupVersion\":\"v1\""), "{body}");
+        assert!(body.contains("\"name\":\"pods\""), "{body}");
+        assert!(body.contains("\"kind\":\"Pod\""), "{body}");
+        assert!(body.contains("\"namespaced\":true"), "{body}");
+    }
+
+    #[test]
+    fn discovery_grouped_resourcelist() {
+        let mut reg = Registry::new();
+        let resp = handle(&mut reg, &get("/apis/apps/v1"));
+        assert_eq!(resp.status, 200);
+        let body = String::from_utf8(resp.body).unwrap();
+        assert!(body.contains("\"groupVersion\":\"apps/v1\""), "{body}");
+        assert!(body.contains("\"name\":\"deployments\""), "{body}");
+    }
+
+    #[test]
+    fn openapi_is_404_not_400() {
+        // kubectl probes /openapi/* for schema validation; a clean 404 makes it
+        // skip validation gracefully rather than erroring on a 400.
+        let mut reg = Registry::new();
+        assert_eq!(handle(&mut reg, &get("/openapi/v2")).status, 404);
+        assert_eq!(handle(&mut reg, &get("/openapi/v3")).status, 404);
+    }
+
+    #[test]
+    fn post_on_named_path_is_405() {
+        let mut reg = Registry::new();
+        let req = req_body("POST", "/api/v1/namespaces/default/pods/nginx", "application/json", POD_JSON);
+        assert_eq!(handle(&mut reg, &req).status, 405);
+    }
+
+    #[test]
+    fn unsupported_method_on_resource_is_405() {
+        let mut reg = Registry::new();
+        let req = HttpRequest::parse(b"TRACE /api/v1/nodes HTTP/1.1\r\n\r\n").unwrap();
         let resp = handle(&mut reg, &req);
         assert_eq!(resp.status, 405);
     }
