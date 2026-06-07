@@ -16,6 +16,7 @@
 
 pub mod broker;
 pub mod codec;
+pub mod metrics;
 pub mod packet;
 #[cfg(feature = "runtime")]
 pub mod runtime;
