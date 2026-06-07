@@ -69,7 +69,8 @@ impl Resolver {
     /// current-thread runtime; this handle (and its clones) talk to it over a
     /// channel from any runtime. A `block` that fails to build yields a
     /// resolver that answers `SERVFAIL` until a successful [`Resolver::reload`];
-    /// validate up front with [`build_chain`] if a hard failure is wanted.
+    /// validate up front with [`build_chain`](crate::build::build_chain) if a
+    /// hard failure is wanted.
     #[must_use]
     pub fn spawn(block: ServerBlock) -> Self {
         let (tx, mut rx) = mpsc::channel::<Cmd>(RESOLVER_BACKLOG);

@@ -27,13 +27,24 @@
 # this crate produces no user-facing strings — its errors model DNS wire
 # vocabulary (RCODEs, parse failures), never the Portal.
 #
+# Also implemented and tested here (the real DNS server layer):
+#
+#   * UDP + TCP listeners — RFC 1035 §4.2.1 datagrams (512-octet limit + TC
+#     truncation) and §4.2.2 / RFC 7766 length-prefixed streams with connection
+#     reuse, over real OS sockets; the resolver actor that owns the !Send chain
+#     on its own runtime; hot reload of the chain between queries.
+#   * Corefile -> Chain lowering — the canonical plugin.cfg priority order
+#     (ported zdirectives.go) + per-directive plugin instantiation.
+#   * Kubernetes API indexer — ServiceList/Endpoints JSON -> populated plugin
+#     (CoreDNS ToService/ToEndpoints), behind an ApiSource transport seam.
+#
 # Port method: HONEST behavioural reimplementation of documented DNS protocol
 # RFCs and CoreDNS plugin semantics from PUBLIC sources (RFC 1034/1035/2782/
-# 3596/4034/4592 and the Apache-2.0 coredns/coredns plugin docs). This is NOT a
-# verbatim line-by-line port and is not claimed as one. The socket transports,
-# the real network forward client, the live Kubernetes API watch, DNSSEC online
-# signing, the Prometheus HTTP exposition, the zone-file watch/reload, zone
-# transfer (AXFR/IXFR), EDNS(0)/OPT and the Corefile→Chain wiring are all
+# 3596/4034/4592/7766 and the Apache-2.0 coredns/coredns plugin docs). This is
+# NOT a verbatim line-by-line port and is not claimed as one. The TLS/QUIC/DoH
+# transports, the real network forward client, the live Kubernetes API HTTP
+# watch client, DNSSEC online signing, the Prometheus HTTP exposition, the
+# zone-file watch/reload, zone transfer (AXFR/IXFR) and EDNS(0)/OPT remain
 # deferred and enumerated below with an ADR-004 phase disposition.
 
 [crate]
@@ -59,8 +70,8 @@ linux_min_kernel = "7.1"
 # protocol and the answer logic of the core service-discovery plugin set — is
 # implemented and tested in full; the socket/crypto/HTTP/watch shells around it
 # remain and are all ADR-004 deferrals enumerated below.
-fill_ratio              = 0.35
-fill_ratio_basis        = "RFC 1035 wire codec (header/question/RR/compression) + RR RDATA codecs + the plugin chain + hosts/rewrite/cache/kubernetes/file/forward/errors/ready/metrics decision cores + Corefile parser, fully implemented & tested; socket transports, network forward client, live K8s watch, DNSSEC signing, Prometheus exposition, zone watch/reload, AXFR/IXFR, EDNS0/OPT and Corefile→Chain wiring deferred"
+fill_ratio              = 0.45
+fill_ratio_basis        = "RFC 1035 wire codec (header/question/RR/compression) + RR RDATA codecs + the plugin chain + hosts/rewrite/cache/kubernetes/file/forward/errors/ready/metrics decision cores + Corefile parser + the real UDP/TCP server (resolver actor, TC truncation, length framing, hot reload) + Corefile→Chain lowering (canonical order) + the K8s API indexer (ServiceList/Endpoints→plugin behind an ApiSource seam), all implemented & tested; the TLS/QUIC/DoH transports, network forward client, live K8s HTTP watch client, DNSSEC signing, Prometheus exposition, zone watch/reload, AXFR/IXFR and EDNS0/OPT deferred"
 test_port_ratio         = 0.0   # tests designed from the RFCs / CoreDNS docs, none ported
 adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-004 phase disposition + note
 honest_ratio            = 1.00  # 0.35 / (0.35 + (1-0.35)*(1-1.00)) = 1.00
@@ -135,12 +146,32 @@ ours = "src/builtins.rs::{Metrics,Errors,Ready,format_log_line}"
 spec = "CoreDNS Corefile (Caddyfile) grammar — server blocks, zone:port, directives, nested subdirective blocks"
 ours = "src/corefile.rs::Corefile"
 
+[[mapped]]
+spec = "CoreDNS core/dnsserver register.go + zdirectives.go — Corefile->Chain lowering in canonical plugin.cfg priority order, per-directive plugin instantiation"
+ours = "src/build.rs::{DIRECTIVES,build_chain,build_chain_with}"
+
+[[mapped]]
+spec = "CoreDNS core/dnsserver server_udp.go — RFC 1035 §4.2.1 UDP service: datagram loop, 512-octet limit + TC truncation, FORMERR for undecodable input"
+ours = "src/server.rs::serve_udp"
+
+[[mapped]]
+spec = "CoreDNS core/dnsserver server_tcp.go — RFC 1035 §4.2.2 / RFC 7766 TCP service: 2-octet length prefix, multiple queries per connection"
+ours = "src/server.rs::serve_tcp"
+
+[[mapped]]
+spec = "CoreDNS server dispatch + reload plugin — a single owner of the plugin chain serving all listeners; hot chain rebuild on config/endpoint change"
+ours = "src/server.rs::Resolver"
+
+[[mapped]]
+spec = "CoreDNS plugin/kubernetes object converters (ToService/ToEndpoints) — ServiceList/Endpoints JSON -> ClusterIP/headless/ExternalName/SRV records"
+ours = "src/k8s.rs::{kubernetes_from_api,K8sSnapshot}"
+
 # ---- unmapped (NOT in this crate; ADR-004 disposition) ---------------------
 
 [[unmapped]]
-area     = "Socket transports (UDP/TCP listeners, TLS/DoT, QUIC/DoQ, DoH)"
+area     = "Encrypted transports (TLS/DoT, QUIC/DoQ, DoH)"
 priority = "phase-1b"
-note     = "ADR-004 Phase 3: every plugin decision (which records, which RCODE) is implemented and tested here against in-memory messages; binding a UDP/TCP socket, the TLS/QUIC/HTTP framing and the read/write loop are an I/O shell that wraps Chain::handle. No new answer logic."
+note     = "ADR-004 Phase 3: the plaintext UDP and TCP listeners are now implemented and tested (src/server.rs); the TLS/QUIC/HTTP framing on top is an additional I/O shell over the same resolver and is deferred. No new answer logic."
 
 [[unmapped]]
 area     = "forward network client (the real DNS exchange over the wire)"
@@ -148,9 +179,9 @@ priority = "phase-1b"
 note     = "ADR-004 Phase 3: the upstream-selection and health/max_fails DECISIONS are implemented and tested; forward::Forward takes the actual exchange as an injected Transport (Fn(&str,&Message)->Option<Message>). The UDP/TCP/TLS/QUIC/DoH client that implements that trait is the deferred I/O."
 
 [[unmapped]]
-area     = "live Kubernetes API watch (Services/Endpoints/EndpointSlices informers)"
+area     = "live Kubernetes API HTTP watch client (Services/Endpoints/EndpointSlices informers)"
 priority = "phase-2"
-note     = "ADR-004 Phase 2/3: kubernetes::Kubernetes resolves over an in-memory snapshot supplied by the caller; the apiserver watch that keeps that snapshot current is cross-crate integration (cave-home-apiserver-rs) and is deferred. This crate stays apiserver-agnostic per Charter §5.1 (no cave-home crate deps)."
+note     = "ADR-004 Phase 2/3: the conversion from the API's ServiceList/Endpoints JSON into a populated plugin is now implemented and tested (src/k8s.rs) behind the ApiSource seam, and Resolver::update_endpoints folds a snapshot into the running chain. The watched HTTP/2 streaming client that produces those list/watch documents (a cave-home-apiserver-rs integration) is the deferred I/O. This crate stays apiserver-agnostic per Charter §5.1 (no cave-home crate deps)."
 
 [[unmapped]]
 area     = "DNSSEC online signing + the dnssec/sign plugins (DNSKEY/RRSIG/NSEC/DS)"
@@ -163,14 +194,9 @@ priority = "phase-1b"
 note     = "ADR-004 Phase 3: builtins::Metrics tracks the counters (queries by type, responses by rcode) the observability panels/alerts reference; the HTTP endpoint that renders them in the Prometheus text format is the deferred exposition shell (observability/panels/coredns-rs.json + alerts/coredns-rs.yml model the target)."
 
 [[unmapped]]
-area     = "Corefile -> Chain wiring (instantiate each plugin from its directive)"
-priority = "phase-1b"
-note     = "ADR-004 Phase 3: the Corefile parser produces the config AST and the plugin chain executes a list of plugins; the factory that maps each parsed Directive to a constructed plugin (with its args/sub-directives) is a thin assembly step deferred to the server bring-up."
-
-[[unmapped]]
 area     = "Zone file watch / hot reload (file + reload + auto plugins)"
 priority = "phase-1b"
-note     = "ADR-004 Phase 3: Zone::from_master parses a zone and Zone::lookup answers from it; the inotify-style file watch and the periodic reload loop are I/O shells around the parser, deferred."
+note     = "ADR-004 Phase 3: Zone::from_master parses a zone and Zone::lookup answers from it, and Resolver::reload rebuilds the whole chain from a new server block between queries; the inotify-style file watch and the periodic config-poll loop that would CALL reload are the remaining I/O shells, deferred."
 
 [[unmapped]]
 area     = "Zone transfer (AXFR/IXFR) — secondary/transfer plugins"
@@ -240,3 +266,19 @@ ours         = "src/builtins.rs::tests"
 [[spec_test]]
 designed_for = "Corefile — simple block, zone:port, multi-zone header, nested subdirectives, comments, multiple blocks, quoted args, unbalanced braces, plugin lookup"
 ours         = "src/corefile.rs::tests"
+
+[[spec_test]]
+designed_for = "build — canonical plugin.cfg ordering, chain ordered by priority not declaration, unknown/unsupported directive → Config error, per-plugin instantiation, snapshot-seeded kubernetes"
+ours         = "src/build.rs::tests"
+
+[[spec_test]]
+designed_for = "server — chain resolve via the actor, live reload + bad-block rollback, real-socket UDP and TCP round-trips, multi-query TCP connection, 512-octet TC truncation, FORMERR for malformed input, endpoint update"
+ours         = "src/server.rs::tests"
+
+[[spec_test]]
+designed_for = "k8s — ClusterIP A/AAAA, headless from Endpoints, endpoint hostname, ExternalName CNAME, named-port SRV, unknown→NXDOMAIN, malformed-JSON Config error, empty endpoints, ApiSource StaticSource feed"
+ours         = "src/k8s.rs::tests"
+
+[[spec_test]]
+designed_for = "end-to-end — Corefile + K8s snapshot resolving cluster A/SRV over real UDP and TCP sockets sharing one resolver, authoritative NXDOMAIN for misses"
+ours         = "tests/dns_server.rs"

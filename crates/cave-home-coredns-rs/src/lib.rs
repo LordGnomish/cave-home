@@ -30,22 +30,37 @@
 //!   capacity-eviction decision (caller-supplied `now`).
 //! * [`kubernetes`] — the `kubernetes` plugin: `svc` / `pod` name parsing and
 //!   `ClusterIP` / headless / `ExternalName` / `SRV` / reverse-`PTR` answers.
-//! * [`file`] — the `file` plugin: authoritative zone lookup with `CNAME`
+//! * [`mod@file`] — the `file` plugin: authoritative zone lookup with `CNAME`
 //!   chasing, wildcards, delegation and the `NXDOMAIN` / `NODATA` distinction.
 //! * [`forward`] — the `forward` plugin: upstream selection policy and the
 //!   health/`max_fails` exclusion decision (the network proxy is deferred).
 //! * [`corefile`] — the Caddy-style `Corefile` parser producing a config AST.
 //!
+//! # The real server layer
+//!
+//! On top of the decision core sits the live DNS server (`CoreDNS`'s
+//! `core/dnsserver`):
+//!
+//! * [`build`] — lower a parsed `Corefile` server block into a live
+//!   [`plugin::Chain`], ordering plugins by the canonical `plugin.cfg` priority.
+//! * [`server`] — the real UDP and TCP listeners (RFC 1035 §4.2), the resolver
+//!   actor that owns the chain, and hot reload.
+//! * [`k8s`] — the Kubernetes API indexer: `ServiceList` / `Endpoints` JSON
+//!   converted into a populated [`kubernetes`] plugin, behind an
+//!   [`k8s::ApiSource`] transport seam.
+//!
 //! # Honest port method (Charter §6)
 //!
 //! This is a **behavioural reimplementation** of documented `CoreDNS` plugin
 //! semantics and the DNS protocol RFCs from public sources (RFC 1035 / 2782 /
-//! 3596 / 4034 and the Apache-2.0 `coredns/coredns` plugin docs). It is **not**
-//! a verbatim line-by-line port and is labelled as such in the parity manifest.
-//! The UDP/TCP/TLS/QUIC/DoH listeners, the real network `forward` proxy, the
-//! live Kubernetes API watch, DNSSEC online signing and Prometheus exposition
-//! are **deferred** — they are the I/O and crypto shells around exactly the
-//! logic implemented here, each enumerated in `parity.manifest.toml`.
+//! 3596 / 4034 / 7766 and the Apache-2.0 `coredns/coredns` plugin docs). It is
+//! **not** a verbatim line-by-line port and is labelled as such in the parity
+//! manifest. The plaintext UDP/TCP listeners, the `Corefile`→chain wiring and
+//! the Kubernetes API conversion are implemented here; the TLS/QUIC/DoH
+//! transports, the real network `forward` proxy, the live Kubernetes API HTTP
+//! watch client, DNSSEC online signing and Prometheus exposition remain
+//! **deferred** — the I/O and crypto shells around exactly the logic
+//! implemented here, each enumerated in `parity.manifest.toml`.
 //!
 //! # Charter §6.3
 //!
