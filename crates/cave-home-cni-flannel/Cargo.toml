@@ -20,6 +20,11 @@ adr         = "ADR-008"
 # `Datapath` trait whose real impl uses `nix`'s safe socket wrappers on Linux
 # to talk to AF_NETLINK — `unsafe_code = "forbid"` rules out raw libc here.
 [dependencies]
+# The durable subnet-lease store is etcd-shaped; in K3s that etcd is kine. We
+# reuse cave-home's kine watch model (WatchEvent/EventKind) to translate lease
+# key/value changes into flannel subnet events. kine is itself std-only, so this
+# adds no transitive weight.
+cave-home-kine-rs = { path = "../cave-home-kine-rs" }
 
 # The real datapath I/O layer: only the Linux AF_NETLINK socket needs an
 # external crate, and only `nix`'s *safe* wrappers (the workspace forbids

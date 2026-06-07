@@ -79,4 +79,5 @@ pub mod route_network;
 pub mod routes;
 pub mod subnet;
 pub mod subnet_env;
+pub mod subnet_registry;
 pub mod vxlan_network;
