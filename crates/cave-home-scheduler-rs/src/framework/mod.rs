@@ -15,6 +15,7 @@ pub mod registry;
 
 pub use cycle_state::CycleState;
 pub use events::{ActionType, ClusterEvent, Gvk, WILD_CARD_EVENT};
+// `NodeScore` is the per-node score pair handed to `ScorePlugin::normalize_score`.
 // `events` provides the cluster-event vocabulary (`ActionType`/`Gvk`/`ClusterEvent`).
 pub use registry::{PluginRegistry, RegistryBuilder};
 
@@ -94,6 +95,28 @@ impl Status {
 pub const MIN_NODE_SCORE: i64 = 0;
 pub const MAX_NODE_SCORE: i64 = 100;
 
+/// Upstream: `pkg/scheduler/framework/types.go::NodeScore`.
+///
+/// A single (node, raw-score) pair produced by a [`ScorePlugin`]. The whole
+/// slice for one plugin is handed to [`ScorePlugin::normalize_score`] so the
+/// plugin can rescale the set into the `[MIN_NODE_SCORE, MAX_NODE_SCORE]` range
+/// before weights are applied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NodeScore {
+    pub name: String,
+    pub score: i64,
+}
+
+impl NodeScore {
+    #[must_use]
+    pub fn new(name: impl Into<String>, score: i64) -> Self {
+        Self {
+            name: name.into(),
+            score,
+        }
+    }
+}
+
 /// Upstream: `pkg/scheduler/framework/interface.go::PreFilterResult`.
 ///
 /// An optional restriction of the candidate node set produced by a PreFilter
@@ -129,10 +152,30 @@ pub trait PreScorePlugin: Send + Sync {
     fn pre_score(&self, state: &mut CycleState, pod: &Pod, nodes: &[NodeInfo]) -> Status;
 }
 
-/// Upstream: `pkg/scheduler/framework/interface.go::ScorePlugin`.
+/// Upstream: `pkg/scheduler/framework/interface.go::ScorePlugin` (+ the optional
+/// `ScoreExtensions.NormalizeScore`).
 pub trait ScorePlugin: Send + Sync {
     fn name(&self) -> &'static str;
     fn score(&self, state: &mut CycleState, pod: &Pod, node: &NodeInfo) -> (i64, Status);
+
+    /// Upstream: `pkg/scheduler/framework/interface.go::ScoreExtensions.NormalizeScore`.
+    ///
+    /// Runs once after [`score`](Self::score) has produced a raw score for every
+    /// feasible node, with the full `(node, raw-score)` set in hand, so the
+    /// plugin can rescale it (e.g. spread to `[MIN_NODE_SCORE, MAX_NODE_SCORE]`)
+    /// before the framework applies [`weight`](Self::weight). The default leaves
+    /// scores untouched — a plugin that already emits in-range scores opts out by
+    /// not overriding this. Mutates `scores` in place; a non-success [`Status`]
+    /// aborts the scheduling cycle.
+    fn normalize_score(
+        &self,
+        _state: &mut CycleState,
+        _pod: &Pod,
+        _scores: &mut [NodeScore],
+    ) -> Status {
+        Status::success()
+    }
+
     /// Default weight applied to the produced score.
     /// Upstream: `pkg/scheduler/apis/config/types.go::Plugin.Weight`.
     fn weight(&self) -> i64 {

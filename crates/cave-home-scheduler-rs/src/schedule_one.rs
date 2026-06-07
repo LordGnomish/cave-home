@@ -7,7 +7,10 @@
 use std::collections::BTreeSet;
 
 use crate::cache::{NodeInfo, SchedulerCache};
-use crate::framework::{Code, CycleState, FilterFailureMap, PluginRegistry, Status};
+use crate::framework::{
+    Code, CycleState, FilterFailureMap, NodeScore, PluginRegistry, Status, MAX_NODE_SCORE,
+    MIN_NODE_SCORE,
+};
 use crate::types::Pod;
 
 /// Upstream: `pkg/scheduler/schedule_one.go::ScheduleResult`.
@@ -168,32 +171,53 @@ pub fn schedule_one_limited(
     }
 
     // ---------- Score ----------
-    let mut best_score = i64::MIN;
-    let mut best_node: Option<String> = None;
-    for node in &feasible {
-        let mut total_score = 0_i64;
-        for plugin in registry.scores() {
+    // Upstream `RunScorePlugins`: score is computed plugin-major so each plugin
+    // can `NormalizeScore` over its whole `(node, raw-score)` set, after which
+    // every score is range-checked and folded — weighted — into per-node totals.
+    let mut totals: Vec<(String, i64)> = feasible
+        .iter()
+        .map(|n| (n.node().metadata.name.clone(), 0_i64))
+        .collect();
+
+    for plugin in registry.scores() {
+        // Raw scores for this plugin across every feasible node.
+        let mut scores: Vec<NodeScore> = Vec::with_capacity(feasible.len());
+        for node in &feasible {
             let (score, status) = plugin.score(&mut state, pod, node);
             if !status.is_success() {
-                // Score errors degrade to "no contribution" (upstream uses
-                // an error code that aborts the scheduling cycle; here we
-                // surface a single error code via the `error` field instead).
-                return ScheduleResult {
-                    suggested_host: None,
-                    evaluated_nodes: total,
-                    feasible_nodes: feasible.len(),
-                    nominated_node: None,
-                    filter_failures: failures,
-                    error: Some(status),
-                };
+                return score_error(status, total, feasible.len(), failures);
             }
-            total_score = total_score.saturating_add(score.saturating_mul(plugin.weight()));
+            scores.push(NodeScore::new(node.node().metadata.name.clone(), score));
         }
-        if total_score > best_score {
-            best_score = total_score;
-            best_node = Some(node.node().metadata.name.clone());
+
+        // NormalizeScore (ScoreExtensions) — optional per-plugin rescale.
+        let status = plugin.normalize_score(&mut state, pod, &mut scores);
+        if !status.is_success() {
+            return score_error(status, total, feasible.len(), failures);
+        }
+
+        // Range-check then weight-and-accumulate into the per-node totals.
+        let weight = plugin.weight();
+        for (slot, ns) in totals.iter_mut().zip(scores.iter()) {
+            if ns.score < MIN_NODE_SCORE || ns.score > MAX_NODE_SCORE {
+                let status = Status::error(
+                    plugin.name(),
+                    format!(
+                        "score {} for node {} out of range [{MIN_NODE_SCORE}, {MAX_NODE_SCORE}]",
+                        ns.score, ns.name
+                    ),
+                );
+                return score_error(status, total, feasible.len(), failures);
+            }
+            slot.1 = slot.1.saturating_add(ns.score.saturating_mul(weight));
         }
     }
+
+    // Highest total wins; ties resolve to the first (admission-order) node.
+    let best_node = totals
+        .into_iter()
+        .max_by_key(|(_, s)| *s)
+        .map(|(name, _)| name);
 
     ScheduleResult {
         suggested_host: best_node,
@@ -202,6 +226,24 @@ pub fn schedule_one_limited(
         nominated_node: None,
         filter_failures: failures,
         error: None,
+    }
+}
+
+/// Build the terminal [`ScheduleResult`] for a Score-phase abort (a `Score` or
+/// `NormalizeScore` plugin returned non-success, or a score fell out of range).
+const fn score_error(
+    status: Status,
+    total: usize,
+    feasible: usize,
+    failures: FilterFailureMap,
+) -> ScheduleResult {
+    ScheduleResult {
+        suggested_host: None,
+        evaluated_nodes: total,
+        feasible_nodes: feasible,
+        nominated_node: None,
+        filter_failures: failures,
+        error: Some(status),
     }
 }
 
@@ -387,6 +429,70 @@ mod tests {
         let result = schedule_one_limited(&pod("p", 100, 100), &cache, &reg, 1);
         assert_eq!(result.feasible_nodes, 1);
         assert!(result.suggested_host.is_some());
+    }
+
+    /// Raw score 10 for every node except "n2" (which gets 90); NormalizeScore
+    /// then inverts the set (`new = max - raw`). Without the normalize step the
+    /// high-raw node "n2" would win; with it, the inversion makes "n1" win — so
+    /// this proves `schedule_one` ranks on the *normalized* scores, not the raw.
+    struct InvertingScore;
+    impl ScorePlugin for InvertingScore {
+        fn name(&self) -> &'static str {
+            "InvertingScore"
+        }
+        fn score(&self, _: &mut CycleState, _: &Pod, node: &NodeInfo) -> (i64, Status) {
+            let s = if node.node().metadata.name == "n2" { 90 } else { 10 };
+            (s, Status::success())
+        }
+        fn normalize_score(
+            &self,
+            _: &mut CycleState,
+            _: &Pod,
+            scores: &mut [crate::framework::NodeScore],
+        ) -> Status {
+            let max = scores.iter().map(|s| s.score).max().unwrap_or(0);
+            for s in scores.iter_mut() {
+                s.score = max - s.score;
+            }
+            Status::success()
+        }
+    }
+
+    #[test]
+    fn normalize_score_inverts_ranking_before_selection() {
+        let cache = SchedulerCache::new();
+        cache.add_node(node("n1", 1000, 1024));
+        cache.add_node(node("n2", 1000, 1024));
+        let reg = crate::framework::PluginRegistry::builder()
+            .with_score(Arc::new(InvertingScore))
+            .build();
+        let result = schedule_one(&pod("p", 100, 100), &cache, &reg);
+        // Raw would pick n2 (90); normalized (n1=80, n2=0) picks n1.
+        assert_eq!(result.suggested_host.as_deref(), Some("n1"));
+    }
+
+    /// Emits a score outside `[MIN_NODE_SCORE, MAX_NODE_SCORE]` and never
+    /// normalizes it back in range — upstream aborts the cycle with an error.
+    struct OutOfRangeScore;
+    impl ScorePlugin for OutOfRangeScore {
+        fn name(&self) -> &'static str {
+            "OutOfRangeScore"
+        }
+        fn score(&self, _: &mut CycleState, _: &Pod, _: &NodeInfo) -> (i64, Status) {
+            (999, Status::success())
+        }
+    }
+
+    #[test]
+    fn out_of_range_score_aborts_cycle() {
+        let cache = SchedulerCache::new();
+        cache.add_node(node("n1", 1000, 1024));
+        let reg = crate::framework::PluginRegistry::builder()
+            .with_score(Arc::new(OutOfRangeScore))
+            .build();
+        let result = schedule_one(&pod("p", 100, 100), &cache, &reg);
+        assert!(result.suggested_host.is_none());
+        assert!(result.error.is_some());
     }
 
     #[test]
