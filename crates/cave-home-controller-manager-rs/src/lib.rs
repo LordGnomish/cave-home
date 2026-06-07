@@ -55,6 +55,7 @@
 pub mod apis;
 pub mod controllers;
 pub mod informer;
+pub mod manager;
 pub mod reconcile;
 pub mod types;
 pub mod workqueue;

@@ -129,6 +129,16 @@ fn reconcile_rolling(
 ) {
     let desired = deploy.spec.replicas;
 
+    // No rollout in progress (all old RSes drained): the new RS owns the whole
+    // Deployment, so it tracks `desired` directly — this is the pure
+    // scaling-event path (scale up *or* down), separate from the surge/cut
+    // rollout math below (upstream `dc.scale`).
+    let old_total: i32 = old_rs.iter().map(|rs| rs.spec.replicas).sum();
+    if old_total == 0 {
+        scale(new_rs, desired, cluster);
+        return;
+    }
+
     // --- scale up new (NewRSNewReplicas) ---
     let total_spec: i32 = old_rs.iter().map(|rs| rs.spec.replicas).sum::<i32>() + new_rs.spec.replicas;
     let max_total = desired + max_surge;
