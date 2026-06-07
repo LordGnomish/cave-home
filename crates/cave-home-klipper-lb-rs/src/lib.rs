@@ -30,7 +30,10 @@
 //! * [`port_alloc`] — host-port allocation + cross-Service conflict detection,
 //! * [`daemonset`]  — svclb pod-spec construction (per-port containers + env),
 //! * [`status`]     — `status.loadBalancer.ingress` IP computation (Cluster /
-//!   Local `externalTrafficPolicy`).
+//!   Local `externalTrafficPolicy`),
+//! * [`controller`] — the reconcile-loop decision core: from a cluster snapshot,
+//!   decide the svclb `DaemonSet`s to apply, the orphans to delete, each
+//!   Service's ingress disposition, and the observability metrics.
 //!
 //! # Example
 //!
