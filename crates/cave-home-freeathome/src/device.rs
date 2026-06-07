@@ -84,6 +84,48 @@ impl Device {
         SetDatapoint::new(self.serial.as_str(), self.channel.id(), pairing, value)
             .map_err(|e| FreeAtHomeError::Domain(e.to_string()))
     }
+
+    /// The pairing role that reports this device's primary observable state.
+    ///
+    /// On/off-shaped kinds (light, switch, sensor) report via [`Pairing::InfoOnOff`];
+    /// a cover via [`Pairing::InfoBlindPosition`]; a thermostat via
+    /// [`Pairing::InfoCurrentTemperature`]. A scene reports no live state.
+    const fn primary_info_pairing(&self) -> Option<Pairing> {
+        match self.channel.function().device_kind() {
+            DeviceKind::Light | DeviceKind::Switch | DeviceKind::Sensor => {
+                Some(Pairing::InfoOnOff)
+            }
+            DeviceKind::Cover => Some(Pairing::InfoBlindPosition),
+            DeviceKind::Climate => Some(Pairing::InfoCurrentTemperature),
+            DeviceKind::Scene => None,
+        }
+    }
+
+    /// The current wire value of the device's primary reported-state datapoint,
+    /// as last seen in the channel's datapoints (e.g. `"1"`, `"50"`, `"21.5"`).
+    pub fn primary_value(&self) -> Option<&str> {
+        let pairing = self.primary_info_pairing()?;
+        self.channel
+            .datapoint_for(pairing)
+            .and_then(|dp| dp.value.as_deref())
+    }
+
+    /// A household-facing state token for list/detail views.
+    ///
+    /// On/off-shaped kinds render `on`/`off`/`unknown`; analogue kinds (cover
+    /// position, climate temperature) render the raw wire value (or `unknown`);
+    /// a scene has no live state and renders `scene`.
+    pub fn display_state(&self) -> String {
+        match self.channel.function().device_kind() {
+            DeviceKind::Light | DeviceKind::Switch | DeviceKind::Sensor => {
+                crate::core_bridge::on_off_state(self.primary_value()).to_string()
+            }
+            DeviceKind::Scene => "scene".to_string(),
+            DeviceKind::Cover | DeviceKind::Climate => {
+                self.primary_value().unwrap_or("unknown").to_string()
+            }
+        }
+    }
 }
 
 impl FreeAtHomeDevice for Device {
