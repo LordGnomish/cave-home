@@ -60,6 +60,8 @@
 
 pub mod error;
 pub mod name;
+pub mod wire;
 
 pub use error::{Result, WireError};
 pub use name::Name;
+pub use wire::{Header, Opcode, Rcode, Reader, Writer};
