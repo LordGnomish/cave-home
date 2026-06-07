@@ -42,8 +42,8 @@ pub use queue::{PriorityQueue, QueuedPodInfo, SchedulingQueue};
 pub use schedule_one::{schedule_one, ScheduleResult};
 pub use scheduler::{CycleOutcome, Scheduler};
 pub use source_sink::{
-    EventStream, InMemorySink, InMemorySource, PodEvent, SchedulerSink, SchedulerSource,
-    SourceSinkError,
+    EventStream, InMemorySink, InMemorySource, NodeEvent, NodeEventStream, PodEvent, SchedulerSink,
+    SchedulerSource, SourceSinkError,
 };
 pub use types::{
     Affinity, Container, ContainerPort, HostPathSource, Node, NodeAffinity, NodeSelector,
