@@ -58,6 +58,7 @@
 //! Per Charter §9 only the **local** console API is ever targeted — there is no
 //! Ubiquiti-cloud dependency in any path here.
 
+pub mod access;
 pub mod auth;
 pub mod client;
 pub mod console;
@@ -66,6 +67,7 @@ pub mod metrics;
 pub mod network;
 pub mod transport;
 
+pub use access::{AccessClient, AccessConfig};
 pub use auth::{Credentials, Session};
 pub use client::ConsoleClient;
 pub use network::NetworkApi;
