@@ -10,6 +10,7 @@
 #![doc(html_root_url = "https://docs.rs/cave-home-core")]
 
 pub mod context;
+pub mod entity;
 pub mod event;
 pub mod event_bus;
 pub mod service;
@@ -17,6 +18,7 @@ pub mod state;
 pub mod state_machine;
 
 pub use context::Context;
+pub use entity::{DeviceInfo, Entity, EntityCategory};
 pub use event::{Event, EventOrigin};
 pub use event_bus::{EventBus, Listener};
 pub use service::{Service, ServiceCall, ServiceError, ServiceRegistry};

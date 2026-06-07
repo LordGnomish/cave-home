@@ -23,6 +23,12 @@ time        = { version = "0.3", features = ["formatting", "parsing", "macros", 
 tokio       = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
 tracing     = "0.1"
 uuid        = { version = "1", features = ["v4", "serde"] }
+# Template engine — minijinja is a Jinja2 implementation, the same template
+# language HA's `homeassistant/helpers/template.py` builds on (HA uses Python
+# Jinja2). This is the faithful port substrate, not a Tera approximation.
+minijinja   = "2"
+# Config layer — HA configuration is YAML (`homeassistant/config.py`).
+serde_yaml  = "0.9"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "test-util"] }
