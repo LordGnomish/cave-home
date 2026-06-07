@@ -108,4 +108,33 @@ mod tests {
         let mut s = CycleState::new();
         assert!(NodeResourcesFit.filter(&mut s, &p, &info).is_success());
     }
+
+    #[test]
+    fn prefilter_precomputes_pod_requests_into_state() {
+        use crate::framework::PreFilterPlugin;
+        let p = pod(500, 1024);
+        let mut s = CycleState::new();
+        let (res, status) = NodeResourcesFit.pre_filter(&mut s, &p);
+        assert!(status.is_success());
+        // NodeResourcesFit does not restrict the node set.
+        assert!(res.is_none_or(|r| r.node_names.is_none()));
+        // The aggregated request is cached for the Filter phase to reuse.
+        let cached = s
+            .read::<PreFilterFitState>(PRE_FILTER_FIT_KEY)
+            .expect("pre-filter state recorded");
+        assert_eq!(cached.cpu, 500);
+        assert_eq!(cached.memory, 1024);
+    }
+
+    #[test]
+    fn filter_uses_precomputed_prefilter_state_when_present() {
+        use crate::framework::PreFilterPlugin;
+        let info = NodeInfo::new(node(1000, 4096));
+        let p = pod(600, 0);
+        let mut s = CycleState::new();
+        // Precompute once...
+        NodeResourcesFit.pre_filter(&mut s, &p);
+        // ...then Filter reuses it and still fits.
+        assert!(NodeResourcesFit.filter(&mut s, &p, &info).is_success());
+    }
 }

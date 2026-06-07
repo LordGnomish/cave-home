@@ -197,4 +197,110 @@ mod tests {
         assert!(result.suggested_host.is_none());
         assert!(result.filter_failures.contains_key("tiny"));
     }
+
+    use crate::cache::NodeInfo;
+    use crate::framework::{
+        CycleState, PreFilterPlugin, PreFilterResult, PreScorePlugin, ScorePlugin, Status,
+    };
+    use std::collections::BTreeSet;
+    use std::sync::Arc;
+
+    /// PreFilter that restricts scheduling to an explicit node-name set.
+    struct OnlyNodes(BTreeSet<String>);
+    impl PreFilterPlugin for OnlyNodes {
+        fn name(&self) -> &'static str {
+            "OnlyNodes"
+        }
+        fn pre_filter(&self, _: &mut CycleState, _: &Pod) -> (Option<PreFilterResult>, Status) {
+            (
+                Some(PreFilterResult {
+                    node_names: Some(self.0.clone()),
+                }),
+                Status::success(),
+            )
+        }
+    }
+
+    /// PreFilter that declares the pod globally unschedulable.
+    struct RejectAll;
+    impl PreFilterPlugin for RejectAll {
+        fn name(&self) -> &'static str {
+            "RejectAll"
+        }
+        fn pre_filter(&self, _: &mut CycleState, _: &Pod) -> (Option<PreFilterResult>, Status) {
+            (None, Status::unschedulable(self.name(), "pod rejected pre-filter"))
+        }
+    }
+
+    /// PreScore writes a per-node bonus into the cycle state...
+    struct FavourPreScore;
+    impl PreScorePlugin for FavourPreScore {
+        fn name(&self) -> &'static str {
+            "FavourPreScore"
+        }
+        fn pre_score(&self, state: &mut CycleState, _: &Pod, nodes: &[NodeInfo]) -> Status {
+            // Record the favoured node = the lexicographically last node name.
+            if let Some(last) = nodes.iter().map(|n| n.node().metadata.name.clone()).max() {
+                state.write("favoured", last);
+            }
+            Status::success()
+        }
+    }
+
+    /// ...which this Score reads to award the bonus.
+    struct FavourScore;
+    impl ScorePlugin for FavourScore {
+        fn name(&self) -> &'static str {
+            "FavourScore"
+        }
+        fn score(&self, state: &mut CycleState, _: &Pod, node: &NodeInfo) -> (i64, Status) {
+            let favoured = state.read::<String>("favoured").cloned();
+            let s = if favoured.as_deref() == Some(node.node().metadata.name.as_str()) {
+                100
+            } else {
+                0
+            };
+            (s, Status::success())
+        }
+    }
+
+    #[test]
+    fn prefilter_node_subset_restricts_candidates() {
+        let cache = SchedulerCache::new();
+        cache.add_node(node("n1", 1000, 1024));
+        cache.add_node(node("n2", 1000, 1024));
+        let only: BTreeSet<String> = ["n2".to_string()].into_iter().collect();
+        let reg = crate::framework::PluginRegistry::builder()
+            .with_pre_filter(Arc::new(OnlyNodes(only)))
+            .build();
+        let result = schedule_one(&pod("p", 100, 100), &cache, &reg);
+        assert_eq!(result.suggested_host.as_deref(), Some("n2"));
+        assert_eq!(result.feasible_nodes, 1);
+    }
+
+    #[test]
+    fn prefilter_unschedulable_short_circuits_before_filter() {
+        let cache = SchedulerCache::new();
+        cache.add_node(node("n1", 1000, 1024));
+        let reg = crate::framework::PluginRegistry::builder()
+            .with_pre_filter(Arc::new(RejectAll))
+            .build();
+        let result = schedule_one(&pod("p", 100, 100), &cache, &reg);
+        assert!(result.suggested_host.is_none());
+        assert_eq!(result.feasible_nodes, 0);
+    }
+
+    #[test]
+    fn prescore_state_feeds_score_choice() {
+        let cache = SchedulerCache::new();
+        cache.add_node(node("n1", 1000, 1024));
+        cache.add_node(node("n2", 1000, 1024));
+        let reg = crate::framework::PluginRegistry::builder()
+            .with_pre_score(Arc::new(FavourPreScore))
+            .with_score(Arc::new(FavourScore))
+            .build();
+        let result = schedule_one(&pod("p", 100, 100), &cache, &reg);
+        // FavourPreScore favours the last node name ("n2"); FavourScore awards it.
+        assert_eq!(result.suggested_host.as_deref(), Some("n2"));
+    }
 }

@@ -121,4 +121,40 @@ mod tests {
         assert_eq!(reg.filters()[0].name(), "PassFilter");
         assert_eq!(reg.scores()[0].name(), "ZeroScore");
     }
+
+    struct NoopPreFilter;
+    impl super::super::PreFilterPlugin for NoopPreFilter {
+        fn name(&self) -> &'static str {
+            "NoopPreFilter"
+        }
+        fn pre_filter(
+            &self,
+            _: &mut CycleState,
+            _: &Pod,
+        ) -> (Option<super::super::PreFilterResult>, Status) {
+            (None, Status::success())
+        }
+    }
+
+    struct NoopPreScore;
+    impl super::super::PreScorePlugin for NoopPreScore {
+        fn name(&self) -> &'static str {
+            "NoopPreScore"
+        }
+        fn pre_score(&self, _: &mut CycleState, _: &Pod, _: &[NodeInfo]) -> Status {
+            Status::success()
+        }
+    }
+
+    #[test]
+    fn registry_records_pre_filter_and_pre_score_plugins_in_order() {
+        let reg = PluginRegistry::builder()
+            .with_pre_filter(Arc::new(NoopPreFilter))
+            .with_pre_score(Arc::new(NoopPreScore))
+            .build();
+        assert_eq!(reg.pre_filters().len(), 1);
+        assert_eq!(reg.pre_scores().len(), 1);
+        assert_eq!(reg.pre_filters()[0].name(), "NoopPreFilter");
+        assert_eq!(reg.pre_scores()[0].name(), "NoopPreScore");
+    }
 }
