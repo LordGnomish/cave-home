@@ -219,13 +219,88 @@ mod tests {
         assert_eq!(q.pop().unwrap().pod.metadata.name, "retry");
     }
 
+    use crate::framework::{ActionType, ClusterEvent, Gvk};
+
+    #[test]
+    fn add_unschedulable_if_not_present_lands_in_unschedulable_set() {
+        let q = PriorityQueue::new();
+        // Pod failed this scheduling cycle; no concurrent move happened.
+        let cycle = q.scheduling_cycle();
+        let info = QueuedPodInfo::new(pod("p", 0));
+        q.add_unschedulable_if_not_present(info, cycle, 0);
+        // It is NOT in the active queue.
+        assert!(q.pop().is_none());
+        assert_eq!(q.unschedulable_count(), 1);
+    }
+
+    #[test]
+    fn move_all_reactivates_matching_unschedulable_pod() {
+        let q = PriorityQueue::new();
+        let cycle = q.scheduling_cycle();
+        q.add_unschedulable_if_not_present(QueuedPodInfo::new(pod("p", 0)), cycle, 0);
+        // A node was added — reconsider waiting pods.
+        let ev = ClusterEvent::new(Gvk::Node, ActionType::ADD);
+        q.move_all_to_active_or_backoff_queue(&ev, 0);
+        assert_eq!(q.unschedulable_count(), 0);
+        assert_eq!(q.pop().unwrap().pod.metadata.name, "p");
+    }
+
+    #[test]
+    fn add_after_concurrent_move_routes_to_backoff_not_unschedulable() {
+        let q = PriorityQueue::new();
+        q.add(pod("p", 0));
+        // Pop captures the scheduling cycle this pod is being scheduled in.
+        let popped = q.pop().unwrap();
+        let pod_cycle = q.scheduling_cycle();
+        // A cluster event arrives WHILE the pod is mid-flight.
+        let ev = ClusterEvent::new(Gvk::Node, ActionType::ADD);
+        q.move_all_to_active_or_backoff_queue(&ev, 0);
+        // The failed pod must not be parked in unschedulable (it would miss
+        // the move it raced); it goes to backoff so it is retried.
+        q.add_unschedulable_if_not_present(popped, pod_cycle, 0);
+        assert_eq!(q.unschedulable_count(), 0);
+        assert_eq!(q.backoff_count(), 1);
+    }
+
+    #[test]
+    fn flush_unschedulable_leftover_moves_stale_pod() {
+        let q = PriorityQueue::new();
+        let cycle = q.scheduling_cycle();
+        q.add_unschedulable_if_not_present(QueuedPodInfo::new(pod("old", 0)), cycle, 0);
+        // Not yet stale.
+        q.flush_unschedulable_pods_leftover(30_000);
+        assert_eq!(q.unschedulable_count(), 1);
+        // Past the 60s leftover threshold — must be moved out.
+        q.flush_unschedulable_pods_leftover(61_000);
+        assert_eq!(q.unschedulable_count(), 0);
+    }
+
+    #[test]
+    fn move_all_to_backoff_when_pod_is_backing_off() {
+        let q = PriorityQueue::new();
+        let cycle = q.scheduling_cycle();
+        let mut info = QueuedPodInfo::new(pod("p", 0));
+        info.attempts = 1; // backoff = 1s
+        info.last_attempt_ms = 0;
+        q.add_unschedulable_if_not_present(info, cycle, 0);
+        let ev = ClusterEvent::new(Gvk::Node, ActionType::ADD);
+        // Move while the pod is still inside its backoff window.
+        q.move_all_to_active_or_backoff_queue(&ev, 500);
+        // It must not be immediately poppable — it is in backoff.
+        assert!(q.pop().is_none());
+        assert_eq!(q.backoff_count(), 1);
+        // After its backoff elapses it surfaces to active.
+        q.flush_backoff(2_000);
+        assert_eq!(q.pop().unwrap().pod.metadata.name, "p");
+    }
+
     #[test]
     fn backoff_grows_exponentially_then_caps() {
         let info = QueuedPodInfo {
-            pod: pod("p", 0),
             attempts: 1,
             initial_attempt_ms: 0,
             last_attempt_ms: 0,
+            ..QueuedPodInfo::new(pod("p", 0))
         };
         assert_eq!(info.ready_at_ms(), 1_000); // 1s
 
