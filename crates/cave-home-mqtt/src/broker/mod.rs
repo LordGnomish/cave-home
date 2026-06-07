@@ -10,6 +10,571 @@ pub mod retain;
 pub mod session;
 pub mod topic;
 
+use crate::broker::auth::{AclAction, Authenticator};
+use crate::broker::retain::{RetainedMessage, RetainedStore};
+use crate::broker::session::Session;
+use crate::broker::topic::{topic_matches, valid_topic_filter, valid_topic_name};
+use crate::packet::QoS;
+use crate::v5::packet::{
+    ConnAckV5, ConnectV5, DisconnectV5, PacketV5, PubAckV5, PubCompV5, PubRecV5,
+    PubRelV5, PublishV5, RetainHandling, SubAckV5, SubscribeV5, SubscriptionV5,
+    UnsubAckV5, UnsubscribeV5, Will,
+};
+use crate::v5::property::Property;
+use crate::v5::reason::ReasonCode;
+use bytes::Bytes;
+use std::collections::HashMap;
+
+/// Broker-wide capabilities advertised in CONNACK and applied to QoS /
+/// retain handling.
+#[derive(Clone, Debug)]
+pub struct BrokerConfig {
+    /// §3.2.2.3.4 — the maximum QoS the server accepts/grants.
+    pub max_qos: QoS,
+    /// §3.2.2.3.5 — whether RETAIN is supported.
+    pub retain_available: bool,
+}
+
+impl Default for BrokerConfig {
+    fn default() -> Self {
+        Self { max_qos: QoS::ExactlyOnce, retain_available: true }
+    }
+}
+
+/// A side effect the runtime must perform. The decision core never does
+/// I/O itself; it returns these for the transport layer to apply.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Action {
+    /// Write `packet` to the connection bound to `client_id`.
+    Send { client_id: String, packet: PacketV5 },
+    /// Close the connection bound to `client_id` (e.g. session takeover).
+    Drop { client_id: String, reason: ReasonCode },
+}
+
+/// The clean-room MQTT broker decision core.
+pub struct Broker {
+    config: BrokerConfig,
+    auth: Authenticator,
+    retained: RetainedStore,
+    sessions: HashMap<String, Session>,
+    wills: HashMap<String, Will>,
+    next_auto: u64,
+}
+
+impl Broker {
+    pub fn new(config: BrokerConfig, auth: Authenticator) -> Self {
+        Self {
+            config,
+            auth,
+            retained: RetainedStore::default(),
+            sessions: HashMap::new(),
+            wills: HashMap::new(),
+            next_auto: 0,
+        }
+    }
+
+    pub fn session_count(&self) -> usize {
+        self.sessions.len()
+    }
+
+    pub fn retained_count(&self) -> usize {
+        self.retained.len()
+    }
+
+    // ---- CONNECT ---------------------------------------------------------
+
+    /// §3.1 — process a CONNECT, returning the CONNACK plus any takeover
+    /// drop and queued-message deliveries.
+    pub fn connect(&mut self, mut c: ConnectV5) -> Vec<Action> {
+        let mut actions = Vec::new();
+        let username = c.username.clone();
+        let password = c.password.clone();
+        if !self.auth.authenticate(username.as_deref(), password.as_deref()) {
+            let cid = if c.client_id.is_empty() { "<unauthenticated>".to_owned() } else { c.client_id.clone() };
+            actions.push(Action::Send {
+                client_id: cid.clone(),
+                packet: PacketV5::ConnAck(ConnAckV5 {
+                    session_present: false,
+                    reason_code: ReasonCode::BadUserNameOrPassword,
+                    properties: vec![],
+                }),
+            });
+            actions.push(Action::Drop { client_id: cid, reason: ReasonCode::BadUserNameOrPassword });
+            return actions;
+        }
+
+        // §3.1.3.1 — assign a client id when the payload one is empty.
+        let (client_id, assigned) = if c.client_id.is_empty() {
+            self.next_auto += 1;
+            (format!("auto-{}", self.next_auto), true)
+        } else {
+            (c.client_id.clone(), false)
+        };
+
+        // §3.1.4.3 — a second connection with the same id takes over.
+        if self.sessions.get(&client_id).is_some_and(|s| s.connected) {
+            actions.push(Action::Drop {
+                client_id: client_id.clone(),
+                reason: ReasonCode::SessionTakenOver,
+            });
+        }
+
+        let session_expiry = session_expiry_from(&c.properties);
+        let session_present = if c.clean_start {
+            self.sessions.remove(&client_id);
+            false
+        } else {
+            self.sessions.contains_key(&client_id)
+        };
+
+        let will = c.will.take();
+        {
+            let sess = self
+                .sessions
+                .entry(client_id.clone())
+                .or_insert_with(|| Session::new(client_id.clone(), session_expiry));
+            sess.connected = true;
+            sess.session_expiry_secs = session_expiry;
+            sess.username = username;
+        }
+        if let Some(w) = will {
+            self.wills.insert(client_id.clone(), w);
+        } else {
+            self.wills.remove(&client_id);
+        }
+
+        let mut props = Vec::new();
+        if assigned {
+            props.push(Property::AssignedClientIdentifier(client_id.clone()));
+        }
+        actions.push(Action::Send {
+            client_id: client_id.clone(),
+            packet: PacketV5::ConnAck(ConnAckV5 {
+                session_present,
+                reason_code: ReasonCode::Success,
+                properties: props,
+            }),
+        });
+
+        // Deliver anything queued while the (resumed) session was offline.
+        if session_present {
+            if let Some(sess) = self.sessions.get_mut(&client_id) {
+                let queued: Vec<PublishV5> = sess.queued.drain(..).collect();
+                for p in queued {
+                    if let Some(pid) = p.packet_id {
+                        sess.outgoing_unacked.insert(pid, p.clone());
+                    }
+                    actions.push(Action::Send {
+                        client_id: client_id.clone(),
+                        packet: PacketV5::Publish(p),
+                    });
+                }
+            }
+        }
+        actions
+    }
+
+    // ---- Post-CONNECT packet dispatch ------------------------------------
+
+    /// Dispatch a packet from an already-connected `client_id` (§3.x).
+    pub fn handle(&mut self, client_id: &str, packet: PacketV5) -> Vec<Action> {
+        match packet {
+            PacketV5::Subscribe(s) => self.on_subscribe(client_id, &s),
+            PacketV5::Unsubscribe(u) => self.on_unsubscribe(client_id, &u),
+            PacketV5::Publish(p) => self.on_publish(client_id, &p),
+            PacketV5::PubAck(a) => {
+                if let Some(s) = self.sessions.get_mut(client_id) {
+                    s.outgoing_unacked.remove(&a.packet_id);
+                }
+                vec![]
+            }
+            PacketV5::PubRec(r) => {
+                // Subscriber acknowledged our QoS 2 PUBLISH: release it.
+                if let Some(s) = self.sessions.get_mut(client_id) {
+                    s.outgoing_unacked.remove(&r.packet_id);
+                    s.outgoing_pubrel.insert(r.packet_id);
+                }
+                vec![Action::Send {
+                    client_id: client_id.to_owned(),
+                    packet: PacketV5::PubRel(PubRelV5 {
+                        packet_id: r.packet_id,
+                        reason_code: ReasonCode::Success,
+                        properties: vec![],
+                    }),
+                }]
+            }
+            PacketV5::PubRel(r) => {
+                // Publisher released a QoS 2 message: complete the handshake.
+                if let Some(s) = self.sessions.get_mut(client_id) {
+                    s.incoming_qos2.remove(&r.packet_id);
+                }
+                vec![Action::Send {
+                    client_id: client_id.to_owned(),
+                    packet: PacketV5::PubComp(PubCompV5 {
+                        packet_id: r.packet_id,
+                        reason_code: ReasonCode::Success,
+                        properties: vec![],
+                    }),
+                }]
+            }
+            PacketV5::PubComp(c) => {
+                if let Some(s) = self.sessions.get_mut(client_id) {
+                    s.outgoing_pubrel.remove(&c.packet_id);
+                }
+                vec![]
+            }
+            PacketV5::PingReq => vec![Action::Send {
+                client_id: client_id.to_owned(),
+                packet: PacketV5::PingResp,
+            }],
+            PacketV5::Disconnect(d) => self.on_disconnect(client_id, &d),
+            // The server is not expected to receive these; ignore safely.
+            PacketV5::Connect(_)
+            | PacketV5::ConnAck(_)
+            | PacketV5::SubAck(_)
+            | PacketV5::UnsubAck(_)
+            | PacketV5::PingResp
+            | PacketV5::Auth(_) => vec![],
+        }
+    }
+
+    // ---- SUBSCRIBE / UNSUBSCRIBE -----------------------------------------
+
+    fn on_subscribe(&mut self, client_id: &str, s: &SubscribeV5) -> Vec<Action> {
+        let username = self.sessions.get(client_id).and_then(|s| s.username.clone());
+        let mut reason_codes = Vec::with_capacity(s.subscriptions.len());
+        // (filter, granted-qos) pairs whose retained messages to deliver.
+        let mut deliver_retained: Vec<(String, QoS)> = Vec::new();
+
+        for sub in &s.subscriptions {
+            if !valid_topic_filter(&sub.topic_filter) {
+                reason_codes.push(ReasonCode::TopicFilterInvalid);
+                continue;
+            }
+            if !self.auth.authorize(username.as_deref(), AclAction::Subscribe, &sub.topic_filter) {
+                reason_codes.push(ReasonCode::NotAuthorized);
+                continue;
+            }
+            let granted = qos_min(sub.qos, self.config.max_qos);
+            let stored = SubscriptionV5 { qos: granted, ..sub.clone() };
+            let existed = self
+                .sessions
+                .get_mut(client_id)
+                .is_some_and(|sess| sess.add_subscription(stored));
+            reason_codes.push(granted_code(granted));
+
+            let send_retained = match sub.retain_handling {
+                RetainHandling::SendOnSubscribe => true,
+                RetainHandling::SendIfNew => !existed,
+                RetainHandling::DoNotSend => false,
+            };
+            if send_retained {
+                deliver_retained.push((sub.topic_filter.clone(), granted));
+            }
+        }
+
+        let mut actions = vec![Action::Send {
+            client_id: client_id.to_owned(),
+            packet: PacketV5::SubAck(SubAckV5 {
+                packet_id: s.packet_id,
+                properties: vec![],
+                reason_codes,
+            }),
+        }];
+
+        for (filter, granted) in deliver_retained {
+            let hits: Vec<(String, RetainedMessage)> = self
+                .retained
+                .matching(&filter)
+                .into_iter()
+                .map(|(t, m)| (t.to_owned(), m.clone()))
+                .collect();
+            for (topic, msg) in hits {
+                let qos = qos_min(msg.qos, granted);
+                if let Some(sess) = self.sessions.get_mut(client_id) {
+                    let packet_id = if qos == QoS::AtMostOnce { None } else { Some(sess.next_id()) };
+                    let p = PublishV5 {
+                        topic,
+                        qos,
+                        retain: true, // §3.3.1.3 retained delivery has RETAIN=1
+                        dup: false,
+                        packet_id,
+                        properties: msg.properties.clone(),
+                        payload: msg.payload.clone(),
+                    };
+                    if let Some(pid) = packet_id {
+                        sess.outgoing_unacked.insert(pid, p.clone());
+                    }
+                    actions.push(Action::Send {
+                        client_id: client_id.to_owned(),
+                        packet: PacketV5::Publish(p),
+                    });
+                }
+            }
+        }
+        actions
+    }
+
+    fn on_unsubscribe(&mut self, client_id: &str, u: &UnsubscribeV5) -> Vec<Action> {
+        let mut reason_codes = Vec::with_capacity(u.topic_filters.len());
+        for f in &u.topic_filters {
+            let removed = self
+                .sessions
+                .get_mut(client_id)
+                .is_some_and(|s| s.remove_subscription(f));
+            reason_codes.push(if removed {
+                ReasonCode::Success
+            } else {
+                ReasonCode::NoSubscriptionExisted
+            });
+        }
+        vec![Action::Send {
+            client_id: client_id.to_owned(),
+            packet: PacketV5::UnsubAck(UnsubAckV5 {
+                packet_id: u.packet_id,
+                properties: vec![],
+                reason_codes,
+            }),
+        }]
+    }
+
+    // ---- PUBLISH ---------------------------------------------------------
+
+    fn on_publish(&mut self, client_id: &str, p: &PublishV5) -> Vec<Action> {
+        if !valid_topic_name(&p.topic) {
+            return ack_publish_error(client_id, p, ReasonCode::TopicNameInvalid);
+        }
+        let username = self.sessions.get(client_id).and_then(|s| s.username.clone());
+        if !self.auth.authorize(username.as_deref(), AclAction::Publish, &p.topic) {
+            return ack_publish_error(client_id, p, ReasonCode::NotAuthorized);
+        }
+
+        // §3.3.1.2 — QoS 2 duplicate: re-acknowledge without re-routing.
+        if p.qos == QoS::ExactlyOnce {
+            if let Some(pid) = p.packet_id {
+                if self.sessions.get(client_id).is_some_and(|s| s.incoming_qos2.contains(&pid)) {
+                    return vec![pubrec(client_id, pid, ReasonCode::Success)];
+                }
+            }
+        }
+
+        if p.retain && self.config.retain_available {
+            self.retained.apply(
+                &p.topic,
+                RetainedMessage {
+                    payload: p.payload.clone(),
+                    qos: p.qos,
+                    properties: p.properties.clone(),
+                },
+            );
+        }
+
+        let (delivered, mut actions) = self.route_publish(
+            Some(client_id),
+            &p.topic,
+            p.qos,
+            &p.payload,
+            &p.properties,
+            p.retain,
+        );
+
+        let reason = if delivered > 0 {
+            ReasonCode::Success
+        } else {
+            ReasonCode::NoMatchingSubscribers
+        };
+        match p.qos {
+            QoS::AtMostOnce => {}
+            QoS::AtLeastOnce => {
+                if let Some(pid) = p.packet_id {
+                    actions.push(Action::Send {
+                        client_id: client_id.to_owned(),
+                        packet: PacketV5::PubAck(PubAckV5 {
+                            packet_id: pid,
+                            reason_code: reason,
+                            properties: vec![],
+                        }),
+                    });
+                }
+            }
+            QoS::ExactlyOnce => {
+                if let Some(pid) = p.packet_id {
+                    if let Some(s) = self.sessions.get_mut(client_id) {
+                        s.incoming_qos2.insert(pid);
+                    }
+                    actions.push(pubrec(client_id, pid, reason));
+                }
+            }
+        }
+        actions
+    }
+
+    /// Fan a message out to every session with a matching subscription.
+    /// Returns the delivery count (sent or queued) and the Send actions.
+    fn route_publish(
+        &mut self,
+        publisher: Option<&str>,
+        topic: &str,
+        src_qos: QoS,
+        payload: &Bytes,
+        properties: &[Property],
+        retain_src: bool,
+    ) -> (usize, Vec<Action>) {
+        // Resolve targets first to avoid aliasing the session map.
+        let targets: Vec<(String, QoS, bool)> = self
+            .sessions
+            .iter()
+            .filter_map(|(id, sess)| {
+                let mut best: Option<QoS> = None;
+                let mut rap = false;
+                for sub in &sess.subscriptions {
+                    if !topic_matches(&sub.topic_filter, topic) {
+                        continue;
+                    }
+                    if sub.no_local && publisher == Some(id.as_str()) {
+                        continue; // §3.8.3.1 No Local
+                    }
+                    best = Some(match best {
+                        Some(q) => qos_max(q, sub.qos),
+                        None => sub.qos,
+                    });
+                    rap |= sub.retain_as_published;
+                }
+                best.map(|q| (id.clone(), qos_min(src_qos, q), rap))
+            })
+            .collect();
+
+        let mut actions = Vec::new();
+        let mut delivered = 0;
+        for (id, qos, rap) in targets {
+            delivered += 1;
+            let forward_retain = retain_src && rap;
+            let Some(sess) = self.sessions.get_mut(&id) else { continue };
+            let packet_id = if qos == QoS::AtMostOnce { None } else { Some(sess.next_id()) };
+            let pkt = PublishV5 {
+                topic: topic.to_owned(),
+                qos,
+                retain: forward_retain,
+                dup: false,
+                packet_id,
+                properties: properties.to_vec(),
+                payload: payload.clone(),
+            };
+            if sess.connected {
+                if let Some(pid) = packet_id {
+                    sess.outgoing_unacked.insert(pid, pkt.clone());
+                }
+                actions.push(Action::Send { client_id: id, packet: PacketV5::Publish(pkt) });
+            } else if qos != QoS::AtMostOnce {
+                sess.queued.push_back(pkt); // persistent session: queue QoS 1/2
+            }
+            // Offline QoS 0 is dropped (§4.1 / non-persistent fan-out).
+        }
+        (delivered, actions)
+    }
+
+    // ---- DISCONNECT / network teardown -----------------------------------
+
+    fn on_disconnect(&mut self, client_id: &str, d: &DisconnectV5) -> Vec<Action> {
+        // §3.14.4 — a normal DISCONNECT discards the Will unless the client
+        // explicitly asks to publish it (reason 0x04).
+        if d.reason_code != ReasonCode::DisconnectWithWill {
+            self.wills.remove(client_id);
+        }
+        self.detach(client_id);
+        vec![]
+    }
+
+    /// Ungraceful network loss (§3.1.2.5): publish the Will, then detach.
+    pub fn network_disconnect(&mut self, client_id: &str) -> Vec<Action> {
+        let mut actions = Vec::new();
+        if let Some(will) = self.wills.remove(client_id) {
+            if will.retain && self.config.retain_available {
+                self.retained.apply(
+                    &will.topic,
+                    RetainedMessage {
+                        payload: will.payload.clone(),
+                        qos: will.qos,
+                        properties: will.properties.clone(),
+                    },
+                );
+            }
+            let (_n, will_actions) = self.route_publish(
+                Some(client_id),
+                &will.topic,
+                will.qos,
+                &will.payload,
+                &will.properties,
+                will.retain,
+            );
+            actions.extend(will_actions);
+        }
+        self.detach(client_id);
+        actions
+    }
+
+    /// Mark the session offline; drop it entirely if it must not persist.
+    fn detach(&mut self, client_id: &str) {
+        let expire = match self.sessions.get_mut(client_id) {
+            Some(sess) => {
+                sess.connected = false;
+                sess.session_expiry_secs == 0
+            }
+            None => return,
+        };
+        if expire {
+            self.sessions.remove(client_id);
+        }
+    }
+}
+
+/// §3.1.2.11 — read the Session Expiry Interval property (default 0).
+fn session_expiry_from(props: &[Property]) -> u32 {
+    props
+        .iter()
+        .find_map(|p| match p {
+            Property::SessionExpiryInterval(v) => Some(*v),
+            _ => None,
+        })
+        .unwrap_or(0)
+}
+
+fn qos_min(a: QoS, b: QoS) -> QoS {
+    if (a as u8) <= (b as u8) { a } else { b }
+}
+
+fn qos_max(a: QoS, b: QoS) -> QoS {
+    if (a as u8) >= (b as u8) { a } else { b }
+}
+
+/// §3.9.3 — map a granted QoS to its SUBACK reason code.
+fn granted_code(qos: QoS) -> ReasonCode {
+    match qos {
+        QoS::AtMostOnce => ReasonCode::Success, // 0x00 == Granted QoS 0
+        QoS::AtLeastOnce => ReasonCode::GrantedQoS1,
+        QoS::ExactlyOnce => ReasonCode::GrantedQoS2,
+    }
+}
+
+fn pubrec(client_id: &str, packet_id: u16, reason: ReasonCode) -> Action {
+    Action::Send {
+        client_id: client_id.to_owned(),
+        packet: PacketV5::PubRec(PubRecV5 { packet_id, reason_code: reason, properties: vec![] }),
+    }
+}
+
+/// QoS-appropriate negative acknowledgement for a rejected PUBLISH.
+fn ack_publish_error(client_id: &str, p: &PublishV5, reason: ReasonCode) -> Vec<Action> {
+    match (p.qos, p.packet_id) {
+        (QoS::AtLeastOnce, Some(pid)) => vec![Action::Send {
+            client_id: client_id.to_owned(),
+            packet: PacketV5::PubAck(PubAckV5 { packet_id: pid, reason_code: reason, properties: vec![] }),
+        }],
+        (QoS::ExactlyOnce, Some(pid)) => vec![pubrec(client_id, pid, reason)],
+        _ => vec![],
+    }
+}
+
 #[cfg(test)]
 mod router_tests {
     use super::*;
