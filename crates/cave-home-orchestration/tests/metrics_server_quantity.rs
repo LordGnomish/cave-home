@@ -27,11 +27,20 @@ use cave_home_orchestration::metrics_server::quantity::{Quantity, ResourceList};
 #[test]
 fn cpu_canonical_decimal_si_string() {
     // 0.25 cores = 250 000 000 nanocores normalises to "250m" (milli).
-    assert_eq!(Quantity::from_cpu_nanocores(250_000_000).to_cpu_string(), "250m");
+    assert_eq!(
+        Quantity::from_cpu_nanocores(250_000_000).to_cpu_string(),
+        "250m"
+    );
     // 2 whole cores → "2" (no suffix).
-    assert_eq!(Quantity::from_cpu_nanocores(2_000_000_000).to_cpu_string(), "2");
+    assert_eq!(
+        Quantity::from_cpu_nanocores(2_000_000_000).to_cpu_string(),
+        "2"
+    );
     // 1.5 cores = 1500m, not divisible by a whole core → "1500m".
-    assert_eq!(Quantity::from_cpu_nanocores(1_500_000_000).to_cpu_string(), "1500m");
+    assert_eq!(
+        Quantity::from_cpu_nanocores(1_500_000_000).to_cpu_string(),
+        "1500m"
+    );
     // A single nanocore stays at nano scale.
     assert_eq!(Quantity::from_cpu_nanocores(1).to_cpu_string(), "1n");
     // Micro scale: 5 000 nano = 5u.
@@ -51,11 +60,20 @@ fn cpu_milli_rounds_up_like_kubectl() {
 #[test]
 fn memory_canonical_binary_si_string() {
     // 128 MiB exactly.
-    assert_eq!(Quantity::from_bytes(128 * 1024 * 1024).to_mem_string(), "128Mi");
+    assert_eq!(
+        Quantity::from_bytes(128 * 1024 * 1024).to_mem_string(),
+        "128Mi"
+    );
     // 1.5 GiB = 1536 MiB — divisible by Mi, not by Gi.
-    assert_eq!(Quantity::from_bytes(1536 * 1024 * 1024).to_mem_string(), "1536Mi");
+    assert_eq!(
+        Quantity::from_bytes(1536 * 1024 * 1024).to_mem_string(),
+        "1536Mi"
+    );
     // 2 GiB exactly → "2Gi".
-    assert_eq!(Quantity::from_bytes(2 * 1024 * 1024 * 1024).to_mem_string(), "2Gi");
+    assert_eq!(
+        Quantity::from_bytes(2 * 1024 * 1024 * 1024).to_mem_string(),
+        "2Gi"
+    );
     // 4 KiB → "4Ki".
     assert_eq!(Quantity::from_bytes(4096).to_mem_string(), "4Ki");
     // A prime byte count is not divisible by any binary unit → raw bytes.
