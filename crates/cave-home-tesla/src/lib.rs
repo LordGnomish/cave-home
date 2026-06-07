@@ -50,5 +50,6 @@
 
 pub mod crypto;
 pub mod error;
+pub mod fleet_api;
 
 pub use error::{Result, TeslaError};
