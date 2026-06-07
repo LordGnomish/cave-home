@@ -129,25 +129,29 @@ impl Dialect {
                  \tvalue BLOB,\n\
                  \told_value BLOB\n)"
                 .to_string(),
+            // 64-bit ids and revisions throughout: a `BIGSERIAL` id and `BIGINT`
+            // MVCC columns so every Rust `i64` (notably 63-bit lease ids) binds
+            // to `int8` without truncation. (kine's upstream pgsql uses a 32-bit
+            // SERIAL id — a known scaling ceiling we deliberately raise.)
             Driver::Postgres => "CREATE TABLE IF NOT EXISTS kine (\n\
-                 \tid SERIAL PRIMARY KEY,\n\
+                 \tid BIGSERIAL PRIMARY KEY,\n\
                  \tname VARCHAR(630),\n\
-                 \tcreated INTEGER,\n\
-                 \tdeleted INTEGER,\n\
-                 \tcreate_revision INTEGER,\n\
-                 \tprev_revision INTEGER,\n\
-                 \tlease INTEGER,\n\
+                 \tcreated BIGINT,\n\
+                 \tdeleted BIGINT,\n\
+                 \tcreate_revision BIGINT,\n\
+                 \tprev_revision BIGINT,\n\
+                 \tlease BIGINT,\n\
                  \tvalue BYTEA,\n\
                  \told_value BYTEA\n)"
                 .to_string(),
             Driver::Mysql => "CREATE TABLE IF NOT EXISTS kine (\n\
-                 \tid INTEGER AUTO_INCREMENT,\n\
+                 \tid BIGINT AUTO_INCREMENT,\n\
                  \tname VARCHAR(630) CHARACTER SET ascii,\n\
-                 \tcreated INTEGER,\n\
-                 \tdeleted INTEGER,\n\
-                 \tcreate_revision INTEGER,\n\
-                 \tprev_revision INTEGER,\n\
-                 \tlease INTEGER,\n\
+                 \tcreated BIGINT,\n\
+                 \tdeleted BIGINT,\n\
+                 \tcreate_revision BIGINT,\n\
+                 \tprev_revision BIGINT,\n\
+                 \tlease BIGINT,\n\
                  \tvalue MEDIUMBLOB,\n\
                  \told_value MEDIUMBLOB,\n\
                  \tPRIMARY KEY (id)\n)"
@@ -288,6 +292,76 @@ impl Dialect {
              WHERE kv.name LIKE ? AND kv.id > ?\n\
              ORDER BY kv.id ASC"
         ))
+    }
+
+    // --- Portable per-row statements shared by every driver -----------------
+    // These are standard SQL (no driver-specific syntax beyond placeholder
+    // rebinding), so the SQLite / Postgres / MySQL backends issue the very same
+    // query text. Centralising them here keeps the three drivers in lock-step.
+
+    /// The latest row for a key: `id, create_revision, deleted, value` of the
+    /// highest-id row named `?`. Bind: `name`.
+    #[must_use]
+    pub fn latest_row_sql(self) -> String {
+        self.rebind(
+            "SELECT id, create_revision, deleted, value FROM kine \
+             WHERE name = ? ORDER BY id DESC LIMIT 1",
+        )
+    }
+
+    /// The store header revision (`MAX(id)` over real rows). Bind:
+    /// `compact_rev_key` sentinel name (excluded).
+    #[must_use]
+    pub fn header_revision_sql(self) -> String {
+        self.rebind("SELECT COALESCE(MAX(id), 0) FROM kine WHERE name <> ?")
+    }
+
+    /// The compacted-revision floor, read from the sentinel row. Bind:
+    /// `compact_rev_key`.
+    #[must_use]
+    pub fn compacted_floor_sql(self) -> String {
+        self.rebind("SELECT COALESCE(MAX(prev_revision), 0) FROM kine WHERE name = ?")
+    }
+
+    /// Fix a freshly created generation's `create_revision` to its own id (kine's
+    /// "id is the create rev"). Bind: `id`, `id`.
+    #[must_use]
+    pub fn set_create_revision_sql(self) -> String {
+        self.rebind("UPDATE kine SET create_revision = ? WHERE id = ?")
+    }
+
+    /// The live keys attached to a lease (latest-row-per-key, not tombstoned,
+    /// `lease = ?`), excluding the sentinel. Bind: `lease`, `compact_rev_key`.
+    #[must_use]
+    pub fn keys_with_lease_sql(self) -> String {
+        self.rebind(
+            "SELECT kv.name FROM kine AS kv \
+             JOIN (SELECT name, MAX(id) AS mid FROM kine GROUP BY name) AS latest \
+               ON kv.name = latest.name AND kv.id = latest.mid \
+             WHERE kv.deleted = 0 AND kv.lease = ? AND kv.name <> ? \
+             ORDER BY kv.name ASC",
+        )
+    }
+
+    /// Count real (non-sentinel) rows. Bind: `compact_rev_key`.
+    #[must_use]
+    pub fn count_rows_sql(self) -> String {
+        self.rebind("SELECT COUNT(*) FROM kine WHERE name <> ?")
+    }
+
+    /// Compaction's physical purge: delete every row at/below `?2` that is not
+    /// the surviving *live* latest row of its key, excluding the sentinel `?1`.
+    /// Bind: `compact_rev_key`, `target`.
+    #[must_use]
+    pub fn compact_delete_sql(self) -> String {
+        self.rebind(
+            "DELETE FROM kine WHERE name <> ? AND id <= ? AND id NOT IN ( \
+                 SELECT kv.id FROM kine AS kv \
+                 JOIN (SELECT name, MAX(id) AS mid FROM kine GROUP BY name) AS latest \
+                   ON kv.name = latest.name AND kv.id = latest.mid \
+                 WHERE kv.deleted = 0 \
+             )",
+        )
     }
 }
 
@@ -471,5 +545,62 @@ mod tests {
         let sql = Dialect::new(Driver::Postgres).list_revision_sql();
         assert!(sql.contains("$1"), "first param numbered");
         assert!(!sql.contains('?'), "no bare ? after rebind");
+    }
+
+    #[test]
+    fn postgres_ddl_uses_64bit_id_and_revision_columns() {
+        let ddl = Dialect::new(Driver::Postgres).create_table_sql();
+        assert!(ddl.contains("BIGSERIAL"), "64-bit auto id");
+        assert!(ddl.contains("create_revision BIGINT"));
+        assert!(ddl.contains("lease BIGINT"), "63-bit lease ids need int8");
+    }
+
+    #[test]
+    fn mysql_ddl_uses_64bit_id_and_revision_columns() {
+        let ddl = Dialect::new(Driver::Mysql).create_table_sql();
+        assert!(ddl.contains("BIGINT AUTO_INCREMENT"));
+        assert!(ddl.contains("lease BIGINT"));
+    }
+
+    #[test]
+    fn latest_row_sql_picks_the_highest_id_for_a_name() {
+        let sql = Dialect::new(Driver::Sqlite).latest_row_sql();
+        assert!(sql.contains("ORDER BY id DESC"));
+        assert!(sql.contains("LIMIT 1"));
+        assert!(sql.contains("name = ?"));
+    }
+
+    #[test]
+    fn header_and_floor_sql_read_max_id_and_compacted_floor() {
+        let h = Dialect::new(Driver::Sqlite).header_revision_sql();
+        assert!(h.contains("MAX(id)"));
+        let f = Dialect::new(Driver::Sqlite).compacted_floor_sql();
+        assert!(f.contains("MAX(prev_revision)"));
+    }
+
+    #[test]
+    fn keys_with_lease_sql_joins_latest_live_rows_for_a_lease() {
+        let sql = Dialect::new(Driver::Sqlite).keys_with_lease_sql();
+        assert!(sql.contains("MAX(id)"));
+        assert!(sql.contains("kv.deleted = 0"));
+        assert!(sql.contains("kv.lease = ?"));
+    }
+
+    #[test]
+    fn compact_delete_sql_spares_the_live_latest_row() {
+        let sql = Dialect::new(Driver::Sqlite).compact_delete_sql();
+        assert!(sql.starts_with("DELETE FROM kine"));
+        assert!(sql.contains("id <= ?"));
+        assert!(sql.contains("NOT IN"));
+        assert!(sql.contains("kv.deleted = 0"));
+    }
+
+    #[test]
+    fn portable_statements_rebind_for_postgres() {
+        let d = Dialect::new(Driver::Postgres);
+        for sql in [d.latest_row_sql(), d.keys_with_lease_sql(), d.compact_delete_sql()] {
+            assert!(!sql.contains('?'), "postgres statement still has a bare ?: {sql}");
+            assert!(sql.contains("$1"));
+        }
     }
 }
