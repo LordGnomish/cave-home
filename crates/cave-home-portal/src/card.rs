@@ -45,6 +45,15 @@ pub enum Card {
     ServiceLb,
     /// Live log tail for an add-on. Developer only.
     Logs { entity_id: String },
+    /// The workloads (pods / deployments) running across the cluster, with phase
+    /// and the node each is bound to. Developer only.
+    WorkloadList,
+    /// The ingress routing table (Traefik routers → services). Developer only.
+    IngressRoutes,
+    /// Persistent-volume / local-path storage status. Developer only.
+    StorageStatus,
+    /// Secrets-encryption status (provider, key rotation). Developer only.
+    SecurityStatus,
 }
 
 impl Card {
@@ -54,7 +63,14 @@ impl Card {
     pub const fn is_developer_only(&self) -> bool {
         matches!(
             self,
-            Self::RawEntity { .. } | Self::ClusterTopology | Self::ServiceLb | Self::Logs { .. }
+            Self::RawEntity { .. }
+                | Self::ClusterTopology
+                | Self::ServiceLb
+                | Self::Logs { .. }
+                | Self::WorkloadList
+                | Self::IngressRoutes
+                | Self::StorageStatus
+                | Self::SecurityStatus
         )
     }
 
