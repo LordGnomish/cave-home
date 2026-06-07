@@ -11,6 +11,152 @@
 //! deferred (see `parity.manifest.toml`). HTTP keep-alive is also deferred: each
 //! connection serves exactly one request and then closes (`Connection: close`).
 
+use std::io::{self, Read, Write};
+use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
+use std::sync::{Arc, Mutex};
+
+use crate::handler::ApiServer;
+use crate::http::Request;
+
+fn to_io<E: std::fmt::Display>(e: E) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, e.to_string())
+}
+
+fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+fn content_length(req: &Request) -> usize {
+    req.headers
+        .get("content-length")
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(0)
+}
+
+/// Read one complete HTTP/1.1 request from `stream`: the header block (to the
+/// blank line) and then exactly `Content-Length` body bytes. Returns `Ok(None)`
+/// on a clean EOF before any bytes arrive (peer closed without a request).
+///
+/// # Errors
+/// `UnexpectedEof` if the stream ends mid-message, or `InvalidData` if the bytes
+/// do not parse as a request.
+pub fn read_request<R: Read>(stream: &mut R) -> io::Result<Option<Request>> {
+    let mut buf: Vec<u8> = Vec::new();
+    let mut tmp = [0u8; 2048];
+
+    let header_end = loop {
+        if let Some(p) = find_subsequence(&buf, b"\r\n\r\n") {
+            break p + 4;
+        }
+        let n = stream.read(&mut tmp)?;
+        if n == 0 {
+            if buf.is_empty() {
+                return Ok(None);
+            }
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "connection closed before request headers completed",
+            ));
+        }
+        buf.extend_from_slice(&tmp[..n]);
+    };
+
+    // Parse the head to learn the body length, then read the rest of the body.
+    let head = Request::parse(&buf[..header_end]).map_err(to_io)?;
+    let want = header_end + content_length(&head);
+    while buf.len() < want {
+        let n = stream.read(&mut tmp)?;
+        if n == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "connection closed before request body completed",
+            ));
+        }
+        buf.extend_from_slice(&tmp[..n]);
+    }
+
+    Ok(Some(Request::parse(&buf[..want]).map_err(to_io)?))
+}
+
+/// Serve exactly one request on `stream`: read it, run the handler under the
+/// shared lock, write the response (with `Connection: close`), and flush. A
+/// peer that closes without sending a request is a no-op.
+///
+/// # Errors
+/// I/O errors from the underlying stream.
+pub fn serve_stream<S: Read + Write>(stream: &mut S, app: &Mutex<ApiServer>) -> io::Result<()> {
+    let Some(req) = read_request(stream)? else {
+        return Ok(());
+    };
+    let mut resp = {
+        // A poisoned lock still holds a valid server; recover and continue.
+        let mut guard = app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        guard.handle(&req)
+    };
+    resp.headers.insert("connection", "close");
+    stream.write_all(&resp.to_bytes())?;
+    stream.flush()
+}
+
+/// A blocking, thread-per-connection HTTP server bound to a TCP port.
+pub struct Server {
+    listener: TcpListener,
+    app: Arc<Mutex<ApiServer>>,
+}
+
+impl Server {
+    /// Bind to `addr` (use port `0` for an ephemeral port) wrapping a shared
+    /// [`ApiServer`].
+    ///
+    /// # Errors
+    /// Any bind error from the OS.
+    pub fn bind(addr: impl ToSocketAddrs, app: Arc<Mutex<ApiServer>>) -> io::Result<Self> {
+        Ok(Self {
+            listener: TcpListener::bind(addr)?,
+            app,
+        })
+    }
+
+    /// The bound local address (resolves the ephemeral port).
+    ///
+    /// # Errors
+    /// If the socket address cannot be read.
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.listener.local_addr()
+    }
+
+    /// Accept and fully serve a single connection (one request). Used by tests
+    /// and by callers that drive their own accept cadence.
+    ///
+    /// # Errors
+    /// Accept or per-connection I/O errors.
+    pub fn serve_once(&self) -> io::Result<()> {
+        let (mut stream, _peer) = self.listener.accept()?;
+        serve_stream(&mut stream, &self.app)
+    }
+
+    /// Run the accept loop forever, serving each connection on the calling
+    /// thread. Per-connection errors are swallowed so one bad client cannot stop
+    /// the server.
+    ///
+    /// # Errors
+    /// A fatal accept error.
+    pub fn run(&self) -> io::Result<()> {
+        for conn in self.listener.incoming() {
+            match conn {
+                Ok(mut stream) => {
+                    let _ = serve_stream(&mut stream, &self.app);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

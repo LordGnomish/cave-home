@@ -39,7 +39,7 @@ pub struct AdmissionRequest {
 }
 
 /// A mutating plugin may rewrite `request.object`. Returning `Err` rejects.
-pub trait MutatingPlugin {
+pub trait MutatingPlugin: Send + Sync {
     /// Plugin name (for diagnostics + deterministic ordering reporting).
     fn name(&self) -> &str;
     /// Mutate the request in place, or reject.
@@ -50,7 +50,7 @@ pub trait MutatingPlugin {
 }
 
 /// A validating plugin may only accept or reject; it must not mutate.
-pub trait ValidatingPlugin {
+pub trait ValidatingPlugin: Send + Sync {
     /// Plugin name.
     fn name(&self) -> &str;
     /// Validate the (already-mutated) request, or reject.
@@ -240,8 +240,7 @@ impl ValidatingPlugin for RequireName {
 mod tests {
     use super::*;
     use crate::json::obj;
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use std::sync::{Arc, Mutex};
 
     fn req(op: Operation, ns: &str, object: Option<Value>) -> AdmissionRequest {
         AdmissionRequest {
@@ -256,14 +255,14 @@ mod tests {
     /// Order-recording mutating plugin for the ordering test.
     struct Recorder {
         tag: &'static str,
-        log: Rc<RefCell<Vec<&'static str>>>,
+        log: Arc<Mutex<Vec<&'static str>>>,
     }
     impl MutatingPlugin for Recorder {
         fn name(&self) -> &str {
             self.tag
         }
         fn admit(&self, _r: &mut AdmissionRequest) -> Result<()> {
-            self.log.borrow_mut().push(self.tag);
+            self.log.lock().expect("log lock").push(self.tag);
             Ok(())
         }
     }
@@ -319,14 +318,14 @@ mod tests {
 
     #[test]
     fn chain_runs_mutating_before_validating_in_order() {
-        let log = Rc::new(RefCell::new(Vec::new()));
+        let log = Arc::new(Mutex::new(Vec::new()));
         let chain = AdmissionChain::new()
             .with_mutating(Box::new(Recorder { tag: "m1", log: log.clone() }))
             .with_mutating(Box::new(Recorder { tag: "m2", log: log.clone() }))
             .with_validating(Box::new(RequireName));
         let r = req(Operation::Create, "default", Some(obj([("metadata", obj([("name", Value::from("p"))]))])));
         chain.run(r).expect("admit");
-        assert_eq!(*log.borrow(), vec!["m1", "m2"]);
+        assert_eq!(*log.lock().expect("log"), vec!["m1", "m2"]);
         assert_eq!(chain.plugin_order(), vec!["m1", "m2", "RequireName"]);
     }
 

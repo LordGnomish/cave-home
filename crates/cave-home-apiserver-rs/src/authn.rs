@@ -40,7 +40,7 @@ fn bearer_token(req: &Request) -> Option<&str> {
 /// - `Ok(None)` — no credentials this authenticator handles ("no opinion");
 ///   the chain tries the next authenticator.
 /// - `Err(401)` — credentials were presented but are invalid; a hard stop.
-pub trait Authenticator {
+pub trait Authenticator: Send + Sync {
     /// Attempt to authenticate `req`.
     ///
     /// # Errors
