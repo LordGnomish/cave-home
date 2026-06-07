@@ -178,4 +178,37 @@ mod tests {
             assert!(u.contains(s), "usage should mention {s}");
         }
     }
+
+    #[test]
+    fn get_maps_to_rest_request() {
+        let cmd = parse(&args(&["get", "ABB700C12345", "ch0000", "odp0000"])).expect("ok");
+        let req = to_rest_request(&cmd).expect("ok").expect("some");
+        assert_eq!(req.path(), "datapoint/ABB700C12345/ch0000/odp0000");
+    }
+
+    #[test]
+    fn set_maps_to_rest_request_with_body() {
+        let cmd = parse(&args(&["set", "ABB700C12345", "ch0000", "idp0000", "1"])).expect("ok");
+        let req = to_rest_request(&cmd).expect("ok").expect("some");
+        assert_eq!(req.method(), crate::rest::HttpMethod::Put);
+        assert_eq!(req.body(), Some("1"));
+    }
+
+    #[test]
+    fn list_and_watch_map_to_no_single_request() {
+        let list = parse(&args(&["list"])).expect("ok");
+        assert!(to_rest_request(&list).expect("ok").is_none());
+        let watch = parse(&args(&["watch"])).expect("ok");
+        assert!(to_rest_request(&watch).expect("ok").is_none());
+    }
+
+    #[test]
+    fn invalid_serial_is_error() {
+        let cmd = FreeAtHomeCommand::Get {
+            serial: "!!".into(),
+            channel: "ch0000".into(),
+            datapoint: "odp0000".into(),
+        };
+        assert!(to_rest_request(&cmd).is_err());
+    }
 }
