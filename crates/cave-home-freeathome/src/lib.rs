@@ -32,10 +32,10 @@
 
 pub mod auth;
 pub mod config;
-mod core_bridge;
+pub mod core_bridge;
 pub mod device;
 pub mod error;
-mod mqtt_bridge;
+pub mod mqtt_bridge;
 pub mod event;
 pub mod model;
 pub mod reconnect;
@@ -44,8 +44,10 @@ pub mod state;
 
 pub use auth::{AuthMethod, ClientCertConfig, Credentials};
 pub use config::ClientConfig;
+pub use core_bridge::{entity_id, on_off_state, register};
 pub use device::{writable_pairings, Device, FreeAtHomeDevice};
 pub use error::{FreeAtHomeError, Result};
+pub use mqtt_bridge::{availability_topic, state_payload, state_topic};
 pub use event::{parse_datapoint_address, parse_ws_frame, DatapointUpdate, FreeAtHomeEvent};
 pub use reconnect::Backoff;
 pub use state::StateCache;

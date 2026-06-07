@@ -26,6 +26,11 @@ pub trait FreeAtHomeDevice {
     /// The household-facing display name.
     fn friendly_name(&self) -> &str;
 
+    /// The room the device is assigned to, if known.
+    fn room(&self) -> Option<&str> {
+        None
+    }
+
     /// The grandma-friendly device kind.
     fn kind(&self) -> DeviceKind {
         self.function().device_kind()
@@ -96,6 +101,10 @@ impl FreeAtHomeDevice for Device {
 
     fn friendly_name(&self) -> &str {
         &self.name
+    }
+
+    fn room(&self) -> Option<&str> {
+        self.channel.room()
     }
 }
 

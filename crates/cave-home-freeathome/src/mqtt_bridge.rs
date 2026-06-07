@@ -1,6 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //! Bridge from free@home datapoint updates onto cave-home MQTT topics.
+//!
+//! Datapoint pushes are republished under `cave-home/freeathome/<serial>/state`
+//! as a small JSON document, so other hub components (and external MQTT
+//! consumers) can subscribe to free@home state without speaking the SysAP API.
+
+use cave_home_free_home::DeviceSerial;
+use serde_json::json;
+
+use crate::event::DatapointUpdate;
+
+/// The MQTT topic namespace for this integration.
+pub const TOPIC_PREFIX: &str = "cave-home/freeathome";
+
+/// State messages are retained so late subscribers see the last value.
+pub const STATE_RETAINED: bool = true;
+
+/// The shared availability (online/offline) topic.
+pub fn availability_topic() -> String {
+    format!("{TOPIC_PREFIX}/availability")
+}
+
+/// The state topic for a device.
+pub fn state_topic(serial: &DeviceSerial) -> String {
+    format!("{TOPIC_PREFIX}/{serial}/state")
+}
+
+/// The retained JSON state payload for one datapoint update.
+pub fn state_payload(update: &DatapointUpdate) -> String {
+    json!({
+        "channel": update.channel().to_string(),
+        "datapoint": update.datapoint().to_string(),
+        "value": update.value(),
+        "address": update.address(),
+    })
+    .to_string()
+}
 
 #[cfg(test)]
 mod tests {
