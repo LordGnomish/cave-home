@@ -8,19 +8,29 @@
 //! [`Scraper`] + [`Storage`] into a single [`MetricsSnapshot`] the observability
 //! track (`observability/panels/metrics-server.json`) renders.
 
-use cave_home_orchestration::metrics_server::observability::{metric_names, MetricsSnapshot};
-use cave_home_orchestration::metrics_server::scraper::{ScrapeConfig, ScrapeOutcome, ScrapeFailure, Scraper};
+use cave_home_orchestration::metrics_server::observability::{MetricsSnapshot, metric_names};
+use cave_home_orchestration::metrics_server::scraper::{
+    ScrapeConfig, ScrapeFailure, ScrapeOutcome, Scraper,
+};
 use cave_home_orchestration::metrics_server::store::Storage;
 use cave_home_orchestration::metrics_server::summary::MetricsPoint;
 
 fn point(ts: u64, cpu: u64, mem: u64) -> MetricsPoint {
-    MetricsPoint { timestamp_nanos: ts, cumulative_cpu_nanos: cpu, working_set_bytes: mem }
+    MetricsPoint {
+        timestamp_nanos: ts,
+        cumulative_cpu_nanos: cpu,
+        working_set_bytes: mem,
+    }
 }
 
 #[test]
 fn metric_names_are_namespaced_and_unique() {
     let names = metric_names();
-    assert!(names.iter().all(|n| n.starts_with("cave_home_metrics_server_")));
+    assert!(
+        names
+            .iter()
+            .all(|n| n.starts_with("cave_home_metrics_server_"))
+    );
     let mut sorted = names.to_vec();
     sorted.sort_unstable();
     let before = sorted.len();
@@ -36,7 +46,10 @@ fn metric_names_are_namespaced_and_unique() {
 fn snapshot_folds_scraper_and_storage() {
     let mut scraper = Scraper::new(ScrapeConfig::new(1_000, 1_000));
     scraper.record("hub-1", ScrapeOutcome::success(0, 200));
-    scraper.record("hub-1", ScrapeOutcome::failure(1_000, 400, ScrapeFailure::Timeout));
+    scraper.record(
+        "hub-1",
+        ScrapeOutcome::failure(1_000, 400, ScrapeFailure::Timeout),
+    );
 
     let mut store = Storage::new();
     store.store_node("hub-1", point(0, 0, 1));

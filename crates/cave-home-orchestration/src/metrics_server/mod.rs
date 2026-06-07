@@ -28,6 +28,8 @@
 //! - [`api`] — the `metrics.k8s.io/v1beta1` [`api::NodeMetrics`] /
 //!   [`api::PodMetrics`] objects and the aggregated [`api::ApiService`]
 //!   registration descriptor.
+//! - [`observability`] — the Prometheus metric-name constants + the snapshot the
+//!   scraper exposes (scrape latency, error rate, storage memory footprint).
 //!
 //! # Scope (honest)
 //!
@@ -39,12 +41,14 @@
 //! runtime-bound (ADR-004 phase-1b) and enumerated in `parity.manifest.toml`.
 
 pub mod api;
+pub mod observability;
 pub mod quantity;
 pub mod scraper;
 pub mod store;
 pub mod summary;
 
 pub use api::{ApiService, ContainerMetrics, NodeMetrics, PodMetrics};
+pub use observability::MetricsSnapshot;
 pub use quantity::{Quantity, ResourceList};
 pub use scraper::{ScrapeConfig, ScrapeFailure, ScrapeOutcome, ScrapeResult, Scraper};
 pub use store::{PointRing, RateError, Storage, Usage};

@@ -1,0 +1,27 @@
+{
+  "_comment": "cave-home-orchestration metrics_server panels — the in-process port of kubernetes-sigs/metrics-server. Series are exported by crates/cave-home-orchestration/src/metrics_server/observability.rs (MetricsSnapshot). Domain: cluster resource-metrics pipeline (node/pod CPU/mem). Real dashboard JSON lands when the observability M3 crate ships and the embedded binary exports these named series.",
+  "_planned_panels": [
+    {
+      "title": "metrics-server — scrape latency p50/p95/p99 (s)",
+      "expr": "histogram_quantile(0.99, rate(cave_home_metrics_server_scrape_duration_seconds_bucket[5m]))"
+    },
+    {
+      "title": "metrics-server — scrape error rate (5m)",
+      "expr": "rate(cave_home_metrics_server_scrape_errors_total[5m]) / rate(cave_home_metrics_server_scrapes_total[5m])"
+    },
+    {
+      "title": "metrics-server — total scrapes/s",
+      "expr": "rate(cave_home_metrics_server_scrapes_total[1m])"
+    },
+    {
+      "title": "metrics-server — storage memory footprint (bytes)",
+      "expr": "cave_home_metrics_server_storage_memory_bytes"
+    },
+    {
+      "title": "metrics-server — points retained",
+      "expr": "cave_home_metrics_server_storage_points"
+    }
+  ],
+  "_charter_track": "observability",
+  "_grandma_friendly": null
+}
