@@ -18,6 +18,134 @@
 //! layer (so `ApiServer` writes survive a restart) is the next bolt-on; the
 //! seam and a tested kine binding land here.
 
+use cave_home_kine_rs::Store;
+
+use crate::gvk::GroupVersionResource;
+use crate::status::{Result, Status, StatusReason};
+
+/// The etcd registry key for an object: `/registry/<resource>[/<ns>][/<name>]`.
+/// With an empty `name` this is the collection *prefix* used by list/range.
+#[must_use]
+pub fn registry_key(gvr: &GroupVersionResource, namespace: &str, name: &str) -> String {
+    let mut key = format!("/registry/{}", gvr.resource);
+    if !namespace.is_empty() {
+        key.push('/');
+        key.push_str(namespace);
+    }
+    if !name.is_empty() {
+        key.push('/');
+        key.push_str(name);
+    }
+    key
+}
+
+/// The KV operations the apiserver storage layer needs, each returning the
+/// store revision (→ `resourceVersion`). This is the seam: the in-memory
+/// registry is the default, [`KineBackend`] the persistent binding, and a real
+/// remote kine over gRPC would implement the same trait.
+pub trait Backend {
+    /// Conditionally insert `value` at `key` (fails `AlreadyExists` if a live
+    /// row exists). Returns the new revision.
+    ///
+    /// # Errors
+    /// `AlreadyExists` if the key is live; `InternalError` on a store fault.
+    fn create(&mut self, key: &str, value: &[u8]) -> Result<u64>;
+
+    /// Read the live value at `key`, or `None` if absent/deleted.
+    ///
+    /// # Errors
+    /// `InternalError` on a store fault.
+    fn get(&self, key: &str) -> Result<Option<Vec<u8>>>;
+
+    /// Overwrite the live value at `key`. Returns the new revision.
+    ///
+    /// # Errors
+    /// `NotFound` if the key has no live row; `InternalError` on a store fault.
+    fn update(&mut self, key: &str, value: &[u8]) -> Result<u64>;
+
+    /// Delete the key. Returns `true` if a live row was removed.
+    ///
+    /// # Errors
+    /// `InternalError` on a store fault.
+    fn delete(&mut self, key: &str) -> Result<bool>;
+
+    /// List `(key, value)` of every live row under `prefix`, sorted by key.
+    ///
+    /// # Errors
+    /// `InternalError` on a store fault.
+    fn list(&self, prefix: &str) -> Result<Vec<(String, Vec<u8>)>>;
+
+    /// The current global store revision.
+    fn revision(&self) -> u64;
+}
+
+/// A [`Backend`] backed by an embedded kine [`Store`] (k3s's datastore).
+#[derive(Debug, Default)]
+pub struct KineBackend {
+    store: Store,
+}
+
+impl KineBackend {
+    /// A backend over a fresh, empty kine store.
+    #[must_use]
+    pub fn new() -> Self {
+        Self { store: Store::new() }
+    }
+}
+
+fn internal(msg: impl std::fmt::Display) -> Status {
+    Status::new(StatusReason::InternalError, format!("kine backend error: {msg}"))
+}
+
+#[allow(clippy::cast_sign_loss)] // kine revisions are monotonic and non-negative
+impl Backend for KineBackend {
+    fn create(&mut self, key: &str, value: &[u8]) -> Result<u64> {
+        match self.store.create(key.as_bytes(), value, 0).map_err(internal)? {
+            Some(rev) => Ok(rev as u64),
+            None => Err(Status::already_exists(format!("key {key:?} already exists"))),
+        }
+    }
+
+    fn get(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        Ok(self.store.get_live(key.as_bytes()).map(|r| r.value.clone()))
+    }
+
+    fn update(&mut self, key: &str, value: &[u8]) -> Result<u64> {
+        match self.store.update(key.as_bytes(), value, 0).map_err(internal)? {
+            Some(rev) => Ok(rev as u64),
+            None => Err(Status::not_found(format!("key {key:?} not found"))),
+        }
+    }
+
+    fn delete(&mut self, key: &str) -> Result<bool> {
+        Ok(self.store.delete(key.as_bytes()).map_err(internal)?.is_some())
+    }
+
+    fn list(&self, prefix: &str) -> Result<Vec<(String, Vec<u8>)>> {
+        let mut out = Vec::new();
+        for key in self.store.live_keys() {
+            if key.starts_with(prefix.as_bytes()) {
+                if let Some(row) = self.store.get_live(&key) {
+                    let key_str = String::from_utf8_lossy(&key).into_owned();
+                    out.push((key_str, row.value.clone()));
+                }
+            }
+        }
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(out)
+    }
+
+    fn revision(&self) -> u64 {
+        self.store
+            .rows()
+            .iter()
+            .map(|r| r.mod_revision)
+            .max()
+            .unwrap_or(0)
+            .max(0) as u64
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
