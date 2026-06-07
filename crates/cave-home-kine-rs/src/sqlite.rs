@@ -278,6 +278,84 @@ impl SqliteStore {
         Ok(Some(rev))
     }
 
+    /// Every *live* key whose latest row is attached to lease `lease_id`, sorted
+    /// ascending. Used by the lease layer to find what a lease owns at expiry or
+    /// revoke. Lease `0` ("no lease") owns nothing and returns empty. The
+    /// `compact_rev_key` sentinel (lease 0) is never included.
+    ///
+    /// # Errors
+    /// [`KineError::Backend`] on a query failure.
+    pub fn keys_with_lease(&self, lease_id: i64) -> Result<Vec<Vec<u8>>> {
+        if lease_id == 0 {
+            return Ok(Vec::new());
+        }
+        // The latest row per key (the current state); keep only the live ones
+        // bound to this lease. Mirrors kine's "delete the lease's keys" scan.
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT kv.name FROM kine AS kv \
+                 JOIN (SELECT name, MAX(id) AS mid FROM kine GROUP BY name) AS latest \
+                   ON kv.name = latest.name AND kv.id = latest.mid \
+                 WHERE kv.deleted = 0 AND kv.lease = ? AND kv.name <> ? \
+                 ORDER BY kv.name ASC",
+            )
+            .map_err(backend)?;
+        let rows: rusqlite::Result<Vec<Vec<u8>>> = stmt
+            .query_map(rusqlite::params![lease_id, COMPACT_REV_KEY], |r| {
+                Ok(r.get::<_, String>(0)?.into_bytes())
+            })
+            .map_err(backend)?
+            .collect();
+        rows.map_err(backend)
+    }
+
+    /// Revoke lease `lease_id`: tombstone every live key attached to it, exactly
+    /// as etcd deletes a lease's keys when it expires or is revoked. Each
+    /// deletion appends a proper tombstone row (its own revision), so the change
+    /// shows up in watches. Returns how many keys were deleted.
+    ///
+    /// # Errors
+    /// [`KineError::Backend`] on a query failure.
+    pub fn revoke_lease_keys(&mut self, lease_id: i64) -> Result<usize> {
+        let keys = self.keys_with_lease(lease_id)?;
+        let mut deleted = 0;
+        for key in keys {
+            if self.delete(&key)?.is_some() {
+                deleted += 1;
+            }
+        }
+        Ok(deleted)
+    }
+
+    /// The physical size of the database file in bytes (`page_count *
+    /// page_size`), etcd's `Status.dbSize`. For an in-memory store this is the
+    /// in-RAM page allocation.
+    ///
+    /// # Errors
+    /// [`KineError::Backend`] on a query failure.
+    pub fn db_size(&self) -> Result<i64> {
+        let pages: i64 =
+            self.conn.query_row("PRAGMA page_count", [], |r| r.get(0)).map_err(backend)?;
+        let page_size: i64 =
+            self.conn.query_row("PRAGMA page_size", [], |r| r.get(0)).map_err(backend)?;
+        Ok(pages.saturating_mul(page_size))
+    }
+
+    /// Defragment the datastore (`VACUUM`): rebuild the file so the free pages
+    /// left behind by compaction's `DELETE`s are returned to the filesystem.
+    /// This is etcd's `Defragment` maintenance op, realised on `SQLite`. Returns
+    /// the number of bytes reclaimed (`0` if the file did not shrink).
+    ///
+    /// # Errors
+    /// [`KineError::Backend`] if the rebuild fails.
+    pub fn defragment(&self) -> Result<i64> {
+        let before = self.db_size()?;
+        self.conn.execute_batch("VACUUM").map_err(backend)?;
+        let after = self.db_size()?;
+        Ok((before - after).max(0))
+    }
+
     /// Execute a [`RangeRequest`] as live SQL and return the current-state (or
     /// historical) view, sorted by key, with etcd's `count`/`more` flags.
     ///
