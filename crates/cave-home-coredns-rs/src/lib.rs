@@ -59,6 +59,7 @@
 #![allow(clippy::cast_possible_truncation)]
 
 pub mod arpa;
+pub mod cache;
 pub mod error;
 pub mod hosts;
 pub mod message;
@@ -68,6 +69,7 @@ pub mod rewrite;
 pub mod rr;
 pub mod wire;
 
+pub use cache::{Cache, CacheKey, CachePlugin};
 pub use error::{Result, WireError};
 pub use hosts::Hosts;
 pub use message::{Message, Question};
