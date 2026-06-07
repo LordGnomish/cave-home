@@ -51,9 +51,10 @@ impl HttpMethod {
     }
 }
 
-/// A transport-ready request: an absolute URL, a method, headers and an
-/// optional body. The auth layer fills in cookies / CSRF / bearer headers; the
-/// API layer fills in URL + body. The transport just executes it.
+/// A transport-ready request: an absolute URL, a method, headers and a body.
+///
+/// The auth layer fills in cookies / CSRF / bearer headers; the API layer fills
+/// in URL + body. The transport just executes it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpRequest {
     /// The HTTP method.
