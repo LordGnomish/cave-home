@@ -30,13 +30,19 @@ impl MetricsSnapshot {
     /// Queries seen for a record type.
     #[must_use]
     pub fn queries(&self, qtype: RecordType) -> u64 {
-        self.queries_by_type.get(&qtype.to_u16()).copied().unwrap_or(0)
+        self.queries_by_type
+            .get(&qtype.to_u16())
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Responses emitted with a response code.
     #[must_use]
     pub fn responses(&self, rcode: Rcode) -> u64 {
-        self.responses_by_rcode.get(&(rcode as u8)).copied().unwrap_or(0)
+        self.responses_by_rcode
+            .get(&(rcode as u8))
+            .copied()
+            .unwrap_or(0)
     }
 }
 
@@ -73,8 +79,15 @@ impl Plugin for Metrics {
         }
         let outcome = next.run(req);
         // An error surfaces to the client as SERVFAIL; count it as such.
-        let rcode = outcome.as_ref().map_or(Rcode::ServFail, |reply| reply.header.rcode);
-        *self.inner.borrow_mut().responses_by_rcode.entry(rcode as u8).or_insert(0) += 1;
+        let rcode = outcome
+            .as_ref()
+            .map_or(Rcode::ServFail, |reply| reply.header.rcode);
+        *self
+            .inner
+            .borrow_mut()
+            .responses_by_rcode
+            .entry(rcode as u8)
+            .or_insert(0) += 1;
         outcome
     }
 }
@@ -154,11 +167,15 @@ impl Plugin for Ready {
 /// Render a per-query log line: `<qname> <qtype> <rcode> <ancount>`.
 #[must_use]
 pub fn format_log_line(query: &Message, reply: &Message) -> String {
-    let (name, qtype) = query
-        .questions
-        .first()
-        .map_or_else(|| (".".to_string(), "ANY".to_string()), |q| (q.name.to_string(), rtype_str(q.qtype)));
-    format!("{name} {qtype} {} {}", rcode_str(reply.header.rcode), reply.answers.len())
+    let (name, qtype) = query.questions.first().map_or_else(
+        || (".".to_string(), "ANY".to_string()),
+        |q| (q.name.to_string(), rtype_str(q.qtype)),
+    );
+    format!(
+        "{name} {qtype} {} {}",
+        rcode_str(reply.header.rcode),
+        reply.answers.len()
+    )
 }
 
 /// The mnemonic for a record type.
@@ -266,7 +283,9 @@ mod tests {
         let metrics = Rc::new(Metrics::new());
         let chain = Chain::new(vec![
             Box::new(metrics.clone()),
-            Box::new(Backend { mode: Mode::Nxdomain }),
+            Box::new(Backend {
+                mode: Mode::Nxdomain,
+            }),
         ]);
         let _ = chain.handle(&q(RecordType::A));
         assert_eq!(metrics.snapshot().responses(Rcode::NxDomain), 1);
@@ -315,7 +334,10 @@ mod tests {
             Box::new(Backend { mode: Mode::Ok }),
         ]);
         // Not ready → SERVFAIL, backend not consulted.
-        assert_eq!(chain.handle(&q(RecordType::A)).header.rcode, Rcode::ServFail);
+        assert_eq!(
+            chain.handle(&q(RecordType::A)).header.rcode,
+            Rcode::ServFail
+        );
         ready.set_ready(true);
         assert_eq!(chain.handle(&q(RecordType::A)).answers.len(), 1);
     }

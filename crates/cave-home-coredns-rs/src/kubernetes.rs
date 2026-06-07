@@ -49,13 +49,21 @@ impl Port {
     /// A TCP port.
     #[must_use]
     pub fn tcp(name: &str, number: u16) -> Self {
-        Self { name: name.to_string(), protocol: Protocol::Tcp, number }
+        Self {
+            name: name.to_string(),
+            protocol: Protocol::Tcp,
+            number,
+        }
     }
 
     /// A UDP port.
     #[must_use]
     pub fn udp(name: &str, number: u16) -> Self {
-        Self { name: name.to_string(), protocol: Protocol::Udp, number }
+        Self {
+            name: name.to_string(),
+            protocol: Protocol::Udp,
+            number,
+        }
     }
 }
 
@@ -92,7 +100,10 @@ impl Endpoint {
     /// Build an endpoint.
     #[must_use]
     pub fn new(hostname: Option<&str>, ip: IpAddr) -> Self {
-        Self { hostname: hostname.map(str::to_string), ip }
+        Self {
+            hostname: hostname.map(str::to_string),
+            ip,
+        }
     }
 }
 
@@ -212,7 +223,8 @@ impl Kubernetes {
                 self.reverse.entry(ip).or_insert_with(|| fqdn.clone());
             }
         }
-        self.services.insert((svc.namespace.clone(), svc.name.clone()), svc);
+        self.services
+            .insert((svc.namespace.clone(), svc.name.clone()), svc);
         self
     }
 
@@ -251,7 +263,13 @@ impl Kubernetes {
 
     /// The authoritative reply for an in-zone request, or the
     /// fallthrough/NODATA/NXDOMAIN decision.
-    fn finish(&self, req: &Request<'_>, next: Next<'_>, answers: Vec<ResourceRecord>, found: Found) -> Outcome {
+    fn finish(
+        &self,
+        req: &Request<'_>,
+        next: Next<'_>,
+        answers: Vec<ResourceRecord>,
+        found: Found,
+    ) -> Outcome {
         match found {
             Found::Answers if !answers.is_empty() => {
                 let mut reply = req.reply().with_aa(true);
@@ -284,7 +302,11 @@ enum Found {
 
 /// The fully-qualified name of a service: `name.namespace.svc.zone`.
 fn service_fqdn(namespace: &str, name: &str, zone: &Name) -> Name {
-    let mut labels = vec![name.as_bytes().to_vec(), namespace.as_bytes().to_vec(), b"svc".to_vec()];
+    let mut labels = vec![
+        name.as_bytes().to_vec(),
+        namespace.as_bytes().to_vec(),
+        b"svc".to_vec(),
+    ];
     labels.extend(zone.labels().iter().cloned());
     Name::from_labels(labels).unwrap_or_else(|_| zone.clone())
 }
@@ -323,15 +345,19 @@ impl Kubernetes {
         namespace: &str,
         qtype: RecordType,
     ) -> (Vec<ResourceRecord>, Found) {
-        let Some(svc) = self.services.get(&(namespace.to_string(), service.to_string())) else {
+        let Some(svc) = self
+            .services
+            .get(&(namespace.to_string(), service.to_string()))
+        else {
             // Both an unknown service in a known namespace and an unknown
             // namespace are NXDOMAIN for a non-wildcard query.
             return (Vec::new(), Found::Nxdomain);
         };
         match &svc.spec {
-            Spec::ExternalName(target) => {
-                (vec![self.record(owner.clone(), Rdata::Cname(target.clone()))], Found::Answers)
-            }
+            Spec::ExternalName(target) => (
+                vec![self.record(owner.clone(), Rdata::Cname(target.clone()))],
+                Found::Answers,
+            ),
             Spec::ClusterIp(_) | Spec::Headless(_) => {
                 let answers: Vec<_> = svc
                     .addresses()
@@ -357,7 +383,10 @@ impl Kubernetes {
         namespace: &str,
         qtype: RecordType,
     ) -> (Vec<ResourceRecord>, Found) {
-        let Some(svc) = self.services.get(&(namespace.to_string(), service.to_string())) else {
+        let Some(svc) = self
+            .services
+            .get(&(namespace.to_string(), service.to_string()))
+        else {
             return (Vec::new(), Found::Nxdomain);
         };
         let Spec::Headless(eps) = &svc.spec else {
@@ -367,7 +396,10 @@ impl Kubernetes {
             return (Vec::new(), Found::Nxdomain);
         };
         if family_matches(qtype, ep.ip) {
-            (vec![self.record(owner.clone(), addr_rdata(ep.ip))], Found::Answers)
+            (
+                vec![self.record(owner.clone(), addr_rdata(ep.ip))],
+                Found::Answers,
+            )
         } else {
             (Vec::new(), Found::NoData)
         }
@@ -382,7 +414,10 @@ impl Kubernetes {
         service: &str,
         namespace: &str,
     ) -> (Vec<ResourceRecord>, Vec<ResourceRecord>, Found) {
-        let Some(svc) = self.services.get(&(namespace.to_string(), service.to_string())) else {
+        let Some(svc) = self
+            .services
+            .get(&(namespace.to_string(), service.to_string()))
+        else {
             return (Vec::new(), Vec::new(), Found::Nxdomain);
         };
         let want = port_label.strip_prefix('_').unwrap_or(port_label);
@@ -399,7 +434,12 @@ impl Kubernetes {
         let target = service_fqdn(namespace, service, zone);
         let srv = self.record(
             owner.clone(),
-            Rdata::Srv { priority: 0, weight: 100, port: port.number, target: target.clone() },
+            Rdata::Srv {
+                priority: 0,
+                weight: 100,
+                port: port.number,
+                target: target.clone(),
+            },
         );
         // Offer the target's addresses in the additional section.
         let additional: Vec<_> = svc
@@ -423,9 +463,10 @@ impl Kubernetes {
         }
         let _ = namespace;
         match parse_dashed_ip(ip_label) {
-            Some(ip) if family_matches(qtype, ip) => {
-                (vec![self.record(owner.clone(), addr_rdata(ip))], Found::Answers)
-            }
+            Some(ip) if family_matches(qtype, ip) => (
+                vec![self.record(owner.clone(), addr_rdata(ip))],
+                Found::Answers,
+            ),
             Some(_) => (Vec::new(), Found::NoData),
             None => (Vec::new(), Found::Nxdomain),
         }
@@ -439,7 +480,9 @@ impl Plugin for Kubernetes {
 
     #[allow(clippy::too_many_lines)]
     fn serve_dns(&self, req: &Request<'_>, next: Next<'_>) -> Outcome {
-        let Some(q) = req.question() else { return next.run(req) };
+        let Some(q) = req.question() else {
+            return next.run(req);
+        };
         let owner = q.name.clone();
 
         // Reverse lookups are matched against the address index regardless of
@@ -448,7 +491,9 @@ impl Plugin for Kubernetes {
             if let Some(ip) = from_arpa(&owner) {
                 if let Some(fqdn) = self.reverse.get(&ip) {
                     let mut reply = req.reply().with_aa(true);
-                    reply.answers.push(self.record(owner, Rdata::Ptr(fqdn.clone())));
+                    reply
+                        .answers
+                        .push(self.record(owner, Rdata::Ptr(fqdn.clone())));
                     return Ok(reply);
                 }
             }
@@ -462,8 +507,10 @@ impl Plugin for Kubernetes {
         let Some((kind, middle)) = labels.split_last() else {
             return next.run(req);
         };
-        let middle: Vec<String> =
-            middle.iter().map(|l| String::from_utf8_lossy(l).into_owned()).collect();
+        let middle: Vec<String> = middle
+            .iter()
+            .map(|l| String::from_utf8_lossy(l).into_owned())
+            .collect();
 
         let (answers, additional, found) = match (kind.as_slice(), middle.as_slice()) {
             // _port._proto.service.namespace.svc
@@ -491,7 +538,10 @@ impl Plugin for Kubernetes {
 
         let outcome = self.finish(req, next, answers, found)?;
         // Attach the SRV additional section if we produced one and answered.
-        if !additional.is_empty() && outcome.header.rcode == Rcode::NoError && !outcome.answers.is_empty() {
+        if !additional.is_empty()
+            && outcome.header.rcode == Rcode::NoError
+            && !outcome.answers.is_empty()
+        {
             let mut outcome = outcome;
             outcome.additional = additional;
             return Ok(outcome);
@@ -600,7 +650,10 @@ mod tests {
     fn external_name_returns_cname() {
         let m = ask("ext.default.svc.cluster.local", RecordType::A);
         assert_eq!(m.answers.len(), 1);
-        assert_eq!(m.answers[0].rdata, Rdata::Cname(Name::parse("example.com").unwrap()));
+        assert_eq!(
+            m.answers[0].rdata,
+            Rdata::Cname(Name::parse("example.com").unwrap())
+        );
     }
 
     #[test]
@@ -613,9 +666,16 @@ mod tests {
         });
         let (port, target) = srv.expect("an SRV answer");
         assert_eq!(port, 80);
-        assert_eq!(target, Name::parse("web.default.svc.cluster.local").unwrap());
+        assert_eq!(
+            target,
+            Name::parse("web.default.svc.cluster.local").unwrap()
+        );
         // The target's A record is offered in the additional section.
-        assert!(m.additional.iter().any(|rr| matches!(rr.rdata, Rdata::A(_))));
+        assert!(
+            m.additional
+                .iter()
+                .any(|rr| matches!(rr.rdata, Rdata::A(_)))
+        );
     }
 
     #[test]

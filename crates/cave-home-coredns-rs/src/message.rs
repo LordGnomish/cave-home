@@ -29,7 +29,11 @@ impl Question {
     /// Build a question.
     #[must_use]
     pub const fn new(name: Name, qtype: RecordType, qclass: Class) -> Self {
-        Self { name, qtype, qclass }
+        Self {
+            name,
+            qtype,
+            qclass,
+        }
     }
 
     /// Encode the question.
@@ -146,7 +150,12 @@ impl Message {
         for q in &self.questions {
             q.encode(&mut w);
         }
-        for rr in self.answers.iter().chain(&self.authority).chain(&self.additional) {
+        for rr in self
+            .answers
+            .iter()
+            .chain(&self.authority)
+            .chain(&self.additional)
+        {
             rr.encode(&mut w);
         }
         w.into_bytes()
@@ -164,12 +173,20 @@ impl Message {
             .map(|_| Question::decode(&mut r))
             .collect::<Result<Vec<_>>>()?;
         let read_section = |r: &mut Reader<'_>, n: u16| {
-            (0..n).map(|_| ResourceRecord::decode(r)).collect::<Result<Vec<_>>>()
+            (0..n)
+                .map(|_| ResourceRecord::decode(r))
+                .collect::<Result<Vec<_>>>()
         };
         let answers = read_section(&mut r, header.ancount)?;
         let authority = read_section(&mut r, header.nscount)?;
         let additional = read_section(&mut r, header.arcount)?;
-        Ok(Self { header, questions, answers, authority, additional })
+        Ok(Self {
+            header,
+            questions,
+            answers,
+            authority,
+            additional,
+        })
     }
 }
 
@@ -220,13 +237,12 @@ mod tests {
         let mut m = Message::query(Name::parse("example.com").unwrap(), RecordType::A, 1);
         m.answers.push(a("example.com", [1, 1, 1, 1]));
         m.answers.push(a("example.com", [2, 2, 2, 2]));
-        m.authority
-            .push(ResourceRecord::new(
-                Name::parse("example.com").unwrap(),
-                Class::In,
-                3600,
-                Rdata::Ns(Name::parse("ns.example.com").unwrap()),
-            ));
+        m.authority.push(ResourceRecord::new(
+            Name::parse("example.com").unwrap(),
+            Class::In,
+            3600,
+            Rdata::Ns(Name::parse("ns.example.com").unwrap()),
+        ));
         let bytes = m.encode();
         let decoded = Message::decode(&bytes).unwrap();
         assert_eq!(decoded.header.qdcount, 1);
@@ -277,7 +293,11 @@ mod tests {
         // 8 answers all named example.com: every owner name after the first
         // compresses to a 2-byte pointer, so the message is far smaller than the
         // ~16 bytes/owner an uncompressed encoding would need.
-        assert!(bytes.len() < 200, "expected compression, got {} bytes", bytes.len());
+        assert!(
+            bytes.len() < 200,
+            "expected compression, got {} bytes",
+            bytes.len()
+        );
         assert_eq!(Message::decode(&bytes).unwrap().answers, m.answers);
     }
 

@@ -10,7 +10,7 @@
 //! suffix that has already been emitted.
 
 use crate::error::{Result, WireError};
-use crate::name::{Name, MAX_NAME_WIRE};
+use crate::name::{MAX_NAME_WIRE, Name};
 use std::collections::HashMap;
 
 /// The two high bits of a length octet that mark a compression pointer.
@@ -128,10 +128,9 @@ impl<'a> Reader<'a> {
         let mut jumped = false;
 
         loop {
-            let len_byte = *self
-                .buf
-                .get(pos)
-                .ok_or(WireError::UnexpectedEof { needed: "label length" })?;
+            let len_byte = *self.buf.get(pos).ok_or(WireError::UnexpectedEof {
+                needed: "label length",
+            })?;
             match len_byte & PTR_MASK {
                 0x00 => {
                     let llen = len_byte as usize;
@@ -258,7 +257,9 @@ impl Writer {
         for (i, label) in name.labels().iter().enumerate() {
             let here = self.buf.len();
             if here <= MAX_PTR_OFFSET {
-                self.ptrs.entry(suffix_key(&name.labels()[i..])).or_insert(here as u16);
+                self.ptrs
+                    .entry(suffix_key(&name.labels()[i..]))
+                    .or_insert(here as u16);
             }
             self.buf.push(label.len() as u8);
             self.buf.extend_from_slice(label);

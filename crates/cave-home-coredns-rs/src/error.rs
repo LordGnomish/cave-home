@@ -67,7 +67,9 @@ pub enum WireError {
 impl fmt::Display for WireError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnexpectedEof { needed } => write!(f, "unexpected end of buffer reading {needed}"),
+            Self::UnexpectedEof { needed } => {
+                write!(f, "unexpected end of buffer reading {needed}")
+            }
             Self::LabelTooLong { len } => write!(f, "label too long: {len} > 63"),
             Self::NameTooLong { len } => write!(f, "name too long: {len} > 255"),
             Self::InvalidLabel => f.write_str("invalid label octet"),
@@ -76,7 +78,10 @@ impl fmt::Display for WireError {
             }
             Self::ReservedLabelType => f.write_str("reserved label-type bits"),
             Self::RdataLengthMismatch { declared, consumed } => {
-                write!(f, "rdlength mismatch: declared {declared}, consumed {consumed}")
+                write!(
+                    f,
+                    "rdlength mismatch: declared {declared}, consumed {consumed}"
+                )
             }
             Self::InvalidRdata { reason } => write!(f, "invalid rdata: {reason}"),
             Self::Corefile { reason } => write!(f, "corefile parse error: {reason}"),

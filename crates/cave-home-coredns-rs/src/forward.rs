@@ -54,8 +54,21 @@ impl Pool {
     /// Build a pool over upstream addresses.
     #[must_use]
     pub fn new(addrs: Vec<String>, policy: Policy, max_fails: u32) -> Self {
-        let upstreams = addrs.into_iter().map(|addr| Health { addr, fails: 0, down: false }).collect();
-        Self { upstreams, policy, max_fails: max_fails.max(1), cursor: 0, rng: 0x9E37_79B9_7F4A_7C15 }
+        let upstreams = addrs
+            .into_iter()
+            .map(|addr| Health {
+                addr,
+                fails: 0,
+                down: false,
+            })
+            .collect();
+        Self {
+            upstreams,
+            policy,
+            max_fails: max_fails.max(1),
+            cursor: 0,
+            rng: 0x9E37_79B9_7F4A_7C15,
+        }
     }
 
     /// The number of upstreams.
@@ -125,8 +138,9 @@ impl Pool {
                 None
             }
             Policy::Random => {
-                let healthy: Vec<usize> =
-                    (0..self.upstreams.len()).filter(|&i| !self.upstreams[i].down).collect();
+                let healthy: Vec<usize> = (0..self.upstreams.len())
+                    .filter(|&i| !self.upstreams[i].down)
+                    .collect();
                 // SplitMix64-style step; deterministic but well-spread.
                 self.rng = self.rng.wrapping_mul(0x2545_F491_4F6C_DD1D).wrapping_add(1);
                 let pick = (self.rng >> 33) as usize % healthy.len();
@@ -144,7 +158,10 @@ impl Pool {
             Policy::RoundRobin => {
                 let start = self.cursor;
                 self.cursor = (self.cursor + 1) % n.max(1);
-                (0..n).map(|i| (start + i) % n).filter(|&i| !self.upstreams[i].down).collect()
+                (0..n)
+                    .map(|i| (start + i) % n)
+                    .filter(|&i| !self.upstreams[i].down)
+                    .collect()
             }
             Policy::Random => {
                 let mut healthy: Vec<usize> = (0..n).filter(|&i| !self.upstreams[i].down).collect();
@@ -220,14 +237,18 @@ mod tests {
     use super::*;
     use crate::message::Message;
     use crate::name::Name;
-    use crate::rr::{Class, Rdata, RecordType, ResourceRecord};
     use crate::plugin::Chain;
+    use crate::rr::{Class, Rdata, RecordType, ResourceRecord};
     use crate::wire::Rcode;
     use std::net::Ipv4Addr;
 
     fn pool(policy: Policy) -> Pool {
         Pool::new(
-            vec!["10.0.0.1:53".into(), "10.0.0.2:53".into(), "10.0.0.3:53".into()],
+            vec![
+                "10.0.0.1:53".into(),
+                "10.0.0.2:53".into(),
+                "10.0.0.3:53".into(),
+            ],
             policy,
             2,
         )
@@ -320,7 +341,11 @@ mod tests {
         let fwd = Forward::new(vec!["10.0.0.1:53".into()], Policy::Sequential)
             .with_transport(Box::new(|_addr, _q| Some(canned(1))));
         let chain = Chain::new(vec![Box::new(fwd)]);
-        let reply = chain.handle(&Message::query(Name::parse("example.com").unwrap(), RecordType::A, 77));
+        let reply = chain.handle(&Message::query(
+            Name::parse("example.com").unwrap(),
+            RecordType::A,
+            77,
+        ));
         assert_eq!(reply.header.id, 77);
         assert_eq!(reply.answers.len(), 1);
     }
@@ -329,7 +354,13 @@ mod tests {
     fn plugin_fails_over_to_a_healthy_upstream() {
         // Upstream 0 always fails; upstream 1 succeeds.
         let fwd = Forward::new(vec!["a:53".into(), "b:53".into()], Policy::Sequential)
-            .with_transport(Box::new(|addr, _q| if addr == "a:53" { None } else { Some(canned(2)) }));
+            .with_transport(Box::new(|addr, _q| {
+                if addr == "a:53" {
+                    None
+                } else {
+                    Some(canned(2))
+                }
+            }));
         let chain = Chain::new(vec![Box::new(fwd)]);
         let reply = chain.handle(&query());
         assert_eq!(reply.header.rcode, Rcode::NoError);

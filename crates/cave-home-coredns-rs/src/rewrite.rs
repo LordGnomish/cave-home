@@ -45,9 +45,19 @@ pub enum NameRule {
 /// The field a rule rewrites.
 #[derive(Debug, Clone)]
 enum Kind {
-    Name { mode: NameRule, from: String, to: String },
-    Type { from: RecordType, to: RecordType },
-    Class { from: Class, to: Class },
+    Name {
+        mode: NameRule,
+        from: String,
+        to: String,
+    },
+    Type {
+        from: RecordType,
+        to: RecordType,
+    },
+    Class {
+        from: Class,
+        to: Class,
+    },
 }
 
 /// A single rewrite rule.
@@ -63,20 +73,30 @@ impl Rule {
     pub fn name(mode: NameRule, from: &str, to: &str) -> Self {
         Self {
             policy: Policy::Stop,
-            kind: Kind::Name { mode, from: from.to_ascii_lowercase(), to: to.to_ascii_lowercase() },
+            kind: Kind::Name {
+                mode,
+                from: from.to_ascii_lowercase(),
+                to: to.to_ascii_lowercase(),
+            },
         }
     }
 
     /// A type-rewrite rule (default policy `stop`).
     #[must_use]
     pub const fn rtype(from: RecordType, to: RecordType) -> Self {
-        Self { policy: Policy::Stop, kind: Kind::Type { from, to } }
+        Self {
+            policy: Policy::Stop,
+            kind: Kind::Type { from, to },
+        }
     }
 
     /// A class-rewrite rule (default policy `stop`).
     #[must_use]
     pub const fn class(from: Class, to: Class) -> Self {
-        Self { policy: Policy::Stop, kind: Kind::Class { from, to } }
+        Self {
+            policy: Policy::Stop,
+            kind: Kind::Class { from, to },
+        }
     }
 
     /// Switch this rule to the `continue` policy.
@@ -89,10 +109,14 @@ impl Rule {
     /// Apply this rule to the first question of `m`, returning `true` if it
     /// matched (and mutated the query).
     fn apply(&self, m: &mut Message) -> bool {
-        let Some(q) = m.questions.first_mut() else { return false };
+        let Some(q) = m.questions.first_mut() else {
+            return false;
+        };
         match &self.kind {
             Kind::Name { mode, from, to } => {
-                let Some(new) = rewrite_name(&q.name, *mode, from, to) else { return false };
+                let Some(new) = rewrite_name(&q.name, *mode, from, to) else {
+                    return false;
+                };
                 q.name = new;
                 true
             }
@@ -266,7 +290,11 @@ mod tests {
     #[test]
     fn exact_name_rewrite_and_response_restore() {
         let m = run(
-            vec![Rule::name(NameRule::Exact, "old.example.com", "new.example.com")],
+            vec![Rule::name(
+                NameRule::Exact,
+                "old.example.com",
+                "new.example.com",
+            )],
             "old.example.com",
             RecordType::A,
         );
@@ -281,7 +309,11 @@ mod tests {
     #[test]
     fn suffix_name_rewrite() {
         let m = run(
-            vec![Rule::name(NameRule::Suffix, ".example.internal", ".example.com")],
+            vec![Rule::name(
+                NameRule::Suffix,
+                ".example.internal",
+                ".example.com",
+            )],
             "host.example.internal",
             RecordType::A,
         );

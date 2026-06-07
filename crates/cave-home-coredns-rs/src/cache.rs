@@ -43,7 +43,12 @@ impl CacheKey {
     /// parsing is deferred).
     #[must_use]
     pub fn from_question(q: &Question) -> Self {
-        Self { name: q.name.clone(), qtype: q.qtype, qclass: q.qclass, dnssec_ok: false }
+        Self {
+            name: q.name.clone(),
+            qtype: q.qtype,
+            qclass: q.qclass,
+            dnssec_ok: false,
+        }
     }
 }
 
@@ -64,7 +69,10 @@ impl Cache {
     /// A cache holding up to `capacity` entries.
     #[must_use]
     pub fn new(capacity: usize) -> Self {
-        Self { entries: HashMap::new(), capacity: capacity.max(1) }
+        Self {
+            entries: HashMap::new(),
+            capacity: capacity.max(1),
+        }
     }
 
     /// The number of live entries.
@@ -104,7 +112,9 @@ impl Cache {
     /// Cache a response under `key` as observed at `now`. Zero-TTL responses are
     /// not stored. Inserting past capacity evicts the soonest-to-expire entry.
     pub fn insert(&mut self, key: CacheKey, response: &Message, now: u64) {
-        let Some(ttl) = cache_ttl(response) else { return };
+        let Some(ttl) = cache_ttl(response) else {
+            return;
+        };
         if ttl == 0 {
             return;
         }
@@ -113,7 +123,11 @@ impl Cache {
         }
         self.entries.insert(
             key,
-            Entry { response: response.clone(), inserted_at: now, expires_at: now + u64::from(ttl) },
+            Entry {
+                response: response.clone(),
+                inserted_at: now,
+                expires_at: now + u64::from(ttl),
+            },
         );
     }
 
@@ -166,7 +180,10 @@ impl CachePlugin {
     /// A cache plugin holding up to `capacity` entries, clock at zero.
     #[must_use]
     pub fn new(capacity: usize) -> Self {
-        Self { inner: RefCell::new(Cache::new(capacity)), now: Cell::new(0) }
+        Self {
+            inner: RefCell::new(Cache::new(capacity)),
+            now: Cell::new(0),
+        }
     }
 
     /// Set the plugin's clock (seconds). Stands in for the wall-clock the live
@@ -188,7 +205,9 @@ impl Plugin for CachePlugin {
     }
 
     fn serve_dns(&self, req: &Request<'_>, next: Next<'_>) -> Outcome {
-        let Some(q) = req.question() else { return next.run(req) };
+        let Some(q) = req.question() else {
+            return next.run(req);
+        };
         let key = CacheKey::from_question(q);
         let now = self.now.get();
 
@@ -260,7 +279,11 @@ mod tests {
     #[test]
     fn insert_then_get_within_ttl_hits() {
         let mut c = Cache::new(16);
-        c.insert(key("a.example.com", RecordType::A), &positive("a.example.com", 100), 0);
+        c.insert(
+            key("a.example.com", RecordType::A),
+            &positive("a.example.com", 100),
+            0,
+        );
         let got = c.get(&key("a.example.com", RecordType::A), 0).unwrap();
         assert_eq!(got.answers.len(), 1);
     }
@@ -268,7 +291,11 @@ mod tests {
     #[test]
     fn ttl_counts_down_with_elapsed_time() {
         let mut c = Cache::new(16);
-        c.insert(key("a.example.com", RecordType::A), &positive("a.example.com", 100), 1000);
+        c.insert(
+            key("a.example.com", RecordType::A),
+            &positive("a.example.com", 100),
+            1000,
+        );
         let got = c.get(&key("a.example.com", RecordType::A), 1030).unwrap();
         assert_eq!(got.answers[0].ttl, 70);
     }
@@ -276,7 +303,11 @@ mod tests {
     #[test]
     fn expired_entry_is_a_miss() {
         let mut c = Cache::new(16);
-        c.insert(key("a.example.com", RecordType::A), &positive("a.example.com", 100), 0);
+        c.insert(
+            key("a.example.com", RecordType::A),
+            &positive("a.example.com", 100),
+            0,
+        );
         assert!(c.get(&key("a.example.com", RecordType::A), 101).is_none());
         assert_eq!(c.len(), 0, "expired entry should be evicted on access");
     }
@@ -284,7 +315,11 @@ mod tests {
     #[test]
     fn zero_ttl_responses_are_not_cached() {
         let mut c = Cache::new(16);
-        c.insert(key("a.example.com", RecordType::A), &positive("a.example.com", 0), 0);
+        c.insert(
+            key("a.example.com", RecordType::A),
+            &positive("a.example.com", 0),
+            0,
+        );
         assert_eq!(c.len(), 0);
     }
 
@@ -309,7 +344,13 @@ mod tests {
         ));
         let mut c = Cache::new(16);
         c.insert(key("nope.example.com", RecordType::A), &nxd, 0);
-        assert_eq!(c.get(&key("nope.example.com", RecordType::A), 49).unwrap().header.rcode, Rcode::NxDomain);
+        assert_eq!(
+            c.get(&key("nope.example.com", RecordType::A), 49)
+                .unwrap()
+                .header
+                .rcode,
+            Rcode::NxDomain
+        );
         assert!(c.get(&key("nope.example.com", RecordType::A), 51).is_none());
     }
 
@@ -325,7 +366,11 @@ mod tests {
     #[test]
     fn keys_distinguish_query_type() {
         let mut c = Cache::new(16);
-        c.insert(key("a.example.com", RecordType::A), &positive("a.example.com", 100), 0);
+        c.insert(
+            key("a.example.com", RecordType::A),
+            &positive("a.example.com", 100),
+            0,
+        );
         assert!(c.get(&key("a.example.com", RecordType::Aaaa), 0).is_none());
         assert!(c.get(&key("a.example.com", RecordType::A), 0).is_some());
     }
@@ -336,11 +381,18 @@ mod tests {
         let cache = CachePlugin::new(16);
         let chain = Chain::new(vec![
             Box::new(cache),
-            Box::new(Counter { hits: hits.clone(), answer_ttl: 300 }),
+            Box::new(Counter {
+                hits: hits.clone(),
+                answer_ttl: 300,
+            }),
         ]);
         let q = Message::query(Name::parse("x.example.com").unwrap(), RecordType::A, 7);
         let first = chain.handle(&q);
-        let second = chain.handle(&Message::query(Name::parse("x.example.com").unwrap(), RecordType::A, 99));
+        let second = chain.handle(&Message::query(
+            Name::parse("x.example.com").unwrap(),
+            RecordType::A,
+            99,
+        ));
         assert_eq!(hits.get(), 1, "second query must be served from cache");
         assert_eq!(first.answers.len(), 1);
         // The cache hit echoes the *second* query's id, not the cached one.

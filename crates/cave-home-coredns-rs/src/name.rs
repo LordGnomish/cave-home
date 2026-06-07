@@ -117,7 +117,9 @@ impl Name {
         if self.labels.is_empty() {
             None
         } else {
-            Some(Self { labels: self.labels[1..].to_vec() })
+            Some(Self {
+                labels: self.labels[1..].to_vec(),
+            })
         }
     }
 
@@ -232,12 +234,18 @@ mod tests {
 
     #[test]
     fn trailing_dot_is_equivalent() {
-        assert_eq!(Name::parse("foo.bar.").unwrap(), Name::parse("foo.bar").unwrap());
+        assert_eq!(
+            Name::parse("foo.bar.").unwrap(),
+            Name::parse("foo.bar").unwrap()
+        );
     }
 
     #[test]
     fn equality_is_ascii_case_insensitive() {
-        assert_eq!(Name::parse("FoO.CoM").unwrap(), Name::parse("foo.com").unwrap());
+        assert_eq!(
+            Name::parse("FoO.CoM").unwrap(),
+            Name::parse("foo.com").unwrap()
+        );
     }
 
     #[test]

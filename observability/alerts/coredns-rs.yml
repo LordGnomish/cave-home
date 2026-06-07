@@ -1,0 +1,74 @@
+# cave-home-coredns-rs alerts — the embedded cluster DNS (K3s in-process CoreDNS).
+#
+# Expressions reference cave_home_coredns_rs_* metrics; the decision core already
+# tracks the underlying counters (builtins::Metrics), and the deferred Prometheus
+# exposition publishes them. The four rules cover the failure modes that matter
+# for cluster DNS: total liveness, a SERVFAIL burst (resolution breaking),
+# every forward upstream down (no recursion), and a collapsed cache hit ratio
+# (load amplified onto upstreams).
+#
+# Charter §6.3: cluster DNS is infrastructure — `summary` is the one-line Portal
+# headline, `description` the operator detail.
+
+groups:
+  - name: cave-home-coredns-rs
+    interval: 30s
+    rules:
+      - alert: CorednsRsNoQueries
+        expr: increase(cave_home_coredns_rs_dns_requests_total[5m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+          pillar: infra
+          crate: cave-home-coredns-rs
+        annotations:
+          summary: "cluster DNS (in-process CoreDNS)"
+          description: |
+            cave-home-coredns-rs has served no DNS queries for 5 minutes.
+            Either the listener is down or nothing in the cluster can reach
+            it — service discovery is effectively offline.
+
+      - alert: CorednsRsServfailBurst
+        expr: sum(rate(cave_home_coredns_rs_dns_responses_total{rcode="SERVFAIL"}[5m])) > 1
+        for: 10m
+        labels:
+          severity: critical
+          pillar: infra
+          crate: cave-home-coredns-rs
+        annotations:
+          summary: "cluster DNS (resolution failing)"
+          description: |
+            cave-home-coredns-rs SERVFAIL rate {{ $value | humanize }}/sec over
+            5 min. Plugins are erroring or every upstream is failing; pods will
+            see name-resolution failures.
+
+      - alert: CorednsRsAllUpstreamsDown
+        expr: cave_home_coredns_rs_forward_healthy_upstreams == 0 and cave_home_coredns_rs_forward_total_upstreams > 0
+        for: 2m
+        labels:
+          severity: critical
+          pillar: infra
+          crate: cave-home-coredns-rs
+        annotations:
+          summary: "cluster DNS (no working upstream resolver)"
+          description: |
+            Every forward upstream is marked down (max_fails reached). External
+            names cannot be resolved until an upstream recovers — check
+            upstream reachability.
+
+      - alert: CorednsRsCacheHitRatioLow
+        expr: |
+          rate(cave_home_coredns_rs_cache_hits_total[10m])
+            / clamp_min(rate(cave_home_coredns_rs_cache_hits_total[10m]) + rate(cave_home_coredns_rs_cache_misses_total[10m]), 1)
+            < 0.2
+        for: 15m
+        labels:
+          severity: warning
+          pillar: infra
+          crate: cave-home-coredns-rs
+        annotations:
+          summary: "cluster DNS (cache barely helping)"
+          description: |
+            cave-home-coredns-rs cache hit ratio {{ $value | humanizePercentage }}
+            over 10 min is below 20%. Upstreams are taking the full query load;
+            check TTLs and whether the cache is being bypassed.

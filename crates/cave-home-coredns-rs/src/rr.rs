@@ -211,7 +211,15 @@ impl Rdata {
             Self::Aaaa(ip) => w.write_bytes(&ip.octets()),
             // The classic name-bearing types MAY be compressed (RFC 1035 §4.1.4).
             Self::Ns(n) | Self::Cname(n) | Self::Ptr(n) => w.write_name(n),
-            Self::Soa { mname, rname, serial, refresh, retry, expire, minimum } => {
+            Self::Soa {
+                mname,
+                rname,
+                serial,
+                refresh,
+                retry,
+                expire,
+                minimum,
+            } => {
                 w.write_name(mname);
                 w.write_name(rname);
                 w.write_u32(*serial);
@@ -220,7 +228,10 @@ impl Rdata {
                 w.write_u32(*expire);
                 w.write_u32(*minimum);
             }
-            Self::Mx { preference, exchange } => {
+            Self::Mx {
+                preference,
+                exchange,
+            } => {
                 w.write_u16(*preference);
                 w.write_name(exchange);
             }
@@ -240,7 +251,12 @@ impl Rdata {
                     }
                 }
             }
-            Self::Srv { priority, weight, port, target } => {
+            Self::Srv {
+                priority,
+                weight,
+                port,
+                target,
+            } => {
                 w.write_u16(*priority);
                 w.write_u16(*weight);
                 w.write_u16(*port);
@@ -303,7 +319,10 @@ impl Rdata {
         };
         let consumed = r.position() - start;
         if consumed > rdlength {
-            return Err(WireError::RdataLengthMismatch { declared: rdlength, consumed });
+            return Err(WireError::RdataLengthMismatch {
+                declared: rdlength,
+                consumed,
+            });
         }
         // A compressed embedded name consumes fewer octets than RDLENGTH; land
         // exactly on the record boundary so the next record reads correctly.
@@ -331,7 +350,12 @@ impl ResourceRecord {
     /// Assemble a record.
     #[must_use]
     pub const fn new(name: Name, class: Class, ttl: u32, rdata: Rdata) -> Self {
-        Self { name, class, ttl, rdata }
+        Self {
+            name,
+            class,
+            ttl,
+            rdata,
+        }
     }
 
     /// The record's type, derived from its RDATA.
@@ -366,7 +390,12 @@ impl ResourceRecord {
         let ttl = r.read_u32()?;
         let rdlength = r.read_u16()? as usize;
         let rdata = Rdata::decode(rtype, r, rdlength)?;
-        Ok(Self { name, class, ttl, rdata })
+        Ok(Self {
+            name,
+            class,
+            ttl,
+            rdata,
+        })
     }
 }
 
@@ -550,7 +579,12 @@ mod tests {
             Name::parse("_a._tcp.example.com").unwrap(),
             Class::In,
             300,
-            Rdata::Srv { priority: 0, weight: 0, port: 1, target: Name::parse("t.example.com").unwrap() },
+            Rdata::Srv {
+                priority: 0,
+                weight: 0,
+                port: 1,
+                target: Name::parse("t.example.com").unwrap(),
+            },
         );
         a.encode(&mut w);
         let before = w.len();
@@ -558,7 +592,12 @@ mod tests {
             Name::parse("_b._tcp.example.com").unwrap(),
             Class::In,
             300,
-            Rdata::Srv { priority: 0, weight: 0, port: 2, target: Name::parse("t.example.com").unwrap() },
+            Rdata::Srv {
+                priority: 0,
+                weight: 0,
+                port: 2,
+                target: Name::parse("t.example.com").unwrap(),
+            },
         );
         b.encode(&mut w);
         let bytes = w.into_bytes();

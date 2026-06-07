@@ -161,9 +161,11 @@ impl Chain {
     #[must_use]
     pub fn handle(&self, query: &Message) -> Message {
         let req = Request::new(query);
-        Next { rest: &self.plugins }
-            .run(&req)
-            .unwrap_or_else(|_| req.reply().with_rcode(Rcode::ServFail))
+        Next {
+            rest: &self.plugins,
+        }
+        .run(&req)
+        .unwrap_or_else(|_| req.reply().with_rcode(Rcode::ServFail))
     }
 }
 
@@ -296,7 +298,10 @@ mod tests {
             Box::new(AlwaysNext),
             Box::new(StaticA(Ipv4Addr::new(1, 1, 1, 1))),
         ]);
-        assert_eq!(chain.plugin_names(), vec!["set_ad", "always_next", "static_a"]);
+        assert_eq!(
+            chain.plugin_names(),
+            vec!["set_ad", "always_next", "static_a"]
+        );
     }
 
     #[test]

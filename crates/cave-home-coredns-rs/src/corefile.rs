@@ -92,12 +92,16 @@ impl Corefile {
                     Token::Newline => p += 1,
                     Token::Open => break,
                     Token::Close => {
-                        return Err(WireError::Corefile { reason: "unexpected '}'" });
+                        return Err(WireError::Corefile {
+                            reason: "unexpected '}'",
+                        });
                     }
                 }
             }
             if header.is_empty() || tokens.get(p) != Some(&Token::Open) {
-                return Err(WireError::Corefile { reason: "expected '{' after server header" });
+                return Err(WireError::Corefile {
+                    reason: "expected '{' after server header",
+                });
             }
             p += 1; // consume Open
             let plugins = parse_block(&tokens, &mut p)?;
@@ -113,12 +117,20 @@ fn parse_block(tokens: &[Token], p: &mut usize) -> Result<Vec<Directive>> {
     loop {
         skip_newlines(tokens, p);
         match tokens.get(*p) {
-            None => return Err(WireError::Corefile { reason: "unbalanced '{'" }),
+            None => {
+                return Err(WireError::Corefile {
+                    reason: "unbalanced '{'",
+                });
+            }
             Some(Token::Close) => {
                 *p += 1;
                 return Ok(dirs);
             }
-            Some(Token::Open) => return Err(WireError::Corefile { reason: "unexpected '{'" }),
+            Some(Token::Open) => {
+                return Err(WireError::Corefile {
+                    reason: "unexpected '{'",
+                });
+            }
             Some(Token::Word(name)) => {
                 let name = name.clone();
                 *p += 1;
@@ -160,14 +172,22 @@ fn server_from_header(header: &[String], plugins: Vec<Directive>) -> Result<Serv
     for raw in header {
         // Strip an optional transport scheme (dns:// / tls:// / …).
         let addr = raw.split_once("://").map_or(raw.as_str(), |(_, rest)| rest);
-        let (zone, addr_port) = addr.rsplit_once(':').map_or((addr, None), |(z, pstr)| (z, Some(pstr)));
+        let (zone, addr_port) = addr
+            .rsplit_once(':')
+            .map_or((addr, None), |(z, pstr)| (z, Some(pstr)));
         if let Some(pstr) = addr_port {
-            let parsed = pstr.parse().map_err(|_| WireError::Corefile { reason: "bad port" })?;
+            let parsed = pstr
+                .parse()
+                .map_err(|_| WireError::Corefile { reason: "bad port" })?;
             port = Some(parsed);
         }
         zones.push(zone.to_string());
     }
-    Ok(ServerBlock { zones, port: port.unwrap_or(DEFAULT_PORT), plugins })
+    Ok(ServerBlock {
+        zones,
+        port: port.unwrap_or(DEFAULT_PORT),
+        plugins,
+    })
 }
 
 /// Advance `p` past any run of newline tokens.

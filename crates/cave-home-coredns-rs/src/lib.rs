@@ -52,6 +52,28 @@
 //! Cluster DNS is pure infrastructure, hidden from the homeowner. This crate
 //! produces **no user-facing strings** — its errors model DNS wire vocabulary
 //! (`RCODE`s, parse failures), never the Portal.
+//!
+//! # Example
+//!
+//! ```
+//! use cave_home_coredns_rs::{Chain, Hosts, Message, Name, Rcode, RecordType};
+//!
+//! // A one-plugin chain that answers from a hostfile.
+//! let chain = Chain::new(vec![Box::new(Hosts::parse("10.0.0.1 web.local"))]);
+//!
+//! let query = Message::query(Name::parse("web.local").unwrap(), RecordType::A, 0x42);
+//! let reply = chain.handle(&query);
+//!
+//! assert_eq!(reply.header.rcode, Rcode::NoError);
+//! assert!(reply.header.aa);
+//! assert_eq!(reply.answers.len(), 1);
+//!
+//! // The reply re-encodes to valid wire bytes and decodes back.
+//! let bytes = reply.encode();
+//! let decoded = Message::decode(&bytes).unwrap();
+//! assert_eq!(decoded.answers, reply.answers);
+//! assert_eq!(decoded.header.ancount, 1); // section counts are derived on encode
+//! ```
 
 #![forbid(unsafe_code)]
 // DNS counts and TTLs are unsigned 16/32-bit wire fields; the casts between
@@ -74,7 +96,7 @@ pub mod rewrite;
 pub mod rr;
 pub mod wire;
 
-pub use builtins::{format_log_line, Errors, Metrics, MetricsSnapshot, Ready};
+pub use builtins::{Errors, Metrics, MetricsSnapshot, Ready, format_log_line};
 pub use cache::{Cache, CacheKey, CachePlugin};
 pub use corefile::{Corefile, Directive, ServerBlock};
 pub use error::{Result, WireError};

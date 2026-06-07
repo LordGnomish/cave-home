@@ -1,0 +1,242 @@
+# cave-home-coredns-rs — parity manifest.
+#
+# This crate ships the *decision core* of the embedded cluster DNS that K3s runs
+# in-process for Kubernetes service discovery (ADR-004, Orchestration Phase 3):
+# the DNS wire protocol and the per-plugin answer logic of CoreDNS's Caddy-style
+# plugin chain, implemented as pure, std-only code so it is testable without a
+# socket, a cluster, a clock, or a crypto backend.
+#
+# What is implemented and tested here:
+#
+#   * RFC 1035 domain names — labels, 63/255 limits, case-insensitive compare,
+#     RFC 4034 canonical ordering.
+#   * The DNS message codec — 12-octet header + flags, question, the RDATA
+#     codecs (A/AAAA/NS/CNAME/PTR/SOA/MX/TXT/SRV + opaque unknown types), and
+#     RFC 1035 §4.1.4 name compression (loop-safe on read).
+#   * The Caddy-style plugin chain — the Plugin/Next "NextOrFailure" contract,
+#     middleware composition, fallthrough, SERVFAIL on an exhausted chain.
+#   * Plugins: hosts, rewrite, cache (positive+negative, TTL, eviction),
+#     kubernetes (ClusterIP/headless/ExternalName/SRV/pod/reverse-PTR,
+#     NXDOMAIN/NODATA/fallthrough), file (authoritative zone: delegation, CNAME
+#     chasing, wildcards, NXDOMAIN/NODATA, master-file parser), forward
+#     (round-robin/random/sequential + max_fails health), and the operational
+#     plugins metrics/errors/ready + the log-line formatter.
+#   * The Corefile parser — server blocks, zone:port, directives, nested blocks.
+#
+# Cluster DNS is INFRASTRUCTURE, hidden from the homeowner (Charter §6.3):
+# this crate produces no user-facing strings — its errors model DNS wire
+# vocabulary (RCODEs, parse failures), never the Portal.
+#
+# Port method: HONEST behavioural reimplementation of documented DNS protocol
+# RFCs and CoreDNS plugin semantics from PUBLIC sources (RFC 1034/1035/2782/
+# 3596/4034/4592 and the Apache-2.0 coredns/coredns plugin docs). This is NOT a
+# verbatim line-by-line port and is not claimed as one. The socket transports,
+# the real network forward client, the live Kubernetes API watch, DNSSEC online
+# signing, the Prometheus HTTP exposition, the zone-file watch/reload, zone
+# transfer (AXFR/IXFR), EDNS(0)/OPT and the Corefile→Chain wiring are all
+# deferred and enumerated below with an ADR-004 phase disposition.
+
+[crate]
+name             = "cave-home-coredns-rs"
+upstream_repo    = "coredns/coredns"
+port_method      = "spec-based (behavioural reimplementation of CoreDNS plugin semantics + DNS RFCs; NOT verbatim line-by-line)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "RFC 1035 — DNS message format, header/question/RR layout, name compression (§4.1.4), master files (§5)",
+    "RFC 1034 — the authoritative lookup algorithm (§4.3.2): referral, CNAME, wildcard, NXDOMAIN/NODATA",
+    "RFC 2782 — SRV records (priority/weight/port/target; target MUST NOT be compressed)",
+    "RFC 3596 — AAAA records + ip6.arpa reverse mapping",
+    "RFC 4034 — DNSSEC canonical name form (§3.1.7) and canonical ordering (§6.1)",
+    "RFC 4592 — wildcard synthesis at the closest encloser",
+    "coredns/coredns plugin docs — Corefile grammar, plugin chain (NextOrFailure/fallthrough), and the hosts/rewrite/cache/kubernetes/file/forward/errors/ready/metrics plugin semantics (Apache-2.0)",
+]
+ported_at        = "2026-06-07"
+linux_min_kernel = "7.1"
+
+[ratios]
+# fill_ratio is against the FULL CoreDNS scope (the DNS server + its ~40-plugin
+# ecosystem + transports + DNSSEC + Prometheus). The decision core — the wire
+# protocol and the answer logic of the core service-discovery plugin set — is
+# implemented and tested in full; the socket/crypto/HTTP/watch shells around it
+# remain and are all ADR-004 deferrals enumerated below.
+fill_ratio              = 0.35
+fill_ratio_basis        = "RFC 1035 wire codec (header/question/RR/compression) + RR RDATA codecs + the plugin chain + hosts/rewrite/cache/kubernetes/file/forward/errors/ready/metrics decision cores + Corefile parser, fully implemented & tested; socket transports, network forward client, live K8s watch, DNSSEC signing, Prometheus exposition, zone watch/reload, AXFR/IXFR, EDNS0/OPT and Corefile→Chain wiring deferred"
+test_port_ratio         = 0.0   # tests designed from the RFCs / CoreDNS docs, none ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-004 phase disposition + note
+honest_ratio            = 1.00  # 0.35 / (0.35 + (1-0.35)*(1-1.00)) = 1.00
+
+# ---- mapped (real implementation present in this crate) --------------------
+
+[[mapped]]
+spec = "RFC 1035 domain names — labels, 63/255 limits, case-insensitive equality"
+ours = "src/name.rs::Name"
+
+[[mapped]]
+spec = "RFC 4034 §3.1.7/§6.1 — canonical (lower-cased) form + canonical ordering"
+ours = "src/name.rs::Name::{canonical,cmp_canonical}"
+
+[[mapped]]
+spec = "RFC 1035 §4.1.1 — the 12-octet header + flag bits + OPCODE/RCODE"
+ours = "src/wire.rs::{Header,Opcode,Rcode}"
+
+[[mapped]]
+spec = "RFC 1035 §4.1.4 — name compression (suffix sharing on write, loop-safe backward-only pointers on read)"
+ours = "src/wire.rs::{Writer::write_name,Reader::read_name}"
+
+[[mapped]]
+spec = "RFC 1035 §3.2 + RFC 2782/3596 — RR types/classes + RDATA codecs (A/AAAA/NS/CNAME/PTR/SOA/MX/TXT/SRV + unknown), RDLENGTH backpatch"
+ours = "src/rr.rs::{RecordType,Class,Rdata,ResourceRecord}"
+
+[[mapped]]
+spec = "RFC 1035 §4.1 — the full message (4 sections), reply assembly, section-count derivation, cross-section compression"
+ours = "src/message.rs::{Message,Question}"
+
+[[mapped]]
+spec = "CoreDNS plugin chain — the Plugin/Next NextOrFailure contract, middleware composition, fallthrough, SERVFAIL-on-exhaustion"
+ours = "src/plugin.rs::{Plugin,Next,Chain,Request}"
+
+[[mapped]]
+spec = "CoreDNS hosts plugin — hostfile A/AAAA forward + reverse PTR, authoritative NODATA/NXDOMAIN, fallthrough"
+ours = "src/hosts.rs::Hosts"
+
+[[mapped]]
+spec = "RFC 1035 §3.5 / RFC 3596 §2.5 — in-addr.arpa / ip6.arpa reverse name <-> address"
+ours = "src/arpa.rs::{to_arpa,from_arpa}"
+
+[[mapped]]
+spec = "CoreDNS rewrite plugin — name (exact/prefix/suffix/substring)/type/class rules, stop/continue, response restore"
+ours = "src/rewrite.rs::{Rewriter,Rule}"
+
+[[mapped]]
+spec = "CoreDNS cache plugin — positive (min-TTL) + negative (SOA-minimum) caching, zero-TTL skip, elapsed-time countdown, capacity eviction"
+ours = "src/cache.rs::{Cache,CachePlugin}"
+
+[[mapped]]
+spec = "CoreDNS kubernetes plugin — svc/pod name schema: ClusterIP/headless/ExternalName/SRV/pod/reverse-PTR, NXDOMAIN/NODATA, fallthrough"
+ours = "src/kubernetes.rs::Kubernetes"
+
+[[mapped]]
+spec = "RFC 1034 §4.3.2 authoritative lookup — delegation+glue, exact, CNAME chase, wildcard (RFC 4592), NXDOMAIN/NODATA with SOA"
+ours = "src/file.rs::Zone::lookup"
+
+[[mapped]]
+spec = "RFC 1035 §5 master-file format — $ORIGIN/$TTL, @, blank-owner, paren continuation, relative names, common types"
+ours = "src/file.rs::Zone::from_master"
+
+[[mapped]]
+spec = "CoreDNS forward plugin — upstream selection policy (round-robin/random/sequential) + max_fails health/exclusion/revival"
+ours = "src/forward.rs::{Pool,Forward}"
+
+[[mapped]]
+spec = "CoreDNS metrics/errors/ready plugins — request/response counters, error-to-SERVFAIL, readiness gate; log line format"
+ours = "src/builtins.rs::{Metrics,Errors,Ready,format_log_line}"
+
+[[mapped]]
+spec = "CoreDNS Corefile (Caddyfile) grammar — server blocks, zone:port, directives, nested subdirective blocks"
+ours = "src/corefile.rs::Corefile"
+
+# ---- unmapped (NOT in this crate; ADR-004 disposition) ---------------------
+
+[[unmapped]]
+area     = "Socket transports (UDP/TCP listeners, TLS/DoT, QUIC/DoQ, DoH)"
+priority = "phase-1b"
+note     = "ADR-004 Phase 3: every plugin decision (which records, which RCODE) is implemented and tested here against in-memory messages; binding a UDP/TCP socket, the TLS/QUIC/HTTP framing and the read/write loop are an I/O shell that wraps Chain::handle. No new answer logic."
+
+[[unmapped]]
+area     = "forward network client (the real DNS exchange over the wire)"
+priority = "phase-1b"
+note     = "ADR-004 Phase 3: the upstream-selection and health/max_fails DECISIONS are implemented and tested; forward::Forward takes the actual exchange as an injected Transport (Fn(&str,&Message)->Option<Message>). The UDP/TCP/TLS/QUIC/DoH client that implements that trait is the deferred I/O."
+
+[[unmapped]]
+area     = "live Kubernetes API watch (Services/Endpoints/EndpointSlices informers)"
+priority = "phase-2"
+note     = "ADR-004 Phase 2/3: kubernetes::Kubernetes resolves over an in-memory snapshot supplied by the caller; the apiserver watch that keeps that snapshot current is cross-crate integration (cave-home-apiserver-rs) and is deferred. This crate stays apiserver-agnostic per Charter §5.1 (no cave-home crate deps)."
+
+[[unmapped]]
+area     = "DNSSEC online signing + the dnssec/sign plugins (DNSKEY/RRSIG/NSEC/DS)"
+priority = "phase-2"
+note     = "ADR-004: canonical name form + ordering (the DNSSEC name primitives) are implemented; RRSIG generation, the NSEC/NSEC3 denial chain and key management need a crypto backend and are deferred. cave-runtime keeps cave-dns separate under strict isolation."
+
+[[unmapped]]
+area     = "Prometheus HTTP exposition (/metrics endpoint)"
+priority = "phase-1b"
+note     = "ADR-004 Phase 3: builtins::Metrics tracks the counters (queries by type, responses by rcode) the observability panels/alerts reference; the HTTP endpoint that renders them in the Prometheus text format is the deferred exposition shell (observability/panels/coredns-rs.json + alerts/coredns-rs.yml model the target)."
+
+[[unmapped]]
+area     = "Corefile -> Chain wiring (instantiate each plugin from its directive)"
+priority = "phase-1b"
+note     = "ADR-004 Phase 3: the Corefile parser produces the config AST and the plugin chain executes a list of plugins; the factory that maps each parsed Directive to a constructed plugin (with its args/sub-directives) is a thin assembly step deferred to the server bring-up."
+
+[[unmapped]]
+area     = "Zone file watch / hot reload (file + reload + auto plugins)"
+priority = "phase-1b"
+note     = "ADR-004 Phase 3: Zone::from_master parses a zone and Zone::lookup answers from it; the inotify-style file watch and the periodic reload loop are I/O shells around the parser, deferred."
+
+[[unmapped]]
+area     = "Zone transfer (AXFR/IXFR) — secondary/transfer plugins"
+priority = "phase-2"
+note     = "ADR-004 (task: optional): the authoritative data model exists; the transfer protocol (full + incremental, SOA-serial driven) is a separate wire flow and is deferred as the optional item it was scoped as."
+
+[[unmapped]]
+area     = "EDNS(0) / OPT pseudo-record (UDP buffer size, DO bit, options)"
+priority = "phase-1b"
+note     = "ADR-004 Phase 3: OPT decodes/round-trips as an opaque unknown RR and the cache key reserves a dnssec_ok (DO) field; parsing OPT options and negotiating the UDP buffer size land with the socket transport that needs them."
+
+[[unmapped]]
+area     = "Backward-compat: pre-3.x / non-IN classes / legacy plugins"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home targets the current DNS protocol and the CoreDNS plugin set it needs; no legacy class handling or deprecated plugins."
+
+# ---- spec_test (designed from the RFCs / CoreDNS documented semantics) -----
+
+[[spec_test]]
+designed_for = "Domain names — parse/print, 63/255 limits, case-insensitive equality/hash, subdomain/parent, RFC 4034 ordering"
+ours         = "src/name.rs::tests"
+
+[[spec_test]]
+designed_for = "Wire codec — header round-trip + flag layout, OPCODE/RCODE, name compression, loop-safe/malformed-pointer guards, EOF, 255-limit"
+ours         = "src/wire.rs::tests"
+
+[[spec_test]]
+designed_for = "RR/RDATA — type/class wire values, A/AAAA/NS/CNAME/PTR/SOA/MX/TXT/SRV + unknown round-trips, RDLENGTH mismatch, uncompressed SRV target"
+ours         = "src/rr.rs::tests"
+
+[[spec_test]]
+designed_for = "Message — question round-trip, query/reply builders, count derivation, four-section round-trip, cross-section compression, truncation"
+ours         = "src/message.rs::tests"
+
+[[spec_test]]
+designed_for = "Plugin chain — short-circuit, fallthrough, middleware post-processing, error/exhaustion → SERVFAIL, plugin order, request accessors"
+ours         = "src/plugin.rs::tests"
+
+[[spec_test]]
+designed_for = "arpa + hosts — v4/v6 reverse conversion + rejection; A/AAAA/PTR answers, NODATA/NXDOMAIN, fallthrough, configurable TTL"
+ours         = "src/arpa.rs::tests + src/hosts.rs::tests"
+
+[[spec_test]]
+designed_for = "rewrite — exact/prefix/suffix/substring name + type rules, response restore, stop vs continue chaining"
+ours         = "src/rewrite.rs::tests"
+
+[[spec_test]]
+designed_for = "cache — positive hit/TTL countdown/expiry-miss/zero-TTL-skip, negative via SOA minimum, capacity eviction, type-distinguished keys, plugin hit"
+ours         = "src/cache.rs::tests"
+
+[[spec_test]]
+designed_for = "kubernetes — ClusterIP A/AAAA, headless + endpoint hostname, ExternalName CNAME, named-port SRV+additional, pod, reverse PTR, NXDOMAIN/NODATA, out-of-zone defer, fallthrough"
+ours         = "src/kubernetes.rs::tests"
+
+[[spec_test]]
+designed_for = "file — exact, apex SOA/NS, NODATA/NXDOMAIN+SOA, in-zone & out-of-zone CNAME, wildcard, delegation+glue, out-of-zone non-authority, master-file parse"
+ours         = "src/file.rs::tests"
+
+[[spec_test]]
+designed_for = "forward — round-robin/sequential/random selection, max_fails down/exclude/revive, all-down, plugin failover + all-fail SERVFAIL"
+ours         = "src/forward.rs::tests"
+
+[[spec_test]]
+designed_for = "operational plugins — metrics by type/rcode incl NXDOMAIN/SERVFAIL, errors→SERVFAIL+count, ready gate, log line format"
+ours         = "src/builtins.rs::tests"
+
+[[spec_test]]
+designed_for = "Corefile — simple block, zone:port, multi-zone header, nested subdirectives, comments, multiple blocks, quoted args, unbalanced braces, plugin lookup"
+ours         = "src/corefile.rs::tests"

@@ -45,10 +45,16 @@ impl Hosts {
                 continue;
             }
             let mut fields = line.split_whitespace();
-            let Some(ip_str) = fields.next() else { continue };
-            let Ok(ip) = ip_str.parse::<IpAddr>() else { continue };
+            let Some(ip_str) = fields.next() else {
+                continue;
+            };
+            let Ok(ip) = ip_str.parse::<IpAddr>() else {
+                continue;
+            };
             for host in fields {
-                let Ok(name) = Name::parse(host) else { continue };
+                let Ok(name) = Name::parse(host) else {
+                    continue;
+                };
                 match ip {
                     IpAddr::V4(a) => v4.entry(name.clone()).or_default().push(a),
                     IpAddr::V6(a) => v6.entry(name.clone()).or_default().push(a),
@@ -56,7 +62,13 @@ impl Hosts {
                 ptr.entry(ip).or_default().push(name);
             }
         }
-        Self { v4, v6, ptr, fallthrough: false, ttl: DEFAULT_TTL }
+        Self {
+            v4,
+            v6,
+            ptr,
+            fallthrough: false,
+            ttl: DEFAULT_TTL,
+        }
     }
 
     /// Enable `fallthrough`: pass unknown names to the next plugin.
@@ -128,14 +140,18 @@ impl Plugin for Hosts {
     }
 
     fn serve_dns(&self, req: &Request<'_>, next: Next<'_>) -> Outcome {
-        let Some(q) = req.question() else { return next.run(req) };
+        let Some(q) = req.question() else {
+            return next.run(req);
+        };
         let owner = q.name.clone();
         match q.qtype {
             RecordType::A => {
                 let answers = self
                     .lookup_a(&owner)
                     .iter()
-                    .map(|ip| ResourceRecord::new(owner.clone(), Class::In, self.ttl, Rdata::A(*ip)))
+                    .map(|ip| {
+                        ResourceRecord::new(owner.clone(), Class::In, self.ttl, Rdata::A(*ip))
+                    })
                     .collect();
                 self.respond(req, next, answers, self.knows(&owner))
             }
@@ -175,12 +191,12 @@ impl Plugin for Hosts {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use crate::arpa::to_arpa;
     use crate::message::Message;
     use crate::name::Name;
     use crate::plugin::{Chain, Next, Outcome, Plugin, Request};
     use crate::rr::{Rdata, RecordType};
     use crate::wire::Rcode;
-    use crate::arpa::to_arpa;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
     /// A terminal fallback plugin that always answers REFUSED-as-marker so we
@@ -282,9 +298,15 @@ mod tests {
             Box::new(Sentinel),
         ]);
         // Unknown name falls through to the sentinel.
-        assert_eq!(ask(&chain, "nope.example.com", RecordType::A).header.rcode, Rcode::Refused);
+        assert_eq!(
+            ask(&chain, "nope.example.com", RecordType::A).header.rcode,
+            Rcode::Refused
+        );
         // Known name is still answered by hosts, not the sentinel.
-        assert_eq!(ask(&chain, "host.example.com", RecordType::A).header.rcode, Rcode::NoError);
+        assert_eq!(
+            ask(&chain, "host.example.com", RecordType::A).header.rcode,
+            Rcode::NoError
+        );
     }
 
     #[test]

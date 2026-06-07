@@ -116,6 +116,9 @@ mod tests {
     fn non_arpa_names_are_rejected() {
         assert_eq!(from_arpa(&Name::parse("example.com").unwrap()), None);
         assert_eq!(from_arpa(&Name::parse("1.2.3.in-addr.arpa").unwrap()), None);
-        assert_eq!(from_arpa(&Name::parse("zz.4.3.2.1.in-addr.arpa").unwrap()), None);
+        assert_eq!(
+            from_arpa(&Name::parse("zz.4.3.2.1.in-addr.arpa").unwrap()),
+            None
+        );
     }
 }

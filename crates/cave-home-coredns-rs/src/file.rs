@@ -51,7 +51,11 @@ impl Zone {
     /// An empty zone rooted at `origin`.
     #[must_use]
     pub fn new(origin: Name) -> Self {
-        Self { origin, owners: HashMap::new(), soa: None }
+        Self {
+            origin,
+            owners: HashMap::new(),
+            soa: None,
+        }
     }
 
     /// Add a record (builder style).
@@ -162,11 +166,23 @@ impl Zone {
     }
 
     const fn answer(answers: Vec<ResourceRecord>) -> ZoneReply {
-        ZoneReply { rcode: Rcode::NoError, aa: true, answers, authority: Vec::new(), additional: Vec::new() }
+        ZoneReply {
+            rcode: Rcode::NoError,
+            aa: true,
+            answers,
+            authority: Vec::new(),
+            additional: Vec::new(),
+        }
     }
 
     fn negative(&self, rcode: Rcode) -> ZoneReply {
-        ZoneReply { rcode, aa: true, answers: Vec::new(), authority: self.soa_authority(), additional: Vec::new() }
+        ZoneReply {
+            rcode,
+            aa: true,
+            answers: Vec::new(),
+            authority: self.soa_authority(),
+            additional: Vec::new(),
+        }
     }
 
     fn cname_at(&self, name: &Name) -> Option<Name> {
@@ -195,7 +211,11 @@ impl Zone {
                 rcode: chained.rcode,
                 aa: true,
                 answers,
-                authority: if chained.rcode == Rcode::NoError { Vec::new() } else { chained.authority },
+                authority: if chained.rcode == Rcode::NoError {
+                    Vec::new()
+                } else {
+                    chained.authority
+                },
                 additional: Vec::new(),
             };
         }
@@ -260,17 +280,24 @@ impl Zone {
                 continue;
             }
             if let Some(rest) = line.trim().strip_prefix("$TTL") {
-                default_ttl = rest.trim().parse().map_err(|_| WireError::Corefile { reason: "bad $TTL" })?;
+                default_ttl = rest
+                    .trim()
+                    .parse()
+                    .map_err(|_| WireError::Corefile { reason: "bad $TTL" })?;
                 continue;
             }
 
             let owner_in_line = !line.starts_with([' ', '\t']);
             let mut toks = line.split_whitespace().peekable();
             let owner = if owner_in_line {
-                let tok = toks.next().ok_or(WireError::Corefile { reason: "empty record" })?;
+                let tok = toks.next().ok_or(WireError::Corefile {
+                    reason: "empty record",
+                })?;
                 to_name(tok, &current_origin)?
             } else {
-                last_owner.clone().ok_or(WireError::Corefile { reason: "blank owner with no prior record" })?
+                last_owner.clone().ok_or(WireError::Corefile {
+                    reason: "blank owner with no prior record",
+                })?
             };
             last_owner = Some(owner.clone());
 
@@ -287,7 +314,9 @@ impl Zone {
                     toks.next();
                 }
             }
-            let rtype = toks.next().ok_or(WireError::Corefile { reason: "missing type" })?;
+            let rtype = toks.next().ok_or(WireError::Corefile {
+                reason: "missing type",
+            })?;
             let rest: Vec<&str> = toks.collect();
             let rdata = parse_rdata(rtype, &rest, &current_origin)?;
             zone.add_record(ResourceRecord::new(owner, Class::In, ttl, rdata));
@@ -315,7 +344,9 @@ impl Plugin for FilePlugin {
     }
 
     fn serve_dns(&self, req: &Request<'_>, next: Next<'_>) -> Outcome {
-        let Some(q) = req.question() else { return next.run(req) };
+        let Some(q) = req.question() else {
+            return next.run(req);
+        };
         match self.zone.lookup(&q.name, q.qtype) {
             None => next.run(req), // out of zone — not authoritative
             Some(z) => {
@@ -391,14 +422,29 @@ fn to_name(tok: &str, origin: &Name) -> Result<Name> {
 
 /// Parse the RDATA tokens for a record type.
 fn parse_rdata(rtype: &str, rest: &[&str], origin: &Name) -> Result<Rdata> {
-    let bad = || WireError::Corefile { reason: "bad rdata" };
+    let bad = || WireError::Corefile {
+        reason: "bad rdata",
+    };
     let parse_u32 = |s: &str| s.parse::<u32>().map_err(|_| bad());
     let parse_u16 = |s: &str| s.parse::<u16>().map_err(|_| bad());
     match rtype.to_ascii_uppercase().as_str() {
-        "A" => Ok(Rdata::A(rest.first().ok_or_else(bad)?.parse::<Ipv4Addr>().map_err(|_| bad())?)),
-        "AAAA" => Ok(Rdata::Aaaa(rest.first().ok_or_else(bad)?.parse::<Ipv6Addr>().map_err(|_| bad())?)),
+        "A" => Ok(Rdata::A(
+            rest.first()
+                .ok_or_else(bad)?
+                .parse::<Ipv4Addr>()
+                .map_err(|_| bad())?,
+        )),
+        "AAAA" => Ok(Rdata::Aaaa(
+            rest.first()
+                .ok_or_else(bad)?
+                .parse::<Ipv6Addr>()
+                .map_err(|_| bad())?,
+        )),
         "NS" => Ok(Rdata::Ns(to_name(rest.first().ok_or_else(bad)?, origin)?)),
-        "CNAME" => Ok(Rdata::Cname(to_name(rest.first().ok_or_else(bad)?, origin)?)),
+        "CNAME" => Ok(Rdata::Cname(to_name(
+            rest.first().ok_or_else(bad)?,
+            origin,
+        )?)),
         "PTR" => Ok(Rdata::Ptr(to_name(rest.first().ok_or_else(bad)?, origin)?)),
         "MX" => Ok(Rdata::Mx {
             preference: parse_u16(rest.first().ok_or_else(bad)?)?,
@@ -406,7 +452,9 @@ fn parse_rdata(rtype: &str, rest: &[&str], origin: &Name) -> Result<Rdata> {
         }),
         "TXT" => {
             let joined = rest.join(" ");
-            Ok(Rdata::Txt(vec![joined.trim_matches('"').as_bytes().to_vec()]))
+            Ok(Rdata::Txt(vec![
+                joined.trim_matches('"').as_bytes().to_vec(),
+            ]))
         }
         "SRV" => Ok(Rdata::Srv {
             priority: parse_u16(rest.first().ok_or_else(bad)?)?,
@@ -423,7 +471,9 @@ fn parse_rdata(rtype: &str, rest: &[&str], origin: &Name) -> Result<Rdata> {
             expire: parse_u32(rest.get(5).ok_or_else(bad)?)?,
             minimum: parse_u32(rest.get(6).ok_or_else(bad)?)?,
         }),
-        _ => Err(WireError::Corefile { reason: "unsupported record type" }),
+        _ => Err(WireError::Corefile {
+            reason: "unsupported record type",
+        }),
     }
 }
 
@@ -476,15 +526,40 @@ mod tests {
     fn zone() -> Zone {
         Zone::new(n("example.com"))
             .with_record(soa())
-            .with_record(ResourceRecord::new(n("example.com"), Class::In, 3600, Rdata::Ns(n("ns1.example.com"))))
+            .with_record(ResourceRecord::new(
+                n("example.com"),
+                Class::In,
+                3600,
+                Rdata::Ns(n("ns1.example.com")),
+            ))
             .with_record(a("ns1.example.com", [192, 0, 2, 1]))
             .with_record(a("www.example.com", [192, 0, 2, 10]))
-            .with_record(ResourceRecord::new(n("www.example.com"), Class::In, 3600, Rdata::Aaaa(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 10))))
-            .with_record(ResourceRecord::new(n("alias.example.com"), Class::In, 3600, Rdata::Cname(n("www.example.com"))))
-            .with_record(ResourceRecord::new(n("ext.example.com"), Class::In, 3600, Rdata::Cname(n("elsewhere.net"))))
+            .with_record(ResourceRecord::new(
+                n("www.example.com"),
+                Class::In,
+                3600,
+                Rdata::Aaaa(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 10)),
+            ))
+            .with_record(ResourceRecord::new(
+                n("alias.example.com"),
+                Class::In,
+                3600,
+                Rdata::Cname(n("www.example.com")),
+            ))
+            .with_record(ResourceRecord::new(
+                n("ext.example.com"),
+                Class::In,
+                3600,
+                Rdata::Cname(n("elsewhere.net")),
+            ))
             .with_record(a("*.wild.example.com", [192, 0, 2, 99]))
             // Delegation of sub.example.com with in-zone glue.
-            .with_record(ResourceRecord::new(n("sub.example.com"), Class::In, 3600, Rdata::Ns(n("ns.sub.example.com"))))
+            .with_record(ResourceRecord::new(
+                n("sub.example.com"),
+                Class::In,
+                3600,
+                Rdata::Ns(n("ns.sub.example.com")),
+            ))
             .with_record(a("ns.sub.example.com", [192, 0, 2, 53]))
     }
 
@@ -500,11 +575,19 @@ mod tests {
     #[test]
     fn apex_soa_and_ns() {
         assert!(matches!(
-            zone().lookup(&n("example.com"), RecordType::Soa).unwrap().answers[0].rdata,
+            zone()
+                .lookup(&n("example.com"), RecordType::Soa)
+                .unwrap()
+                .answers[0]
+                .rdata,
             Rdata::Soa { .. }
         ));
         assert!(matches!(
-            zone().lookup(&n("example.com"), RecordType::Ns).unwrap().answers[0].rdata,
+            zone()
+                .lookup(&n("example.com"), RecordType::Ns)
+                .unwrap()
+                .answers[0]
+                .rdata,
             Rdata::Ns(_)
         ));
     }
@@ -512,7 +595,9 @@ mod tests {
     #[test]
     fn nodata_for_existing_name_wrong_type() {
         // www exists (A/AAAA) but has no MX → NOERROR, empty answer, SOA in authority.
-        let r = zone().lookup(&n("www.example.com"), RecordType::Mx).unwrap();
+        let r = zone()
+            .lookup(&n("www.example.com"), RecordType::Mx)
+            .unwrap();
         assert_eq!(r.rcode, Rcode::NoError);
         assert!(r.answers.is_empty());
         assert!(matches!(r.authority[0].rdata, Rdata::Soa { .. }));
@@ -520,14 +605,18 @@ mod tests {
 
     #[test]
     fn nxdomain_for_absent_name() {
-        let r = zone().lookup(&n("ghost.example.com"), RecordType::A).unwrap();
+        let r = zone()
+            .lookup(&n("ghost.example.com"), RecordType::A)
+            .unwrap();
         assert_eq!(r.rcode, Rcode::NxDomain);
         assert!(matches!(r.authority[0].rdata, Rdata::Soa { .. }));
     }
 
     #[test]
     fn cname_is_chased_within_the_zone() {
-        let r = zone().lookup(&n("alias.example.com"), RecordType::A).unwrap();
+        let r = zone()
+            .lookup(&n("alias.example.com"), RecordType::A)
+            .unwrap();
         // CNAME alias→www, then www's A.
         assert!(matches!(r.answers[0].rdata, Rdata::Cname(_)));
         assert!(r.answers.iter().any(|rr| matches!(rr.rdata, Rdata::A(_))));
@@ -542,7 +631,9 @@ mod tests {
 
     #[test]
     fn wildcard_synthesis() {
-        let r = zone().lookup(&n("anything.wild.example.com"), RecordType::A).unwrap();
+        let r = zone()
+            .lookup(&n("anything.wild.example.com"), RecordType::A)
+            .unwrap();
         assert_eq!(r.answers.len(), 1);
         // The synthesized record is owned by the queried name.
         assert_eq!(r.answers[0].name, n("anything.wild.example.com"));
@@ -551,28 +642,44 @@ mod tests {
 
     #[test]
     fn delegation_returns_a_referral_with_glue() {
-        let r = zone().lookup(&n("host.sub.example.com"), RecordType::A).unwrap();
+        let r = zone()
+            .lookup(&n("host.sub.example.com"), RecordType::A)
+            .unwrap();
         assert_eq!(r.rcode, Rcode::NoError);
         assert!(!r.aa, "a referral is not authoritative");
         assert!(matches!(r.authority[0].rdata, Rdata::Ns(_)));
         // Glue address for the in-zone nameserver is in additional.
-        assert!(r.additional.iter().any(|rr| matches!(rr.rdata, Rdata::A(_))));
+        assert!(
+            r.additional
+                .iter()
+                .any(|rr| matches!(rr.rdata, Rdata::A(_)))
+        );
     }
 
     #[test]
     fn out_of_zone_is_not_authoritative() {
-        assert!(zone().lookup(&n("www.example.org"), RecordType::A).is_none());
+        assert!(
+            zone()
+                .lookup(&n("www.example.org"), RecordType::A)
+                .is_none()
+        );
     }
 
     #[test]
     fn plugin_defers_out_of_zone_and_answers_in_zone() {
         let chain = Chain::new(vec![Box::new(FilePlugin::new(zone())), Box::new(Sentinel)]);
         assert_eq!(
-            chain.handle(&Message::query(n("www.example.com"), RecordType::A, 1)).answers.len(),
+            chain
+                .handle(&Message::query(n("www.example.com"), RecordType::A, 1))
+                .answers
+                .len(),
             1
         );
         assert_eq!(
-            chain.handle(&Message::query(n("foo.example.org"), RecordType::A, 1)).header.rcode,
+            chain
+                .handle(&Message::query(n("foo.example.org"), RecordType::A, 1))
+                .header
+                .rcode,
             Rcode::Refused
         );
     }
@@ -595,10 +702,19 @@ mail     IN MX    10 mailhost.example.com.
         let r = z.lookup(&n("www.example.com"), RecordType::A).unwrap();
         assert_eq!(r.answers[0].rdata, Rdata::A(Ipv4Addr::new(192, 0, 2, 10)));
         let mx = z.lookup(&n("mail.example.com"), RecordType::Mx).unwrap();
-        assert!(matches!(mx.answers[0].rdata, Rdata::Mx { preference: 10, .. }));
         assert!(matches!(
-            z.lookup(&n("example.com"), RecordType::Soa).unwrap().answers[0].rdata,
-            Rdata::Soa { serial: 2026060701, .. }
+            mx.answers[0].rdata,
+            Rdata::Mx { preference: 10, .. }
+        ));
+        assert!(matches!(
+            z.lookup(&n("example.com"), RecordType::Soa)
+                .unwrap()
+                .answers[0]
+                .rdata,
+            Rdata::Soa {
+                serial: 2026060701,
+                ..
+            }
         ));
     }
 }
