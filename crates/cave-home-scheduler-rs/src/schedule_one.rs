@@ -81,12 +81,26 @@ fn apply_pre_filters(
     })
 }
 
-/// Upstream: `Scheduler.scheduleOne` (the synchronous core).
+/// Upstream: `Scheduler.scheduleOne` (the synchronous core), searching every
+/// feasible node.
 #[must_use]
 pub fn schedule_one(
     pod: &Pod,
     cache: &SchedulerCache,
     registry: &PluginRegistry,
+) -> ScheduleResult {
+    schedule_one_limited(pod, cache, registry, usize::MAX)
+}
+
+/// As [`schedule_one`], but stops the Filter loop once `feasible_limit` nodes
+/// have been accepted. Upstream: `findNodesThatFitPod` honouring
+/// `numFeasibleNodesToFind` to bound latency on large clusters.
+#[must_use]
+pub fn schedule_one_limited(
+    pod: &Pod,
+    cache: &SchedulerCache,
+    registry: &PluginRegistry,
+    feasible_limit: usize,
 ) -> ScheduleResult {
     let all_nodes = cache.snapshot();
     let total = all_nodes.len();
@@ -102,6 +116,9 @@ pub fn schedule_one(
     let mut feasible: Vec<NodeInfo> = Vec::with_capacity(nodes.len());
     let mut failures = FilterFailureMap::new();
     for node in &nodes {
+        if feasible.len() >= feasible_limit {
+            break;
+        }
         let mut accepted = true;
         for plugin in registry.filters() {
             let s = plugin.filter(&mut state, pod, node);
@@ -357,6 +374,19 @@ mod tests {
         let result = schedule_one(&pod("p", 100, 100), &cache, &reg);
         assert!(result.suggested_host.is_none());
         assert_eq!(result.feasible_nodes, 0);
+    }
+
+    #[test]
+    fn feasible_node_search_stops_at_limit() {
+        let cache = SchedulerCache::new();
+        cache.add_node(node("n1", 1000, 1024));
+        cache.add_node(node("n2", 1000, 1024));
+        cache.add_node(node("n3", 1000, 1024));
+        let reg = default_registry();
+        // All three fit, but the limit caps the feasible search at one.
+        let result = schedule_one_limited(&pod("p", 100, 100), &cache, &reg, 1);
+        assert_eq!(result.feasible_nodes, 1);
+        assert!(result.suggested_host.is_some());
     }
 
     #[test]

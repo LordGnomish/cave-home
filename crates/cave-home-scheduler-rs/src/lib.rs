@@ -43,7 +43,8 @@ pub use framework::{
 pub use plugins::default_registry;
 pub use preemption::DefaultPreemption;
 pub use queue::{PriorityQueue, QueuedPodInfo, SchedulingQueue};
-pub use schedule_one::{schedule_one, ScheduleResult};
+pub use config::SchedulerConfig;
+pub use schedule_one::{schedule_one, schedule_one_limited, ScheduleResult};
 pub use scheduler::{CycleOutcome, Scheduler};
 pub use source_sink::{
     EventStream, InMemorySink, InMemorySource, NodeEvent, NodeEventStream, PodEvent, SchedulerSink,

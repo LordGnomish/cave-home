@@ -3,13 +3,82 @@
 //!
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
 //!         pkg/scheduler/apis/config/types.go
-//!         pkg/scheduler/schedule_one.go::numFeasibleNodesToFind
+//!         `pkg/scheduler/schedule_one.go::numFeasibleNodesToFind`
 //!
 //! Phase 2 ships a single hard-coded profile (`default-scheduler`); multi-
 //! profile registries remain deferred (see `parity.manifest.toml`). What *is*
 //! load-bearing here is `percentageOfNodesToScore` and the adaptive
 //! `numFeasibleNodesToFind` heuristic, which bounds how many feasible nodes the
 //! filter loop searches for on large clusters.
+
+/// Upstream: `pkg/scheduler/schedule_one.go::minFeasibleNodesToFind` — never
+/// search for fewer than this many feasible nodes (small clusters are fully
+/// searched anyway).
+const MIN_FEASIBLE_NODES_TO_FIND: usize = 100;
+/// Upstream: `basePercentageOfNodesToScore`.
+const BASE_PERCENTAGE: u32 = 50;
+/// Upstream: `minFeasibleNodesPercentageToFind`.
+const MIN_PERCENTAGE: u32 = 5;
+
+/// Upstream: `pkg/scheduler/apis/config/types.go::KubeSchedulerProfile`
+/// (the Phase 2 slice). A single profile is supported.
+#[derive(Debug, Clone)]
+pub struct SchedulerConfig {
+    /// Upstream: `KubeSchedulerProfile.SchedulerName`.
+    pub profile_name: String,
+    /// Upstream: `KubeSchedulerConfiguration.PercentageOfNodesToScore`.
+    /// `None` selects the adaptive heuristic; `Some(p)` pins it to `p` percent.
+    pub percentage_of_nodes_to_score: Option<u32>,
+}
+
+impl Default for SchedulerConfig {
+    fn default() -> Self {
+        Self {
+            profile_name: "default-scheduler".to_string(),
+            percentage_of_nodes_to_score: None,
+        }
+    }
+}
+
+impl SchedulerConfig {
+    /// Pin `percentageOfNodesToScore` to an explicit value.
+    #[must_use]
+    pub const fn with_percentage(mut self, percentage: u32) -> Self {
+        self.percentage_of_nodes_to_score = Some(percentage);
+        self
+    }
+
+    /// Upstream: `pkg/scheduler/schedule_one.go::numFeasibleNodesToFind`.
+    ///
+    /// How many feasible nodes the filter loop should look for before stopping.
+    /// Small clusters (and `percentage >= 100`) search everything; large
+    /// clusters scale the search down adaptively to bound latency, never below
+    /// the [`MIN_FEASIBLE_NODES_TO_FIND`] floor.
+    #[must_use]
+    pub fn num_feasible_nodes_to_find(&self, num_all_nodes: usize) -> usize {
+        let percentage = self.percentage_of_nodes_to_score.unwrap_or(0);
+        if num_all_nodes < MIN_FEASIBLE_NODES_TO_FIND || percentage >= 100 {
+            return num_all_nodes;
+        }
+
+        // Adaptive percentage when unset/zero: shrink as the cluster grows.
+        let adaptive = if percentage == 0 {
+            let total = u32::try_from(num_all_nodes).unwrap_or(u32::MAX);
+            BASE_PERCENTAGE
+                .saturating_sub(total / 125)
+                .max(MIN_PERCENTAGE)
+        } else {
+            percentage
+        };
+
+        let num = num_all_nodes.saturating_mul(adaptive as usize) / 100;
+        if num < MIN_FEASIBLE_NODES_TO_FIND {
+            MIN_FEASIBLE_NODES_TO_FIND
+        } else {
+            num
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

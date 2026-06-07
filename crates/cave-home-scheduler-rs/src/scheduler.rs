@@ -10,9 +10,10 @@ use std::time::{Duration, Instant};
 use tokio::sync::Notify;
 
 use crate::cache::SchedulerCache;
+use crate::config::SchedulerConfig;
 use crate::framework::{ActionType, ClusterEvent, CycleState, Gvk, PluginRegistry};
 use crate::queue::{PriorityQueue, QueuedPodInfo, SchedulingQueue};
-use crate::schedule_one::{schedule_one, ScheduleResult};
+use crate::schedule_one::{schedule_one_limited, ScheduleResult};
 use crate::source_sink::{NodeEvent, PodEvent, Result, SchedulerSink, SchedulerSource};
 
 /// Upstream: `pkg/scheduler/scheduler.go::Scheduler`.
@@ -24,6 +25,8 @@ pub struct Scheduler {
     pub registry: PluginRegistry,
     /// Profile name — `default-scheduler` in Phase 2.
     pub profile_name: String,
+    /// Scheduler configuration (percentage-of-nodes-to-score, profile).
+    pub config: SchedulerConfig,
 }
 
 /// Outcome of a single `run_once` cycle (the pod that was processed +
@@ -40,14 +43,24 @@ impl Scheduler {
         source: Arc<dyn SchedulerSource>,
         sink: Arc<dyn SchedulerSink>,
     ) -> Self {
+        let config = SchedulerConfig::default();
         Self {
             source,
             sink,
             cache: SchedulerCache::new(),
             queue: PriorityQueue::new(),
             registry: crate::plugins::default_registry(),
-            profile_name: "default-scheduler".into(),
+            profile_name: config.profile_name.clone(),
+            config,
         }
+    }
+
+    /// Replace the scheduler configuration.
+    #[must_use]
+    pub fn with_config(mut self, config: SchedulerConfig) -> Self {
+        self.profile_name = config.profile_name.clone();
+        self.config = config;
+        self
     }
 
     /// Replace the registry — useful for tests that exercise a subset.
@@ -82,7 +95,8 @@ impl Scheduler {
         };
         let pod = info.pod.clone();
         let full = pod.full_name();
-        let result = schedule_one(&pod, &self.cache, &self.registry);
+        let limit = self.config.num_feasible_nodes_to_find(self.cache.node_count());
+        let result = schedule_one_limited(&pod, &self.cache, &self.registry, limit);
 
         if let Some(host) = &result.suggested_host {
             // Assume the pod into the cache and emit the bind.
@@ -283,7 +297,8 @@ impl Scheduler {
         let pod_cycle = self.queue.scheduling_cycle();
         let pod = info.pod.clone();
         let full = pod.full_name();
-        let result = schedule_one(&pod, &self.cache, &self.registry);
+        let limit = self.config.num_feasible_nodes_to_find(self.cache.node_count());
+        let result = schedule_one_limited(&pod, &self.cache, &self.registry, limit);
 
         if let Some(host) = result.suggested_host.clone() {
             match self.run_binding_cycle(&pod, &host).await {
