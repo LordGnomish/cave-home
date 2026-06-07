@@ -32,8 +32,10 @@
 
 pub mod auth;
 pub mod config;
+mod core_bridge;
 pub mod device;
 pub mod error;
+mod mqtt_bridge;
 pub mod event;
 pub mod model;
 pub mod reconnect;
