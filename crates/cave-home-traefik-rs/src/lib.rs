@@ -99,3 +99,76 @@ pub use middleware::{Applied, Middleware, MiddlewareChain};
 pub use request::{RequestDescriptor, ResponseDescriptor};
 pub use router::{select, Router};
 pub use rule::{parse, ParseError, Rule};
+
+// ── Real runtime (feature = "runtime", default-on) ───────────────────────────
+//
+// Everything below is the actual HTTP/HTTPS reverse-proxy + Kubernetes-Ingress
+// runtime that consults the decision core above: the async TCP/TLS listener,
+// the reverse-proxy forwarding engine (retries, circuit breaking), the
+// middleware-enforcement layer (auth, rate-limit, compression, CORS), service
+// discovery, the ACME client, Prometheus metrics and the dashboard. It is
+// gated so that `--no-default-features` still builds the std-only decision core.
+
+/// Bridge between `hyper`/`http` wire types and the core descriptors.
+#[cfg(feature = "runtime")]
+pub mod wire;
+
+/// Hop-by-hop header stripping + the `X-Forwarded-*` reverse-proxy header set.
+#[cfg(feature = "runtime")]
+pub mod forwarded;
+
+/// Reverse-proxy upstream request-URI assembly.
+#[cfg(feature = "runtime")]
+pub mod backend;
+
+/// Circuit breaker for backend forwarding.
+#[cfg(feature = "runtime")]
+pub mod circuit;
+
+/// Bounded retry policy with exponential backoff.
+#[cfg(feature = "runtime")]
+pub mod retry;
+
+/// Token-bucket rate limiting.
+#[cfg(feature = "runtime")]
+pub mod ratelimit;
+
+/// HTTP Basic-auth enforcement.
+#[cfg(feature = "runtime")]
+pub mod auth;
+
+/// CORS preflight + response decoration.
+#[cfg(feature = "runtime")]
+pub mod cors;
+
+/// Response compression (gzip / deflate negotiation).
+#[cfg(feature = "runtime")]
+pub mod compress;
+
+/// TLS termination + SNI certificate resolution.
+#[cfg(feature = "runtime")]
+pub mod tls;
+
+/// ACME (RFC 8555) client for automatic certificates.
+#[cfg(feature = "runtime")]
+pub mod acme;
+
+/// Kubernetes service discovery (endpoints → server pool).
+#[cfg(feature = "runtime")]
+pub mod discovery;
+
+/// Kubernetes Ingress controller: reconcile + hot-swap config holder.
+#[cfg(feature = "runtime")]
+pub mod controller;
+
+/// Prometheus metrics.
+#[cfg(feature = "runtime")]
+pub mod metrics;
+
+/// Dashboard status snapshot.
+#[cfg(feature = "runtime")]
+pub mod dashboard;
+
+/// The real async HTTP/HTTPS reverse-proxy listener.
+#[cfg(feature = "runtime")]
+pub mod server;
