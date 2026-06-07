@@ -78,6 +78,10 @@ pub mod router;
 pub mod rule;
 
 pub use config::{ConfigError, DynamicConfig, Route};
+pub use ingress::{
+    translate_ingresses, BackendRef, HttpPath, Ingress, IngressBackend, IngressError, IngressRule,
+    IngressTls, PathType, ServicePort, Translation,
+};
 pub use loadbalancer::{LoadBalancer, Server, Service, StickyPick};
 pub use matcher::matches;
 pub use middleware::{Applied, Middleware, MiddlewareChain};
