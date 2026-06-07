@@ -139,18 +139,30 @@ impl<L: LlmClient, E: ToolExecutor> Dispatcher<L, E> {
         transcript: &Transcript,
         ctx: &DispatchContext,
     ) -> Result<DispatchOutcome> {
-        // STUB (RED): no path wired yet.
-        let _ = (transcript, ctx, &self.intents, &self.executor, &self.registry, &self.config);
-        Ok(DispatchOutcome {
-            path: DispatchPath::Nlu,
-            reply: String::new(),
-            executed: Vec::new(),
-            confidence: 0.0,
-        })
+        // 1. NLU fast-path.
+        match understand(&transcript.text, &self.intents, self.config.lang) {
+            Understanding::Acted {
+                action,
+                reply,
+                confidence,
+            } => {
+                let call = intent_to_tool_call(&action);
+                let result = self.executor.execute(&call).await?;
+                Ok(DispatchOutcome {
+                    path: DispatchPath::Nlu,
+                    reply,
+                    executed: vec![(call, result)],
+                    confidence,
+                })
+            }
+            // 2. LLM fall-back for everything the grammar didn't catch.
+            Understanding::NotUnderstood { .. } | Understanding::NeedsClarification { .. } => {
+                self.dispatch_via_llm(transcript, ctx).await
+            }
+        }
     }
 
     /// The bounded tool-calling conversation with the local model.
-    #[allow(dead_code)]
     async fn dispatch_via_llm(
         &self,
         transcript: &Transcript,
