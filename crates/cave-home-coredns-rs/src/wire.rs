@@ -98,6 +98,19 @@ impl<'a> Reader<'a> {
         self.read_bytes(n).map(|_| ())
     }
 
+    /// Move the cursor to an absolute offset (used by the RDATA codec to land
+    /// exactly on `rdata_start + RDLENGTH` after a possibly-compressed name).
+    ///
+    /// # Errors
+    /// [`WireError::UnexpectedEof`] if `pos` is past the end of the buffer.
+    pub const fn set_position(&mut self, pos: usize) -> Result<()> {
+        if pos > self.buf.len() {
+            return Err(WireError::UnexpectedEof { needed: "seek" });
+        }
+        self.pos = pos;
+        Ok(())
+    }
+
     /// Decode a domain name, following RFC 1035 §4.1.4 compression pointers.
     ///
     /// The cursor is left just past the *first* pointer (or the root octet of an
@@ -234,6 +247,33 @@ impl Writer {
             self.buf.extend_from_slice(&labels[i]);
         }
         self.buf.push(0);
+    }
+
+    /// Write a domain name in full, never emitting a compression pointer.
+    ///
+    /// Required for the `SRV` target (RFC 2782) and other RDATA whose names must
+    /// not be compressed. Suffixes are still *recorded* so later names may point
+    /// back at them.
+    pub fn write_name_uncompressed(&mut self, name: &Name) {
+        for (i, label) in name.labels().iter().enumerate() {
+            let here = self.buf.len();
+            if here <= MAX_PTR_OFFSET {
+                self.ptrs.entry(suffix_key(&name.labels()[i..])).or_insert(here as u16);
+            }
+            self.buf.push(label.len() as u8);
+            self.buf.extend_from_slice(label);
+        }
+        self.buf.push(0);
+    }
+
+    /// Overwrite the big-endian `u16` at an earlier offset (RDLENGTH backpatch).
+    ///
+    /// Out-of-range offsets are ignored; callers only ever patch a placeholder
+    /// they themselves wrote.
+    pub fn patch_u16(&mut self, at: usize, v: u16) {
+        if let Some(slot) = self.buf.get_mut(at..at + 2) {
+            slot.copy_from_slice(&v.to_be_bytes());
+        }
     }
 
     /// Consume the writer, yielding the message bytes.
