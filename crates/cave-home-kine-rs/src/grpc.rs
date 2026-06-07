@@ -27,7 +27,7 @@
 
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::sync::Mutex;
 use tokio_stream::Stream;
@@ -35,6 +35,7 @@ use tonic::{Code, Request, Response, Status, Streaming};
 
 use crate::error::KineError;
 use crate::range::{prefix_successor, RangeEnd, RangeRequest as KineRange, RangeResponse as KineRangeResp};
+use crate::metrics::KineMetrics;
 use crate::sqlite::SqliteStore;
 use crate::store::Row;
 use crate::watch::{EventKind, WatchEvent};
@@ -69,25 +70,33 @@ pub const ETCD_VERSION: &str = "3.5.13";
 #[derive(Clone)]
 pub struct KineServer {
     store: Arc<Mutex<SqliteStore>>,
+    metrics: Arc<KineMetrics>,
 }
 
 impl KineServer {
     /// Wrap an owned store.
     #[must_use]
     pub fn new(store: SqliteStore) -> Self {
-        Self { store: Arc::new(Mutex::new(store)) }
+        Self { store: Arc::new(Mutex::new(store)), metrics: Arc::new(KineMetrics::new()) }
     }
 
     /// Wrap an already-shared store (so a watcher / metrics layer can share it).
     #[must_use]
-    pub const fn from_shared(store: Arc<Mutex<SqliteStore>>) -> Self {
-        Self { store }
+    pub fn from_shared(store: Arc<Mutex<SqliteStore>>) -> Self {
+        Self { store, metrics: Arc::new(KineMetrics::new()) }
     }
 
     /// The shared store handle.
     #[must_use]
     pub fn store(&self) -> Arc<Mutex<SqliteStore>> {
         Arc::clone(&self.store)
+    }
+
+    /// The server's metric registry (Prometheus exposition via
+    /// [`KineMetrics::render`]).
+    #[must_use]
+    pub fn metrics(&self) -> Arc<KineMetrics> {
+        Arc::clone(&self.metrics)
     }
 
     /// This server as a tonic `KV` service, ready for `Server::add_service`.
@@ -235,24 +244,52 @@ impl KineServer {
 #[tonic::async_trait]
 impl Kv for KineServer {
     async fn range(&self, request: Request<RangeRequest>) -> Result<Response<RangeResponse>, Status> {
-        Ok(Response::new(self.do_range(request.get_ref()).await?))
+        let start = Instant::now();
+        let result = self.do_range(request.get_ref()).await;
+        self.metrics.record_request("range", start.elapsed().as_secs_f64(), result.is_ok());
+        result.map(Response::new)
     }
 
     async fn put(&self, request: Request<PutRequest>) -> Result<Response<PutResponse>, Status> {
-        Ok(Response::new(self.do_put(request.get_ref()).await?))
+        let start = Instant::now();
+        let result = self.do_put(request.get_ref()).await;
+        self.metrics.record_request("put", start.elapsed().as_secs_f64(), result.is_ok());
+        result.map(Response::new)
     }
 
     async fn delete_range(
         &self,
         request: Request<DeleteRangeRequest>,
     ) -> Result<Response<DeleteRangeResponse>, Status> {
-        Ok(Response::new(self.do_delete_range(request.get_ref()).await?))
+        let start = Instant::now();
+        let result = self.do_delete_range(request.get_ref()).await;
+        self.metrics.record_request("delete", start.elapsed().as_secs_f64(), result.is_ok());
+        result.map(Response::new)
     }
 
     async fn txn(&self, request: Request<TxnRequest>) -> Result<Response<TxnResponse>, Status> {
-        let txn = request.into_inner();
-        // Evaluate every comparison against the current committed state; etcd
-        // runs the success branch iff all compares hold, else the failure one.
+        let start = Instant::now();
+        let result = self.do_txn(request.into_inner()).await;
+        self.metrics.record_request("txn", start.elapsed().as_secs_f64(), result.is_ok());
+        result.map(Response::new)
+    }
+
+    async fn compact(
+        &self,
+        request: Request<CompactionRequest>,
+    ) -> Result<Response<CompactionResponse>, Status> {
+        let start = Instant::now();
+        let result = self.do_compact(request.into_inner()).await;
+        self.metrics.record_request("compact", start.elapsed().as_secs_f64(), result.is_ok());
+        result.map(Response::new)
+    }
+}
+
+impl KineServer {
+    /// Run a transaction: evaluate every comparison against the current
+    /// committed state and run the success branch iff all hold, else the
+    /// failure branch.
+    async fn do_txn(&self, txn: TxnRequest) -> Result<TxnResponse, Status> {
         let succeeded = {
             let store = self.store.lock().await;
             let mut all = true;
@@ -269,28 +306,22 @@ impl Kv for KineServer {
         for op in ops {
             responses.push(self.exec_op(op).await?);
         }
-        Ok(Response::new(TxnResponse {
-            header: Some(self.header().await?),
-            succeeded,
-            responses,
-        }))
+        Ok(TxnResponse { header: Some(self.header().await?), succeeded, responses })
     }
 
-    async fn compact(
-        &self,
-        request: Request<CompactionRequest>,
-    ) -> Result<Response<CompactionResponse>, Status> {
-        let req = request.into_inner();
-        let mut store = self.store.lock().await;
-        store.compact(req.revision).map_err(status)?;
-        let revision = store.current_revision().map_err(status)?;
-        Ok(Response::new(CompactionResponse {
+    /// Compact the store and record the rows removed into the metrics.
+    async fn do_compact(&self, req: CompactionRequest) -> Result<CompactionResponse, Status> {
+        let (revision, removed) = {
+            let mut store = self.store.lock().await;
+            let report = store.compact(req.revision).map_err(status)?;
+            (store.current_revision().map_err(status)?, report.removed)
+        };
+        self.metrics.record_compaction(removed as u64);
+        Ok(CompactionResponse {
             header: Some(ResponseHeader { cluster_id: 0, member_id: 0, revision, raft_term: 0 }),
-        }))
+        })
     }
-}
 
-impl KineServer {
     /// Execute a single Txn request op (put / delete / range) and wrap the
     /// etcd `ResponseOp`.
     async fn exec_op(&self, op: RequestOp) -> Result<ResponseOp, Status> {
