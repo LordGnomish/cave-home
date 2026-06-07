@@ -65,12 +65,14 @@ pub mod console;
 pub mod error;
 pub mod metrics;
 pub mod network;
+pub mod protect;
 pub mod transport;
 
 pub use access::{AccessClient, AccessConfig};
 pub use auth::{Credentials, Session};
 pub use client::ConsoleClient;
 pub use network::NetworkApi;
+pub use protect::ProtectApi;
 pub use console::{Console, ConsoleKind};
 pub use error::{Result, UnifiError};
 pub use transport::{HttpMethod, HttpRequest, HttpResponse, HttpTransport, MockTransport};
