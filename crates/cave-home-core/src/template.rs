@@ -52,11 +52,12 @@ impl TemplateEngine {
         env.add_function("state_attr", move |entity_id: &str, attr: &str| -> Value {
             lookup_state(&sm, entity_id)
                 .and_then(|s| s.attributes.get(attr).cloned())
-                .map_or(Value::from(()), |v| Value::from_serialize(&v))
+                .map_or_else(|| Value::from(()), |v| Value::from_serialize(&v))
         });
 
         // is_state_attr('climate.x', 'hvac_action', 'heating') -> bool.
-        let sm = states.clone();
+        // The last closure consumes `states` directly (no further clone).
+        let sm = states;
         env.add_function(
             "is_state_attr",
             move |entity_id: &str, attr: &str, value: Value| -> bool {
@@ -77,8 +78,9 @@ impl TemplateEngine {
     /// [`TemplateError::Render`] if the template is malformed or a global
     /// raises during rendering.
     pub fn render(&self, template: &str) -> Result<String, TemplateError> {
-        let _ = template;
-        unimplemented!("RED")
+        self.env
+            .render_str(template, minijinja::context! {})
+            .map_err(|e| TemplateError::Render(e.to_string()))
     }
 }
 
