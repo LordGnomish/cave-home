@@ -42,6 +42,9 @@ pub enum Card {
     ClusterTopology,
     /// Live log tail for an add-on. Developer only.
     Logs { entity_id: String },
+    /// Orchestration > Storage page: the local-path-provisioner PV/PVC table
+    /// with on-node `hostPath` detail. Developer only.
+    Storage,
 }
 
 impl Card {
@@ -51,7 +54,7 @@ impl Card {
     pub const fn is_developer_only(&self) -> bool {
         matches!(
             self,
-            Self::RawEntity { .. } | Self::ClusterTopology | Self::Logs { .. }
+            Self::RawEntity { .. } | Self::ClusterTopology | Self::Logs { .. } | Self::Storage
         )
     }
 
