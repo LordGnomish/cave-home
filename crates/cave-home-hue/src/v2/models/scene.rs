@@ -51,6 +51,33 @@ pub enum SceneRecallAction {
     Deactivate,
 }
 
+impl SceneRecallAction {
+    /// Parse a CLI-friendly token into a recall action. Mirrors the
+    /// `OpMode::from_cli` contract the Tesla adapter exposes to `cavehomectl`,
+    /// so the CLI and the crate agree on the vocabulary.
+    #[must_use]
+    pub fn from_cli(token: &str) -> Option<Self> {
+        match token.trim().to_ascii_lowercase().as_str() {
+            "active" | "on" | "recall" => Some(Self::Active),
+            "dynamic" | "dynamic-palette" | "dynamic_palette" => Some(Self::DynamicPalette),
+            "static" => Some(Self::Static),
+            "off" | "deactivate" => Some(Self::Deactivate),
+            _ => None,
+        }
+    }
+
+    /// The CLIP wire token for this action (matches the serde `snake_case`).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::DynamicPalette => "dynamic_palette",
+            Self::Static => "static",
+            Self::Deactivate => "deactivate",
+        }
+    }
+}
+
 /// `aiohue.v2.models.scene.SceneRecall` — PUT body to recall a scene.
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct SceneRecall {
@@ -120,5 +147,31 @@ mod tests {
         let body = serde_json::to_string(&put).unwrap();
         assert!(body.contains("\"action\":\"active\""));
         assert!(body.contains("\"duration\":500"));
+    }
+
+    #[test]
+    fn recall_action_from_cli_accepts_friendly_tokens() {
+        assert_eq!(SceneRecallAction::from_cli("active"), Some(SceneRecallAction::Active));
+        assert_eq!(SceneRecallAction::from_cli("ON"), Some(SceneRecallAction::Active));
+        assert_eq!(
+            SceneRecallAction::from_cli("dynamic"),
+            Some(SceneRecallAction::DynamicPalette)
+        );
+        assert_eq!(SceneRecallAction::from_cli("static"), Some(SceneRecallAction::Static));
+        assert_eq!(SceneRecallAction::from_cli("off"), Some(SceneRecallAction::Deactivate));
+        assert_eq!(SceneRecallAction::from_cli("nonsense"), None);
+    }
+
+    #[test]
+    fn recall_action_as_str_matches_serde_wire_token() {
+        for action in [
+            SceneRecallAction::Active,
+            SceneRecallAction::DynamicPalette,
+            SceneRecallAction::Static,
+            SceneRecallAction::Deactivate,
+        ] {
+            let json = serde_json::to_string(&action).unwrap();
+            assert_eq!(json, format!("\"{}\"", action.as_str()));
+        }
     }
 }

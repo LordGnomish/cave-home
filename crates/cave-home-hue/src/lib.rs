@@ -48,6 +48,9 @@
 pub mod bridge;
 pub mod discovery;
 pub mod errors;
+pub mod metrics;
 pub mod util;
 pub mod v1;
 pub mod v2;
+
+pub use metrics::Metrics;
