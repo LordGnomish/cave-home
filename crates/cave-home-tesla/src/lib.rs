@@ -49,3 +49,6 @@
 // `parity.manifest.toml`).
 
 pub mod crypto;
+pub mod error;
+
+pub use error::{Result, TeslaError};
