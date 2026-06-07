@@ -48,19 +48,28 @@
 //! - [`metrics`] — Prometheus exposition (`apiserver_request_total`, …).
 //! - [`storage`] — the etcd/kine KV seam ([`Backend`] + [`KineBackend`]).
 //! - [`server`]  — the std `TcpListener` socket loop ([`Server`]).
+//! - [`tls`]     — *(feature `tls`)* rustls TLS + mTLS termination
+//!   ([`tls::TlsServer`]) reusing the same handler flow over a rustls stream.
+//! - [`x509`]    — std-only X.509 Subject parser (CN → user, O → groups) feeding
+//!   [`authn::RequestHeaderAuthenticator`] from a verified client cert.
+//! - [`webhook`] — dynamic `admission.k8s.io/v1` mutating/validating webhook
+//!   plugins ([`webhook::WebhookValidatingPlugin`] /
+//!   [`webhook::WebhookMutatingPlugin`]) over a [`webhook::WebhookClient`] seam.
 //!
 //! ## Honest port method
 //!
 //! This is a **behavioural reimplementation of the documented Kubernetes REST
 //! semantics** (the public API conventions, label/field selector docs, RFC
-//! 7396 / RFC 6902, the admission-controller phase contract, RFC 9112 HTTP/1.1).
-//! It is **not** a verbatim line-by-line transcription of any pinned
-//! `kubernetes/kubernetes` revision. Still deferred and enumerated in
-//! `parity.manifest.toml`: HTTP/2 + TLS (rustls) termination (the connection
-//! handler is generic over any `Read + Write`, so TLS wraps it without touching
-//! the chain), HTTP keep-alive, mTLS/OIDC authenticators, the Node authorizer /
-//! SubjectAccessReview, admission *webhooks*, CRDs, API aggregation, and wiring
-//! [`Backend`] in as the registry's persistence layer.
+//! 7396 / RFC 6902, the admission-controller phase contract, RFC 9112 HTTP/1.1,
+//! RFC 5280 X.509 subjects, `admission.k8s.io/v1`). It is **not** a verbatim
+//! line-by-line transcription of any pinned `kubernetes/kubernetes` revision.
+//! TLS + mTLS termination, x509 client-cert authn, and the admission-webhook
+//! call mechanism are now implemented (the latter two std-only; TLS behind the
+//! off-by-default `tls` feature). Still deferred and enumerated in
+//! `parity.manifest.toml`: HTTP/2, HTTP keep-alive, OIDC / service-account-JWT
+//! authenticators, the Node authorizer / SubjectAccessReview, the
+//! `*WebhookConfiguration` registration objects, CRDs, API aggregation, and
+//! wiring [`Backend`] in as the registry's persistence layer.
 //!
 //! ## Example
 //!
@@ -139,4 +148,11 @@ pub use rbac::{
 };
 pub use registry::{ListOptions, ListResult, Registry, WatchEvent, WatchEventKind};
 pub use selector::{FieldSelector, LabelSelector, Requirement};
+pub use webhook::{
+    AdmissionResponse, FailurePolicy, HttpWebhookClient, MockWebhookClient, WebhookClient,
+    WebhookError, WebhookMutatingPlugin, WebhookValidatingPlugin,
+};
+pub use x509::subject_identity;
+#[cfg(feature = "tls")]
+pub use tls::{serve_tls_stream, server_config, server_config_mtls, TlsServer};
 pub use status::{Status, StatusReason};
