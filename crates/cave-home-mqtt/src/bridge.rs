@@ -8,6 +8,136 @@
 //! to subscribe to on each side and maps a topic across the bridge,
 //! applying the prefix rewrite. The socket pump lives in the runtime.
 
+use crate::broker::topic::topic_matches;
+use crate::packet::QoS;
+
+/// Direction a bridged topic flows (Mosquitto `out`/`in`/`both`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Direction {
+    /// Local → remote.
+    Out,
+    /// Remote → local.
+    In,
+    /// Both directions.
+    Both,
+}
+
+impl Direction {
+    fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "out" => Self::Out,
+            "in" => Self::In,
+            "both" => Self::Both,
+            _ => return None,
+        })
+    }
+
+    fn flows_out(self) -> bool {
+        matches!(self, Self::Out | Self::Both)
+    }
+
+    fn flows_in(self) -> bool {
+        matches!(self, Self::In | Self::Both)
+    }
+}
+
+/// One bridged topic rule (a Mosquitto `topic` directive).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TopicRule {
+    pub pattern: String,
+    pub direction: Direction,
+    pub qos: QoS,
+    pub local_prefix: String,
+    pub remote_prefix: String,
+}
+
+impl TopicRule {
+    /// Parse `topic <pattern> [direction [qos [local_prefix remote_prefix]]]`
+    /// (the value part, without the leading `topic` keyword).
+    pub fn parse(line: &str) -> Option<Self> {
+        let mut it = line.split_whitespace();
+        let pattern = it.next()?.to_owned();
+        let direction = match it.next() {
+            Some(d) => Direction::parse(d)?,
+            None => Direction::Both,
+        };
+        let qos = match it.next() {
+            Some(q) => QoS::from_u8(q.parse().ok()?)?,
+            None => QoS::AtMostOnce,
+        };
+        let local_prefix = it.next().unwrap_or("").to_owned();
+        let remote_prefix = it.next().unwrap_or("").to_owned();
+        Some(Self { pattern, direction, qos, local_prefix, remote_prefix })
+    }
+
+    fn local_filter(&self) -> String {
+        format!("{}{}", self.local_prefix, self.pattern)
+    }
+
+    fn remote_filter(&self) -> String {
+        format!("{}{}", self.remote_prefix, self.pattern)
+    }
+}
+
+/// A configured bridge to a remote broker.
+#[derive(Clone, Debug)]
+pub struct BridgeConfig {
+    pub name: String,
+    pub remote_addr: String,
+    pub client_id: String,
+    pub remote_username: Option<String>,
+    pub remote_password: Option<String>,
+    pub rules: Vec<TopicRule>,
+}
+
+impl BridgeConfig {
+    /// Local topic filters the bridge must subscribe to (outbound rules).
+    pub fn local_subscriptions(&self) -> Vec<String> {
+        self.rules
+            .iter()
+            .filter(|r| r.direction.flows_out())
+            .map(TopicRule::local_filter)
+            .collect()
+    }
+
+    /// Remote topic filters the bridge must subscribe to (inbound rules).
+    pub fn remote_subscriptions(&self) -> Vec<String> {
+        self.rules
+            .iter()
+            .filter(|r| r.direction.flows_in())
+            .map(TopicRule::remote_filter)
+            .collect()
+    }
+
+    /// Map a local topic to its remote name, if an outbound rule matches.
+    pub fn map_local_to_remote(&self, local_topic: &str) -> Option<String> {
+        for r in &self.rules {
+            if !r.direction.flows_out() {
+                continue;
+            }
+            if topic_matches(&r.local_filter(), local_topic) {
+                let stem = local_topic.strip_prefix(r.local_prefix.as_str())?;
+                return Some(format!("{}{}", r.remote_prefix, stem));
+            }
+        }
+        None
+    }
+
+    /// Map a remote topic to its local name, if an inbound rule matches.
+    pub fn map_remote_to_local(&self, remote_topic: &str) -> Option<String> {
+        for r in &self.rules {
+            if !r.direction.flows_in() {
+                continue;
+            }
+            if topic_matches(&r.remote_filter(), remote_topic) {
+                let stem = remote_topic.strip_prefix(r.remote_prefix.as_str())?;
+                return Some(format!("{}{}", r.local_prefix, stem));
+            }
+        }
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
