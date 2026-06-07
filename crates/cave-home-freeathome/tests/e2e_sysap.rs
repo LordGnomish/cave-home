@@ -17,6 +17,16 @@
 //! exact same production code path runs as against a physical SysAP (minus TLS,
 //! which the SysAP terminates and which is covered by the insecure-cert seam).
 
+// Tests lean on expect/unwrap/panic for clarity (workspace convention); the
+// pedantic group is relaxed for the same reason integration tests are exempt
+// from the library's lint gate.
+#![allow(
+    clippy::pedantic,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic
+)]
+
 use std::time::Duration;
 
 use cave_home_free_home::DeviceKind;

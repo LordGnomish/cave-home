@@ -86,23 +86,21 @@ impl ClientConfig {
 
     /// The HTTP(S) origin REST calls hang off — the override, or `https://<host>`.
     fn http_origin(&self) -> String {
-        match &self.origin {
-            Some(o) => o.trim_end_matches('/').to_string(),
-            None => format!("https://{}", self.host),
-        }
+        self.origin.as_ref().map_or_else(
+            || format!("https://{}", self.host),
+            |o| o.trim_end_matches('/').to_string(),
+        )
     }
 
     /// The WS(S) origin the live socket hangs off, with the scheme mapped from
     /// the HTTP origin (`http` → `ws`, `https` → `wss`).
     fn ws_origin(&self) -> String {
         let http = self.http_origin();
-        if let Some(rest) = http.strip_prefix("https://") {
-            format!("wss://{rest}")
-        } else if let Some(rest) = http.strip_prefix("http://") {
-            format!("ws://{rest}")
-        } else {
+        match http.split_once("://") {
+            Some(("https", rest)) => format!("wss://{rest}"),
+            Some(("http", rest)) => format!("ws://{rest}"),
             // No recognised scheme: default to secure WS on the bare origin.
-            format!("wss://{http}")
+            _ => format!("wss://{http}"),
         }
     }
 }
