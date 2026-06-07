@@ -474,6 +474,20 @@ mod tests {
     }
 
     #[test]
+    fn chunked_response_to_bytes_streams_and_terminates() {
+        let mut body = Vec::new();
+        body.extend_from_slice(&encode_chunk(b"{\"type\":\"ADDED\"}\n"));
+        let resp = Response::chunked_json(body);
+        assert!(resp.chunked);
+        let text = String::from_utf8(resp.to_bytes()).expect("utf8");
+        assert!(text.starts_with("HTTP/1.1 200 OK\r\n"));
+        assert!(text.contains("transfer-encoding: chunked\r\n"));
+        assert!(text.contains("content-type: application/json\r\n"));
+        assert!(text.ends_with("0\r\n\r\n"), "got tail: {text:?}");
+        assert!(!text.to_ascii_lowercase().contains("content-length"));
+    }
+
+    #[test]
     fn streaming_response_headers_use_chunked() {
         let head = Response::new(200)
             .header("content-type", "application/json")

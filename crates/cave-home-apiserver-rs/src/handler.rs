@@ -819,6 +819,81 @@ mod tests {
         assert_eq!(resp.status, 403);
     }
 
+    // --- watch streams ------------------------------------------------------
+
+    #[test]
+    fn watch_streams_added_events_as_chunked() {
+        let mut s = ApiServer::new();
+        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "a")));
+        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "b")));
+        let resp = s.handle(&req(
+            "GET",
+            "/api/v1/namespaces/default/pods?watch=true&resourceVersion=0",
+            "application/json",
+            "",
+        ));
+        assert_eq!(resp.status, 200);
+        assert!(resp.chunked, "watch must be a chunked stream");
+        let body = body_str(&resp);
+        assert_eq!(body.matches(r#""type":"ADDED""#).count(), 2, "body: {body}");
+        // Chunk framing present + the object payload.
+        assert!(body.contains(r#""name":"a""#));
+        assert!(body.contains(r#""name":"b""#));
+    }
+
+    #[test]
+    fn watch_since_resource_version_returns_only_newer() {
+        let mut s = ApiServer::new();
+        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "a"))); // rv1
+        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "b"))); // rv2
+        let resp = s.handle(&req(
+            "GET",
+            "/api/v1/namespaces/default/pods?watch=1&resourceVersion=1",
+            "application/json",
+            "",
+        ));
+        let body = body_str(&resp);
+        assert_eq!(body.matches(r#""type":"ADDED""#).count(), 1, "body: {body}");
+        assert!(body.contains(r#""name":"b""#));
+        assert!(!body.contains(r#""name":"a""#));
+    }
+
+    #[test]
+    fn watch_reports_modified_and_deleted() {
+        let mut s = ApiServer::new();
+        let created = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "a")));
+        let body = body_str(&created);
+        s.handle(&req("PUT", "/api/v1/namespaces/default/pods/a", "application/json", &body));
+        s.handle(&req("DELETE", "/api/v1/namespaces/default/pods/a", "application/json", ""));
+        let resp = s.handle(&req(
+            "GET",
+            "/api/v1/namespaces/default/pods?watch=true&resourceVersion=0",
+            "application/json",
+            "",
+        ));
+        let body = body_str(&resp);
+        assert!(body.contains(r#""type":"ADDED""#));
+        assert!(body.contains(r#""type":"MODIFIED""#));
+        assert!(body.contains(r#""type":"DELETED""#));
+    }
+
+    #[test]
+    fn watch_is_namespace_scoped() {
+        let mut s = ApiServer::new();
+        s.handle(&req("POST", "/api/v1/namespaces/ns1/pods", "application/json", &pod_json("ns1", "a")));
+        s.handle(&req("POST", "/api/v1/namespaces/ns2/pods", "application/json", &pod_json("ns2", "b")));
+        let resp = s.handle(&req(
+            "GET",
+            "/api/v1/namespaces/ns1/pods?watch=true&resourceVersion=0",
+            "application/json",
+            "",
+        ));
+        let body = body_str(&resp);
+        assert_eq!(body.matches(r#""type":"ADDED""#).count(), 1, "body: {body}");
+        assert!(body.contains(r#""name":"a""#));
+        assert!(!body.contains(r#""name":"b""#));
+    }
+
     // --- admission integration ---------------------------------------------
 
     use crate::admission::{AdmissionChain, AdmissionRequest, MutatingPlugin, Operation, RequireName};
