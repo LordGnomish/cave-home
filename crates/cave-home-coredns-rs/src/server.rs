@@ -27,9 +27,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::build::build_chain;
+use crate::build::build_chain_with;
 use crate::corefile::ServerBlock;
 use crate::error::{Result, WireError};
+use crate::k8s::K8sSnapshot;
 use crate::message::Message;
 use crate::wire::Rcode;
 
@@ -45,8 +46,10 @@ const RESOLVER_BACKLOG: usize = 1024;
 enum Cmd {
     /// Resolve a decoded query; the reply goes back on the channel.
     Resolve(Box<Message>, oneshot::Sender<Message>),
-    /// Rebuild the chain from a new server block; the build result acks back.
+    /// Replace the server block and rebuild; the build result acks back.
     Reload(Box<ServerBlock>, oneshot::Sender<Result<()>>),
+    /// Replace the Kubernetes snapshot and rebuild; the result acks back.
+    UpdateEndpoints(Box<K8sSnapshot>, oneshot::Sender<Result<()>>),
 }
 
 /// A cloneable handle to the single-owner resolver actor.
@@ -80,23 +83,43 @@ impl Resolver {
                     return;
                 };
                 rt.block_on(async move {
-                    // An unbuildable initial config degrades to an empty chain
-                    // (SERVFAIL); reload can recover it.
-                    let mut chain = build_chain(&block).unwrap_or_default();
+                    // The owner keeps the inputs the chain is built from — the
+                    // server block and the latest Kubernetes snapshot — and
+                    // rebuilds whenever either changes. An unbuildable initial
+                    // config degrades to an empty chain (SERVFAIL) until a
+                    // successful reload/update recovers it.
+                    let mut block = block;
+                    let mut snapshot: Option<K8sSnapshot> = None;
+                    let mut chain = build_chain_with(&block, snapshot.as_ref()).unwrap_or_default();
                     while let Some(cmd) = rx.recv().await {
                         match cmd {
                             Cmd::Resolve(query, reply) => {
                                 let _ = reply.send(chain.handle(&query));
                             }
-                            Cmd::Reload(new_block, ack) => match build_chain(&new_block) {
-                                Ok(new_chain) => {
-                                    chain = new_chain;
-                                    let _ = ack.send(Ok(()));
+                            Cmd::Reload(new_block, ack) => {
+                                match build_chain_with(&new_block, snapshot.as_ref()) {
+                                    Ok(new_chain) => {
+                                        block = *new_block;
+                                        chain = new_chain;
+                                        let _ = ack.send(Ok(()));
+                                    }
+                                    Err(e) => {
+                                        let _ = ack.send(Err(e));
+                                    }
                                 }
-                                Err(e) => {
-                                    let _ = ack.send(Err(e));
+                            }
+                            Cmd::UpdateEndpoints(snap, ack) => {
+                                match build_chain_with(&block, Some(&snap)) {
+                                    Ok(new_chain) => {
+                                        snapshot = Some(*snap);
+                                        chain = new_chain;
+                                        let _ = ack.send(Ok(()));
+                                    }
+                                    Err(e) => {
+                                        let _ = ack.send(Err(e));
+                                    }
                                 }
-                            },
+                            }
                         }
                     }
                 });
@@ -137,6 +160,27 @@ impl Resolver {
         let (atx, arx) = oneshot::channel();
         self.tx
             .send(Cmd::Reload(Box::new(block.clone()), atx))
+            .await
+            .map_err(|_| WireError::Config {
+                reason: "resolver stopped",
+            })?;
+        arx.await.map_err(|_| WireError::Config {
+            reason: "resolver stopped",
+        })?
+    }
+
+    /// Push a new Kubernetes API snapshot, rebuilding the chain so the running
+    /// server resolves the cluster's current services. This is how a watch
+    /// update reaches the live server (`CoreDNS`'s informer-driven plugin
+    /// update, expressed as a chain rebuild for the immutable plugin here).
+    ///
+    /// # Errors
+    /// [`WireError::Config`] if the snapshot fails to convert (the old chain is
+    /// kept), or if the resolver task has stopped.
+    pub async fn update_endpoints(&self, snapshot: &K8sSnapshot) -> Result<()> {
+        let (atx, arx) = oneshot::channel();
+        self.tx
+            .send(Cmd::UpdateEndpoints(Box::new(snapshot.clone()), atx))
             .await
             .map_err(|_| WireError::Config {
                 reason: "resolver stopped",

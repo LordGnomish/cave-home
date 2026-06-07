@@ -206,6 +206,41 @@ fn cluster_addresses(spec: &ServiceSpec) -> Vec<IpAddr> {
         .collect()
 }
 
+/// A point-in-time copy of the cluster's `Service` and `Endpoints` lists, as
+/// the API served them.
+///
+/// Unlike the live [`Kubernetes`] plugin (which is `!Send`), a snapshot is
+/// plain `Send + Clone` data, so it can be handed to the resolver actor
+/// ([`crate::server::Resolver::update_endpoints`]); the actor rebuilds its
+/// chain's kubernetes plugin from it. This is how a watch update reaches the
+/// running server in this crate's immutable-plugin design.
+#[derive(Debug, Clone, Default)]
+pub struct K8sSnapshot {
+    /// The `ServiceList` JSON.
+    pub services: String,
+    /// The `Endpoints` list JSON.
+    pub endpoints: String,
+}
+
+impl K8sSnapshot {
+    /// A snapshot from the two list documents.
+    #[must_use]
+    pub fn new(services: &str, endpoints: &str) -> Self {
+        Self {
+            services: services.to_string(),
+            endpoints: endpoints.to_string(),
+        }
+    }
+
+    /// Convert into a populated [`Kubernetes`] plugin for `zone`.
+    ///
+    /// # Errors
+    /// As [`kubernetes_from_api`].
+    pub fn resolve(&self, zone: &str) -> Result<Kubernetes> {
+        kubernetes_from_api(zone, &self.services, &self.endpoints)
+    }
+}
+
 /// The abstract Kubernetes API connection: the source of the `Service` and
 /// `Endpoints` lists the indexer converts.
 ///

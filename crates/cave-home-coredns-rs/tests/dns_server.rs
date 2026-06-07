@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //
-//! End-to-end integration: a real CoreDNS server over real loopback sockets.
+//! End-to-end integration: a real `CoreDNS` server over real loopback sockets.
 //!
 //! These drive the public API exactly as the K3s node would: parse a Corefile,
 //! spawn the resolver, feed it a Kubernetes API snapshot, then resolve cluster
@@ -15,7 +15,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 
 use cave_home_coredns_rs::{
-    Corefile, K8sSnapshot, Message, Name, Rdata, RecordType, Rcode, Resolver, serve_tcp, serve_udp,
+    Corefile, K8sSnapshot, Message, Name, Rcode, Rdata, RecordType, Resolver, serve_tcp, serve_udp,
 };
 
 /// A Corefile a K3s node would run: a cluster zone served by the kubernetes
@@ -30,7 +30,7 @@ const COREFILE: &str = "cluster.local {
     }
 }";
 
-/// The API's ServiceList: one ClusterIP service `web` with a named http port.
+/// The API's `ServiceList`: one `ClusterIP` service `web` with a named http port.
 const SERVICES: &str = r#"{
     "items": [
         {

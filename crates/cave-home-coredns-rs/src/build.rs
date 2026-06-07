@@ -29,6 +29,7 @@ use crate::error::{Result, WireError};
 use crate::file::{FilePlugin, Zone};
 use crate::forward::{Forward, Policy as ForwardPolicy};
 use crate::hosts::Hosts;
+use crate::k8s::K8sSnapshot;
 use crate::kubernetes::Kubernetes;
 use crate::name::Name;
 use crate::plugin::{Chain, Plugin};
@@ -123,6 +124,22 @@ pub fn priority(name: &str) -> Option<usize> {
 /// `CoreDNS` plugin, or one this crate does not implement, or whose arguments
 /// cannot be parsed.
 pub fn build_chain(block: &ServerBlock) -> Result<Chain> {
+    build_chain_with(block, None)
+}
+
+/// Lower a [`ServerBlock`] into a [`Chain`] like [`build_chain`], but seed any
+/// `kubernetes` plugin from a live API snapshot.
+///
+/// `CoreDNS`'s kubernetes plugin is populated by a watch on the API server; in
+/// this crate the watch's data arrives as a [`K8sSnapshot`], and a chain rebuilt
+/// with that snapshot resolves the cluster's current services. Corefile options
+/// on the directive (`fallthrough`, `pods`, `ttl`, `namespaces`) still apply on
+/// top of the seeded registry.
+///
+/// # Errors
+/// As [`build_chain`], plus a [`WireError::Config`] if the snapshot fails to
+/// convert (malformed API JSON).
+pub fn build_chain_with(block: &ServerBlock, k8s: Option<&K8sSnapshot>) -> Result<Chain> {
     // Sort the configured directives by canonical priority. Every directive
     // must be a known plugin (validated here) before we attempt to build it.
     let mut ordered: Vec<(usize, &Directive)> = Vec::with_capacity(block.plugins.len());
@@ -139,13 +156,13 @@ pub fn build_chain(block: &ServerBlock) -> Result<Chain> {
     let zone = block.zones.first().map_or("cluster.local", String::as_str);
     let mut plugins: Vec<Box<dyn Plugin>> = Vec::with_capacity(ordered.len());
     for (_, dir) in ordered {
-        plugins.push(instantiate(dir, zone)?);
+        plugins.push(instantiate(dir, zone, k8s)?);
     }
     Ok(Chain::new(plugins))
 }
 
 /// Build one plugin from its directive.
-fn instantiate(dir: &Directive, zone: &str) -> Result<Box<dyn Plugin>> {
+fn instantiate(dir: &Directive, zone: &str, k8s: Option<&K8sSnapshot>) -> Result<Box<dyn Plugin>> {
     match dir.name.as_str() {
         "errors" => Ok(Box::new(Errors::new())),
         "ready" => {
@@ -159,7 +176,7 @@ fn instantiate(dir: &Directive, zone: &str) -> Result<Box<dyn Plugin>> {
         "cache" => Ok(Box::new(build_cache(dir))),
         "rewrite" => Ok(Box::new(build_rewrite(dir)?)),
         "hosts" => Ok(Box::new(build_hosts(dir))),
-        "kubernetes" => Ok(Box::new(build_kubernetes(dir, zone))),
+        "kubernetes" => Ok(Box::new(build_kubernetes(dir, zone, k8s)?)),
         "file" => Ok(Box::new(build_file(dir, zone)?)),
         "forward" => Ok(Box::new(build_forward(dir)?)),
         // A known CoreDNS plugin that this crate does not (yet) implement: fail
@@ -199,9 +216,15 @@ fn build_forward(dir: &Directive) -> Result<Forward> {
 }
 
 /// `kubernetes ZONE… { pods MODE; fallthrough; ttl N; namespaces… }`.
-fn build_kubernetes(dir: &Directive, zone: &str) -> Kubernetes {
+///
+/// When a [`K8sSnapshot`] is supplied the plugin starts from the converted API
+/// registry; otherwise it starts empty (services arrive via a later reload).
+fn build_kubernetes(dir: &Directive, zone: &str, k8s: Option<&K8sSnapshot>) -> Result<Kubernetes> {
     let kzone = dir.args.first().map_or(zone, String::as_str);
-    let mut k = Kubernetes::new(kzone);
+    let mut k = match k8s {
+        Some(snapshot) => snapshot.resolve(kzone)?,
+        None => Kubernetes::new(kzone),
+    };
     for sub in &dir.block {
         match sub.name.as_str() {
             "fallthrough" => k = k.with_fallthrough(true),
@@ -224,7 +247,7 @@ fn build_kubernetes(dir: &Directive, zone: &str) -> Kubernetes {
             _ => {}
         }
     }
-    k
+    Ok(k)
 }
 
 /// `hosts [HOSTSFILE] [ZONES…] { INLINE-ENTRIES; fallthrough; ttl N }`.

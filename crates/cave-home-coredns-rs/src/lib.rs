@@ -99,7 +99,7 @@ pub mod rr;
 pub mod server;
 pub mod wire;
 
-pub use build::{DIRECTIVES, build_chain, priority};
+pub use build::{DIRECTIVES, build_chain, build_chain_with, priority};
 pub use builtins::{Errors, Metrics, MetricsSnapshot, Ready, format_log_line};
 pub use cache::{Cache, CacheKey, CachePlugin};
 pub use corefile::{Corefile, Directive, ServerBlock};
@@ -109,7 +109,7 @@ pub use file::{FilePlugin, Zone, ZoneReply};
 // avoid colliding with `rewrite::Policy` (rule continue/stop).
 pub use forward::{Forward, Policy as ForwardPolicy, Pool};
 pub use hosts::Hosts;
-pub use k8s::{ApiSource, StaticSource, kubernetes_from_api, kubernetes_from_source};
+pub use k8s::{ApiSource, K8sSnapshot, StaticSource, kubernetes_from_api, kubernetes_from_source};
 pub use kubernetes::{Endpoint, Kubernetes, Port, Protocol, Service};
 pub use message::{Message, Question};
 pub use name::Name;
