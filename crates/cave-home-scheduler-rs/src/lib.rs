@@ -35,7 +35,10 @@ pub mod source_sink;
 pub mod types;
 
 pub use cache::{NodeInfo, SchedulerCache};
-pub use framework::{CycleState, PluginRegistry, RegistryBuilder, Status};
+pub use framework::{
+    ActionType, ClusterEvent, CycleState, Gvk, PluginRegistry, PreFilterPlugin, PreFilterResult,
+    PreScorePlugin, RegistryBuilder, Status,
+};
 pub use plugins::default_registry;
 pub use preemption::DefaultPreemption;
 pub use queue::{PriorityQueue, QueuedPodInfo, SchedulingQueue};

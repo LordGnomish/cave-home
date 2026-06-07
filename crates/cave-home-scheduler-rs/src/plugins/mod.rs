@@ -32,6 +32,9 @@ use crate::framework::{PluginRegistry, RegistryBuilder};
 #[must_use]
 pub fn default_registry() -> PluginRegistry {
     RegistryBuilder::default()
+        // PreFilter — NodeResourcesFit precomputes the pod's summed requests
+        // once so the per-node Filter loop reuses them (upstream default).
+        .with_pre_filter(Arc::new(NodeResourcesFit))
         // Filters — order chosen to mirror upstream defaults file
         // (NodeUnschedulable runs before NodeName so a tainted control-plane
         // returns the cheaper "Unschedulable" reason).

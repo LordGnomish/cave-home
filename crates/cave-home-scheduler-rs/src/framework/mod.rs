@@ -94,10 +94,39 @@ impl Status {
 pub const MIN_NODE_SCORE: i64 = 0;
 pub const MAX_NODE_SCORE: i64 = 100;
 
+/// Upstream: `pkg/scheduler/framework/interface.go::PreFilterResult`.
+///
+/// An optional restriction of the candidate node set produced by a PreFilter
+/// plugin. `node_names == None` means "no opinion — keep all nodes"; multiple
+/// PreFilter results are intersected.
+#[derive(Debug, Clone, Default)]
+pub struct PreFilterResult {
+    pub node_names: Option<std::collections::BTreeSet<String>>,
+}
+
+/// Upstream: `pkg/scheduler/framework/interface.go::PreFilterPlugin`.
+///
+/// Runs once per pod before the per-node Filter loop: it can precompute
+/// pod-level state (cached in [`CycleState`]) and optionally narrow the
+/// candidate node set, or declare the pod outright unschedulable.
+pub trait PreFilterPlugin: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn pre_filter(&self, state: &mut CycleState, pod: &Pod) -> (Option<PreFilterResult>, Status);
+}
+
 /// Upstream: `pkg/scheduler/framework/interface.go::FilterPlugin`.
 pub trait FilterPlugin: Send + Sync {
     fn name(&self) -> &'static str;
     fn filter(&self, state: &mut CycleState, pod: &Pod, node: &NodeInfo) -> Status;
+}
+
+/// Upstream: `pkg/scheduler/framework/interface.go::PreScorePlugin`.
+///
+/// Runs once per pod after Filter and before the per-node Score loop, over the
+/// feasible node set; precomputes scoring state into [`CycleState`].
+pub trait PreScorePlugin: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn pre_score(&self, state: &mut CycleState, pod: &Pod, nodes: &[NodeInfo]) -> Status;
 }
 
 /// Upstream: `pkg/scheduler/framework/interface.go::ScorePlugin`.

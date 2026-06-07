@@ -4,10 +4,10 @@
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
 //!         pkg/scheduler/schedule_one.go
 
+use std::collections::BTreeSet;
+
 use crate::cache::{NodeInfo, SchedulerCache};
-use crate::framework::{
-    CycleState, FilterFailureMap, PluginRegistry, Status,
-};
+use crate::framework::{Code, CycleState, FilterFailureMap, PluginRegistry, Status};
 use crate::types::Pod;
 
 /// Upstream: `pkg/scheduler/schedule_one.go::ScheduleResult`.
@@ -35,15 +35,68 @@ impl ScheduleResult {
     }
 }
 
+/// Upstream: `RunPreFilterPlugins` + the node-set restriction. Returns the
+/// candidate node set on success, or a boxed terminal [`ScheduleResult`] if a
+/// `PreFilter` plugin made the pod unschedulable / errored.
+fn apply_pre_filters(
+    pod: &Pod,
+    all_nodes: Vec<NodeInfo>,
+    registry: &PluginRegistry,
+    state: &mut CycleState,
+) -> std::result::Result<Vec<NodeInfo>, Box<ScheduleResult>> {
+    let total = all_nodes.len();
+    let mut allowed: Option<BTreeSet<String>> = None;
+    for plugin in registry.pre_filters() {
+        let (result, status) = plugin.pre_filter(state, pod);
+        if !status.is_success() {
+            let mut failures = FilterFailureMap::new();
+            for node in &all_nodes {
+                failures.insert(node.node().metadata.name.clone(), status.clone());
+            }
+            if status.code == Code::Error {
+                return Err(Box::new(ScheduleResult {
+                    suggested_host: None,
+                    evaluated_nodes: total,
+                    feasible_nodes: 0,
+                    nominated_node: None,
+                    filter_failures: failures,
+                    error: Some(status),
+                }));
+            }
+            return Err(Box::new(ScheduleResult::unschedulable(failures, total)));
+        }
+        if let Some(names) = result.and_then(|r| r.node_names) {
+            allowed = Some(match allowed {
+                Some(existing) => existing.intersection(&names).cloned().collect(),
+                None => names,
+            });
+        }
+    }
+    Ok(match &allowed {
+        Some(names) => all_nodes
+            .into_iter()
+            .filter(|n| names.contains(&n.node().metadata.name))
+            .collect(),
+        None => all_nodes,
+    })
+}
+
 /// Upstream: `Scheduler.scheduleOne` (the synchronous core).
+#[must_use]
 pub fn schedule_one(
     pod: &Pod,
     cache: &SchedulerCache,
     registry: &PluginRegistry,
 ) -> ScheduleResult {
-    let nodes = cache.snapshot();
-    let total = nodes.len();
+    let all_nodes = cache.snapshot();
+    let total = all_nodes.len();
     let mut state = CycleState::new();
+
+    // ---------- PreFilter ----------
+    let nodes = match apply_pre_filters(pod, all_nodes, registry, &mut state) {
+        Ok(nodes) => nodes,
+        Err(result) => return *result,
+    };
 
     // ---------- Filter ----------
     let mut feasible: Vec<NodeInfo> = Vec::with_capacity(nodes.len());
@@ -79,6 +132,22 @@ pub fn schedule_one(
             }
         }
         return ScheduleResult::unschedulable(failures, total);
+    }
+
+    // ---------- PreScore ----------
+    // Precompute scoring state over the feasible set (upstream `RunPreScorePlugins`).
+    for plugin in registry.pre_scores() {
+        let status = plugin.pre_score(&mut state, pod, &feasible);
+        if !status.is_success() {
+            return ScheduleResult {
+                suggested_host: None,
+                evaluated_nodes: total,
+                feasible_nodes: feasible.len(),
+                nominated_node: None,
+                filter_failures: failures,
+                error: Some(status),
+            };
+        }
     }
 
     // ---------- Score ----------
