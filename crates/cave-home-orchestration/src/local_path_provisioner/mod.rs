@@ -40,8 +40,8 @@
 //!   and affinity, then retain-vs-teardown by reclaim policy.
 //! - [`metrics`] — the observability descriptors (PV count by status,
 //!   provisioning latency, reconcile error rate).
-//!
-//! Further submodules (`report`) land in subsequent TDD cycles.
+//! - [`report`] — the PV/PVC view-model rows that `cavectl orchestration
+//!   storage` and the Portal Storage surface render.
 //!
 //! Like the rest of this crate it is **infrastructure**, hidden from end users
 //! (Charter §6.3, ADR-007): no user-facing strings, no i18n.
@@ -52,6 +52,7 @@ pub mod metrics;
 pub mod path;
 pub mod provision;
 pub mod reclaim;
+pub mod report;
 
 pub use config::ProvisionerConfig;
 
