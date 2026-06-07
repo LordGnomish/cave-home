@@ -881,6 +881,28 @@ mod tests {
         assert_eq!(resp.status, 403);
     }
 
+    // --- observability / metrics -------------------------------------------
+
+    #[test]
+    fn metrics_endpoint_exposes_prometheus_text() {
+        let mut s = ApiServer::new();
+        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        s.handle(&req("GET", "/api/v1/namespaces/default/pods/ghost", "application/json", ""));
+        let resp = s.handle(&req("GET", "/metrics", "text/plain", ""));
+        assert_eq!(resp.status, 200);
+        assert_eq!(resp.headers.get("content-type"), Some("text/plain; version=0.0.4"));
+        let body = body_str(&resp);
+        assert!(body.contains("apiserver_request_total{verb=\"create\",code=\"201\"} 1"), "body: {body}");
+        assert!(body.contains("apiserver_request_total{verb=\"get\",code=\"404\"} 1"), "body: {body}");
+    }
+
+    #[test]
+    fn metrics_count_accessible_on_server() {
+        let mut s = ApiServer::new();
+        s.handle(&req("GET", "/api/v1/pods", "application/json", ""));
+        assert_eq!(s.metrics.request_count("list", 200), 1);
+    }
+
     // --- audit logging ------------------------------------------------------
 
     use crate::audit::MemoryAuditSink;

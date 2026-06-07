@@ -78,6 +78,7 @@ pub mod handler;
 pub mod http;
 pub mod json;
 pub mod meta;
+pub mod metrics;
 pub mod patch;
 pub mod path;
 pub mod rbac;
