@@ -82,12 +82,12 @@ pub struct Schema {
 
 impl Schema {
     #[must_use]
-    pub fn new(fields: Vec<Field>) -> Self {
+    pub const fn new(fields: Vec<Field>) -> Self {
         Self { fields, allow_extra: false }
     }
 
     #[must_use]
-    pub fn allow_extra(mut self) -> Self {
+    pub const fn allow_extra(mut self) -> Self {
         self.allow_extra = true;
         self
     }
@@ -102,8 +102,65 @@ impl Schema {
         &self,
         value: &serde_yaml::Value,
     ) -> Result<BTreeMap<String, serde_yaml::Value>, ConfigError> {
-        let _ = value;
-        unimplemented!("RED")
+        let mapping = value.as_mapping().ok_or(ConfigError::NotAMapping)?;
+        let mut out = BTreeMap::new();
+        let mut errors = Vec::new();
+
+        // Validate each declared field.
+        for field in &self.fields {
+            match mapping.get(serde_yaml::Value::from(field.key.as_str())) {
+                Some(raw) => match coerce(field.ty, raw) {
+                    Some(coerced) => {
+                        out.insert(field.key.clone(), coerced);
+                    }
+                    None => errors.push(ValidationError::new(
+                        &field.key,
+                        format!("expected {:?}", field.ty),
+                    )),
+                },
+                None => {
+                    if let Some(default) = &field.default {
+                        out.insert(field.key.clone(), default.clone());
+                    } else if field.required {
+                        errors.push(ValidationError::new(&field.key, "required key is missing"));
+                    }
+                }
+            }
+        }
+
+        // Reject (or pass through) keys not described by any field.
+        let known: std::collections::HashSet<&str> =
+            self.fields.iter().map(|f| f.key.as_str()).collect();
+        for (k, v) in mapping {
+            let Some(key) = k.as_str() else { continue };
+            if known.contains(key) {
+                continue;
+            }
+            if self.allow_extra {
+                out.insert(key.to_owned(), v.clone());
+            } else {
+                errors.push(ValidationError::new(key, "extra key not allowed"));
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(out)
+        } else {
+            // Stable ordering so error reporting is deterministic.
+            errors.sort_by(|a, b| a.key.cmp(&b.key));
+            Err(ConfigError::Validation(errors))
+        }
+    }
+}
+
+/// Coerce a raw YAML value to the requested [`FieldType`], or `None` on a type
+/// mismatch. Integers widen to floats; everything else is strict.
+fn coerce(ty: FieldType, raw: &serde_yaml::Value) -> Option<serde_yaml::Value> {
+    match ty {
+        FieldType::Str => raw.as_str().map(serde_yaml::Value::from),
+        FieldType::Int => raw.as_i64().map(serde_yaml::Value::from),
+        FieldType::Float => raw.as_f64().map(serde_yaml::Value::from),
+        FieldType::Bool => raw.as_bool().map(serde_yaml::Value::from),
     }
 }
 
@@ -156,8 +213,77 @@ impl CoreConfig {
     /// [`ConfigError::Yaml`] on a parse error, [`ConfigError::NotAMapping`] if
     /// the block is not a mapping, [`ConfigError::Validation`] on any bad value.
     pub fn from_yaml(yaml: &str) -> Result<Self, ConfigError> {
-        let _ = yaml;
-        unimplemented!("RED")
+        let value: serde_yaml::Value =
+            serde_yaml::from_str(yaml).map_err(|e| ConfigError::Yaml(e.to_string()))?;
+
+        let defaults = Self::default();
+        let schema = Schema::new(vec![
+            Field::optional("name", FieldType::Str)
+                .with_default(serde_yaml::Value::from(defaults.name.clone())),
+            Field::optional("latitude", FieldType::Float)
+                .with_default(serde_yaml::Value::from(defaults.latitude)),
+            Field::optional("longitude", FieldType::Float)
+                .with_default(serde_yaml::Value::from(defaults.longitude)),
+            Field::optional("elevation", FieldType::Int)
+                .with_default(serde_yaml::Value::from(defaults.elevation)),
+            Field::optional("unit_system", FieldType::Str)
+                .with_default(serde_yaml::Value::from("metric")),
+            Field::optional("time_zone", FieldType::Str)
+                .with_default(serde_yaml::Value::from(defaults.time_zone.clone())),
+            Field::optional("currency", FieldType::Str)
+                .with_default(serde_yaml::Value::from(defaults.currency.clone())),
+            Field::optional("country", FieldType::Str),
+            Field::optional("language", FieldType::Str)
+                .with_default(serde_yaml::Value::from(defaults.language.clone())),
+        ])
+        // Core config carries integration keys we do not model; let them pass.
+        .allow_extra();
+
+        let map = schema.validate(&value)?;
+
+        // Post-schema value checks HA enforces beyond the type schema.
+        let mut errors = Vec::new();
+        let str_of = |k: &str| map.get(k).and_then(serde_yaml::Value::as_str).map(str::to_owned);
+        let f64_of = |k: &str| map.get(k).and_then(serde_yaml::Value::as_f64);
+
+        let latitude = f64_of("latitude").unwrap_or(defaults.latitude);
+        if !(-90.0..=90.0).contains(&latitude) {
+            errors.push(ValidationError::new("latitude", "must be between -90 and 90"));
+        }
+        let longitude = f64_of("longitude").unwrap_or(defaults.longitude);
+        if !(-180.0..=180.0).contains(&longitude) {
+            errors.push(ValidationError::new("longitude", "must be between -180 and 180"));
+        }
+
+        let unit_token = str_of("unit_system").unwrap_or_else(|| "metric".to_owned());
+        let unit_system = match unit_token.as_str() {
+            "metric" => Some(UnitSystem::Metric),
+            // HA renamed `imperial` → `us_customary`; accept both.
+            "us_customary" | "imperial" => Some(UnitSystem::UsCustomary),
+            _ => {
+                errors.push(ValidationError::new(
+                    "unit_system",
+                    "must be one of: metric, us_customary",
+                ));
+                None
+            }
+        };
+
+        if !errors.is_empty() {
+            return Err(ConfigError::Validation(errors));
+        }
+
+        Ok(Self {
+            name: str_of("name").unwrap_or(defaults.name),
+            latitude,
+            longitude,
+            elevation: map.get("elevation").and_then(serde_yaml::Value::as_i64).unwrap_or(defaults.elevation),
+            unit_system: unit_system.unwrap_or_default(),
+            time_zone: str_of("time_zone").unwrap_or(defaults.time_zone),
+            currency: str_of("currency").unwrap_or(defaults.currency),
+            country: str_of("country"),
+            language: str_of("language").unwrap_or(defaults.language),
+        })
     }
 }
 
