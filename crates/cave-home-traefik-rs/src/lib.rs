@@ -27,6 +27,12 @@
 //!   [`middleware::MiddlewareChain`] that transforms the request/response.
 //! * [`config`] — a validated [`config::DynamicConfig`] snapshot of routers +
 //!   services + middlewares with reference checking.
+//! * [`ingress`] — translates a Kubernetes [`ingress::Ingress`]
+//!   (`networking.k8s.io/v1`) into routers + services (the pure half of the
+//!   `kubernetes-ingress` provider).
+//! * [`gateway`] — translates a Gateway API [`gateway::HttpRoute`]
+//!   (`gateway.networking.k8s.io/v1`) into routers + weighted services (the
+//!   pure half of the Gateway provider).
 //!
 //! ## What is deferred (phase-1b — see `parity.manifest.toml`)
 //!
@@ -79,6 +85,10 @@ pub mod router;
 pub mod rule;
 
 pub use config::{ConfigError, DynamicConfig, Route};
+pub use gateway::{
+    translate_routes, GatewayError, GatewayTranslation, GwHeaderMatch, GwPathMatch, GwServiceRef,
+    HttpBackendRef, HttpRoute, HttpRouteMatch, HttpRouteRule,
+};
 pub use ingress::{
     translate_ingresses, BackendRef, HttpPath, Ingress, IngressBackend, IngressError, IngressRule,
     IngressTls, PathType, ServicePort, Translation,
