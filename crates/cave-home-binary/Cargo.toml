@@ -20,5 +20,35 @@ path = "src/lib.rs"
 name = "cave-home"
 path = "src/main.rs"
 
+[dependencies]
+# The async runtime hosting every in-process subsystem (Charter §5: one process).
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "net",
+    "io-util",
+    "sync",
+    "macros",
+    "time",
+    "signal",
+] }
+
+# The K3s-class control plane, all linked in-process. The orchestration crate is
+# the bring-up/shutdown brain; the rest are the decision cores this binary drives.
+cave-home-orchestration       = { path = "../cave-home-orchestration" }
+cave-home-apiserver-rs        = { path = "../cave-home-apiserver-rs" }
+cave-home-kine-rs             = { path = "../cave-home-kine-rs" }
+cave-home-scheduler-rs        = { path = "../cave-home-scheduler-rs" }
+cave-home-controller-manager-rs = { path = "../cave-home-controller-manager-rs" }
+cave-home-kubelet-rs          = { path = "../cave-home-kubelet-rs" }
+cave-home-cni-flannel         = { path = "../cave-home-cni-flannel" }
+cave-home-traefik-rs          = { path = "../cave-home-traefik-rs" }
+cave-home-klipper-lb-rs       = { path = "../cave-home-klipper-lb-rs" }
+
+# The household-facing Portal view-model, mounted alongside the control plane.
+cave-home-portal              = { path = "../cave-home-portal" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "macros", "time", "test-util"] }
+
 [lints]
 workspace = true
