@@ -160,3 +160,11 @@ pub mod discovery;
 /// Kubernetes Ingress controller: reconcile + hot-swap config holder.
 #[cfg(feature = "runtime")]
 pub mod controller;
+
+/// Prometheus metrics.
+#[cfg(feature = "runtime")]
+pub mod metrics;
+
+/// Dashboard status snapshot.
+#[cfg(feature = "runtime")]
+pub mod dashboard;
