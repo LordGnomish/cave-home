@@ -32,5 +32,6 @@ mod client;
 mod conv;
 pub mod error;
 pub mod streaming;
+pub mod ws;
 
 pub use client::RemoteCriClient;
