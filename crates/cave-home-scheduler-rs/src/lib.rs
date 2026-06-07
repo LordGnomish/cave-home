@@ -13,14 +13,22 @@
 //! * Score plugins  — `NodeResourcesBalancedAllocation`, `LeastRequested`,
 //!   `ImageLocality`.
 //! * `DefaultPreemption` PostFilter plugin (priority-based).
-//! * Priority `SchedulingQueue` with active + backoff sub-queues.
+//! * Priority `SchedulingQueue` with active + backoff sub-queues, an
+//!   `unschedulablePods` set, event-driven `MoveAllToActiveOrBackoffQueue`
+//!   (driven by `ClusterEvent`s), leftover flush, and a blocking `pop_wait`.
 //! * `SchedulerCache` + `NodeInfo` aggregation + assumed-pod tracking.
-//! * `scheduleOne` cycle plus a top-level `Scheduler` struct that wires
-//!   it to `SchedulerSource` / `SchedulerSink` traits.
+//! * The full framework cycle — `PreFilter → Filter → PostFilter → PreScore →
+//!   Score` (scheduling) and `Reserve → Permit → PreBind → Bind` with
+//!   `Unreserve` rollback (binding).
+//! * Event-driven `Scheduler::run` loop with pod/node informers over the
+//!   `SchedulerSource` watch streams and a periodic backoff/leftover flush,
+//!   plus the legacy `sync`/`run_once` poll driver.
+//! * `SchedulerConfig` — `percentageOfNodesToScore` + adaptive
+//!   `numFeasibleNodesToFind`.
 //!
 //! Phase 2b deferred (see `parity.manifest.toml`): `PodTopologySpread`,
 //! inter-pod affinity, preferred node affinity, custom plugin registry,
-//! multiple profiles, `Reserve`/`Permit`/`PreBind` extension points,
+//! multiple profiles, the `PostBind` extension point, `QueueingHints`,
 //! image-size weighted `ImageLocality`, lower-priority victim
 //! minimisation in `DefaultPreemption`.
 
