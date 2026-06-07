@@ -11,6 +11,7 @@
 //! reimplementation over the in-crate decision core; the socket loop is in
 //! [`crate::server`].
 
+use crate::admission::{AdmissionChain, AdmissionRequest, Operation};
 use crate::authn::{AnonymousAuthenticator, AuthenticatorChain};
 use crate::discovery::{self, ApiGroup, ApiResource, GroupVersionEntry};
 use crate::gvk::{self, GroupVersionResource};
@@ -46,6 +47,8 @@ pub struct ApiServer {
     pub authn: AuthenticatorChain,
     /// The authorization mode.
     pub authz: Authorization,
+    /// The admission pipeline (mutating → validating), run before storage writes.
+    pub admission: AdmissionChain,
 }
 
 impl Default for ApiServer {
@@ -67,6 +70,7 @@ impl ApiServer {
                 .with(Box::new(AnonymousAuthenticator))
                 .allow_anonymous(true),
             authz: Authorization::AlwaysAllow,
+            admission: AdmissionChain::new(),
         }
     }
 
@@ -82,6 +86,32 @@ impl ApiServer {
     pub fn with_authz(mut self, authz: Authorization) -> Self {
         self.authz = authz;
         self
+    }
+
+    /// Replace the admission pipeline (builder style).
+    #[must_use]
+    pub fn with_admission(mut self, admission: AdmissionChain) -> Self {
+        self.admission = admission;
+        self
+    }
+
+    /// Run the admission pipeline for one operation, returning the (possibly
+    /// mutated) request or the rejecting [`Status`].
+    fn admit(
+        &self,
+        operation: Operation,
+        gvr: &GroupVersionResource,
+        namespace: &str,
+        object: Option<Value>,
+        old_object: Option<Value>,
+    ) -> Result<AdmissionRequest> {
+        self.admission.run(AdmissionRequest {
+            gvr: gvr.clone(),
+            operation,
+            namespace: namespace.to_string(),
+            object,
+            old_object,
+        })
     }
 
     /// Run the full request pipeline and return the encoded response. Errors at
@@ -173,33 +203,53 @@ impl ApiServer {
             "create" => {
                 let mut body = parse_body(req)?;
                 inject_namespace(&mut body, &rp.namespace);
-                let created = self.registry.create(gvr, body)?;
+                let admitted = self.admit(Operation::Create, gvr, &rp.namespace, Some(body), None)?;
+                let object = admitted
+                    .object
+                    .ok_or_else(|| Status::invalid("admission removed the object"))?;
+                let created = self.registry.create(gvr, object)?;
                 Ok(object_response(201, &created))
             }
             "update" => {
                 let mut body = parse_body(req)?;
                 inject_namespace(&mut body, &rp.namespace);
-                let updated = if rp.subresource == "status" {
-                    self.registry.update_status(gvr, body)?
-                } else {
-                    self.registry.update(gvr, body)?
-                };
+                if rp.subresource == "status" {
+                    let updated = self.registry.update_status(gvr, body)?;
+                    return Ok(object_response(200, &updated));
+                }
+                let old = self.registry.get(gvr, &rp.namespace, &rp.name).ok();
+                let admitted = self.admit(Operation::Update, gvr, &rp.namespace, Some(body), old)?;
+                let object = admitted
+                    .object
+                    .ok_or_else(|| Status::invalid("admission removed the object"))?;
+                let updated = self.registry.update(gvr, object)?;
                 Ok(object_response(200, &updated))
             }
             "patch" => {
+                // get → apply patch → admit(Update) → update, so admission and
+                // generation/concurrency semantics match a plain update.
+                let existing = self.registry.get(gvr, &rp.namespace, &rp.name)?;
                 let ctype = req.headers.get("content-type").unwrap_or_default();
                 let body = parse_body(req)?;
                 let patched = if ctype.starts_with("application/json-patch+json") {
                     let ops = crate::patch::ops_from_json(&body)?;
-                    self.registry.patch_json(gvr, &rp.namespace, &rp.name, &ops)?
+                    crate::patch::apply_json_patch(&existing, &ops)?
                 } else {
                     // merge-patch+json and strategic-merge-patch+json (the latter
                     // approximated by merge) and the default.
-                    self.registry.patch_merge(gvr, &rp.namespace, &rp.name, &body)?
+                    crate::patch::apply_merge_patch(&existing, &body)
                 };
-                Ok(object_response(200, &patched))
+                let admitted =
+                    self.admit(Operation::Update, gvr, &rp.namespace, Some(patched), Some(existing))?;
+                let object = admitted
+                    .object
+                    .ok_or_else(|| Status::invalid("admission removed the object"))?;
+                let updated = self.registry.update(gvr, object)?;
+                Ok(object_response(200, &updated))
             }
             "delete" => {
+                let existing = self.registry.get(gvr, &rp.namespace, &rp.name)?;
+                self.admit(Operation::Delete, gvr, &rp.namespace, None, Some(existing))?;
                 let (object, _removed) = self.registry.delete(gvr, &rp.namespace, &rp.name)?;
                 Ok(object_response(200, &object))
             }
