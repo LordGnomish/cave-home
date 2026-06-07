@@ -73,6 +73,8 @@
 // etcd revision/count fields are i64 to match the wire protocol.
 #![allow(clippy::cast_possible_wrap)]
 
+#[cfg(any(feature = "sqlite", feature = "postgres", feature = "mysql"))]
+mod backend;
 pub mod compact;
 pub mod dialect;
 pub mod error;
@@ -80,6 +82,10 @@ pub mod error;
 pub mod grpc;
 pub mod lease;
 pub mod metrics;
+#[cfg(feature = "mysql")]
+pub mod mysql;
+#[cfg(feature = "postgres")]
+pub mod postgres;
 pub mod range;
 pub mod revision;
 pub mod sql;

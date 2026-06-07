@@ -27,9 +27,10 @@ use std::path::Path;
 
 use rusqlite::Connection;
 
+use crate::backend::{contains, key_str, like_pattern, resolve_read, validate_range};
 use crate::dialect::{Dialect, Driver, COMPACT_REV_KEY};
 use crate::error::{KineError, Result};
-use crate::range::{RangeEnd, RangeRequest, RangeResponse};
+use crate::range::{RangeRequest, RangeResponse};
 use crate::revision::Revision;
 use crate::store::Row;
 use crate::watch::{EventKind, WatchEvent};
@@ -517,86 +518,6 @@ impl SqliteStore {
             remaining: usize::try_from(after).unwrap_or(0),
         })
     }
-}
-
-/// Map a key's bytes to the UTF-8 string the `name` column stores.
-fn key_str(key: &[u8]) -> Result<String> {
-    if key.is_empty() {
-        return Err(KineError::EmptyKey);
-    }
-    String::from_utf8(key.to_vec())
-        .map_err(|_| KineError::Backend { message: "key is not valid UTF-8".into() })
-}
-
-/// The `LIKE` pattern for a request's interval: exact for a point get, `p%` for
-/// a prefix, `%` for the whole keyspace, and the broadest safe prefix for an
-/// explicit interval (which is then post-filtered in [`contains`]).
-fn like_pattern(req: &RangeRequest) -> String {
-    match &req.end {
-        RangeEnd::Single => String::from_utf8_lossy(&req.key).into_owned(),
-        RangeEnd::Prefix => format!("{}%", String::from_utf8_lossy(&req.key)),
-        RangeEnd::AllKeys => "%".to_string(),
-        RangeEnd::Explicit(end) => {
-            let common = common_prefix(&req.key, end);
-            format!("{}%", String::from_utf8_lossy(common))
-        }
-    }
-}
-
-/// The shared leading bytes of two keys.
-fn common_prefix<'a>(a: &'a [u8], b: &[u8]) -> &'a [u8] {
-    let n = a.iter().zip(b).take_while(|(x, y)| x == y).count();
-    &a[..n]
-}
-
-/// Does `candidate` fall in `req`'s interval? Mirrors `RangeRequest::contains`.
-fn contains(req: &RangeRequest, candidate: &[u8]) -> bool {
-    match &req.end {
-        RangeEnd::Single => candidate == req.key.as_slice(),
-        RangeEnd::Prefix => candidate.starts_with(&req.key),
-        RangeEnd::AllKeys => true,
-        RangeEnd::Explicit(end) => candidate >= req.key.as_slice() && candidate < end.as_slice(),
-    }
-}
-
-/// Validate a range request the same way [`crate::range::execute`] does.
-fn validate_range(req: &RangeRequest) -> Result<()> {
-    if req.limit < 0 {
-        return Err(KineError::NegativeLimit { limit: req.limit });
-    }
-    match &req.end {
-        RangeEnd::AllKeys => Ok(()),
-        RangeEnd::Single | RangeEnd::Prefix => {
-            if req.key.is_empty() {
-                Err(KineError::EmptyKey)
-            } else {
-                Ok(())
-            }
-        }
-        RangeEnd::Explicit(end) => {
-            if req.key.is_empty() {
-                Err(KineError::EmptyKey)
-            } else if end.as_slice() <= req.key.as_slice() {
-                Err(KineError::InvalidRange)
-            } else {
-                Ok(())
-            }
-        }
-    }
-}
-
-/// Resolve a request revision against the header (mirrors `Clock::resolve_read`).
-const fn resolve_read(requested: Revision, header: Revision) -> Result<Revision> {
-    if requested < 0 {
-        return Err(KineError::NegativeRevision { revision: requested });
-    }
-    if requested == 0 {
-        return Ok(header);
-    }
-    if requested > header {
-        return Err(KineError::FutureRevision { requested, current: header });
-    }
-    Ok(requested)
 }
 
 /// Wrap a rusqlite error as a backend error. Takes the error by value so it can
