@@ -144,3 +144,7 @@ pub mod cors;
 /// Response compression (gzip / deflate negotiation).
 #[cfg(feature = "runtime")]
 pub mod compress;
+
+/// TLS termination + SNI certificate resolution.
+#[cfg(feature = "runtime")]
+pub mod tls;
