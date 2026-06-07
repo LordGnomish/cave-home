@@ -29,15 +29,19 @@
 //! - [`path`] — `getPathOnNode` (node fallback, requested-path validation,
 //!   deterministic candidate selection), the `pvName_namespace_pvcName` folder
 //!   name, the `pathPattern` safe-prefix check, and the volume-path join.
+//! - [`provision`] — the `Provision` decision: PVC validation (selector / access
+//!   mode / node), the resulting [`provision::PvSpec`] (reclaim policy, capacity,
+//!   node-affinity term, `hostPath`/`local` source), and the provisioning state.
 //!
-//! Further submodules (`provision`, `helper`, `reclaim`, `metrics`, `report`)
-//! land in subsequent TDD cycles.
+//! Further submodules (`helper`, `reclaim`, `metrics`, `report`) land in
+//! subsequent TDD cycles.
 //!
 //! Like the rest of this crate it is **infrastructure**, hidden from end users
 //! (Charter §6.3, ADR-007): no user-facing strings, no i18n.
 
 pub mod config;
 pub mod path;
+pub mod provision;
 
 /// The node key under which an unlisted node falls back to a default path set
 /// (upstream `NodeDefaultNonListedNodes`).
