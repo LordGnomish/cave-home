@@ -29,6 +29,8 @@ struct Inner {
     db_connections: u64,
     compaction_runs: u64,
     compaction_rows_removed: u64,
+    defragment_runs: u64,
+    defragment_bytes_reclaimed: u64,
 }
 
 /// The kine datastore's metric registry. Cheap to share behind an `Arc`; every
@@ -76,6 +78,15 @@ impl KineMetrics {
         }
     }
 
+    /// Record one defragment (`VACUUM`) run that reclaimed `bytes_reclaimed`
+    /// bytes of free space.
+    pub fn record_defragment(&self, bytes_reclaimed: u64) {
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.defragment_runs += 1;
+            inner.defragment_bytes_reclaimed += bytes_reclaimed;
+        }
+    }
+
     /// Render the registry as Prometheus text exposition.
     #[must_use]
     pub fn render(&self) -> String {
@@ -120,6 +131,14 @@ impl KineMetrics {
         out.push_str("# HELP kine_compaction_rows_removed_total Rows removed by compaction.\n");
         out.push_str("# TYPE kine_compaction_rows_removed_total counter\n");
         let _ = writeln!(out, "kine_compaction_rows_removed_total {}", inner.compaction_rows_removed);
+
+        out.push_str("# HELP kine_defragment_runs_total Total defragment (VACUUM) runs.\n");
+        out.push_str("# TYPE kine_defragment_runs_total counter\n");
+        let _ = writeln!(out, "kine_defragment_runs_total {}", inner.defragment_runs);
+
+        out.push_str("# HELP kine_defragment_bytes_reclaimed_total Bytes reclaimed by defragment.\n");
+        out.push_str("# TYPE kine_defragment_bytes_reclaimed_total counter\n");
+        let _ = writeln!(out, "kine_defragment_bytes_reclaimed_total {}", inner.defragment_bytes_reclaimed);
 
         out
     }
@@ -202,6 +221,16 @@ mod tests {
         let out = m.render();
         assert!(out.contains("kine_compaction_runs_total 2"));
         assert!(out.contains("kine_compaction_rows_removed_total 15"));
+    }
+
+    #[test]
+    fn defragment_counters_accumulate_runs_and_reclaimed_bytes() {
+        let m = KineMetrics::new();
+        m.record_defragment(4096);
+        m.record_defragment(8192);
+        let out = m.render();
+        assert!(out.contains("kine_defragment_runs_total 2"));
+        assert!(out.contains("kine_defragment_bytes_reclaimed_total 12288"));
     }
 
     #[test]

@@ -395,22 +395,125 @@ impl KineServer {
     }
 }
 
+/// Configuration for the background maintenance loop ([`KineServer::spawn_compactor`]).
+#[derive(Debug, Clone, Copy)]
+pub struct CompactionConfig {
+    /// How many of the most recent revisions to keep; older history is
+    /// compacted away. kine keeps a rolling window so the datastore does not
+    /// grow without bound.
+    pub retain: i64,
+    /// How often the loop runs (compact + lease reap).
+    pub interval: Duration,
+}
+
+impl Default for CompactionConfig {
+    fn default() -> Self {
+        // kine's defaults: a 5-minute interval, keeping the last ~1000 revisions.
+        Self { retain: 1000, interval: Duration::from_secs(300) }
+    }
+}
+
+impl KineServer {
+    /// Compact away everything older than the most recent `retain` revisions.
+    /// Computes the target floor as `current - retain` and compacts to it when
+    /// that advances the existing floor; otherwise it is a no-op (`Ok(None)`).
+    /// This is kine's rolling-window compaction, driven by a background loop or
+    /// an operator.
+    ///
+    /// # Errors
+    /// An etcd `Status` if the backend compaction fails.
+    pub async fn compact_retaining(&self, retain: i64) -> Result<Option<crate::compact::CompactReport>, Status> {
+        let (current, floor) = {
+            let store = self.store.lock().await;
+            (store.current_revision().map_err(status)?, store.compacted_revision().map_err(status)?)
+        };
+        let target = current - retain.max(0);
+        if target <= 0 || target <= floor {
+            return Ok(None);
+        }
+        let report = {
+            let mut store = self.store.lock().await;
+            store.compact(target).map_err(status)?
+        };
+        self.metrics.record_compaction(report.removed as u64);
+        Ok(Some(report))
+    }
+
+    /// Reap every lease whose TTL has elapsed by "now": forget it and delete all
+    /// keys attached to it (etcd's lessor tick). Returns the number of keys
+    /// deleted. Time comes from the injected clock, so the loop is testable.
+    ///
+    /// # Errors
+    /// An etcd `Status` if the backend deletion fails.
+    pub async fn reap_expired_leases(&self) -> Result<usize, Status> {
+        let now = (self.clock)();
+        let expired = {
+            let mut leases = self.leases.lock().await;
+            let ids = leases.expired(now);
+            for id in &ids {
+                leases.revoke(*id);
+            }
+            ids
+        };
+        let mut store = self.store.lock().await;
+        let mut deleted = 0;
+        for id in expired {
+            deleted += store.revoke_lease_keys(id).map_err(status)?;
+        }
+        Ok(deleted)
+    }
+
+    /// Spawn the background maintenance loop: on each `config.interval` tick it
+    /// reaps expired leases and runs rolling-window compaction. Returns the
+    /// task handle (abort it to stop the loop). Errors on a tick are swallowed
+    /// (the next tick retries) — a transient backend hiccup must not kill the
+    /// datastore's housekeeping.
+    #[must_use]
+    pub fn spawn_compactor(&self, config: CompactionConfig) -> tokio::task::JoinHandle<()> {
+        let server = self.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(config.interval).await;
+                let _ = server.reap_expired_leases().await;
+                let _ = server.compact_retaining(config.retain).await;
+            }
+        })
+    }
+}
+
 #[tonic::async_trait]
 impl Maintenance for KineServer {
     async fn status(&self, _request: Request<StatusRequest>) -> Result<Response<StatusResponse>, Status> {
-        let header = self.header().await?;
+        let (header, db_size) = {
+            let store = self.store.lock().await;
+            let rev = store.current_revision().map_err(status)?;
+            let size = store.db_size().map_err(status)?;
+            (ResponseHeader { cluster_id: 0, member_id: 0, revision: rev, raft_term: 0 }, size)
+        };
         Ok(Response::new(StatusResponse {
             header: Some(header),
             version: ETCD_VERSION.to_string(),
-            db_size: 0,
+            db_size,
             leader: 0,
             raft_index: 0,
             raft_term: 0,
             raft_applied_index: 0,
             errors: Vec::new(),
-            db_size_in_use: 0,
+            db_size_in_use: db_size,
             is_learner: false,
         }))
+    }
+
+    async fn defragment(
+        &self,
+        _request: Request<etcdserverpb::DefragmentRequest>,
+    ) -> Result<Response<etcdserverpb::DefragmentResponse>, Status> {
+        let reclaimed = {
+            let store = self.store.lock().await;
+            store.defragment().map_err(status)?
+        };
+        self.metrics.record_defragment(u64::try_from(reclaimed).unwrap_or(0));
+        Ok(Response::new(etcdserverpb::DefragmentResponse { header: Some(self.header().await?) }))
     }
 }
 
