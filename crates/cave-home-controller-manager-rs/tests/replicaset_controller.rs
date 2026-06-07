@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Integration tests for the ReplicaSet controller reconciling against the
+//! Integration tests for the `ReplicaSet` controller reconciling against the
 //! in-memory apiserver (`pkg/controller/replicaset` behavioural contract).
 
 use cave_home_controller_manager_rs::apis::{
