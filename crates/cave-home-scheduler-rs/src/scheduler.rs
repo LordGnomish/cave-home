@@ -418,6 +418,13 @@ impl Scheduler {
                 return Err(format!("bind failed: {e}"));
             }
         }
+
+        // ---------- PostBind ----------
+        // Best-effort, success-path-only: the pod is bound, so these callbacks
+        // cannot fail the cycle.
+        for plugin in self.registry.post_binds() {
+            plugin.post_bind(&mut state, pod, host);
+        }
         Ok(())
     }
 
@@ -671,6 +678,58 @@ mod tests {
         // The skip plugin was consulted but abstained, so the DefaultBinder bound.
         assert!(calls.snapshot().contains(&"skip:delta".to_string()));
         assert_eq!(sink.binds(), vec![("default/delta".into(), "n1".into())]);
+    }
+
+    struct RecordingPostBind(Arc<Calls>);
+    impl PostBindPlugin for RecordingPostBind {
+        fn name(&self) -> &'static str {
+            "RecordingPostBind"
+        }
+        fn post_bind(&self, _: &mut CycleState, pod: &Pod, node_name: &str) {
+            self.0
+                .push(format!("postbind:{}:{node_name}", pod.metadata.name));
+        }
+    }
+
+    #[tokio::test]
+    async fn post_bind_runs_after_successful_bind() {
+        let src = Arc::new(InMemorySource::new());
+        let sink = Arc::new(InMemorySink::new());
+        let calls = Arc::new(Calls::default());
+        let reg = PluginRegistry::builder()
+            .with_post_bind(Arc::new(RecordingPostBind(calls.clone())))
+            .build();
+        let sched = Scheduler::new(src.clone(), sink.clone()).with_registry(reg);
+        sched.cache.add_node(node("n1", 1000, 1024));
+
+        let info = QueuedPodInfo::new(pod("epsilon", 100, 256));
+        sched.schedule_and_bind(info, 0).await;
+
+        assert_eq!(sink.binds(), vec![("default/epsilon".into(), "n1".into())]);
+        assert!(calls
+            .snapshot()
+            .contains(&"postbind:epsilon:n1".to_string()));
+    }
+
+    #[tokio::test]
+    async fn post_bind_skipped_when_binding_cycle_fails() {
+        let src = Arc::new(InMemorySource::new());
+        let sink = Arc::new(InMemorySink::new());
+        let calls = Arc::new(Calls::default());
+        // Permit denies before the bind, so the pod is never bound and PostBind
+        // must not run.
+        let reg = PluginRegistry::builder()
+            .with_permit(Arc::new(DenyPermit))
+            .with_post_bind(Arc::new(RecordingPostBind(calls.clone())))
+            .build();
+        let sched = Scheduler::new(src.clone(), sink.clone()).with_registry(reg);
+        sched.cache.add_node(node("n1", 1000, 1024));
+
+        let info = QueuedPodInfo::new(pod("zeta", 100, 256));
+        sched.schedule_and_bind(info, 0).await;
+
+        assert!(sink.binds().is_empty());
+        assert!(!calls.snapshot().iter().any(|s| s.starts_with("postbind")));
     }
 
     #[tokio::test]
