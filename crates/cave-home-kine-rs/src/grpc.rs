@@ -77,9 +77,26 @@ fn system_clock() -> UnixSeconds {
 /// poll over the after-query, not a push — this is that interval).
 const WATCH_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
+/// How many consecutive idle poll ticks elapse before a `progress_notify` watch
+/// emits a progress notification — throttles a quiet range to ~1 update / 300ms
+/// rather than one every poll.
+const PROGRESS_IDLE_TICKS: u32 = 3;
+
 /// kine's reported etcd server version (the apiserver only checks it is a
 /// 3.x etcd that supports the v3 API).
 pub const ETCD_VERSION: &str = "3.5.13";
+
+/// The control action a watch's poll loop takes after servicing its inbound
+/// control stream — kept out of the `select!` arms so error propagation can use
+/// `?` in the surrounding try-stream.
+enum WatchCtl {
+    /// Keep polling.
+    Continue,
+    /// The client asked to cancel watch `id`; emit the marker and stop.
+    Cancel(i64),
+    /// The inbound transport errored; surface it and stop.
+    Failed(Status),
+}
 
 /// An etcd gRPC server backed by a real [`SqliteStore`]. Cheap to clone (the
 /// store is shared behind an `Arc`), so the same instance can back several
@@ -171,9 +188,9 @@ impl KineServer {
         LeaseServer::new(self.clone())
     }
 
-    /// The event stream for one watch: a `created` marker, then the ordered
-    /// change events in the watched range, polled from the backend (kine's
-    /// watch is a poll over the after-query, faithfully reproduced here).
+    /// Drive a watch with no client control stream — historical replay for the
+    /// in-process callers and tests. Equivalent to [`Self::watch_stream_with`]
+    /// fed an inbound that never sends a cancel.
     ///
     /// etcd revision semantics: `start_revision == 0` means "future changes
     /// only"; a positive `start_revision` replays from that revision inclusive.
@@ -181,10 +198,31 @@ impl KineServer {
         &self,
         create: WatchCreateRequest,
     ) -> impl Stream<Item = Result<WatchResponse, Status>> + Send + use<> {
+        self.watch_stream_with(create, tokio_stream::pending())
+    }
+
+    /// The event stream for one watch, honouring the client's control stream:
+    /// a `created` marker, then ordered change events (carrying `prev_kv` when
+    /// requested), periodic progress notifications when `progress_notify` is set
+    /// and the range is idle, and a `canceled` marker (ending the stream) when
+    /// the client sends a [`WatchCancelRequest`]. kine's watch is a poll over the
+    /// after-query; this is that poll, made cancellable.
+    pub fn watch_stream_with<I>(
+        &self,
+        create: WatchCreateRequest,
+        inbound: I,
+    ) -> impl Stream<Item = Result<WatchResponse, Status>> + Send + use<I>
+    where
+        I: Stream<Item = Result<WatchRequest, Status>> + Send + 'static,
+    {
+        use tokio_stream::StreamExt as _;
         let store = self.store();
+        let want_prev = create.prev_kv;
+        let progress_notify = create.progress_notify;
         async_stream::try_stream! {
             let filter = to_kine_range_bytes(&create.key, &create.range_end)?;
             let watch_id = create.watch_id;
+            tokio::pin!(inbound);
 
             let revision = {
                 let s = store.lock().await;
@@ -199,6 +237,8 @@ impl KineServer {
             } else {
                 revision
             };
+            let mut inbound_open = true;
+            let mut idle_ticks = 0u32;
             loop {
                 let (events, header_rev) = {
                     let s = store.lock().await;
@@ -207,10 +247,46 @@ impl KineServer {
                 };
                 if !events.is_empty() {
                     last = events.last().map_or(last, |e| e.revision);
-                    let proto = events.iter().map(to_event).collect();
+                    let proto = events.iter().map(|e| to_event(e, want_prev)).collect();
                     yield watch_response(watch_id, header_rev, false, proto);
+                    idle_ticks = 0;
+                } else if progress_notify {
+                    // An idle progress tick: an empty response carrying the head
+                    // revision so the watcher can advance its checkpoint without
+                    // a change event. Throttled so a quiet range is not chatty.
+                    idle_ticks += 1;
+                    if idle_ticks >= PROGRESS_IDLE_TICKS {
+                        idle_ticks = 0;
+                        yield watch_response(watch_id, header_rev, false, Vec::new());
+                    }
                 }
-                tokio::time::sleep(WATCH_POLL_INTERVAL).await;
+
+                // Pace the poll, but wake early to service a cancel request. The
+                // `?`-propagation must live outside the select! arms, so the arm
+                // only classifies the inbound message into a control action.
+                let ctl = tokio::select! {
+                    biased;
+                    maybe = inbound.next(), if inbound_open => match maybe {
+                        Some(Ok(WatchRequest {
+                            request_union: Some(watch_request::RequestUnion::CancelRequest(c)),
+                        })) => WatchCtl::Cancel(if c.watch_id != 0 { c.watch_id } else { watch_id }),
+                        // A stray create / empty union: ignore (one watch per stream).
+                        Some(Ok(_)) => WatchCtl::Continue,
+                        Some(Err(e)) => WatchCtl::Failed(e),
+                        // Client half-closed its send side: stop listening but
+                        // keep streaming events (etcd keeps the watch alive).
+                        None => { inbound_open = false; WatchCtl::Continue }
+                    },
+                    () = tokio::time::sleep(WATCH_POLL_INTERVAL) => WatchCtl::Continue,
+                };
+                match ctl {
+                    WatchCtl::Cancel(id) => {
+                        yield watch_canceled(id, header_rev);
+                        return;
+                    }
+                    WatchCtl::Failed(e) => { Err::<(), _>(e)?; }
+                    WatchCtl::Continue => {}
+                }
             }
         }
     }
@@ -649,7 +725,9 @@ impl Watch for KineServer {
                 }
             }
         };
-        let stream: Self::WatchStream = Box::pin(self.watch_stream(create));
+        // Hand the remaining client stream to the watch so it can service
+        // cancel requests (the create has already been consumed above).
+        let stream: Self::WatchStream = Box::pin(self.watch_stream_with(create, inbound));
         Ok(Response::new(stream))
     }
 }
@@ -709,7 +787,10 @@ fn row_to_kv(row: &Row) -> KeyValue {
 }
 
 /// Convert a kine [`WatchEvent`] into an etcd `Event` (PUT / DELETE + the kv).
-fn to_event(e: &WatchEvent) -> Event {
+/// When `want_prev` is set, attach the `prev_kv` (the value the key held before
+/// this change) — present for updates and deletes, absent for a fresh create
+/// (which had no previous generation).
+fn to_event(e: &WatchEvent, want_prev: bool) -> Event {
     use etcdserverpb::event::EventType;
     let kv = KeyValue {
         key: e.key.clone(),
@@ -723,7 +804,32 @@ fn to_event(e: &WatchEvent) -> Event {
         EventKind::Put => EventType::Put,
         EventKind::Delete => EventType::Delete,
     };
-    Event { r#type: kind as i32, kv: Some(kv), prev_kv: None }
+    // A create is identified by mod == create; it has no previous kv.
+    let has_prev = e.kind == EventKind::Delete || e.create_revision != e.revision;
+    let prev_kv = (want_prev && has_prev).then(|| KeyValue {
+        key: e.key.clone(),
+        create_revision: e.create_revision,
+        mod_revision: e.revision - 1,
+        version: 0,
+        value: e.prev_value.clone(),
+        lease: 0,
+    });
+    Event { r#type: kind as i32, kv: Some(kv), prev_kv }
+}
+
+/// A `WatchResponse` marking the watch as canceled (the final message etcd
+/// sends in response to a `WatchCancelRequest`).
+fn watch_canceled(watch_id: i64, revision: i64) -> WatchResponse {
+    WatchResponse {
+        header: Some(ResponseHeader { cluster_id: 0, member_id: 0, revision, raft_term: 0 }),
+        watch_id,
+        created: false,
+        canceled: true,
+        compact_revision: 0,
+        cancel_reason: "watch canceled".to_string(),
+        fragment: false,
+        events: Vec::new(),
+    }
 }
 
 /// Build a `WatchResponse` carrying a header, watch id and event batch.
