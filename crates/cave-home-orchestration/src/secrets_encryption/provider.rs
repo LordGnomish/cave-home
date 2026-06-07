@@ -1,9 +1,162 @@
 //! The KMS provider interface and its in-process implementation.
 //!
 //! See the module-level docs in [`crate::secrets_encryption`] for the scheme.
+//!
+//! Upstream Kubernetes models encryption providers behind an `EnvelopeService`
+//! (`Encrypt` / `Decrypt` / `Status`) so a provider can be in-process *or* a
+//! gRPC KMS plugin. [`KmsProvider`] is that object-safe seam, and
+//! [`LocalKmsProvider`] is the in-process implementation over a [`Keyring`] of
+//! ML-KEM-768 KEKs. An out-of-process gRPC transport implementing the same
+//! trait is ADR-004 phase-1b.
 
-// ── RED (TDD) ────────────────────────────────────────────────────────────────
-// Failing tests first; implementation lands in the paired `feat` commit.
+use super::envelope::{self, EnvelopeError, SealRandomness};
+use super::keyring::{KeyId, Keyring};
+
+/// The algorithm label reported by [`KmsProvider::status`] — the PQC envelope.
+pub const ALGORITHM: &str = "ML-KEM-768+AES-256-GCM";
+
+/// Why a provider operation failed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProviderError {
+    /// The object names a key id the provider's keyring does not hold.
+    UnknownKey,
+    /// The envelope layer failed (tampering, wrong key, malformed blob).
+    Envelope(EnvelopeError),
+}
+
+impl core::fmt::Display for ProviderError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::UnknownKey => f.write_str("kms: no key in keyring for that key id"),
+            Self::Envelope(e) => write!(f, "kms: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for ProviderError {}
+
+impl From<EnvelopeError> for ProviderError {
+    fn from(e: EnvelopeError) -> Self {
+        Self::Envelope(e)
+    }
+}
+
+/// A sealed object: the envelope blob plus the id of the key that sealed it.
+///
+/// Mirrors the Kubernetes KMS-v2 `EncryptedObject` (key id + ciphertext); the
+/// [`crate::secrets_encryption::transformer`] serializes it into the prefixed
+/// stored value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EncryptedObject {
+    /// The write key the blob was sealed under — routes the decrypt.
+    pub key_id: KeyId,
+    /// The PQC envelope blob (see [`crate::secrets_encryption::envelope`]).
+    pub blob: Vec<u8>,
+}
+
+/// A snapshot of provider health, for `status` reporting (KMS v2 `Status`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderStatus {
+    /// KMS API version implemented — always `"v2"` (envelope/DEK model).
+    pub version: &'static str,
+    /// Whether the provider can currently encrypt + decrypt.
+    pub healthy: bool,
+    /// The id of the current write key.
+    pub current_key_id: KeyId,
+    /// The envelope algorithm label.
+    pub algorithm: &'static str,
+}
+
+/// The KMS provider interface — object-safe so it can be in-process or a gRPC
+/// plugin behind `&dyn KmsProvider`.
+pub trait KmsProvider {
+    /// Seal `plaintext` under the current write key.
+    ///
+    /// # Errors
+    /// [`ProviderError::Envelope`] if the envelope layer fails.
+    fn encrypt(&self, plaintext: &[u8]) -> Result<EncryptedObject, ProviderError>;
+
+    /// Open an object previously produced by [`KmsProvider::encrypt`].
+    ///
+    /// # Errors
+    /// [`ProviderError::UnknownKey`] if the keyring lacks `obj.key_id`;
+    /// [`ProviderError::Envelope`] on any authentication failure.
+    fn decrypt(&self, obj: &EncryptedObject) -> Result<Vec<u8>, ProviderError>;
+
+    /// Report current health, write-key id, and algorithm.
+    fn status(&self) -> ProviderStatus;
+}
+
+/// In-process KMS provider over a [`Keyring`] of ML-KEM-768 KEKs.
+#[derive(Debug)]
+pub struct LocalKmsProvider {
+    keyring: Keyring,
+}
+
+impl LocalKmsProvider {
+    /// Wrap a keyring as an in-process provider.
+    #[must_use]
+    pub const fn new(keyring: Keyring) -> Self {
+        Self { keyring }
+    }
+
+    /// Borrow the keyring (read path / introspection).
+    #[must_use]
+    pub const fn keyring(&self) -> &Keyring {
+        &self.keyring
+    }
+
+    /// Mutably borrow the keyring — to drive the rotation lifecycle.
+    pub const fn keyring_mut(&mut self) -> &mut Keyring {
+        &mut self.keyring
+    }
+
+    /// Consume the provider, returning its keyring.
+    #[must_use]
+    pub fn into_keyring(self) -> Keyring {
+        self.keyring
+    }
+
+    /// Seal `plaintext` under the current write key with explicit randomness —
+    /// the deterministic seam behind [`KmsProvider::encrypt`].
+    ///
+    /// The write key's id is bound as the envelope AAD, so a blob can only be
+    /// opened under the key id it was tagged with.
+    ///
+    /// # Errors
+    /// [`ProviderError::Envelope`] if the envelope layer fails.
+    pub fn encrypt_with(
+        &self,
+        plaintext: &[u8],
+        r: &SealRandomness,
+    ) -> Result<EncryptedObject, ProviderError> {
+        let write = self.keyring.write_key();
+        let key_id = write.id().clone();
+        let blob = envelope::seal(plaintext, &write.kek().public(), key_id.as_str().as_bytes(), r)?;
+        Ok(EncryptedObject { key_id, blob })
+    }
+}
+
+impl KmsProvider for LocalKmsProvider {
+    fn encrypt(&self, plaintext: &[u8]) -> Result<EncryptedObject, ProviderError> {
+        self.encrypt_with(plaintext, &SealRandomness::generate())
+    }
+
+    fn decrypt(&self, obj: &EncryptedObject) -> Result<Vec<u8>, ProviderError> {
+        let key = self.keyring.find(&obj.key_id).ok_or(ProviderError::UnknownKey)?;
+        let plaintext = envelope::open(&obj.blob, key.kek(), obj.key_id.as_str().as_bytes())?;
+        Ok(plaintext)
+    }
+
+    fn status(&self) -> ProviderStatus {
+        ProviderStatus {
+            version: "v2",
+            healthy: true,
+            current_key_id: self.keyring.write_key().id().clone(),
+            algorithm: ALGORITHM,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
