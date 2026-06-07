@@ -95,8 +95,10 @@ pub mod name;
 pub mod plugin;
 pub mod rewrite;
 pub mod rr;
+pub mod server;
 pub mod wire;
 
+pub use build::{DIRECTIVES, build_chain, priority};
 pub use builtins::{Errors, Metrics, MetricsSnapshot, Ready, format_log_line};
 pub use cache::{Cache, CacheKey, CachePlugin};
 pub use corefile::{Corefile, Directive, ServerBlock};
@@ -112,4 +114,5 @@ pub use name::Name;
 pub use plugin::{Chain, Next, Outcome, Plugin, Request, ServerError};
 pub use rewrite::{NameRule, Policy, Rewriter, Rule};
 pub use rr::{Class, Rdata, RecordType, ResourceRecord};
+pub use server::{MAX_UDP_PAYLOAD, Resolver, serve_tcp, serve_udp};
 pub use wire::{Header, Opcode, Rcode, Reader, Writer};
