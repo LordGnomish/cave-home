@@ -21,6 +21,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive", "env"] }
+cave-home-orchestration = { path = "../cave-home-orchestration" }
 
 [dev-dependencies]
 assert_cmd = "2.0"
