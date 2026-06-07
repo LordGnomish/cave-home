@@ -20,6 +20,10 @@
 //! `Txn` / `Compact`). Faithful behavioural port, Apache-2.0.
 
 #![cfg(feature = "grpc")]
+// tonic idioms: `Status` is a large error type (intrinsic to tonic), and each
+// handler intentionally holds the store `MutexGuard` for the whole operation to
+// keep kine's single global-revision sequence serialised.
+#![allow(clippy::result_large_err, clippy::significant_drop_tightening)]
 
 use std::sync::Arc;
 
@@ -44,6 +48,359 @@ use etcdserverpb::{
     DeleteRangeResponse, KeyValue, PutRequest, PutResponse, RangeRequest, RangeResponse,
     RequestOp, ResponseHeader, ResponseOp, StatusRequest, StatusResponse, TxnRequest, TxnResponse,
 };
+
+/// kine's reported etcd server version (the apiserver only checks it is a
+/// 3.x etcd that supports the v3 API).
+pub const ETCD_VERSION: &str = "3.5.13";
+
+/// An etcd gRPC server backed by a real [`SqliteStore`]. Cheap to clone (the
+/// store is shared behind an `Arc`), so the same instance can back several
+/// service servers ([`Self::kv`], [`Self::maintenance`]).
+#[derive(Clone)]
+pub struct KineServer {
+    store: Arc<Mutex<SqliteStore>>,
+}
+
+impl KineServer {
+    /// Wrap an owned store.
+    #[must_use]
+    pub fn new(store: SqliteStore) -> Self {
+        Self { store: Arc::new(Mutex::new(store)) }
+    }
+
+    /// Wrap an already-shared store (so a watcher / metrics layer can share it).
+    #[must_use]
+    pub const fn from_shared(store: Arc<Mutex<SqliteStore>>) -> Self {
+        Self { store }
+    }
+
+    /// The shared store handle.
+    #[must_use]
+    pub fn store(&self) -> Arc<Mutex<SqliteStore>> {
+        Arc::clone(&self.store)
+    }
+
+    /// This server as a tonic `KV` service, ready for `Server::add_service`.
+    #[must_use]
+    pub fn kv(&self) -> KvServer<Self> {
+        KvServer::new(self.clone())
+    }
+
+    /// This server as a tonic `Maintenance` service.
+    #[must_use]
+    pub fn maintenance(&self) -> MaintenanceServer<Self> {
+        MaintenanceServer::new(self.clone())
+    }
+
+    /// Build a response header stamped with the store's current revision.
+    async fn header(&self) -> Result<ResponseHeader, Status> {
+        let rev = {
+            let store = self.store.lock().await;
+            store.current_revision().map_err(status)?
+        };
+        Ok(ResponseHeader { cluster_id: 0, member_id: 0, revision: rev, raft_term: 0 })
+    }
+
+    /// Execute a [`RangeRequest`] under the lock and shape the etcd response.
+    async fn do_range(&self, req: &RangeRequest) -> Result<RangeResponse, Status> {
+        let kreq = to_kine_range(req)?;
+        let store = self.store.lock().await;
+        let resp = store.range(&kreq).map_err(status)?;
+        Ok(shape_range(req, &resp, resp.revision))
+    }
+
+    /// Execute a put under the lock, optionally capturing the previous kv.
+    async fn do_put(&self, req: &PutRequest) -> Result<PutResponse, Status> {
+        if req.key.is_empty() {
+            return Err(Status::new(Code::InvalidArgument, "etcdserver: key is not provided"));
+        }
+        let mut store = self.store.lock().await;
+
+        // Fetch the current row first when prev_kv / ignore_* needs it.
+        let prev = if req.prev_kv || req.ignore_value || req.ignore_lease {
+            store
+                .range(&KineRange::key(&req.key))
+                .map_err(status)?
+                .kvs
+                .into_iter()
+                .next()
+        } else {
+            None
+        };
+        let value = if req.ignore_value {
+            prev.as_ref().map(|r| r.value.clone()).unwrap_or_default()
+        } else {
+            req.value.clone()
+        };
+        let lease = if req.ignore_lease {
+            prev.as_ref().map_or(0, |r| r.lease)
+        } else {
+            req.lease
+        };
+
+        store.put(&req.key, &value, lease).map_err(status)?;
+        let revision = store.current_revision().map_err(status)?;
+        Ok(PutResponse {
+            header: Some(ResponseHeader { cluster_id: 0, member_id: 0, revision, raft_term: 0 }),
+            prev_kv: if req.prev_kv { prev.as_ref().map(row_to_kv) } else { None },
+        })
+    }
+
+    /// Execute a delete-range under the lock: tombstone every live key in the
+    /// interval, counting deletions and (optionally) returning prev kvs.
+    async fn do_delete_range(&self, req: &DeleteRangeRequest) -> Result<DeleteRangeResponse, Status> {
+        let selector = to_kine_range_bytes(&req.key, &req.range_end)?;
+        let mut store = self.store.lock().await;
+        let victims = store.range(&selector).map_err(status)?.kvs;
+
+        let mut deleted = 0_i64;
+        let mut prev_kvs = Vec::new();
+        for row in &victims {
+            if store.delete(&row.key).map_err(status)?.is_some() {
+                deleted += 1;
+                if req.prev_kv {
+                    prev_kvs.push(row_to_kv(row));
+                }
+            }
+        }
+        let revision = store.current_revision().map_err(status)?;
+        Ok(DeleteRangeResponse {
+            header: Some(ResponseHeader { cluster_id: 0, member_id: 0, revision, raft_term: 0 }),
+            deleted,
+            prev_kvs,
+        })
+    }
+}
+
+#[tonic::async_trait]
+impl Kv for KineServer {
+    async fn range(&self, request: Request<RangeRequest>) -> Result<Response<RangeResponse>, Status> {
+        Ok(Response::new(self.do_range(request.get_ref()).await?))
+    }
+
+    async fn put(&self, request: Request<PutRequest>) -> Result<Response<PutResponse>, Status> {
+        Ok(Response::new(self.do_put(request.get_ref()).await?))
+    }
+
+    async fn delete_range(
+        &self,
+        request: Request<DeleteRangeRequest>,
+    ) -> Result<Response<DeleteRangeResponse>, Status> {
+        Ok(Response::new(self.do_delete_range(request.get_ref()).await?))
+    }
+
+    async fn txn(&self, request: Request<TxnRequest>) -> Result<Response<TxnResponse>, Status> {
+        let txn = request.into_inner();
+        // Evaluate every comparison against the current committed state; etcd
+        // runs the success branch iff all compares hold, else the failure one.
+        let succeeded = {
+            let store = self.store.lock().await;
+            let mut all = true;
+            for cmp in &txn.compare {
+                if !eval_compare(&store, cmp).map_err(status)? {
+                    all = false;
+                    break;
+                }
+            }
+            all
+        };
+        let ops = if succeeded { txn.success } else { txn.failure };
+        let mut responses = Vec::with_capacity(ops.len());
+        for op in ops {
+            responses.push(self.exec_op(op).await?);
+        }
+        Ok(Response::new(TxnResponse {
+            header: Some(self.header().await?),
+            succeeded,
+            responses,
+        }))
+    }
+
+    async fn compact(
+        &self,
+        request: Request<CompactionRequest>,
+    ) -> Result<Response<CompactionResponse>, Status> {
+        let req = request.into_inner();
+        let mut store = self.store.lock().await;
+        store.compact(req.revision).map_err(status)?;
+        let revision = store.current_revision().map_err(status)?;
+        Ok(Response::new(CompactionResponse {
+            header: Some(ResponseHeader { cluster_id: 0, member_id: 0, revision, raft_term: 0 }),
+        }))
+    }
+}
+
+impl KineServer {
+    /// Execute a single Txn request op (put / delete / range) and wrap the
+    /// etcd `ResponseOp`.
+    async fn exec_op(&self, op: RequestOp) -> Result<ResponseOp, Status> {
+        let response = match op.request {
+            Some(request_op::Request::RequestRange(r)) => {
+                response_op::Response::ResponseRange(self.do_range(&r).await?)
+            }
+            Some(request_op::Request::RequestPut(p)) => {
+                response_op::Response::ResponsePut(self.do_put(&p).await?)
+            }
+            Some(request_op::Request::RequestDeleteRange(d)) => {
+                response_op::Response::ResponseDeleteRange(self.do_delete_range(&d).await?)
+            }
+            None => return Err(Status::new(Code::InvalidArgument, "empty txn op")),
+        };
+        Ok(ResponseOp { response: Some(response) })
+    }
+}
+
+#[tonic::async_trait]
+impl Maintenance for KineServer {
+    async fn status(&self, _request: Request<StatusRequest>) -> Result<Response<StatusResponse>, Status> {
+        let header = self.header().await?;
+        Ok(Response::new(StatusResponse {
+            header: Some(header),
+            version: ETCD_VERSION.to_string(),
+            db_size: 0,
+            leader: 0,
+            raft_index: 0,
+            raft_term: 0,
+            raft_applied_index: 0,
+            errors: Vec::new(),
+            db_size_in_use: 0,
+            is_learner: false,
+        }))
+    }
+}
+
+/// Evaluate one etcd `Compare` against the current state of its key.
+fn eval_compare(store: &SqliteStore, cmp: &Compare) -> Result<bool, KineError> {
+    use etcdserverpb::compare::{CompareResult, CompareTarget, TargetUnion};
+
+    let current = store.range(&KineRange::key(&cmp.key))?.kvs.into_iter().next();
+    let (create_rev, mod_rev, version, value, lease) = current.as_ref().map_or(
+        (0_i64, 0_i64, 0_i64, Vec::new(), 0_i64),
+        |r| {
+            (
+                r.create_revision,
+                r.mod_revision,
+                r.mod_revision - r.create_revision + 1,
+                r.value.clone(),
+                r.lease,
+            )
+        },
+    );
+
+    let result = CompareResult::try_from(cmp.result).unwrap_or(CompareResult::Equal);
+    let target = CompareTarget::try_from(cmp.target).unwrap_or(CompareTarget::Create);
+
+    // Compare the requested target field against the stored one.
+    let ordering = match (target, &cmp.target_union) {
+        (CompareTarget::Create, Some(TargetUnion::CreateRevision(v))) => create_rev.cmp(v),
+        (CompareTarget::Mod, Some(TargetUnion::ModRevision(v))) => mod_rev.cmp(v),
+        (CompareTarget::Version, Some(TargetUnion::Version(v))) => version.cmp(v),
+        (CompareTarget::Lease, Some(TargetUnion::Lease(v))) => lease.cmp(v),
+        (CompareTarget::Value, Some(TargetUnion::Value(v))) => value.cmp(v),
+        // A target with no matching union value compares as "equal to zero/empty".
+        _ => std::cmp::Ordering::Equal,
+    };
+
+    Ok(match result {
+        CompareResult::Equal => ordering.is_eq(),
+        CompareResult::Greater => ordering.is_gt(),
+        CompareResult::Less => ordering.is_lt(),
+        CompareResult::NotEqual => ordering.is_ne(),
+    })
+}
+
+/// Convert a kine [`Row`] into an etcd `KeyValue`. `version` is approximated as
+/// `mod - create + 1` (kine does not store etcd's per-generation write counter;
+/// the apiserver keys off `mod_revision`, which is exact).
+fn row_to_kv(row: &Row) -> KeyValue {
+    KeyValue {
+        key: row.key.clone(),
+        create_revision: row.create_revision,
+        mod_revision: row.mod_revision,
+        version: row.mod_revision - row.create_revision + 1,
+        value: row.value.clone(),
+        lease: row.lease,
+    }
+}
+
+/// Shape a backend [`KineRangeResp`] into the etcd `RangeResponse`, honouring
+/// `count_only` / `keys_only`.
+fn shape_range(req: &RangeRequest, resp: &KineRangeResp, revision: i64) -> RangeResponse {
+    let kvs = if req.count_only {
+        Vec::new()
+    } else {
+        resp.kvs
+            .iter()
+            .map(|r| {
+                let mut kv = row_to_kv(r);
+                if req.keys_only {
+                    kv.value = Vec::new();
+                }
+                kv
+            })
+            .collect()
+    };
+    RangeResponse {
+        header: Some(ResponseHeader { cluster_id: 0, member_id: 0, revision, raft_term: 0 }),
+        kvs,
+        more: resp.more,
+        count: resp.count,
+    }
+}
+
+/// Translate an etcd `RangeRequest` into a kine [`KineRange`].
+fn to_kine_range(req: &RangeRequest) -> Result<KineRange, Status> {
+    let mut k = to_kine_range_bytes(&req.key, &req.range_end)?;
+    if req.revision < 0 {
+        return Err(Status::new(Code::OutOfRange, "etcdserver: mvcc: revision is negative"));
+    }
+    k.revision = req.revision;
+    if req.limit < 0 {
+        return Err(Status::new(Code::InvalidArgument, "etcdserver: limit is negative"));
+    }
+    k.limit = req.limit;
+    Ok(k)
+}
+
+/// Translate `(key, range_end)` into a kine range selector, applying etcd's
+/// conventions: empty `range_end` → point get; `key="\0", range_end="\0"` →
+/// whole keyspace; `range_end == key+1` → prefix; otherwise the explicit
+/// half-open interval `[key, range_end)` (covers paginated list continuations).
+fn to_kine_range_bytes(key: &[u8], range_end: &[u8]) -> Result<KineRange, Status> {
+    if key.is_empty() && range_end.is_empty() {
+        return Err(Status::new(Code::InvalidArgument, "etcdserver: key is not provided"));
+    }
+    let end = if range_end.is_empty() {
+        RangeEnd::Single
+    } else if key == [0].as_slice() && range_end == [0].as_slice() {
+        RangeEnd::AllKeys
+    } else if range_end == prefix_successor(key).as_slice() {
+        RangeEnd::Prefix
+    } else {
+        RangeEnd::Explicit(range_end.to_vec())
+    };
+    Ok(KineRange { key: key.to_vec(), end, revision: 0, limit: 0 })
+}
+
+/// Map a kine error onto an etcd gRPC status, preserving etcd's well-known
+/// messages so clients react correctly (notably the compacted-revision guard).
+/// Takes the error by value so it slots into `Result::map_err`.
+#[allow(clippy::needless_pass_by_value)]
+fn status(err: KineError) -> Status {
+    let code = match err {
+        KineError::Compacted { .. } | KineError::FutureRevision { .. } => Code::OutOfRange,
+        KineError::EmptyKey
+        | KineError::InvalidRange
+        | KineError::NegativeLimit { .. }
+        | KineError::NegativeRevision { .. }
+        | KineError::InvalidLeaseId
+        | KineError::InvalidTtl { .. }
+        | KineError::CompactionNotForward { .. }
+        | KineError::CompactFutureRevision { .. } => Code::InvalidArgument,
+        KineError::Backend { .. } => Code::Internal,
+    };
+    Status::new(code, err.to_string())
+}
 
 #[cfg(test)]
 mod tests {
