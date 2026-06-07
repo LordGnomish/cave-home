@@ -59,3 +59,4 @@
 //! This is **infrastructure**, hidden from end users (Charter §6.3, ADR-007).
 
 pub mod envelope;
+pub mod keyring;
