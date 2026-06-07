@@ -60,6 +60,7 @@
 pub mod admission;
 pub mod api;
 pub mod cgroup;
+pub mod container_gc;
 pub mod cri;
 pub mod eviction;
 pub mod kubelet;

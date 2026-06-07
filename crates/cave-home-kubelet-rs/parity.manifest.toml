@@ -68,11 +68,11 @@ linux_min_kernel = "7.1"  # ADR-003: Linux-only deployment baseline.
 # lifecycle decision a node makes about a pod is implemented and exhaustively
 # tested here today; what remains is the runtime/syscall/server plumbing that
 # executes those decisions against the kernel.
-fill_ratio          = 0.22
-fill_ratio_basis    = "node-lifecycle decision core (phase + restart/backoff + probes + sync diff + eviction QoS ranking + admission/resource accounting) fully implemented & tested, plus the syncPod execution slice (CRI trait+mock, PLEG, PodWorker, emptyDir/hostPath volumes, status manager) and the cgroup v2 resource-conversion + QoS cgroupfs-hierarchy decision (cpu.weight/cpu.max/memory.max + /kubepods tree); CRI runtime exec, cgroup sysfs actuation + eviction-manager syscalls, kubelet HTTP server, image/secret/configmap managers, device plugins, full volume manager deferred (ADR-004 phase-1b), all enumerated below"
+fill_ratio          = 0.24
+fill_ratio_basis    = "node-lifecycle decision core (phase + restart/backoff + probes + sync diff + eviction QoS ranking + admission/resource accounting) fully implemented & tested, plus the syncPod execution slice (CRI trait+mock, PLEG, PodWorker, emptyDir/hostPath volumes, status manager), the cgroup v2 resource-conversion + QoS cgroupfs-hierarchy decision (cpu.weight/cpu.max/memory.max + /kubepods tree), and the dead-container GC selection (GCPolicy MinAge/MaxPerPodContainer/MaxContainers); CRI runtime exec, cgroup sysfs actuation + eviction-manager syscalls, GC actuation (RemoveContainer/RemoveImage) + disk-pressure image GC, kubelet HTTP server, secret/configmap managers, device plugins, full volume manager deferred (ADR-004 phase-1b), all enumerated below"
 test_port_ratio     = 0.0   # tests are designed from the documented kubelet contract, not ported from upstream _test.go
 adr_justified_ratio = 1.00  # every [[unmapped]] gap below carries a justified priority + a note
-honest_ratio        = 1.00  # 0.22 / (0.22 + (1-0.22)*(1-1.00)) = 0.22/0.22 = 1.00
+honest_ratio        = 1.00  # 0.24 / (0.24 + (1-0.24)*(1-1.00)) = 0.24/0.24 = 1.00
 
 # ---- mapped (behavioural reference -> cave-home Rust path) ------------------
 # `upstream`/`spec` names the documented reference for each item, not a claim of
@@ -182,6 +182,10 @@ ours     = "src/cgroup.rs::{milli_cpu_to_shares, shares_to_cpu_weight, milli_cpu
 upstream = "pkg/kubelet/cm/qos_container_manager_linux.go + pod_container_manager_linux.go (the /kubepods{,/burstable,/besteffort}/pod<uid> cgroupfs QoS hierarchy; Guaranteed under root, Burstable/BestEffort under their subtree)"
 ours     = "src/cgroup.rs::{CgroupHierarchy, qos_subpath, pod_path, container_path}"
 
+[[mapped]]
+upstream = "pkg/kubelet/kuberuntime/kuberuntime_gc.go::{evictableContainers, enforceMaxContainersPerEvictUnit, evictContainers} — dead-container GC selection under GCPolicy {MinAge, MaxPerPodContainer, MaxContainers}"
+ours     = "src/container_gc.rs::{select_containers_to_remove, GcPolicy, ContainerRecord}"
+
 # ---- unmapped (NOT in this crate; each carries an ADR-004 phase disposition)-
 
 [[unmapped]]
@@ -220,9 +224,9 @@ priority = "phase-1b"
 note     = "ADR-004: the kubelet read-only HTTP/HTTPS surface and the streaming exec/attach/portforward server are an observability/operations surface, not pod-lifecycle decision logic."
 
 [[unmapped]]
-area     = "pkg/kubelet/images (ImageGCManager) + container/container_gc.go"
+area     = "pkg/kubelet/images (ImageGCManager disk-pressure image reaper) + the GC actuation (RemoveContainer/RemoveImage CRI calls)"
 priority = "phase-1b"
-note     = "Disk-pressure-driven image GC + dead-container reaper; pair with the eviction manager's disk-pressure signals."
+note     = "The dead-container GC *selection* decision (GCPolicy MinAge/MaxPerPodContainer/MaxContainers) is now implemented & tested in src/container_gc.rs. Still deferred: the disk-pressure-driven image GC reaper (pair with the eviction manager's disk-pressure signals + cadvisor fs stats) and the actuation that consumes the selection — the RemoveContainer / RemoveImage CRI calls."
 
 [[unmapped]]
 area     = "pkg/kubelet secret + configmap managers + pkg/volume/{configmap,secret,projected,csi,persistentvolumeclaim,downwardapi}"
