@@ -59,11 +59,13 @@
 #![allow(clippy::cast_possible_truncation)]
 
 pub mod error;
+pub mod message;
 pub mod name;
 pub mod rr;
 pub mod wire;
 
 pub use error::{Result, WireError};
+pub use message::{Message, Question};
 pub use name::Name;
 pub use rr::{Class, Rdata, RecordType, ResourceRecord};
 pub use wire::{Header, Opcode, Rcode, Reader, Writer};
