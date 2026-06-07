@@ -14,8 +14,10 @@
 
 pub mod cleanup;
 pub mod cronjob;
+pub mod daemonset;
 pub mod deployment;
 pub mod gc;
 pub mod job;
 pub mod node_lifecycle;
 pub mod replicaset;
+pub mod statefulset;
