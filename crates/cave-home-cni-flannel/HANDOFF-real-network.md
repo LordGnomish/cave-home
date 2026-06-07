@@ -65,6 +65,56 @@ cargo test PASS · netlink-mock integration test · 2-node sim (vxlan + x-node
 pod routing) · LOC ratio recorded · TDD compliance · parity manifest updated ·
 local `--no-ff` merge, NO push.
 
+## Status — COMPLETE (core Crit blocker resolved)
+
+All tracks 1–8 landed; track 9 (WireGuard genetlink datapath) deferred as
+documented. Per-cycle commits on `feature/flannel-real-network`.
+
+| track | module(s) | status |
+|-------|-----------|--------|
+| 1 netlink codec | `netlink.rs` | ✅ 11 tests |
+| 2 datapath seam + mac | `datapath.rs`, `mac.rs` | ✅ 12 tests |
+| 3 vxlan device + events | `device.rs`, `vxlan_network.rs` | ✅ 12 tests |
+| 4 host-gw reconcile | `route_network.rs`, `hostgw.rs` | ✅ 9 tests |
+| 5 real socket (Linux) | `netlink_socket.rs` | ✅ 3 tests (parse_ack); socket Linux-gated |
+| 6 2/3-node sim | `tests/two_node_network.rs` | ✅ 3 integration tests |
+| 7 etcd/kine store | `subnet_registry.rs` | ✅ 8 tests |
+| 8 subnet.env + CNI | `subnet_env.rs`, `cni_delegate.rs`, `bin/flannel.rs` | ✅ 13 tests |
+
+### Results vs acceptance criteria
+
+- **cargo test PASS**: 152 lib unit tests + 3 integration tests (was 88). All green.
+- **netlink-mock integration test**: `MockDatapath` records every op; every
+  backend test asserts against it.
+- **2-node simulated network (vxlan tunnel + cross-node pod routing)**:
+  `tests/two_node_network.rs` builds a real cluster over the mock, reconstructs
+  each node's route/ARP/FDB tables and walks a pod→pod packet (route→ARP→FDB→
+  underlay). Also a 3-node mesh and a host-gw direct-route case.
+- **LOC ratio**: ours impl-only ≈ 2083 LOC vs upstream ported Go ≈ 1450 LOC
+  (device.go/vxlan_network.go/route_network.go/hostgw.go/mac.go/subnet.go).
+  ~1.44×, and that *includes* the hand-written rtnetlink wire codec that
+  upstream gets free from the `vishvananda/netlink` library — so the real
+  faithful-port ratio is ≈ 1:1. (Total incl. tests/docs: 3624 LOC.)
+- **TDD compliance**: every module written test-first; red→green per cycle,
+  one commit per green cycle. lib + bins clippy clean (pedantic+nursery).
+- **parity manifest**: updated — fill_ratio 0.40 → 0.72, 12 new `[[mapped]]`,
+  remaining items honestly enumerated as `[[unmapped]]`.
+
+### Honest caveats
+
+- The Linux `NetlinkSocket` is **API-verified against nix 0.29 source** but not
+  compiled here — this dev box (macOS, no rustup) has no Linux std/target. The
+  pure `parse_ack` logic and every codec byte it writes *are* tested. Compile it
+  on a Linux CI runner before relying on it.
+- WireGuard datapath, the long-running daemon watch loop, IPv6 VXLAN datapath
+  and CNI delegate exec/chaining remain — see `[[unmapped]]` in the manifest.
+
+### Merge
+
+`feature/flannel-real-network` was merged `--no-ff` into a local integration
+branch (NOT pushed) — see the merge commit. The main checkout's live branch was
+left untouched to avoid racing the concurrent uplift loop.
+
 ## Progress log
 
-- (in progress) Track 1 starting.
+- Tracks 1–8 complete; see table above.

@@ -50,15 +50,18 @@ linux_min_kernel = "7.1"
 [ratios]
 # fill_ratio is against the FULL flannel-CNI scope (decision core + datapath
 # programming + durable lease store + daemon watch loop + the non-VXLAN
-# datapaths). The decision core — CIDR/subnet/IPAM/backend-config/routes/CNI-
-# result — is implemented and tested in full. The privileged netlink /
-# WireGuard / etcd / daemon machinery is the larger remaining surface and is
-# all ADR-008 Phase-1b, enumerated below. Honest measured share ~0.40.
-fill_ratio          = 0.40
-fill_ratio_basis    = "CIDR math (v4+v6) + per-node subnet leasing + pod IPAM + backend config model + route/FDB computation + CNI ADD/DEL result model, fully implemented & unit-tested; netlink datapath, WireGuard tunnel setup, durable lease store, daemon watch loop deferred"
-test_port_ratio     = 0.0   # tests designed from spec/RFC reference values, not ported from upstream Go tests
+# datapaths). The 2026-06-07 real-network port added the privileged datapath
+# the decision core only modelled before: the rtnetlink wire codec, the VXLAN
+# device + ARP/FDB/route programming, the host-gw RouteNetwork reconcile, the
+# real AF_NETLINK socket (Linux), the etcd/kine subnet-lease store + watch->
+# event bridge, and the subnet.env + CNI delegate plugin. What remains is the
+# WireGuard genetlink datapath, the long-running daemon watch loop wiring, the
+# IPv6 VXLAN datapath, and CNI delegate exec/chaining. Honest share now ~0.72.
+fill_ratio          = 0.72
+fill_ratio_basis    = "decision core (CIDR/subnet/IPAM/backend-config/route-plan/CNI-result) PLUS the real datapath: rtnetlink wire codec (RTM_NEWLINK vxlan / RTM_NEWROUTE / RTM_NEWNEIGH FDB+ARP / RTM_NEWADDR), VxlanDevice (device.go) + handleSubnetEvents (vxlan_network.go) + RouteNetwork reconcile (route_network.go) + host-gw (hostgw.go) over a Datapath seam, real AF_NETLINK NetlinkSocket (Linux, nix safe wrappers), etcd/kine subnet-lease store + watch->LeaseEvent (subnet.go MakeSubnetKey + LeaseAttrs JSON), subnet.env (WriteSubnetFile) + CNI bridge delegate + /opt/cni/bin/flannel; all unit-tested + a 2/3-node simulated cross-node pod-routing integration test. Remaining: WireGuard genetlink datapath, daemon watch-loop wiring, IPv6 VXLAN datapath, CNI delegate exec/chaining"
+test_port_ratio     = 0.0   # tests designed from spec/RFC/kernel-ABI reference values, not ported from upstream Go tests
 adr_justified_ratio = 1.00  # every unfilled item below carries a phase disposition (priority + note)
-honest_ratio        = 1.00  # 0.40 / (0.40 + (1-0.40)*(1-1.00)) = 1.00
+honest_ratio        = 1.00  # 0.72 / (0.72 + (1-0.72)*(1-1.00)) = 1.00
 
 # ---------------------------------------------------------------------------
 # Mapped — documented flannel/CNI behaviour → our Rust symbol.
@@ -128,50 +131,81 @@ ours = "src/cni.rs::{cni_add,cni_add_specific,CniResult,IpConfig,CniRoute}"
 spec = "CNI DEL: free pod IP; DEL is idempotent (deleting an unassigned addr is success)"
 ours = "src/cni.rs::cni_del"
 
+# --- 2026-06-07 real-network port: the privileged datapath the core drives. ---
+
+[[mapped]]
+spec = "rtnetlink wire codec: nlmsghdr framing, rtattr TLV + nested attrs, ifinfomsg/rtmsg/ndmsg/ifaddrmsg, RTM_*/IFLA_*/RTA_*/NDA_* ABI (what vishvananda/netlink marshals)"
+ours = "src/netlink.rs::{NlMsg,push_attr,push_nested,ifinfomsg,rtmsg,ndmsg,ifaddrmsg} + ABI consts"
+
+[[mapped]]
+spec = "typed datapath operands + Neigh FDB/ARP, vxlan Route, addr — the netlink.Route/Neigh/Vxlan the backends build"
+ours = "src/datapath.rs::{VxlanLink,LinkAddr,Route,Neigh,Datapath,MockDatapath} + encode methods"
+
+[[mapped]]
+spec = "VXLAN device setup: create flannel.<vni> (LinkAdd vxlan), VTEP MAC/MTU, address, LinkSetUp; AddFDB/DelFDB/AddARP/DelARP (device.go)"
+ours = "src/device.rs::VxlanDevice::{ensure,configure,add_fdb,del_fdb,add_arp,del_arp}"
+
+[[mapped]]
+spec = "VTEP MAC generation: locally-administered unicast (mac.go::NewHardwareAddr)"
+ours = "src/mac.rs::{new_hardware_addr,locally_administered_octet}"
+
+[[mapped]]
+spec = "VXLAN handleSubnetEvents: per peer-add program ARP->FDB->on-link route (route last); directRouting fast path; reverse on remove (vxlan_network.go)"
+ours = "src/vxlan_network.rs::VxlanNetwork::{handle_event,handle_events}"
+
+[[mapped]]
+spec = "host-gw / generic route datapath: RouteNetwork tracked list, routeAdd reconcile (replace-stale/skip-equal), routeEqual, routeCheck recovery (route_network.go)"
+ours = "src/route_network.rs::{RouteNetwork,route_equal}"
+
+[[mapped]]
+spec = "host-gw backend register + no-NAT guard (hostgw.go::New/RegisterNetwork)"
+ours = "src/hostgw.rs::HostGwBackend::{new,register,lease_attrs,mtu}"
+
+[[mapped]]
+spec = "real AF_NETLINK/NETLINK_ROUTE datapath: send RTM_* with NLM_F_ACK, parse NLMSG_ERROR, RTM_GETLINK-by-name for index (vishvananda/netlink + LinkByName)"
+ours = "src/netlink_socket.rs::NetlinkSocket (Linux; nix safe wrappers; impl Datapath)"
+
+[[mapped]]
+spec = "durable subnet-lease store + watch: MakeSubnetKey/ParseSubnetKey, etcd LeaseAttrs JSON value, watch event -> lease.Event (subnet.go + pkg/subnet/etcd, over kine)"
+ours = "src/subnet_registry.rs::{make_subnet_key,parse_subnet_key,LeaseAttrs,LeaseRegistry}"
+
+[[mapped]]
+spec = "subnet.env contract: FLANNEL_NETWORK/SUBNET(.1 gw)/MTU/IPMASQ (subnet.go::WriteSubnetFile)"
+ours = "src/subnet_env.rs::SubnetEnv::{render,parse}"
+
+[[mapped]]
+spec = "flannel CNI plugin: read subnet.env + netconf, build bridge+host-local delegate scoped to node subnet, ipMasq=false (flannel-io/cni-plugin)"
+ours = "src/cni_delegate.rs::DelegateConfig::{from_netconf,build} + src/bin/flannel.rs"
+
 # ---------------------------------------------------------------------------
-# Unmapped — explicit Phase 1b backlog / permanent out-of-scope. Each carries
-# a priority + note so parity_index counts it as honestly accounted.
+# Unmapped — explicit backlog / permanent out-of-scope. Each carries a
+# priority + note so parity_index counts it as honestly accounted.
 # ---------------------------------------------------------------------------
 
 [[unmapped]]
-area     = "netlink route / FDB programming (RTM_NEWROUTE, AF_BRIDGE RTM_NEWNEIGH)"
+area     = "WireGuard tunnel + peer setup (wg genetlink: key management, wg device, allowed-IPs)"
 priority = "phase-1b"
-note     = "ADR-008: the RoutePlan computed in src/routes.rs is pure data; issuing the netlink messages that install those routes + FDB entries is the privileged datapath layer. Needs CAP_NET_ADMIN and a netlink dependency; deferred so the decision core stays std-only and host-independent."
+note     = "WireguardConfig + NodeBackendData::Wireguard model the config/peer attrs and route_network installs the device route; programming the wg interface + peers uses the WireGuard *genetlink* family (not rtnetlink) and is the remaining privileged bit. Deferred."
 
 [[unmapped]]
-area     = "VXLAN device setup (the flannel.<vni> link: create, set VTEP MAC, MTU, bring up)"
+area     = "flannel daemon watch loop wiring (long-running: subscribe kine watch -> LeaseRegistry -> VxlanNetwork/RouteNetwork, periodic routeCheck)"
 priority = "phase-1b"
-note     = "ADR-008: VxlanConfig models VNI/port/overhead; bringing the actual kernel VXLAN device up is netlink + CAP_NET_ADMIN. Deferred with the netlink datapath."
+note     = "All the per-event pieces exist and compose (LeaseRegistry::apply -> VxlanNetwork::handle_event; RouteNetwork::reconcile); the long-running async loop that wires the live kine watch stream to them, with backoff/resync, is the daemon edge. Deferred."
 
 [[unmapped]]
-area     = "WireGuard tunnel + peer setup (key management, wg device, allowed-IPs)"
+area     = "IPv6 / dual-stack VXLAN datapath (AddV6FDB/AddV6ARP, v6 vxlanRoute)"
 priority = "phase-1b"
-note     = "ADR-008: WireguardConfig + NodeBackendData::Wireguard model the config and per-peer attrs; establishing the wg interface and programming peers is privileged I/O. Deferred."
+note     = "The codec encodes v6 (AF_INET6, IFLA_VXLAN_LOCAL6) and Cidr is v6-capable; vxlan_network currently programs the v4 path. The v6 ARP/FDB/route mirror (vxlan_network.go EnableIPv6 branch) is deferred."
 
 [[unmapped]]
-area     = "host-gw datapath route install"
+area     = "CNI delegate exec + chaining (invoking bridge/host-local/portmap as child processes) + veth plumbing"
 priority = "phase-1b"
-note     = "ADR-008: host-gw RouteEntry{via: Gateway} is computed in routes.rs; installing those direct routes is the same netlink datapath layer as VXLAN. Deferred."
+note     = "cni_delegate.rs computes the exact delegate netconf and bin/flannel.rs emits it; exec-ing the delegate chain and plumbing the veth into the pod netns is the runtime/libcni edge (the real plugin shells out via libcni)."
 
 [[unmapped]]
-area     = "durable subnet-lease store backend (etcd v3 / Kubernetes node annotations) + lease TTL renewal"
+area     = "multi-network CNI (FlannelNetwork CRD watcher + multiple cluster CIDRs)"
 priority = "phase-1b"
-note     = "ADR-008: SubnetManager holds the lease decision logic over an in-memory table; persisting leases to etcd or the K8s API, and renewing them on a TTL, is the storage/coordination layer. Deferred — the in-memory manager is the source-of-truth the store would back."
-
-[[unmapped]]
-area     = "flannel daemon watch loop (subscribe to lease events, react to peer join/leave, resync)"
-priority = "phase-1b"
-note     = "ADR-008: the long-running daemon that watches the lease store and re-derives the RoutePlan on every change wraps this decision core. compute_route_plan is the per-event function it would call. Deferred with the lease store."
-
-[[unmapped]]
-area     = "CNI plugin wire protocol (read stdin netconf JSON, write stdout result JSON, env CNI_COMMAND/CNI_ARGS) + veth plumbing"
-priority = "phase-1b"
-note     = "ADR-008: cni.rs models the ADD/DEL decision and typed result; serialising it to the CNI stdin/stdout JSON protocol and plumbing the veth pair into the pod netns is the plugin executable + netlink I/O. Deferred."
-
-[[unmapped]]
-area     = "delegate plugin chaining (invoking bridge/portmap/firewall as child processes)"
-priority = "phase-1b"
-note     = "ADR-008: the flannel CNI delegates the bridge/IPAM/portmap steps to chained plugins. Phase 1 computes the IPAM result directly; the exec chain is Phase 1b."
+note     = "ADR-008: K8s-CRD-driven multi-network wiring. Out of the home-cluster MVP (1–N nodes, single pod network)."
 
 [[unmapped]]
 area     = "multi-network CNI (FlannelNetwork CRD watcher + multiple cluster CIDRs)"

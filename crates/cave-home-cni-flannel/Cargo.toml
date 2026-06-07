@@ -6,7 +6,7 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-cni-flannel — flannel CNI subnet-management + IPAM decision core (CIDR math, per-node subnet leasing, pod IPAM, backend config, route computation, CNI ADD/DEL result); std-only; upstream behaviour: flannel-io/flannel Apache-2.0; port method: behavioral reimplementation from public flannel/CNI docs (Orchestration Phase 1, ADR-004 + ADR-008)"
+description = "cave-home-cni-flannel — flannel CNI: subnet-management + IPAM decision core (CIDR/subnet-leasing/pod-IPAM/backend-config/route-plan/CNI-result) PLUS the real network backend (rtnetlink wire codec, VXLAN device + ARP/FDB/route programming, host-gw RouteNetwork, AF_NETLINK socket on Linux, etcd/kine subnet-lease store + watch, subnet.env + CNI bridge delegate, /opt/cni/bin/flannel); line-by-line port of flannel-io/flannel Apache-2.0 datapath (Orchestration Phase 1, ADR-004 + ADR-008)"
 
 [package.metadata.cave-home]
 upstream    = "flannel-io/flannel"
