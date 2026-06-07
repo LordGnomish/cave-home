@@ -112,3 +112,11 @@ pub use rule::{parse, ParseError, Rule};
 /// Bridge between `hyper`/`http` wire types and the core descriptors.
 #[cfg(feature = "runtime")]
 pub mod wire;
+
+/// Hop-by-hop header stripping + the `X-Forwarded-*` reverse-proxy header set.
+#[cfg(feature = "runtime")]
+pub mod forwarded;
+
+/// Reverse-proxy upstream request-URI assembly.
+#[cfg(feature = "runtime")]
+pub mod backend;
