@@ -29,6 +29,9 @@ rustls    = { version = "0.23", default-features = false, features = ["ring", "s
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "io-util"] }
+# Server-side WebSocket (accept_async) for the live-event e2e; unifies with the
+# `connect` + TLS features the library already enables.
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["handshake"] }
 wiremock = "0.6"
 
 [lints]
