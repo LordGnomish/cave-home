@@ -27,6 +27,529 @@
 //! Aggregated ClusterRoles, the Node authorizer, and the dynamic
 //! webhook/SubjectAccessReview surfaces are deferred (see `parity.manifest.toml`).
 
+use crate::status::{Result, Status};
+
+/// The authorizer's verdict. RBAC is purely additive: it only ever returns
+/// [`Decision::Allow`] (a rule matched) or [`Decision::NoOpinion`] (nothing
+/// matched — the chain falls through to the next authorizer, or to a default
+/// deny). [`Decision::Deny`] exists for completeness of the chain contract but
+/// is never produced by this authorizer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Decision {
+    /// A rule explicitly grants the request.
+    Allow,
+    /// An authorizer explicitly forbids the request (not produced by RBAC).
+    Deny,
+    /// No applicable rule; defer to the next authorizer / default deny.
+    NoOpinion,
+}
+
+/// The authenticated identity a request carries.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct UserInfo {
+    /// The user name (for a ServiceAccount this is
+    /// `system:serviceaccount:<namespace>:<name>`).
+    pub name: String,
+    /// The groups the user belongs to.
+    pub groups: Vec<String>,
+}
+
+impl UserInfo {
+    /// A user with no groups.
+    #[must_use]
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { name: name.into(), groups: Vec::new() }
+    }
+
+    /// Attach group memberships.
+    #[must_use]
+    pub fn with_groups(mut self, groups: &[&str]) -> Self {
+        self.groups = groups.iter().map(|g| (*g).to_string()).collect();
+        self
+    }
+}
+
+/// The attributes of a single request to authorize. Either a *resource* request
+/// (apiGroup / resource / subresource / namespace / name) or a *non-resource*
+/// request (a raw URL `path`), distinguished by `resource_request`.
+#[derive(Clone, Debug, Default)]
+pub struct Attributes {
+    /// The authenticated caller.
+    pub user: UserInfo,
+    /// The verb (`get`, `list`, `watch`, `create`, `update`, `patch`,
+    /// `delete`, `deletecollection`, ... or an HTTP method for non-resource).
+    pub verb: String,
+    /// True for a resource request; false for a non-resource URL request.
+    pub resource_request: bool,
+    /// API group (`""` is the core group). Resource requests only.
+    pub api_group: String,
+    /// Plural resource name (`pods`, `deployments`). Resource requests only.
+    pub resource: String,
+    /// Subresource (`log`, `status`, `exec`), if any. Resource requests only.
+    pub subresource: String,
+    /// Object name (empty for collection verbs like list). Resource requests.
+    pub name: String,
+    /// Namespace (empty for cluster-scoped resources). Resource requests.
+    pub namespace: String,
+    /// The URL path. Non-resource requests only.
+    pub path: String,
+}
+
+impl Attributes {
+    /// A resource request.
+    #[must_use]
+    pub fn resource(
+        user: UserInfo,
+        verb: impl Into<String>,
+        api_group: impl Into<String>,
+        resource: impl Into<String>,
+        namespace: impl Into<String>,
+        name: impl Into<String>,
+    ) -> Self {
+        Self {
+            user,
+            verb: verb.into(),
+            resource_request: true,
+            api_group: api_group.into(),
+            resource: resource.into(),
+            subresource: String::new(),
+            name: name.into(),
+            namespace: namespace.into(),
+            path: String::new(),
+        }
+    }
+
+    /// A non-resource (raw URL) request.
+    #[must_use]
+    pub fn non_resource(user: UserInfo, verb: impl Into<String>, path: impl Into<String>) -> Self {
+        Self {
+            user,
+            verb: verb.into(),
+            resource_request: false,
+            path: path.into(),
+            ..Self::default()
+        }
+    }
+
+    /// Set the subresource on a resource request.
+    #[must_use]
+    pub fn with_subresource(mut self, subresource: impl Into<String>) -> Self {
+        self.subresource = subresource.into();
+        self
+    }
+
+    /// The `resource[/subresource]` string a rule's `resources` list is matched
+    /// against.
+    fn combined_resource(&self) -> String {
+        if self.subresource.is_empty() {
+            self.resource.clone()
+        } else {
+            format!("{}/{}", self.resource, self.subresource)
+        }
+    }
+}
+
+/// A single grant. A rule is either a *resource* rule (verbs × apiGroups ×
+/// resources, optionally narrowed by `resource_names`) or a *non-resource* rule
+/// (verbs × `non_resource_urls`). The two forms are kept on one struct to mirror
+/// the documented `PolicyRule`; a given rule normally populates only one form.
+#[derive(Clone, Debug, Default)]
+pub struct PolicyRule {
+    /// Verbs granted (`"*"` = all).
+    pub verbs: Vec<String>,
+    /// API groups (`"*"` = all, `""` = core). Resource rules.
+    pub api_groups: Vec<String>,
+    /// Resources (`"*"` = all; `resource/subresource` and `*/subresource`
+    /// forms supported). Resource rules.
+    pub resources: Vec<String>,
+    /// If non-empty, restrict to these object names. Resource rules.
+    pub resource_names: Vec<String>,
+    /// URL paths (`"*"` = all, trailing `*` = prefix). Non-resource rules.
+    pub non_resource_urls: Vec<String>,
+}
+
+impl PolicyRule {
+    /// A resource rule over `(api_groups, resources, verbs)`.
+    #[must_use]
+    pub fn resource_rule(api_groups: &[&str], resources: &[&str], verbs: &[&str]) -> Self {
+        Self {
+            verbs: to_strings(verbs),
+            api_groups: to_strings(api_groups),
+            resources: to_strings(resources),
+            resource_names: Vec::new(),
+            non_resource_urls: Vec::new(),
+        }
+    }
+
+    /// A non-resource rule over `(non_resource_urls, verbs)`.
+    #[must_use]
+    pub fn non_resource_rule(non_resource_urls: &[&str], verbs: &[&str]) -> Self {
+        Self {
+            verbs: to_strings(verbs),
+            api_groups: Vec::new(),
+            resources: Vec::new(),
+            resource_names: Vec::new(),
+            non_resource_urls: to_strings(non_resource_urls),
+        }
+    }
+
+    /// Narrow a resource rule to specific object names.
+    #[must_use]
+    pub fn with_resource_names(mut self, names: &[&str]) -> Self {
+        self.resource_names = to_strings(names);
+        self
+    }
+
+    /// Whether this rule grants `attrs`.
+    #[must_use]
+    pub fn allows(&self, attrs: &Attributes) -> bool {
+        if attrs.resource_request {
+            verb_matches(&self.verbs, &attrs.verb)
+                && api_group_matches(&self.api_groups, &attrs.api_group)
+                && resource_matches(&self.resources, &attrs.combined_resource(), &attrs.subresource)
+                && resource_name_matches(&self.resource_names, &attrs.name)
+        } else {
+            verb_matches(&self.verbs, &attrs.verb)
+                && self
+                    .non_resource_urls
+                    .iter()
+                    .any(|u| non_resource_url_matches(u, &attrs.path))
+        }
+    }
+}
+
+/// The kind of an RBAC subject.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SubjectKind {
+    /// A user identity.
+    User,
+    /// A group identity.
+    Group,
+    /// A service account (matched via its canonical username).
+    ServiceAccount,
+}
+
+/// A binding subject: who a binding grants its role to.
+#[derive(Clone, Debug)]
+pub struct Subject {
+    /// Subject kind.
+    pub kind: SubjectKind,
+    /// User name, group name, or ServiceAccount name.
+    pub name: String,
+    /// Namespace (ServiceAccount subjects only).
+    pub namespace: String,
+}
+
+impl Subject {
+    /// A user subject.
+    #[must_use]
+    pub fn user(name: impl Into<String>) -> Self {
+        Self { kind: SubjectKind::User, name: name.into(), namespace: String::new() }
+    }
+
+    /// A group subject.
+    #[must_use]
+    pub fn group(name: impl Into<String>) -> Self {
+        Self { kind: SubjectKind::Group, name: name.into(), namespace: String::new() }
+    }
+
+    /// A service-account subject in `namespace`.
+    #[must_use]
+    pub fn service_account(namespace: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            kind: SubjectKind::ServiceAccount,
+            name: name.into(),
+            namespace: namespace.into(),
+        }
+    }
+
+    /// Whether this subject names `user`.
+    fn matches(&self, user: &UserInfo) -> bool {
+        match self.kind {
+            SubjectKind::User => self.name == user.name,
+            SubjectKind::Group => user.groups.iter().any(|g| g == &self.name),
+            SubjectKind::ServiceAccount => {
+                user.name == format!("system:serviceaccount:{}:{}", self.namespace, self.name)
+            }
+        }
+    }
+}
+
+/// Which rule-holder a binding refers to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RoleRefKind {
+    /// A namespaced [`Role`].
+    Role,
+    /// A cluster-wide [`ClusterRole`].
+    ClusterRole,
+}
+
+/// A reference from a binding to a [`Role`] or [`ClusterRole`].
+#[derive(Clone, Debug)]
+pub struct RoleRef {
+    /// Referent kind.
+    pub kind: RoleRefKind,
+    /// Referent name.
+    pub name: String,
+}
+
+impl RoleRef {
+    /// Reference a namespaced [`Role`].
+    #[must_use]
+    pub fn role(name: impl Into<String>) -> Self {
+        Self { kind: RoleRefKind::Role, name: name.into() }
+    }
+
+    /// Reference a [`ClusterRole`].
+    #[must_use]
+    pub fn cluster_role(name: impl Into<String>) -> Self {
+        Self { kind: RoleRefKind::ClusterRole, name: name.into() }
+    }
+}
+
+/// A namespaced collection of rules.
+#[derive(Clone, Debug)]
+pub struct Role {
+    /// Namespace the role lives in.
+    pub namespace: String,
+    /// Role name.
+    pub name: String,
+    /// Granted rules.
+    pub rules: Vec<PolicyRule>,
+}
+
+/// A cluster-wide collection of rules.
+#[derive(Clone, Debug)]
+pub struct ClusterRole {
+    /// Role name.
+    pub name: String,
+    /// Granted rules.
+    pub rules: Vec<PolicyRule>,
+}
+
+/// Binds subjects to a role within a single namespace.
+#[derive(Clone, Debug)]
+pub struct RoleBinding {
+    /// Namespace the binding (and any same-namespace Role) lives in.
+    pub namespace: String,
+    /// Binding name.
+    pub name: String,
+    /// Subjects granted the referenced role.
+    pub subjects: Vec<Subject>,
+    /// The Role or ClusterRole whose rules are granted.
+    pub role_ref: RoleRef,
+}
+
+/// Binds subjects to a ClusterRole cluster-wide.
+#[derive(Clone, Debug)]
+pub struct ClusterRoleBinding {
+    /// Binding name.
+    pub name: String,
+    /// Subjects granted the referenced ClusterRole.
+    pub subjects: Vec<Subject>,
+    /// The ClusterRole whose rules are granted (a Role ref is meaningless here).
+    pub role_ref: RoleRef,
+}
+
+/// The additive RBAC authorizer over a fixed set of roles and bindings.
+#[derive(Clone, Debug, Default)]
+pub struct RbacAuthorizer {
+    /// Namespaced roles.
+    pub roles: Vec<Role>,
+    /// Cluster roles.
+    pub cluster_roles: Vec<ClusterRole>,
+    /// Namespaced bindings.
+    pub role_bindings: Vec<RoleBinding>,
+    /// Cluster bindings.
+    pub cluster_role_bindings: Vec<ClusterRoleBinding>,
+}
+
+impl RbacAuthorizer {
+    /// An empty authorizer (grants nothing).
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a [`Role`].
+    #[must_use]
+    pub fn with_role(mut self, role: Role) -> Self {
+        self.roles.push(role);
+        self
+    }
+
+    /// Register a [`ClusterRole`].
+    #[must_use]
+    pub fn with_cluster_role(mut self, role: ClusterRole) -> Self {
+        self.cluster_roles.push(role);
+        self
+    }
+
+    /// Register a [`RoleBinding`].
+    #[must_use]
+    pub fn with_role_binding(mut self, binding: RoleBinding) -> Self {
+        self.role_bindings.push(binding);
+        self
+    }
+
+    /// Register a [`ClusterRoleBinding`].
+    #[must_use]
+    pub fn with_cluster_role_binding(mut self, binding: ClusterRoleBinding) -> Self {
+        self.cluster_role_bindings.push(binding);
+        self
+    }
+
+    /// Authorize `attrs`. Returns [`Decision::Allow`] if any applicable rule
+    /// matches, otherwise [`Decision::NoOpinion`].
+    #[must_use]
+    pub fn authorize(&self, attrs: &Attributes) -> Decision {
+        // 1. ClusterRoleBindings grant cluster-wide: every namespace, every
+        //    cluster-scoped resource, and every non-resource URL.
+        for crb in &self.cluster_role_bindings {
+            if !crb.subjects.iter().any(|s| s.matches(&attrs.user)) {
+                continue;
+            }
+            if crb.role_ref.kind == RoleRefKind::ClusterRole {
+                if let Some(role) = self.cluster_role(&crb.role_ref.name) {
+                    if role.rules.iter().any(|r| r.allows(attrs)) {
+                        return Decision::Allow;
+                    }
+                }
+            }
+        }
+
+        // 2. RoleBindings grant only namespaced *resource* access within their
+        //    own namespace (never cluster-scoped resources or non-resource URLs).
+        if attrs.resource_request && !attrs.namespace.is_empty() {
+            for rb in &self.role_bindings {
+                if rb.namespace != attrs.namespace {
+                    continue;
+                }
+                if !rb.subjects.iter().any(|s| s.matches(&attrs.user)) {
+                    continue;
+                }
+                let rules = match rb.role_ref.kind {
+                    RoleRefKind::Role => self
+                        .role(&rb.namespace, &rb.role_ref.name)
+                        .map(|r| r.rules.as_slice()),
+                    RoleRefKind::ClusterRole => self
+                        .cluster_role(&rb.role_ref.name)
+                        .map(|r| r.rules.as_slice()),
+                };
+                if let Some(rules) = rules {
+                    if rules.iter().any(|r| r.allows(attrs)) {
+                        return Decision::Allow;
+                    }
+                }
+            }
+        }
+
+        Decision::NoOpinion
+    }
+
+    /// Authorize `attrs`, mapping any non-`Allow` decision to a `Forbidden`
+    /// (403) [`Status`].
+    ///
+    /// # Errors
+    /// A [`Status`] with reason `Forbidden` when the request is not allowed.
+    pub fn authorize_or_forbid(&self, attrs: &Attributes) -> Result<()> {
+        if self.authorize(attrs) == Decision::Allow {
+            Ok(())
+        } else {
+            Err(Status::new(
+                crate::status::StatusReason::Forbidden,
+                forbidden_message(attrs),
+            ))
+        }
+    }
+
+    fn role(&self, namespace: &str, name: &str) -> Option<&Role> {
+        self.roles
+            .iter()
+            .find(|r| r.namespace == namespace && r.name == name)
+    }
+
+    fn cluster_role(&self, name: &str) -> Option<&ClusterRole> {
+        self.cluster_roles.iter().find(|r| r.name == name)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Matching primitives (documented RBAC semantics).
+// ---------------------------------------------------------------------------
+
+fn verb_matches(verbs: &[String], verb: &str) -> bool {
+    verbs.iter().any(|v| v == "*" || v == verb)
+}
+
+fn api_group_matches(groups: &[String], group: &str) -> bool {
+    groups.iter().any(|g| g == "*" || g == group)
+}
+
+/// `combined` is `resource[/subresource]`; `subresource` is the bare
+/// subresource (empty if none). Matches `"*"`, an exact `resource`/
+/// `resource/subresource`, or the `*/subresource` wildcard form.
+fn resource_matches(resources: &[String], combined: &str, subresource: &str) -> bool {
+    resources.iter().any(|r| {
+        r == "*"
+            || r == combined
+            || (!subresource.is_empty()
+                && r.starts_with("*/")
+                && &r[2..] == subresource)
+    })
+}
+
+fn resource_name_matches(resource_names: &[String], name: &str) -> bool {
+    if resource_names.is_empty() {
+        return true;
+    }
+    !name.is_empty() && resource_names.iter().any(|n| n == name)
+}
+
+/// Matches `"*"`, an exact path, or a trailing-`*` prefix (`/api/*`).
+fn non_resource_url_matches(rule: &str, path: &str) -> bool {
+    if rule == "*" || rule == path {
+        return true;
+    }
+    if let Some(prefix) = rule.strip_suffix('*') {
+        return path.starts_with(prefix);
+    }
+    false
+}
+
+fn forbidden_message(attrs: &Attributes) -> String {
+    if attrs.resource_request {
+        let scope = if attrs.namespace.is_empty() {
+            "cluster scope".to_string()
+        } else {
+            format!("namespace \"{}\"", attrs.namespace)
+        };
+        format!(
+            "{} cannot {} resource \"{}\" in API group \"{}\" at the {}",
+            quote_user(&attrs.user.name),
+            attrs.verb,
+            attrs.combined_resource(),
+            attrs.api_group,
+            scope
+        )
+    } else {
+        format!(
+            "{} cannot {} path \"{}\"",
+            quote_user(&attrs.user.name),
+            attrs.verb,
+            attrs.path
+        )
+    }
+}
+
+fn quote_user(name: &str) -> String {
+    format!("user \"{name}\"")
+}
+
+fn to_strings(items: &[&str]) -> Vec<String> {
+    items.iter().map(|s| (*s).to_string()).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,12 +755,18 @@ mod tests {
 
     #[test]
     fn wildcard_subresource_rule_matches() {
-        let az = single_cluster_grant(PolicyRule::resource_rule(&[""], &["*/status"], &["patch"]));
-        let a = Attributes::resource(alice(), "patch", "apps", "deployments", "web", "d")
+        // "*/status" matches any resource's status subresource. apiGroup is "*"
+        // here so the group is not the variable under test.
+        let az = single_cluster_grant(PolicyRule::resource_rule(&["*"], &["*/status"], &["patch"]));
+        let status = Attributes::resource(alice(), "patch", "apps", "deployments", "web", "d")
             .with_subresource("status");
-        // "*/status" matches any resource's status subresource.
-        let a = Attributes { api_group: "apps".into(), ..a };
-        assert_eq!(az.authorize(&a), Decision::Allow);
+        assert_eq!(az.authorize(&status), Decision::Allow);
+        // ...but not a different subresource, nor the bare resource.
+        let scale = Attributes::resource(alice(), "patch", "apps", "deployments", "web", "d")
+            .with_subresource("scale");
+        assert_eq!(az.authorize(&scale), Decision::NoOpinion);
+        let bare = Attributes::resource(alice(), "patch", "apps", "deployments", "web", "d");
+        assert_eq!(az.authorize(&bare), Decision::NoOpinion);
     }
 
     // ----- non-resource URLs ------------------------------------------------

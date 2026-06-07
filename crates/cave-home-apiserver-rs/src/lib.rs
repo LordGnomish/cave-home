@@ -23,6 +23,8 @@
 //!   watch replay.
 //! - [`admission`]— two-phase (mutating → validating) admission pipeline with a
 //!   couple of built-in rules.
+//! - [`rbac`]     — the additive RBAC authorizer: Role/ClusterRole +
+//!   RoleBinding/ClusterRoleBinding rule matching → Allow / NoOpinion.
 //! - [`status`]   — the `metav1.Status` error model (code / reason / message).
 //! - [`json`]     — a small std-only JSON value tree the above operate on.
 //!
@@ -32,9 +34,10 @@
 //! semantics** (the public API conventions, label/field selector docs, RFC
 //! 7396 / RFC 6902, the admission-controller phase contract). It is **not** a
 //! verbatim line-by-line transcription of any pinned `kubernetes/kubernetes`
-//! revision. The HTTP/2 server, etcd/kine storage backend, TLS + authn + authz
-//! (RBAC), admission webhooks, CRDs, and API aggregation are deferred and
-//! enumerated in `parity.manifest.toml`.
+//! revision. The additive RBAC authorizer is implemented here; the HTTP/2
+//! server, etcd/kine storage backend, TLS + authentication, the Node authorizer
+//! / RBAC aggregation / SubjectAccessReview surfaces, admission webhooks, CRDs,
+//! and API aggregation are deferred and enumerated in `parity.manifest.toml`.
 //!
 //! ## Example
 //!
@@ -84,6 +87,10 @@ pub use json::Value;
 pub use meta::{ObjectMeta, OwnerReference};
 pub use patch::PatchOp;
 pub use path::{parse as parse_path, ResourcePath};
+pub use rbac::{
+    Attributes, ClusterRole, ClusterRoleBinding, Decision, PolicyRule, RbacAuthorizer, Role,
+    RoleBinding, RoleRef, RoleRefKind, Subject, SubjectKind, UserInfo,
+};
 pub use registry::{ListOptions, ListResult, Registry, WatchEvent, WatchEventKind};
 pub use selector::{FieldSelector, LabelSelector, Requirement};
 pub use status::{Status, StatusReason};
