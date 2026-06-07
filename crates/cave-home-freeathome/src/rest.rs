@@ -34,10 +34,17 @@ pub enum RestRequest {
     Configuration,
     /// `GET devicelist` — the list of device serials.
     DeviceList,
-    /// `GET device/{serial}` — one device's detail.
-    Device(DeviceSerial),
-    /// `GET datapoint/{serial}/{channel}/{datapoint}` — read a datapoint.
+    /// `GET device/{sysApUuid}/{serial}` — one device's detail.
+    Device {
+        /// The System Access Point UUID (the configuration/devicelist key).
+        sysap_uuid: String,
+        /// Owning device.
+        serial: DeviceSerial,
+    },
+    /// `GET datapoint/{sysApUuid}/{serial}.{channel}.{datapoint}` — read a datapoint.
     GetDatapoint {
+        /// The System Access Point UUID.
+        sysap_uuid: String,
         /// Owning device.
         serial: DeviceSerial,
         /// Channel on the device.
@@ -45,8 +52,10 @@ pub enum RestRequest {
         /// Datapoint within the channel.
         datapoint: DatapointId,
     },
-    /// `PUT datapoint/{serial}/{channel}/{datapoint}` — write a datapoint value.
+    /// `PUT datapoint/{sysApUuid}/{serial}.{channel}.{datapoint}` — write a value.
     SetDatapoint {
+        /// The System Access Point UUID.
+        sysap_uuid: String,
         /// Owning device.
         serial: DeviceSerial,
         /// Channel on the device.
@@ -59,13 +68,23 @@ pub enum RestRequest {
 }
 
 impl RestRequest {
+    /// Fetch one device's detail.
+    pub fn device(sysap_uuid: impl Into<String>, serial: DeviceSerial) -> Self {
+        Self::Device {
+            sysap_uuid: sysap_uuid.into(),
+            serial,
+        }
+    }
+
     /// Read a single datapoint's current value.
-    pub const fn get_datapoint(
+    pub fn get_datapoint(
+        sysap_uuid: impl Into<String>,
         serial: DeviceSerial,
         channel: ChannelId,
         datapoint: DatapointId,
     ) -> Self {
         Self::GetDatapoint {
+            sysap_uuid: sysap_uuid.into(),
             serial,
             channel,
             datapoint,
@@ -74,12 +93,14 @@ impl RestRequest {
 
     /// Write a value to an input datapoint.
     pub fn set_datapoint(
+        sysap_uuid: impl Into<String>,
         serial: DeviceSerial,
         channel: ChannelId,
         datapoint: DatapointId,
         value: impl Into<String>,
     ) -> Self {
         Self::SetDatapoint {
+            sysap_uuid: sysap_uuid.into(),
             serial,
             channel,
             datapoint,
@@ -96,22 +117,27 @@ impl RestRequest {
     }
 
     /// The path relative to the REST base URL (no leading slash).
+    ///
+    /// Datapoint addresses are joined with dots (`serial.channel.datapoint`) and
+    /// prefixed with the SysAP UUID, per the fhapi v1 local API.
     pub fn path(&self) -> String {
         match self {
             Self::Configuration => "configuration".to_string(),
             Self::DeviceList => "devicelist".to_string(),
-            Self::Device(serial) => format!("device/{serial}"),
+            Self::Device { sysap_uuid, serial } => format!("device/{sysap_uuid}/{serial}"),
             Self::GetDatapoint {
+                sysap_uuid,
                 serial,
                 channel,
                 datapoint,
             }
             | Self::SetDatapoint {
+                sysap_uuid,
                 serial,
                 channel,
                 datapoint,
                 ..
-            } => format!("datapoint/{serial}/{channel}/{datapoint}"),
+            } => format!("datapoint/{sysap_uuid}/{serial}.{channel}.{datapoint}"),
         }
     }
 
@@ -134,6 +160,8 @@ mod tests {
     use super::*;
     use cave_home_free_home::{ChannelId, DatapointId, DeviceSerial, Direction};
 
+    const UUID: &str = "00000000-0000-0000-0000-000000000000";
+
     fn serial() -> DeviceSerial {
         DeviceSerial::parse("ABB700C12345").expect("serial")
     }
@@ -152,31 +180,42 @@ mod tests {
     }
 
     #[test]
-    fn device_path_uses_serial() {
-        let r = RestRequest::Device(serial());
-        assert_eq!(r.path(), "device/ABB700C12345");
+    fn device_path_includes_sysap_uuid() {
+        let r = RestRequest::device(UUID, serial());
+        assert_eq!(
+            r.path(),
+            "device/00000000-0000-0000-0000-000000000000/ABB700C12345"
+        );
     }
 
     #[test]
-    fn get_datapoint_path() {
+    fn get_datapoint_path_is_uuid_and_dotted_address() {
         let r = RestRequest::get_datapoint(
+            UUID,
             serial(),
             ChannelId::new(3),
             DatapointId::new(Direction::Input, 0),
         );
-        assert_eq!(r.path(), "datapoint/ABB700C12345/ch0003/idp0000");
+        assert_eq!(
+            r.path(),
+            "datapoint/00000000-0000-0000-0000-000000000000/ABB700C12345.ch0003.idp0000"
+        );
         assert_eq!(r.method(), HttpMethod::Get);
     }
 
     #[test]
-    fn set_datapoint_is_put_with_body() {
+    fn set_datapoint_is_put_with_dotted_address_and_body() {
         let r = RestRequest::set_datapoint(
+            UUID,
             serial(),
             ChannelId::new(3),
             DatapointId::new(Direction::Input, 1),
             "50",
         );
-        assert_eq!(r.path(), "datapoint/ABB700C12345/ch0003/idp0001");
+        assert_eq!(
+            r.path(),
+            "datapoint/00000000-0000-0000-0000-000000000000/ABB700C12345.ch0003.idp0001"
+        );
         assert_eq!(r.method(), HttpMethod::Put);
         assert_eq!(r.body(), Some("50"));
     }

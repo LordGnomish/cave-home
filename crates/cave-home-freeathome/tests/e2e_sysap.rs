@@ -142,19 +142,26 @@ async fn rest_device_list_and_discovery_e2e() {
 async fn rest_read_and_write_datapoint_e2e() {
     let server = MockServer::start().await;
 
+    // The client learns the SysAP UUID from devicelist, then addresses
+    // datapoints as datapoint/<uuid>/<serial>.<channel>.<datapoint> (dotted).
+    Mock::given(method("GET"))
+        .and(path("/fhapi/v1/api/rest/devicelist"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(devicelist_json()))
+        .mount(&server)
+        .await;
     // Read odp0000 → "1".
     Mock::given(method("GET"))
-        .and(path(
-            "/fhapi/v1/api/rest/datapoint/ABB700C12345/ch0000/odp0000",
-        ))
+        .and(path(format!(
+            "/fhapi/v1/api/rest/datapoint/{SYSAP_UUID}/ABB700C12345.ch0000.odp0000"
+        )))
         .respond_with(ResponseTemplate::new(200).set_body_string("1"))
         .mount(&server)
         .await;
     // Write idp0000 = "0", asserting the PUT body.
     Mock::given(method("PUT"))
-        .and(path(
-            "/fhapi/v1/api/rest/datapoint/ABB700C12345/ch0000/idp0000",
-        ))
+        .and(path(format!(
+            "/fhapi/v1/api/rest/datapoint/{SYSAP_UUID}/ABB700C12345.ch0000.idp0000"
+        )))
         .and(body_string("0"))
         .respond_with(ResponseTemplate::new(200).set_body_string("OK"))
         .mount(&server)

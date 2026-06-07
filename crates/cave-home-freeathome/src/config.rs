@@ -24,6 +24,7 @@ pub struct ClientConfig {
     auth: AuthMethod,
     insecure_tls: bool,
     origin: Option<String>,
+    sysap_uuid: Option<String>,
 }
 
 impl ClientConfig {
@@ -34,7 +35,23 @@ impl ClientConfig {
             auth,
             insecure_tls: false,
             origin: None,
+            sysap_uuid: None,
         }
+    }
+
+    /// Pin the System Access Point UUID datapoint/device paths are addressed by.
+    ///
+    /// When unset the client learns it from the first `devicelist`/`configuration`
+    /// response (the response's top-level key). Set it to skip that lookup.
+    #[must_use]
+    pub fn with_sysap_uuid(mut self, uuid: impl Into<String>) -> Self {
+        self.sysap_uuid = Some(uuid.into());
+        self
+    }
+
+    /// The pinned SysAP UUID, if any.
+    pub fn sysap_uuid(&self) -> Option<&str> {
+        self.sysap_uuid.as_deref()
     }
 
     /// Override the API origin (scheme + host + optional port).

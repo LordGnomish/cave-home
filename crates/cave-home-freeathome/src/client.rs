@@ -34,6 +34,10 @@ pub struct FreeAtHomeClient {
     http: reqwest::Client,
     config: ClientConfig,
     metrics: Arc<Metrics>,
+    /// The resolved SysAP UUID (datapoint/device paths are addressed by it).
+    /// Seeded from the config override, otherwise learned from the first
+    /// devicelist/configuration response. Shared across clones.
+    sysap_uuid: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl FreeAtHomeClient {
@@ -46,10 +50,12 @@ impl FreeAtHomeClient {
             .danger_accept_invalid_certs(config.insecure_tls())
             .build()
             .map_err(|e| FreeAtHomeError::Http(e.to_string()))?;
+        let seed = config.sysap_uuid().map(ToString::to_string);
         Ok(Self {
             http,
             config,
             metrics: Arc::new(Metrics::new()),
+            sysap_uuid: Arc::new(std::sync::Mutex::new(seed)),
         })
     }
 
@@ -109,7 +115,12 @@ impl FreeAtHomeClient {
 
     /// Fetch the full SysAP configuration tree.
     pub async fn configuration(&self) -> Result<ConfigurationResponse> {
-        ConfigurationResponse::parse(&self.send_rest(RestRequest::Configuration).await?)
+        let response =
+            ConfigurationResponse::parse(&self.send_rest(RestRequest::Configuration).await?)?;
+        if let Some((uuid, _)) = response.first_sysap() {
+            self.cache_uuid(uuid);
+        }
+        Ok(response)
     }
 
     /// Discover every device the SysAP exposes.
@@ -121,12 +132,59 @@ impl FreeAtHomeClient {
         let raw = self.send_rest(RestRequest::Configuration).await?;
         let sysap =
             SysAp::parse_get_all(&raw).map_err(|e| FreeAtHomeError::Domain(e.to_string()))?;
+        self.cache_uuid(&sysap.id);
         Ok(crate::discovery::discover(&sysap))
     }
 
     /// Fetch the device list.
     pub async fn device_list(&self) -> Result<DeviceListResponse> {
-        DeviceListResponse::parse(&self.send_rest(RestRequest::DeviceList).await?)
+        let response = DeviceListResponse::parse(&self.send_rest(RestRequest::DeviceList).await?)?;
+        if let Some(uuid) = response.0.keys().next() {
+            self.cache_uuid(uuid);
+        }
+        Ok(response)
+    }
+
+    /// The SysAP UUID datapoint/device paths are addressed by.
+    ///
+    /// Returns the pinned/cached UUID, otherwise fetches `devicelist` to learn
+    /// it (the response's top-level key) and caches it. Errors if the SysAP
+    /// reports no installation.
+    pub async fn sysap_uuid(&self) -> Result<String> {
+        if let Some(uuid) = self.cached_uuid() {
+            return Ok(uuid);
+        }
+        self.device_list().await?;
+        self.cached_uuid().ok_or_else(|| {
+            FreeAtHomeError::Domain("SysAP returned no System Access Point UUID".to_string())
+        })
+    }
+
+    /// Read the cached UUID, if known.
+    fn cached_uuid(&self) -> Option<String> {
+        // The cache is a plain Option<String>; a poisoned lock still holds a
+        // consistent value, so recover rather than panic.
+        self.sysap_uuid
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Cache the learned UUID (first writer wins; refreshes are idempotent).
+    fn cache_uuid(&self, uuid: &str) {
+        let mut guard = self
+            .sysap_uuid
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if guard.is_none() {
+            *guard = Some(uuid.to_string());
+        }
+    }
+
+    /// Fetch one device's detail document.
+    pub async fn device(&self, serial: DeviceSerial) -> Result<String> {
+        let uuid = self.sysap_uuid().await?;
+        self.send_rest(RestRequest::device(uuid, serial)).await
     }
 
     /// Read one datapoint's current wire value.
@@ -136,7 +194,8 @@ impl FreeAtHomeClient {
         channel: ChannelId,
         datapoint: DatapointId,
     ) -> Result<String> {
-        self.send_rest(RestRequest::get_datapoint(serial, channel, datapoint))
+        let uuid = self.sysap_uuid().await?;
+        self.send_rest(RestRequest::get_datapoint(uuid, serial, channel, datapoint))
             .await
     }
 
@@ -148,8 +207,9 @@ impl FreeAtHomeClient {
         datapoint: DatapointId,
         value: impl Into<String>,
     ) -> Result<()> {
+        let uuid = self.sysap_uuid().await?;
         self.send_rest(RestRequest::set_datapoint(
-            serial, channel, datapoint, value,
+            uuid, serial, channel, datapoint, value,
         ))
         .await
         .map(|_| ())
