@@ -1,11 +1,27 @@
-//! cave-home-core — line-by-line port skeleton of home-assistant/core (Apache-2.0).
+//! cave-home-core — port of the home-assistant/core architectural foundation
+//! (Apache-2.0).
 //!
-//! The four primitives at the bottom of HA core are: `State`, `Context`,
-//! `Event`, and the `EventBus` they flow through. The `StateMachine` is the
-//! authoritative store of every entity's current state and is fed by, and
-//! emits into, the event bus. This module ports those four into Rust with
-//! the same names and broadly the same shape so subsequent ports
-//! (helpers, services, automations) can land against a recognisable surface.
+//! The bottom of HA core is the synchronous data spine: [`State`], [`Context`],
+//! [`Event`] and the [`EventBus`] they flow through, with [`StateMachine`] the
+//! authoritative store of every entity's current state and [`ServiceRegistry`]
+//! the service catalogue.
+//!
+//! Layered over that spine, this crate ports the architecture every future
+//! domain port lands against:
+//!
+//! * [`entity`] — the [`Entity`] trait + [`DeviceInfo`] / [`EntityCategory`].
+//! * [`area_registry`] / [`device_registry`] / [`entity_registry`] — the three
+//!   HA registries (areas, physical devices, `unique_id`→`entity_id`).
+//! * [`template`] — the Jinja2 (minijinja) template engine with HA's
+//!   state-access globals.
+//! * [`automation`] — the trigger → condition → action chain.
+//! * [`loader`] — the [`Integration`] plug-in seam + dependency-ordered setup,
+//!   driven over [`CoreContext`] (the `hass` handle bundle).
+//! * [`config`] — the voluptuous-style [`Schema`] validator + [`CoreConfig`].
+//! * [`helpers`] — the zone / person / scene registries.
+//!
+//! Each module names its upstream source in its own docs; see
+//! `parity.manifest.toml` and `HANDOFF-ha-core-foundation.md`.
 
 #![doc(html_root_url = "https://docs.rs/cave-home-core")]
 
