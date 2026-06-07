@@ -531,6 +531,94 @@ mod tests {
         assert_eq!(resp.status, 405);
     }
 
+    // --- authentication + authorization enforcement ------------------------
+
+    use crate::authn::{AuthenticatorChain, TokenAuthenticator};
+    use crate::rbac::{
+        ClusterRole, ClusterRoleBinding, PolicyRule, RbacAuthorizer, RoleRef, Subject, UserInfo,
+    };
+
+    fn req_auth(method: &str, target: &str, token: &str, body: &str) -> Request {
+        let raw = format!(
+            "{method} {target} HTTP/1.1\r\nauthorization: Bearer {token}\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        Request::parse(raw.as_bytes()).expect("parse")
+    }
+
+    fn rbac_server() -> ApiServer {
+        let reader = ClusterRole {
+            name: "pod-reader".to_string(),
+            rules: vec![PolicyRule::resource_rule(&[""], &["pods"], &["get", "list"])],
+        };
+        let binding = ClusterRoleBinding {
+            name: "alice-reader".to_string(),
+            subjects: vec![Subject::user("alice")],
+            role_ref: RoleRef::cluster_role("pod-reader"),
+        };
+        let authz = RbacAuthorizer::new()
+            .with_cluster_role(reader)
+            .with_cluster_role_binding(binding);
+        let authn = AuthenticatorChain::new()
+            .with(Box::new(
+                TokenAuthenticator::new().with_token("alice-token", UserInfo::new("alice")),
+            ))
+            .allow_anonymous(false);
+        ApiServer::new()
+            .with_authn(authn)
+            .with_authz(Authorization::Rbac(authz))
+    }
+
+    #[test]
+    fn rbac_allows_permitted_verb() {
+        let mut s = rbac_server();
+        // Seed a pod directly so the read is authorized but the write isn't tested here.
+        s.registry
+            .create(
+                &GroupVersionResource::new("", "v1", "pods"),
+                crate::json::parse(&pod_json("default", "nginx")).expect("json"),
+            )
+            .expect("seed");
+        let resp = s.handle(&req_auth("GET", "/api/v1/namespaces/default/pods/nginx", "alice-token", ""));
+        assert_eq!(resp.status, 200);
+    }
+
+    #[test]
+    fn rbac_denies_unpermitted_verb() {
+        let mut s = rbac_server();
+        // alice may get/list but not create.
+        let resp = s.handle(&req_auth(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "alice-token",
+            &pod_json("default", "nginx"),
+        ));
+        assert_eq!(resp.status, 403);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert_eq!(v.pointer("reason"), Some(&Value::from("Forbidden")));
+    }
+
+    #[test]
+    fn missing_credentials_is_401_when_anonymous_disabled() {
+        let mut s = rbac_server();
+        let resp = s.handle(&req("GET", "/api/v1/namespaces/default/pods", "application/json", ""));
+        assert_eq!(resp.status, 401);
+    }
+
+    #[test]
+    fn invalid_token_is_401() {
+        let mut s = rbac_server();
+        let resp = s.handle(&req_auth("GET", "/api/v1/namespaces/default/pods", "bogus", ""));
+        assert_eq!(resp.status, 401);
+    }
+
+    #[test]
+    fn always_deny_is_403() {
+        let mut s = ApiServer::new().with_authz(Authorization::AlwaysDeny);
+        let resp = s.handle(&req("GET", "/api/v1/pods", "application/json", ""));
+        assert_eq!(resp.status, 403);
+    }
+
     #[test]
     fn update_status_subresource_persists_only_status() {
         let mut s = ApiServer::new();
