@@ -124,4 +124,37 @@ mod tests {
             Some("Basic dTpw".to_string())
         );
     }
+
+    #[test]
+    fn origin_override_drives_rest_base() {
+        let c = cfg("ignored.host").with_origin("http://127.0.0.1:8080");
+        assert_eq!(c.rest_base_url(), "http://127.0.0.1:8080/fhapi/v1/api/rest");
+    }
+
+    #[test]
+    fn origin_override_derives_ws_scheme_from_http() {
+        let c = cfg("ignored.host").with_origin("http://127.0.0.1:8080");
+        assert_eq!(c.ws_url(), "ws://127.0.0.1:8080/fhapi/v1/api/ws");
+    }
+
+    #[test]
+    fn origin_override_derives_wss_from_https() {
+        let c = cfg("ignored.host").with_origin("https://sysap.lan:443");
+        assert_eq!(c.ws_url(), "wss://sysap.lan:443/fhapi/v1/api/ws");
+    }
+
+    #[test]
+    fn origin_override_trims_trailing_slash() {
+        let c = cfg("h").with_origin("http://127.0.0.1:9/");
+        assert_eq!(c.rest_base_url(), "http://127.0.0.1:9/fhapi/v1/api/rest");
+    }
+
+    #[test]
+    fn no_origin_keeps_https_default() {
+        assert_eq!(
+            cfg("sysap.lan").rest_base_url(),
+            "https://sysap.lan/fhapi/v1/api/rest"
+        );
+        assert_eq!(cfg("sysap.lan").ws_url(), "wss://sysap.lan/fhapi/v1/api/ws");
+    }
 }

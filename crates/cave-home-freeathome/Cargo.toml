@@ -28,7 +28,8 @@ futures-util = "0.3"
 rustls    = { version = "0.23", default-features = false, features = ["ring", "std"] }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "io-util"] }
+wiremock = "0.6"
 
 [lints]
 workspace = true
