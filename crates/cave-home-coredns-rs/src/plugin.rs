@@ -2,6 +2,158 @@
 // Copyright 2026 cave-home contributors
 //
 //! The Caddy-style plugin chain.
+//!
+//! `CoreDNS` assembles a server from an ordered list of plugins. Each plugin
+//! either answers the query itself or *defers* to the rest of the chain via
+//! [`Next::run`] — the same `NextOrFailure` contract `CoreDNS` uses. Because a
+//! plugin receives `next` as a value it can call, plugins compose as middleware
+//! (`cache`, `forward`): act before `next`, call it, then post-process the
+//! reply. A plugin that answers without calling `next` short-circuits the rest.
+//! If the chain is exhausted (the last plugin defers), the server answers
+//! `SERVFAIL`, exactly as `CoreDNS` does.
+
+use crate::message::Message;
+use crate::name::Name;
+use crate::rr::{Class, RecordType};
+use crate::wire::Rcode;
+
+/// The view a plugin has of the incoming query.
+///
+/// `CoreDNS` calls this the request "state"; it wraps the query message and
+/// exposes the question fields plugins branch on.
+pub struct Request<'a> {
+    query: &'a Message,
+}
+
+impl<'a> Request<'a> {
+    /// Wrap a query message.
+    #[must_use]
+    pub const fn new(query: &'a Message) -> Self {
+        Self { query }
+    }
+
+    /// The underlying query message.
+    #[must_use]
+    pub const fn query(&self) -> &Message {
+        self.query
+    }
+
+    /// The first question, if any.
+    #[must_use]
+    pub fn question(&self) -> Option<&crate::message::Question> {
+        self.query.questions.first()
+    }
+
+    /// The queried name.
+    #[must_use]
+    pub fn name(&self) -> Option<&Name> {
+        self.question().map(|q| &q.name)
+    }
+
+    /// The queried type.
+    #[must_use]
+    pub fn qtype(&self) -> Option<RecordType> {
+        self.question().map(|q| q.qtype)
+    }
+
+    /// The queried class.
+    #[must_use]
+    pub fn qclass(&self) -> Option<Class> {
+        self.question().map(|q| q.qclass)
+    }
+
+    /// The query id.
+    #[must_use]
+    pub const fn id(&self) -> u16 {
+        self.query.header.id
+    }
+
+    /// A response skeleton echoing this query (see [`Message::reply`]).
+    #[must_use]
+    pub fn reply(&self) -> Message {
+        self.query.reply()
+    }
+}
+
+/// A failure raised by a plugin or the chain. The server maps any of these to a
+/// `SERVFAIL` response; they are never shown to the homeowner (Charter §6.3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServerError {
+    /// A plugin deferred but there was no next plugin to handle the query.
+    NoNextPlugin,
+    /// A plugin's backend (upstream, store, …) failed; the tag is for logs.
+    Backend(&'static str),
+}
+
+/// What a plugin returns: the reply it produced, or a [`ServerError`].
+pub type Outcome = Result<Message, ServerError>;
+
+/// A handle to the remainder of the plugin chain.
+///
+/// It is a cheap `Copy` view over the not-yet-run plugins; calling [`Next::run`]
+/// invokes the next plugin with a `Next` over the rest.
+#[derive(Clone, Copy)]
+pub struct Next<'a> {
+    rest: &'a [Box<dyn Plugin>],
+}
+
+impl Next<'_> {
+    /// Invoke the next plugin in the chain.
+    ///
+    /// # Errors
+    /// [`ServerError::NoNextPlugin`] if the chain is exhausted, or whatever the
+    /// next plugin returns.
+    pub fn run(self, req: &Request<'_>) -> Outcome {
+        match self.rest.split_first() {
+            Some((head, tail)) => head.serve_dns(req, Next { rest: tail }),
+            None => Err(ServerError::NoNextPlugin),
+        }
+    }
+}
+
+/// A `CoreDNS`-style plugin: it either answers or defers to `next`.
+pub trait Plugin {
+    /// The plugin's directive name (as it appears in the `Corefile`).
+    fn name(&self) -> &str;
+
+    /// Handle the request, optionally deferring to the rest of the chain.
+    ///
+    /// # Errors
+    /// Any [`ServerError`] the plugin or a downstream plugin raises.
+    fn serve_dns(&self, req: &Request<'_>, next: Next<'_>) -> Outcome;
+}
+
+/// An assembled, ordered chain of plugins for one server block.
+#[derive(Default)]
+pub struct Chain {
+    plugins: Vec<Box<dyn Plugin>>,
+}
+
+impl Chain {
+    /// Build a chain from plugins in execution order.
+    #[must_use]
+    pub fn new(plugins: Vec<Box<dyn Plugin>>) -> Self {
+        Self { plugins }
+    }
+
+    /// The plugin names in execution order.
+    #[must_use]
+    pub fn plugin_names(&self) -> Vec<&str> {
+        self.plugins.iter().map(|p| p.name()).collect()
+    }
+
+    /// Run the chain for a query, returning the reply to put on the wire.
+    ///
+    /// A [`ServerError`] (including an exhausted chain) becomes a `SERVFAIL`
+    /// response that still echoes the query's id and question.
+    #[must_use]
+    pub fn handle(&self, query: &Message) -> Message {
+        let req = Request::new(query);
+        Next { rest: &self.plugins }
+            .run(&req)
+            .unwrap_or_else(|_| req.reply().with_rcode(Rcode::ServFail))
+    }
+}
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
