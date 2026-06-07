@@ -750,6 +750,23 @@ mod tests {
         assert_eq!(resp.header.unwrap().revision, 1);
     }
 
+    #[tokio::test]
+    async fn handlers_record_live_metrics() {
+        let s = server();
+        s.put(Request::new(put_req(b"/k", b"v"))).await.unwrap(); // ok put
+        s.put(Request::new(put_req(b"", b"x"))).await.unwrap_err(); // failed put (empty key)
+        s.range(Request::new(point(b"/k"))).await.unwrap(); // ok range
+        s.compact(Request::new(CompactionRequest { revision: 1, physical: true }))
+            .await
+            .unwrap();
+
+        let out = s.metrics().render();
+        assert!(out.contains("kine_request_total{operation=\"put\"} 2"));
+        assert!(out.contains("kine_request_errors_total{operation=\"put\"} 1"));
+        assert!(out.contains("kine_request_total{operation=\"range\"} 1"));
+        assert!(out.contains("kine_compaction_runs_total 1"));
+    }
+
     fn watch_create(prefix_key: &[u8], start_revision: i64) -> WatchCreateRequest {
         WatchCreateRequest {
             key: prefix_key.to_vec(),
