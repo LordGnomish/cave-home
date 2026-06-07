@@ -40,8 +40,30 @@ impl Person {
     /// states in `states`, applying HA's precedence.
     #[must_use]
     pub fn resolve_state(&self, states: &StateMachine) -> String {
-        let _ = states;
-        unimplemented!("RED")
+        // Collect the current state of every tracker that exists.
+        let tracker_states: Vec<String> = self
+            .device_trackers
+            .iter()
+            .filter_map(|t| states.get(t).map(|s| s.state))
+            .collect();
+
+        // `home` wins outright.
+        if tracker_states.iter().any(|s| s == STATE_HOME) {
+            return STATE_HOME.to_owned();
+        }
+        // Otherwise the first tracker reporting a named zone (anything that is
+        // not an away/unknown sentinel) is taken.
+        if let Some(zone) = tracker_states.iter().find(|s| {
+            !matches!(s.as_str(), STATE_NOT_HOME | STATE_UNKNOWN | STATE_UNAVAILABLE)
+        }) {
+            return zone.clone();
+        }
+        // Otherwise, if any tracker is explicitly away, the person is away.
+        if tracker_states.iter().any(|s| s == STATE_NOT_HOME) {
+            return STATE_NOT_HOME.to_owned();
+        }
+        // Nothing usable.
+        STATE_UNKNOWN.to_owned()
     }
 }
 

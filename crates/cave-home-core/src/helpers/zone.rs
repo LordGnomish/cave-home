@@ -57,8 +57,9 @@ fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let phi2 = lat2.to_radians();
     let d_phi = (lat2 - lat1).to_radians();
     let d_lambda = (lon2 - lon1).to_radians();
-    let a = (d_phi / 2.0).sin().powi(2)
-        + phi1.cos() * phi2.cos() * (d_lambda / 2.0).sin().powi(2);
+    let hav_lat = (d_phi / 2.0).sin().powi(2);
+    let hav_lon = (d_lambda / 2.0).sin().powi(2);
+    let a = (phi1.cos() * phi2.cos()).mul_add(hav_lon, hav_lat);
     2.0 * EARTH_RADIUS_M * a.sqrt().atan2((1.0 - a).sqrt())
 }
 
@@ -135,8 +136,15 @@ impl ZoneRegistry {
     /// non-passive zone that contains the point, or `None`.
     #[must_use]
     pub fn active_zone(&self, latitude: f64, longitude: f64) -> Option<Zone> {
-        let _ = (latitude, longitude);
-        unimplemented!("RED")
+        self.inner
+            .read()
+            .zones
+            .values()
+            .filter(|z| !z.passive && z.contains(latitude, longitude))
+            // Smallest radius = most specific zone. `total_cmp` orders the
+            // f64 radii without an Ord/NaN hazard.
+            .min_by(|a, b| a.radius.total_cmp(&b.radius))
+            .cloned()
     }
 }
 

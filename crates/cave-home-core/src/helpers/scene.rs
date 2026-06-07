@@ -23,7 +23,7 @@ pub enum SceneError {
 }
 
 /// A single entity target within a scene.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SceneEntityState {
     pub state: String,
     pub attributes: StateAttributes,
@@ -43,7 +43,7 @@ impl SceneEntityState {
 }
 
 /// Port of a `scene` config entry.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Scene {
     pub id: String,
     pub name: String,
@@ -57,8 +57,20 @@ impl Scene {
     /// (entities already in their target state yield no change, as upstream).
     #[must_use]
     pub fn apply(&self, states: &StateMachine, parent: &Context) -> Vec<StateChange> {
-        let _ = (states, parent);
-        unimplemented!("RED")
+        // One shared context for the whole activation so every resulting
+        // state_changed traces back to the same scene-activation cause.
+        let context = Context::child_of(parent);
+        self.entity_states
+            .iter()
+            .filter_map(|(entity_id, target)| {
+                states.set(
+                    entity_id.clone(),
+                    target.state.clone(),
+                    target.attributes.clone(),
+                    context.clone(),
+                )
+            })
+            .collect()
     }
 }
 

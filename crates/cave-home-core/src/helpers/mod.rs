@@ -1,5 +1,6 @@
-//! Helper registries layered over the core primitives — ports of the
-//! `homeassistant.components.{zone,person}` and
+//! Helper registries layered over the core primitives.
+//!
+//! Ports of the `homeassistant.components.{zone,person}` and
 //! `homeassistant.components.homeassistant.scene` helpers that the frontend and
 //! automations lean on.
 
