@@ -11,7 +11,10 @@
 //! reimplementation over the in-crate decision core; the socket loop is in
 //! [`crate::server`].
 
+use std::sync::Arc;
+
 use crate::admission::{AdmissionChain, AdmissionRequest, Operation};
+use crate::audit::{AuditEvent, AuditSink};
 use crate::authn::{AnonymousAuthenticator, AuthenticatorChain};
 use crate::discovery::{self, ApiGroup, ApiResource, GroupVersionEntry};
 use crate::gvk::{self, GroupVersionResource};
@@ -49,6 +52,8 @@ pub struct ApiServer {
     pub authz: Authorization,
     /// The admission pipeline (mutating → validating), run before storage writes.
     pub admission: AdmissionChain,
+    /// Optional audit sink; every handled request records one event when set.
+    pub audit: Option<Arc<dyn AuditSink>>,
 }
 
 impl Default for ApiServer {
@@ -71,7 +76,15 @@ impl ApiServer {
                 .allow_anonymous(true),
             authz: Authorization::AlwaysAllow,
             admission: AdmissionChain::new(),
+            audit: None,
         }
+    }
+
+    /// Attach an audit sink (builder style).
+    #[must_use]
+    pub fn with_audit(mut self, sink: Arc<dyn AuditSink>) -> Self {
+        self.audit = Some(sink);
+        self
     }
 
     /// Replace the authentication chain (builder style).
@@ -118,13 +131,19 @@ impl ApiServer {
     /// any stage are rendered as a `metav1.Status` body with the matching HTTP
     /// code, so this method never fails.
     pub fn handle(&mut self, req: &Request) -> Response {
-        match self.route(req) {
+        let mut event = AuditEvent::started(req.method.as_str(), &req.target);
+        let resp = match self.route(req, &mut event) {
             Ok(resp) => resp,
             Err(s) => status_response(&s),
+        };
+        event.response_code = resp.status;
+        if let Some(sink) = &self.audit {
+            sink.record(&event);
         }
+        resp
     }
 
-    fn route(&mut self, req: &Request) -> Result<Response> {
+    fn route(&mut self, req: &Request, event: &mut AuditEvent) -> Result<Response> {
         // 0. Unauthenticated liveness/health probes (kubelet + load balancers hit
         //    these without credentials).
         if let Some(resp) = health_endpoint(req.path()) {
@@ -133,6 +152,7 @@ impl ApiServer {
 
         // 1. Authentication.
         let user = self.authn.authenticate(req)?;
+        event.user = user.name.clone();
 
         // 1b. Non-resource API-surface endpoints (discovery + version) sit behind
         //     authn but are not RBAC resource requests.
@@ -142,9 +162,11 @@ impl ApiServer {
 
         // 2. Resolve the resource path + verb.
         let rp = path::parse(req.path())?;
+        event.set_resource(&rp);
         let gvr = rp.gvr();
         let watch = matches!(req.query_get("watch").as_deref(), Some("true" | "1"));
         let verb = resolve_verb(&req.method, &rp, watch)?;
+        event.verb = verb.to_string();
 
         // 3. Authorization.
         self.authorize(&user, &rp, verb)?;
