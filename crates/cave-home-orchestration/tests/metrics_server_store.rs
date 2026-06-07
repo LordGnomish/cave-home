@@ -14,7 +14,11 @@ use cave_home_orchestration::metrics_server::store::{PointRing, RateError, Stora
 use cave_home_orchestration::metrics_server::summary::MetricsPoint;
 
 fn point(ts: u64, cpu: u64, mem: u64) -> MetricsPoint {
-    MetricsPoint { timestamp_nanos: ts, cumulative_cpu_nanos: cpu, working_set_bytes: mem }
+    MetricsPoint {
+        timestamp_nanos: ts,
+        cumulative_cpu_nanos: cpu,
+        working_set_bytes: mem,
+    }
 }
 
 #[test]
@@ -76,14 +80,22 @@ fn storage_tracks_nodes_and_pod_containers() {
     let mut store = Storage::new();
     store.store_node("hub-1", point(0, 0, 100));
     store.store_node("hub-1", point(1_000_000_000, 1_000_000_000, 200));
-    let nu = store.node_usage("hub-1").expect("node present").expect("rate ok");
+    let nu = store
+        .node_usage("hub-1")
+        .expect("node present")
+        .expect("rate ok");
     assert_eq!(nu.usage.cpu.to_cpu_string(), "1");
     assert_eq!(nu.usage.memory.raw(), 200);
     assert!(store.node_usage("absent").is_none());
 
     // Two containers of one pod, two samples each.
     store.store_container("apps", "web", "nginx", point(0, 0, 10));
-    store.store_container("apps", "web", "nginx", point(1_000_000_000, 100_000_000, 20));
+    store.store_container(
+        "apps",
+        "web",
+        "nginx",
+        point(1_000_000_000, 100_000_000, 20),
+    );
     store.store_container("apps", "web", "log", point(0, 0, 30));
     store.store_container("apps", "web", "log", point(1_000_000_000, 150_000_000, 40));
     let usages = store.pod_container_usages("apps", "web");

@@ -20,6 +20,9 @@
 //!   round-up display values.
 //! - [`summary`] — the kubelet `/stats/summary` data model + the
 //!   node/pod/container [`summary::MetricsPoint`] extraction (`decode.go`).
+//! - [`store`] — the in-memory ring-buffer point storage and the cumulative-
+//!   counter → CPU-rate computation (`storage/point.go`), with counter-reset and
+//!   zero-window rejection.
 //!
 //! # Scope (honest)
 //!
@@ -31,7 +34,9 @@
 //! runtime-bound (ADR-004 phase-1b) and enumerated in `parity.manifest.toml`.
 
 pub mod quantity;
+pub mod store;
 pub mod summary;
 
 pub use quantity::{Quantity, ResourceList};
+pub use store::{PointRing, RateError, Storage, Usage};
 pub use summary::{MetricsPoint, Summary};
