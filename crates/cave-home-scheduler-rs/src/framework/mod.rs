@@ -4,10 +4,12 @@
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
 //!         pkg/scheduler/framework/interface.go
 //!
-//! Phase 2 covers the three extension points the default plugin set
-//! exercises: `FilterPlugin`, `ScorePlugin`, and `PostFilterPlugin`
-//! (used by preemption). PreFilter / Reserve / Permit / PreBind /
-//! PostBind are deferred — see `parity.manifest.toml`.
+//! All nine framework extension points are present: `PreFilterPlugin`,
+//! `FilterPlugin`, `PostFilterPlugin`, `PreScorePlugin`, `ScorePlugin`
+//! (with the optional `NormalizeScore` rescale), `ReservePlugin`,
+//! `PermitPlugin`, `PreBindPlugin`, `BindPlugin`, and `PostBindPlugin`.
+//! The timed `Permit` "wait" disposition and `QueueingHints` remain
+//! deferred — see `parity.manifest.toml`.
 
 pub mod cycle_state;
 pub mod events;

@@ -17,18 +17,22 @@
 //!   `unschedulablePods` set, event-driven `MoveAllToActiveOrBackoffQueue`
 //!   (driven by `ClusterEvent`s), leftover flush, and a blocking `pop_wait`.
 //! * `SchedulerCache` + `NodeInfo` aggregation + assumed-pod tracking.
-//! * The full framework cycle — `PreFilter → Filter → PostFilter → PreScore →
-//!   Score` (scheduling) and `Reserve → Permit → PreBind → Bind` with
-//!   `Unreserve` rollback (binding).
+//! * The full framework extension chain (all 9 points) — `PreFilter → Filter →
+//!   PostFilter → PreScore → Score(+`NormalizeScore`)` (scheduling) and
+//!   `Reserve → Permit → PreBind → Bind → PostBind` with `Unreserve` rollback
+//!   (binding). `Bind` is a real extension point: registered `BindPlugin`s run
+//!   in order, the first non-`Skip` owns the bind, else the built-in
+//!   `DefaultBinder` (the `SchedulerSink` Binding POST) handles it.
 //! * Event-driven `Scheduler::run` loop with pod/node informers over the
 //!   `SchedulerSource` watch streams and a periodic backoff/leftover flush,
-//!   plus the legacy `sync`/`run_once` poll driver.
+//!   plus the legacy `sync`/`run_once` poll driver (which now also drives the
+//!   full binding cycle).
 //! * `SchedulerConfig` — `percentageOfNodesToScore` + adaptive
 //!   `numFeasibleNodesToFind`.
 //!
 //! Phase 2b deferred (see `parity.manifest.toml`): `PodTopologySpread`,
 //! inter-pod affinity, preferred node affinity, custom plugin registry,
-//! multiple profiles, the `PostBind` extension point, `QueueingHints`,
+//! multiple profiles, the timed `Permit` "wait" disposition, `QueueingHints`,
 //! image-size weighted `ImageLocality`, lower-priority victim
 //! minimisation in `DefaultPreemption`.
 
@@ -46,8 +50,8 @@ pub mod types;
 pub use cache::{NodeInfo, SchedulerCache};
 pub use framework::{
     ActionType, BindPlugin, ClusterEvent, CycleState, Gvk, NodeScore, PermitPlugin, PluginRegistry,
-    PostBindPlugin, PreBindPlugin, PreFilterPlugin, PreFilterResult, PreScorePlugin, RegistryBuilder,
-    ReservePlugin, Status,
+    PostBindPlugin, PreBindPlugin, PreFilterPlugin, PreFilterResult, PreScorePlugin,
+    RegistryBuilder, ReservePlugin, Status,
 };
 pub use plugins::default_registry;
 pub use preemption::DefaultPreemption;
