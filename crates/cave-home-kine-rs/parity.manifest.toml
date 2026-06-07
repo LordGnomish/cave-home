@@ -48,11 +48,11 @@ linux_min_kernel = "7.1"
 # etcd server + apiserver wiring). The decision core — the etcd-MVCC semantics
 # kine must get exactly right — is implemented and tested in full; the I/O and
 # protocol shells around it remain and are all ADR-004 Phase-1b deferrals.
-fill_ratio              = 0.30
-fill_ratio_basis        = "revision clock + append-only revisioned store + Range (point/prefix/interval/historical/limit) + compaction & compacted-read guard + watch event stream + lease/TTL expiry + SQL schema/template model, fully implemented & tested; SQL driver + gRPC server + apiserver wiring deferred"
+fill_ratio              = 0.33
+fill_ratio_basis        = "revision clock + append-only revisioned store + Range (point/prefix/interval/historical/limit) + Txn (guarded compare-and-swap: if/then/else over create_revision/version/mod_revision/value/lease, branch disjoint-key validation) + compaction & compacted-read guard + watch event stream + lease/TTL expiry + SQL schema/template model, fully implemented & tested; SQL driver + gRPC server + apiserver wiring deferred"
 test_port_ratio         = 0.0   # tests designed from etcd/kine spec, none ported
 adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-004 phase disposition + note
-honest_ratio            = 1.00  # 0.30 / (0.30 + (1-0.30)*(1-1.00)) = 1.00
+honest_ratio            = 1.00  # 0.33 / (0.33 + (1-0.33)*(1-1.00)) = 1.00
 
 # ---- mapped (real implementation present in this crate) --------------------
 
@@ -87,6 +87,10 @@ ours = "src/range.rs::{RangeRequest,RangeResponse}"
 [[mapped]]
 spec = "clientv3 prefix successor convention (range_end = key+1, 0xFF carry then whole keyspace)"
 ours = "src/range.rs::prefix_successor"
+
+[[mapped]]
+spec = "etcd Txn — guarded compare-and-swap: compares (logically AND'd, missing key = zero tuple) over create_revision/version/mod_revision/value/lease with Equal/NotEqual/Greater/Less, then success/failure ops; branch writes must touch disjoint keys"
+ours = "src/txn.rs::{Txn,Compare,TxnOp,apply}"
 
 [[mapped]]
 spec = "etcd Compact — drop superseded/tombstoned history, preserve current state, advance floor"
@@ -170,6 +174,10 @@ ours         = "src/range.rs::tests::{historical_read_sees_old_value,historical_
 [[spec_test]]
 designed_for = "Limit truncation + more/count flags"
 ours         = "src/range.rs::tests::{limit_truncates_and_sets_more,limit_at_or_above_count_clears_more}"
+
+[[spec_test]]
+designed_for = "Txn compare-and-swap — mod_revision/create_revision/version/value/lease compares, AND semantics, create-if-absent idiom, success/failure branch selection, no-leak on the unchosen branch, Put/DeleteRange/Range ops, disjoint-key + operand-type validation, kine sequential-revision write model"
+ours         = "src/txn.rs::tests"
 
 [[spec_test]]
 designed_for = "Compaction drops superseded/tombstoned history, preserves current, + ErrCompacted rejection"

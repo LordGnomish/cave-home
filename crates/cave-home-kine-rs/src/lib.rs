@@ -18,6 +18,8 @@
 //! * [`revision`] — the monotonic global revision (etcd's MVCC clock).
 //! * [`range`] — the etcd `Range` RPC: point get, prefix scan, `[key, end)`
 //!   intervals, historical reads at a past revision, and `limit`.
+//! * [`txn`] — the etcd `Txn` RPC: guarded compare-and-swap (`if` compares
+//!   `then` ops `else` ops), the core of every Kubernetes optimistic write.
 //! * [`compact`] — compaction and the `"mvcc: required revision has been
 //!   compacted"` read guard.
 //! * [`watch`] — the ordered `PUT` / `DELETE` event stream for a key or prefix
@@ -89,4 +91,8 @@ pub use lease::{Lease, LeaseTable, UnixSeconds};
 pub use range::{execute, prefix_successor, RangeEnd, RangeRequest, RangeResponse};
 pub use revision::{Clock, Revision, CURRENT};
 pub use store::{Row, Store};
+pub use txn::{
+    apply as apply_txn, Compare, CompareOperand, CompareResult, CompareTarget, Txn, TxnOp,
+    TxnOpResponse, TxnResponse,
+};
 pub use watch::{watch, EventKind, WatchEvent};

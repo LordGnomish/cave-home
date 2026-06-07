@@ -51,6 +51,17 @@ pub enum KineError {
     InvalidLeaseId,
     /// A non-positive TTL was supplied when granting a lease.
     InvalidTtl { ttl_seconds: i64 },
+    /// A Txn `Compare` paired an operand whose kind does not match its target:
+    /// a byte-value operand against a numeric target (`create_revision` /
+    /// `version` / `mod_revision` / `lease`) or a numeric operand against the
+    /// `value` target. etcd validates `Compare.target_union` against
+    /// `Compare.target`; a mismatch is a malformed request.
+    TxnCompareTypeMismatch,
+    /// A Txn branch wrote the same key more than once (two puts, two deletes,
+    /// or a put and a delete of one key). etcd rejects this as
+    /// `"etcdserver: duplicate key given in txn request"` — the ops in a branch
+    /// must touch disjoint keys so their relative order cannot matter.
+    TxnDuplicateKey,
 }
 
 impl core::fmt::Display for KineError {
@@ -85,6 +96,12 @@ impl core::fmt::Display for KineError {
             }
             Self::InvalidTtl { ttl_seconds } => {
                 write!(f, "lease TTL {ttl_seconds}s must be positive")
+            }
+            Self::TxnCompareTypeMismatch => {
+                f.write_str("etcdserver: compare operand does not match its target")
+            }
+            Self::TxnDuplicateKey => {
+                f.write_str("etcdserver: duplicate key given in txn request")
             }
         }
     }
