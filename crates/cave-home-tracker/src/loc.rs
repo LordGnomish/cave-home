@@ -119,6 +119,56 @@ impl Language {
         Some(l)
     }
 
+    /// Resolve a language from a `#!` shebang line, for scripts that carry no
+    /// recognised extension (e.g. klipper-lb's `entry`). Shell only: extension
+    /// already covers everything else, and a narrow rule avoids reclassifying
+    /// unrelated extensionless files across large upstreams.
+    #[must_use]
+    pub fn from_shebang(first_line: &str) -> Option<Self> {
+        let l = first_line.trim();
+        let rest = l.strip_prefix("#!")?;
+        let is_shell = ["bash", "zsh", "dash", "ksh", "/sh", " sh"]
+            .iter()
+            .any(|tok| rest.contains(tok))
+            || rest.ends_with("sh");
+        is_shell.then_some(Self {
+            name: "shell",
+            line: &["#"],
+            block: None,
+        })
+    }
+}
+
+/// Resolve a [`Language`] for a file path: by extension first, then by a
+/// bounded `#!`-shebang sniff for files that have **no** extension at all.
+fn classify_file(path: &Path) -> Option<Language> {
+    if let Some(lang) = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .and_then(Language::from_extension)
+    {
+        return Some(lang);
+    }
+    // Only sniff truly extensionless files, and only their first bytes, so the
+    // fallback adds negligible I/O when walking a large upstream.
+    if path.extension().is_some() {
+        return None;
+    }
+    Language::from_shebang(&first_line(path)?)
+}
+
+/// Read at most the first 128 bytes of `path` as a (lossy) string line. Cheap
+/// enough to run on every extensionless file in a big tree.
+fn first_line(path: &Path) -> Option<String> {
+    use std::io::Read;
+    let mut buf = [0u8; 128];
+    let mut f = std::fs::File::open(path).ok()?;
+    let n = f.read(&mut buf).ok()?;
+    let text = String::from_utf8_lossy(&buf[..n]);
+    Some(text.lines().next().unwrap_or("").to_owned())
+}
+
+impl Language {
     /// Classify the lines of `content` for this language.
     #[must_use]
     pub fn count(self, content: &str) -> LangStat {
@@ -217,10 +267,7 @@ fn count_into(dir: &Path, report: &mut LocReport) -> crate::Result<()> {
             let _ = count_into(&path, report);
             continue;
         }
-        let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
-            continue;
-        };
-        let Some(lang) = Language::from_extension(ext) else {
+        let Some(lang) = classify_file(&path) else {
             continue;
         };
         let Ok(content) = std::fs::read_to_string(&path) else {
@@ -247,11 +294,7 @@ pub fn count_subpaths(root: &Path, subpaths: &[String]) -> crate::Result<LocRepo
         if target.is_dir() {
             count_into(&target, &mut report)?;
         } else if target.is_file() {
-            if let Some(lang) = target
-                .extension()
-                .and_then(|e| e.to_str())
-                .and_then(Language::from_extension)
-            {
+            if let Some(lang) = classify_file(&target) {
                 if let Ok(content) = std::fs::read_to_string(&target) {
                     report.merge(lang.name(), lang.count(&content));
                 }
@@ -271,6 +314,36 @@ mod tests {
         assert_eq!(Language::from_extension("GO").unwrap().name(), "go");
         assert_eq!(Language::from_extension("Py").unwrap().name(), "python");
         assert!(Language::from_extension("xyz").is_none());
+    }
+
+    #[test]
+    fn classifies_shell_by_shebang() {
+        assert_eq!(
+            Language::from_shebang("#!/bin/sh").unwrap().name(),
+            "shell"
+        );
+        assert_eq!(
+            Language::from_shebang("#!/usr/bin/env bash").unwrap().name(),
+            "shell"
+        );
+        assert!(Language::from_shebang("#!/usr/bin/env python3").is_none());
+        assert!(Language::from_shebang("not a shebang").is_none());
+    }
+
+    #[test]
+    fn count_dir_counts_extensionless_shell_script() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        // An `entry`-style script with no extension (klipper-lb's whole source).
+        std::fs::write(
+            root.join("entry"),
+            "#!/bin/sh\n# guard\nset -e\niptables -t nat -A PREROUTING\n",
+        )
+        .unwrap();
+        // A genuinely opaque extensionless file must NOT be counted as code.
+        std::fs::write(root.join("LICENSE"), "Apache License 2.0\nblah\n").unwrap();
+        let report = count_dir(root).unwrap();
+        assert_eq!(report.code_for(&["shell"]), 2, "set -e + iptables line");
     }
 
     #[test]

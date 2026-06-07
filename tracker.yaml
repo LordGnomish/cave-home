@@ -65,9 +65,9 @@ upstreams:
     languages: [python]
     note: "reference client for the Philips Hue CLIP API v2 surface"
   - name: freeathome
-    repo: https://github.com/Busch-Jaeger/free-at-home
-    languages: [python, javascript]
-    note: "Busch-Jaeger free@home SysAP API — community/spec docs"
+    repo: https://github.com/kingsleyadam/local-abbfreeathome-hass
+    languages: [python]
+    note: "ABB/Busch-Jaeger free@home SysAP local REST API (fhapi v1) client — the surface cave-home-free-home ports"
   - name: voice
     repo: https://github.com/rhasspy/rhasspy3
     languages: [python]
@@ -115,7 +115,8 @@ subsystems:
     port_crates: [crates/cave-home-containerd-rs]
     upstreams:
       - name: containerd
-        subpaths: [pkg/cri]
+        # CRI moved pkg/cri -> internal/cri in containerd v2.
+        subpaths: [internal/cri]
   - name: cni-flannel
     group: k3s
     port_crates: [crates/cave-home-cni-flannel]

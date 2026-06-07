@@ -18,7 +18,7 @@
 //! 4. **report** — render a daily markdown progress report with per-subsystem
 //!    tables, group aggregates and a 30-day text trend ([`report`]);
 //! 5. **dashboard** — expose the same numbers as Prometheus metrics on
-//!    `:9100/metrics` ([`metrics`], [`dashboard`]).
+//!    `:9102/metrics` ([`metrics`], [`dashboard`]).
 //!
 //! The binary is **generic**: the same executable tracks cave-home or
 //! cave-runtime (or anything else) purely by pointing `--config` at a different

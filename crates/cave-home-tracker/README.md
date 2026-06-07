@@ -15,13 +15,13 @@ cave-home-tracker --config tracker.yaml poll        # shallow-clone/update upstr
 cave-home-tracker --config tracker.yaml measure     # snapshot LOC / tests / stubs
 cave-home-tracker --config tracker.yaml diff        # day-over-day deltas
 cave-home-tracker --config tracker.yaml report      # docs/audit/daily-progress-<date>.md
-cave-home-tracker --config tracker.yaml dashboard   # Prometheus :9100/metrics
+cave-home-tracker --config tracker.yaml dashboard   # Prometheus :9102/metrics
 ```
 
 `poll` accepts `--upstream <name>` (repeatable) to clone a subset.
 `measure` accepts `--no-tests` for a fast LOC+stub-only pass.
 `report` accepts `--stdout` or `-o <path>`.
-`dashboard` accepts `--addr <host:port>` (default `0.0.0.0:9100`).
+`dashboard` accepts `--addr <host:port>` (default `0.0.0.0:9102`; 9100 is node_exporter's port).
 
 ## The honest completion formula
 

@@ -11,6 +11,35 @@ fn plist_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("dist/com.gnomish.cave-home-tracker.plist")
 }
 
+fn metrics_plist_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("dist/com.gnomish.cave-home-tracker-metrics.plist")
+}
+
+#[test]
+fn metrics_plist_serves_prometheus_on_9102() {
+    let path = metrics_plist_path();
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
+
+    assert!(text.starts_with("<?xml"), "must be an XML plist");
+    assert!(text.contains("<string>com.gnomish.cave-home-tracker-metrics</string>"));
+    // A long-lived, auto-started metrics service.
+    assert!(text.contains("<key>KeepAlive</key>"));
+    assert!(text.contains("<key>RunAtLoad</key>"));
+    // Binds the Prometheus endpoint on :9102 via `dashboard --addr`.
+    assert!(text.contains("<string>dashboard</string>"));
+    assert!(text.contains("127.0.0.1:9102"));
+
+    if let Ok(output) = Command::new("plutil").arg("-lint").arg(&path).output() {
+        assert!(
+            output.status.success(),
+            "plutil -lint failed: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+    }
+}
+
 #[test]
 fn plist_exists_and_declares_the_daily_run() {
     let path = plist_path();

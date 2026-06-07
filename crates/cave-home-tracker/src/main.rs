@@ -8,7 +8,7 @@
 //! cave-home-tracker --config tracker.yaml measure     # snapshot LOC/tests/stubs
 //! cave-home-tracker --config tracker.yaml diff        # day-over-day deltas
 //! cave-home-tracker --config tracker.yaml report      # daily markdown report
-//! cave-home-tracker --config tracker.yaml dashboard   # Prometheus :9100/metrics
+//! cave-home-tracker --config tracker.yaml dashboard   # Prometheus :9102/metrics
 //! ```
 
 use std::path::PathBuf;
@@ -71,8 +71,8 @@ enum Command {
     },
     /// Serve Prometheus metrics for the latest snapshot.
     Dashboard {
-        /// Address to bind.
-        #[arg(long, default_value = "0.0.0.0:9100")]
+        /// Address to bind. Defaults to :9102 (9100 is node_exporter's port).
+        #[arg(long, default_value = "0.0.0.0:9102")]
         addr: String,
     },
 }
