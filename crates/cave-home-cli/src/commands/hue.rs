@@ -16,11 +16,14 @@ pub fn cmd() -> Command {
     Command::new("hue")
         .about("Philips Hue Bridge integration + bridge emulator (ADR-010)")
         // ----- integration (client to a real bridge) -----
-        .subcommand(Command::new("discover").about("Discover Hue bridges on the network (NUPNP + local probe)"))
+        .subcommand(
+            Command::new("discover")
+                .about("Discover Hue bridges on the network (NUPNP + local probe)"),
+        )
         .subcommand(
             Command::new("pair")
                 .about("Pair with a discovered bridge (link-button flow)")
-                .arg(Arg::new("host").long("host").required(true))
+                .arg(Arg::new("host").long("host").required(true)),
         )
         .subcommand(Command::new("status").about("Show paired bridges + reachability"))
         .subcommand(
@@ -30,7 +33,7 @@ pub fn cmd() -> Command {
                 .arg(Arg::new("on").long("on").required(false))
                 .arg(Arg::new("bri").long("bri").required(false))
                 .arg(Arg::new("xy").long("xy").required(false))
-                .arg(Arg::new("ct").long("ct").required(false))
+                .arg(Arg::new("ct").long("ct").required(false)),
         )
         .subcommand(
             Command::new("group")
@@ -38,18 +41,18 @@ pub fn cmd() -> Command {
                 .arg(Arg::new("id").long("id").required(true))
                 .arg(Arg::new("on").long("on").required(false))
                 .arg(Arg::new("bri").long("bri").required(false))
-                .arg(Arg::new("scene").long("scene").required(false))
+                .arg(Arg::new("scene").long("scene").required(false)),
         )
         .subcommand(
             Command::new("scene")
                 .about("Recall a scene")
-                .arg(Arg::new("id").long("id").required(true))
+                .arg(Arg::new("id").long("id").required(true)),
         )
         .subcommand(
             Command::new("sensor")
                 .about("Show / configure a sensor (motion / button / temperature)")
                 .arg(Arg::new("id").long("id").required(true))
-                .arg(Arg::new("on").long("on").required(false))
+                .arg(Arg::new("on").long("on").required(false)),
         )
         .subcommand(Command::new("events").about("Tail the v2 eventstream"))
         // ----- bridge-emu (advanced-mode) -----
@@ -64,10 +67,12 @@ pub fn cmd() -> Command {
                 .subcommand(
                     Command::new("revoke")
                         .about("Revoke a paired client by app-key")
-                        .arg(Arg::new("app-key").long("app-key").required(true))
+                        .arg(Arg::new("app-key").long("app-key").required(true)),
                 )
                 .subcommand(Command::new("ssdp").about("Dump the SSDP description.xml payload"))
-                .subcommand(Command::new("mdns").about("Dump the mDNS _hue._tcp advertisement payload"))
+                .subcommand(
+                    Command::new("mdns").about("Dump the mDNS _hue._tcp advertisement payload"),
+                ),
         )
 }
 

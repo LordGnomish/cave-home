@@ -74,11 +74,11 @@ fn protect_cmd() -> Command {
                 .subcommand(
                     Command::new("assign")
                         .arg(Arg::new("camera").required(true))
-                        .arg(
-                            Arg::new("subsystem")
-                                .required(true)
-                                .value_parser(["native", "frigate-ml", "frigate-only"]),
-                        ),
+                        .arg(Arg::new("subsystem").required(true).value_parser([
+                            "native",
+                            "frigate-ml",
+                            "frigate-only",
+                        ])),
                 ),
         )
 }
@@ -199,7 +199,10 @@ fn dispatch_network(sub: &ArgMatches, verbose: bool) -> i32 {
         }
         Some(("outlet", m)) => {
             let on = m.get_flag("on");
-            let device = m.get_one::<String>("device").map(String::as_str).unwrap_or("");
+            let device = m
+                .get_one::<String>("device")
+                .map(String::as_str)
+                .unwrap_or("");
             let idx = m.get_one::<String>("idx").map(String::as_str).unwrap_or("");
             println!(
                 "Outlet {} (Phase 1 stub).",
@@ -243,7 +246,10 @@ fn dispatch_protect(sub: &ArgMatches, verbose: bool) -> i32 {
                 0
             }
             Some(("assign", m)) => {
-                let cam = m.get_one::<String>("camera").map(String::as_str).unwrap_or("");
+                let cam = m
+                    .get_one::<String>("camera")
+                    .map(String::as_str)
+                    .unwrap_or("");
                 let sys = m
                     .get_one::<String>("subsystem")
                     .map(String::as_str)
@@ -279,7 +285,10 @@ fn dispatch_access(sub: &ArgMatches, verbose: bool) -> i32 {
             0
         }
         Some(("unlock", m)) => {
-            let door = m.get_one::<String>("door").map(String::as_str).unwrap_or("");
+            let door = m
+                .get_one::<String>("door")
+                .map(String::as_str)
+                .unwrap_or("");
             let minutes = m.get_one::<u32>("minutes").copied().unwrap_or(10);
             println!("Kapı '{door}' {minutes} dakika açık kalacak (Phase 1 stub).");
             if verbose {
@@ -316,8 +325,14 @@ fn dispatch_talk(sub: &ArgMatches, verbose: bool) -> i32 {
             0
         }
         Some(("control", m)) => {
-            let call = m.get_one::<String>("call").map(String::as_str).unwrap_or("");
-            let verb = m.get_one::<String>("verb").map(String::as_str).unwrap_or("");
+            let call = m
+                .get_one::<String>("call")
+                .map(String::as_str)
+                .unwrap_or("");
+            let verb = m
+                .get_one::<String>("verb")
+                .map(String::as_str)
+                .unwrap_or("");
             println!("Çağrı '{call}' için '{verb}' isteği gönderildi (Phase 1 stub).");
             if verbose {
                 println!("  Phase 1: TalkClient::control_call returns Unavailable");

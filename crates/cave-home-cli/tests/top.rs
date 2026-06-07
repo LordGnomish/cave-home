@@ -7,7 +7,9 @@
 //! layout, units, the empty-set message); the binary wires the live
 //! `metrics_server` `NodeMetrics` / `PodMetrics` into these rows.
 
-use cave_home_cli::top::{render_top_nodes, render_top_pods, top_subcommands, NodeTopRow, PodTopRow};
+use cave_home_cli::top::{
+    NodeTopRow, PodTopRow, render_top_nodes, render_top_pods, top_subcommands,
+};
 
 fn cells(line: &str) -> Vec<&str> {
     line.split_whitespace().collect()
@@ -28,9 +30,18 @@ fn top_nodes_renders_header_and_rows() {
     ];
     let out = render_top_nodes(&rows);
     let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(cells(lines[0]), vec!["NAME", "CPU(cores)", "CPU%", "MEMORY(bytes)", "MEMORY%"]);
-    assert_eq!(cells(lines[1]), vec!["hub-1", "250m", "12%", "128Mi", "25%"]);
-    assert_eq!(cells(lines[2]), vec!["worker-2", "1000m", "50%", "512Mi", "40%"]);
+    assert_eq!(
+        cells(lines[0]),
+        vec!["NAME", "CPU(cores)", "CPU%", "MEMORY(bytes)", "MEMORY%"]
+    );
+    assert_eq!(
+        cells(lines[1]),
+        vec!["hub-1", "250m", "12%", "128Mi", "25%"]
+    );
+    assert_eq!(
+        cells(lines[2]),
+        vec!["worker-2", "1000m", "50%", "512Mi", "40%"]
+    );
 }
 
 #[test]
@@ -38,7 +49,10 @@ fn top_nodes_unknown_percent_renders_placeholder() {
     let rows = vec![NodeTopRow::new("hub-1", 250, None, 128, None)];
     let out = render_top_nodes(&rows);
     let data = cells(out.lines().nth(1).expect("a data row"));
-    assert_eq!(data, vec!["hub-1", "250m", "<unknown>", "128Mi", "<unknown>"]);
+    assert_eq!(
+        data,
+        vec!["hub-1", "250m", "<unknown>", "128Mi", "<unknown>"]
+    );
 }
 
 #[test]
@@ -60,7 +74,10 @@ fn top_pods_with_namespace_column() {
     let rows = vec![PodTopRow::new("apps", "web", 250, 128)];
     let out = render_top_pods(&rows, true);
     let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(cells(lines[0]), vec!["NAMESPACE", "NAME", "CPU(cores)", "MEMORY(bytes)"]);
+    assert_eq!(
+        cells(lines[0]),
+        vec!["NAMESPACE", "NAME", "CPU(cores)", "MEMORY(bytes)"]
+    );
     assert_eq!(cells(lines[1]), vec!["apps", "web", "250m", "128Mi"]);
 }
 

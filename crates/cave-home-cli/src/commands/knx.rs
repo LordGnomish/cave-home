@@ -16,18 +16,18 @@ pub fn cmd() -> Command {
                 .about("Read / write a KNX group address")
                 .arg(Arg::new("ga").long("ga").required(true))
                 .arg(Arg::new("value").long("value").required(false))
-                .arg(Arg::new("dpt").long("dpt").required(false))
+                .arg(Arg::new("dpt").long("dpt").required(false)),
         )
         .subcommand(
             Command::new("monitor")
                 .about("Tail live KNX telegrams (routing multicast + tunnel ind)")
-                .arg(Arg::new("filter").long("filter").required(false))
+                .arg(Arg::new("filter").long("filter").required(false)),
         )
         .subcommand(
             Command::new("connect")
                 .about("Open a tunnel to a KNX/IP server")
                 .arg(Arg::new("host").long("host").required(true))
-                .arg(Arg::new("port").long("port").default_value("3671"))
+                .arg(Arg::new("port").long("port").default_value("3671")),
         )
         .subcommand(Command::new("disconnect").about("Close the active KNX/IP tunnel"))
         .subcommand(Command::new("scan").about("Discover KNX/IP devices on the LAN"))
@@ -66,7 +66,10 @@ mod tests {
             .map(|a| a.get_id().as_str().to_string())
             .collect();
         for name in ["ga", "value", "dpt"] {
-            assert!(args.contains(&name.to_string()), "arg {name} missing on `group`");
+            assert!(
+                args.contains(&name.to_string()),
+                "arg {name} missing on `group`"
+            );
         }
     }
 

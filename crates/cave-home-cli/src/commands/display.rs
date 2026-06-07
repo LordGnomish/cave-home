@@ -16,23 +16,20 @@ pub fn cmd() -> Command {
         .subcommand(
             Command::new("on")
                 .about("Turn a display on")
-                .arg(Arg::new("name").long("name").required(true))
+                .arg(Arg::new("name").long("name").required(true)),
         )
         .subcommand(
             Command::new("off")
                 .about("Turn a display off")
-                .arg(Arg::new("name").long("name").required(true))
+                .arg(Arg::new("name").long("name").required(true)),
         )
         .subcommand(
             Command::new("cast")
                 .about("Cast a URL or dashboard")
                 .arg(Arg::new("name").long("name").required(true))
-                .arg(Arg::new("url").long("url").required(true))
+                .arg(Arg::new("url").long("url").required(true)),
         )
-        .subcommand(
-            Command::new("list")
-                .about("List every display")
-        )
+        .subcommand(Command::new("list").about("List every display"))
 }
 
 pub fn run() -> i32 {
@@ -47,7 +44,10 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
+        let names: Vec<_> = c
+            .get_subcommands()
+            .map(|s| s.get_name().to_string())
+            .collect();
         for sub in ["on", "off", "cast", "list"] {
             assert!(
                 names.iter().any(|n| n == sub),
