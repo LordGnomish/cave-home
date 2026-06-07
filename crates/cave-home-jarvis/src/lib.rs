@@ -44,6 +44,8 @@
 pub mod audio;
 pub mod error;
 pub mod features;
+pub mod stt;
+pub mod tts;
 pub mod wake;
 
 pub use error::{JarvisError, Result};
