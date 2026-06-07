@@ -16,6 +16,7 @@
 //! - [`bridge`]      — high-level `HueBridgeV2`.
 
 pub mod bridge;
+pub mod color;
 pub mod controllers;
 pub mod events;
 pub mod models;
