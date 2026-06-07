@@ -114,7 +114,7 @@ impl Next<'_> {
 /// A `CoreDNS`-style plugin: it either answers or defers to `next`.
 pub trait Plugin {
     /// The plugin's directive name (as it appears in the `Corefile`).
-    fn name(&self) -> &str;
+    fn name(&self) -> &'static str;
 
     /// Handle the request, optionally deferring to the rest of the chain.
     ///
@@ -138,7 +138,7 @@ impl Chain {
 
     /// The plugin names in execution order.
     #[must_use]
-    pub fn plugin_names(&self) -> Vec<&str> {
+    pub fn plugin_names(&self) -> Vec<&'static str> {
         self.plugins.iter().map(|p| p.name()).collect()
     }
 
@@ -168,7 +168,7 @@ mod tests {
     /// A plugin that answers every query with a fixed A record (authoritative).
     struct StaticA(Ipv4Addr);
     impl Plugin for StaticA {
-        fn name(&self) -> &str {
+        fn name(&self) -> &'static str {
             "static_a"
         }
         fn serve_dns(&self, req: &Request, _next: Next<'_>) -> Outcome {
@@ -184,7 +184,7 @@ mod tests {
     /// A plugin that never answers; it always defers to the next plugin.
     struct AlwaysNext;
     impl Plugin for AlwaysNext {
-        fn name(&self) -> &str {
+        fn name(&self) -> &'static str {
             "always_next"
         }
         fn serve_dns(&self, req: &Request, next: Next<'_>) -> Outcome {
@@ -195,7 +195,7 @@ mod tests {
     /// Middleware: run the rest of the chain, then stamp the AD bit on the reply.
     struct SetAd;
     impl Plugin for SetAd {
-        fn name(&self) -> &str {
+        fn name(&self) -> &'static str {
             "set_ad"
         }
         fn serve_dns(&self, req: &Request, next: Next<'_>) -> Outcome {
@@ -208,7 +208,7 @@ mod tests {
     /// A plugin that fails outright.
     struct Boom;
     impl Plugin for Boom {
-        fn name(&self) -> &str {
+        fn name(&self) -> &'static str {
             "boom"
         }
         fn serve_dns(&self, _req: &Request, _next: Next<'_>) -> Outcome {
