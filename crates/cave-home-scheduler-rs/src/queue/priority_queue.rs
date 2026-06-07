@@ -394,6 +394,49 @@ mod tests {
 
     use crate::framework::{ActionType, ClusterEvent, Gvk};
 
+    #[tokio::test]
+    async fn pop_wait_resolves_when_pod_added_later() {
+        let q = PriorityQueue::new();
+        let q2 = q.clone();
+        let handle = tokio::spawn(async move { q2.pop_wait().await });
+        // Let the spawned task park inside pop_wait before we add.
+        tokio::task::yield_now().await;
+        q.add(pod("late", 0));
+        let got = handle.await.unwrap();
+        assert_eq!(got.unwrap().pod.metadata.name, "late");
+    }
+
+    #[tokio::test]
+    async fn pop_wait_returns_none_when_closed_and_empty() {
+        let q = PriorityQueue::new();
+        q.close();
+        assert!(q.pop_wait().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn pop_wait_drains_remaining_pods_after_close() {
+        let q = PriorityQueue::new();
+        q.add(pod("a", 0));
+        q.close();
+        assert_eq!(q.pop_wait().await.unwrap().pod.metadata.name, "a");
+        assert!(q.pop_wait().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn pop_wait_wakes_on_backoff_flush() {
+        let q = PriorityQueue::new();
+        let cycle = q.scheduling_cycle();
+        // Park a pod in backoff (1s window).
+        q.add_unschedulable_if_not_present(QueuedPodInfo::new(pod("retry", 0)), cycle, 0);
+        let ev = ClusterEvent::new(Gvk::Node, ActionType::ADD);
+        q.move_all_to_active_or_backoff_queue(&ev, 0); // still backing off -> backoff
+        let q2 = q.clone();
+        let handle = tokio::spawn(async move { q2.pop_wait().await });
+        tokio::task::yield_now().await;
+        q.flush_backoff(2_000); // backoff elapsed -> active + wake
+        assert_eq!(handle.await.unwrap().unwrap().pod.metadata.name, "retry");
+    }
+
     #[test]
     fn add_unschedulable_if_not_present_lands_in_unschedulable_set() {
         let q = PriorityQueue::new();
