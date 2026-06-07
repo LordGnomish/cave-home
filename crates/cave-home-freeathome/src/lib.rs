@@ -32,6 +32,7 @@
 
 pub mod auth;
 pub mod cli;
+mod client;
 pub mod config;
 pub mod core_bridge;
 pub mod device;
