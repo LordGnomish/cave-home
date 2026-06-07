@@ -52,6 +52,7 @@ pub mod adapter;
 pub mod crypto;
 pub mod error;
 pub mod fleet_api;
+pub mod gateway_local;
 pub mod models;
 
 pub use adapter::{EnergyProvider, TeslaProvider};
