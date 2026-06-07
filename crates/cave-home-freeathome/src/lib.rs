@@ -38,6 +38,7 @@ pub mod device;
 pub mod error;
 pub mod metrics;
 pub mod mqtt_bridge;
+mod portal;
 pub mod event;
 pub mod model;
 pub mod reconnect;
