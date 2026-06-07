@@ -9,16 +9,23 @@
 
 #![doc(html_root_url = "https://docs.rs/cave-home-core")]
 
+pub mod area_registry;
 pub mod context;
+pub mod device_registry;
 pub mod entity;
+pub mod entity_registry;
 pub mod event;
 pub mod event_bus;
 pub mod service;
 pub mod state;
 pub mod state_machine;
+pub mod util;
 
+pub use area_registry::{AreaEntry, AreaRegistry};
 pub use context::Context;
+pub use device_registry::{DeviceEntry, DeviceRegistry};
 pub use entity::{DeviceInfo, Entity, EntityCategory};
+pub use entity_registry::{EntityRegistry, RegistryEntry};
 pub use event::{Event, EventOrigin};
 pub use event_bus::{EventBus, Listener};
 pub use service::{Service, ServiceCall, ServiceError, ServiceRegistry};
