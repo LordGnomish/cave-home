@@ -70,6 +70,7 @@ pub mod json;
 pub mod meta;
 pub mod patch;
 pub mod path;
+pub mod rbac;
 pub mod registry;
 pub mod selector;
 pub mod status;
