@@ -19,6 +19,234 @@
 //! as the v4 plan, or vice versa). As elsewhere in this crate, this is pure
 //! decision logic — no kernel or store I/O.
 
+use std::fmt;
+use std::net::IpAddr;
+
+use crate::cidr::Cidr;
+use crate::ipam::{IpamError, PodIpam};
+use crate::subnet::{NodeId, SubnetError, SubnetManager};
+
+/// A node's paired dual-stack lease: one IPv4 and one IPv6 per-node subnet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DualStackLease {
+    /// The node holding the lease.
+    pub node: NodeId,
+    /// The node's IPv4 per-node subnet.
+    pub v4: Cidr,
+    /// The node's IPv6 per-node subnet.
+    pub v6: Cidr,
+}
+
+/// A pod's paired dual-stack address: one IPv4 and one IPv6.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DualStackAddr {
+    /// The pod's IPv4 address.
+    pub v4: IpAddr,
+    /// The pod's IPv6 address.
+    pub v6: IpAddr,
+}
+
+/// Errors from the dual-stack coordination layer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DualStackError {
+    /// The IPv4 plan was not IPv4, or the IPv6 plan was not IPv6 (families
+    /// swapped).
+    FamilyMismatch,
+    /// The IPv4 subnet manager failed.
+    V4Subnet(SubnetError),
+    /// The IPv6 subnet manager failed.
+    V6Subnet(SubnetError),
+    /// The IPv4 pod IPAM failed.
+    V4Ipam(IpamError),
+    /// The IPv6 pod IPAM failed.
+    V6Ipam(IpamError),
+}
+
+impl fmt::Display for DualStackError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::FamilyMismatch => {
+                write!(f, "dual-stack config family mismatch (v4 plan must be IPv4, v6 plan IPv6)")
+            }
+            Self::V4Subnet(e) => write!(f, "IPv4 subnet: {e}"),
+            Self::V6Subnet(e) => write!(f, "IPv6 subnet: {e}"),
+            Self::V4Ipam(e) => write!(f, "IPv4 IPAM: {e}"),
+            Self::V6Ipam(e) => write!(f, "IPv6 IPAM: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for DualStackError {}
+
+/// Leases an IPv4 and an IPv6 per-node subnet to every node, in lock-step.
+#[derive(Debug)]
+pub struct DualStackSubnetManager {
+    v4: SubnetManager,
+    v6: SubnetManager,
+}
+
+impl DualStackSubnetManager {
+    /// Build a dual-stack manager from an IPv4 cluster CIDR (carved into
+    /// `v4_node_prefix` subnets) and an IPv6 cluster CIDR (carved into
+    /// `v6_node_prefix` subnets).
+    ///
+    /// # Errors
+    /// - [`DualStackError::FamilyMismatch`] if `v4_cluster` is not IPv4 or
+    ///   `v6_cluster` is not IPv6.
+    /// - [`DualStackError::V4Subnet`] / [`DualStackError::V6Subnet`] if either
+    ///   single-family manager rejects its prefix.
+    pub fn new(
+        v4_cluster: Cidr,
+        v4_node_prefix: u8,
+        v6_cluster: Cidr,
+        v6_node_prefix: u8,
+    ) -> Result<Self, DualStackError> {
+        if !v4_cluster.is_ipv4() || !v6_cluster.is_ipv6() {
+            return Err(DualStackError::FamilyMismatch);
+        }
+        let v4 = SubnetManager::new(v4_cluster, v4_node_prefix).map_err(DualStackError::V4Subnet)?;
+        let v6 = SubnetManager::new(v6_cluster, v6_node_prefix).map_err(DualStackError::V6Subnet)?;
+        Ok(Self { v4, v6 })
+    }
+
+    /// The IPv4 single-family manager.
+    #[must_use]
+    pub const fn v4(&self) -> &SubnetManager {
+        &self.v4
+    }
+
+    /// The IPv6 single-family manager.
+    #[must_use]
+    pub const fn v6(&self) -> &SubnetManager {
+        &self.v6
+    }
+
+    /// Lease both an IPv4 and an IPv6 per-node subnet to `node`, atomically.
+    ///
+    /// Idempotent: a node that already holds a paired lease gets it back. If
+    /// the IPv6 family cannot be satisfied, a *newly taken* IPv4 lease is
+    /// rolled back so the node never holds a half (single-family) lease.
+    ///
+    /// # Errors
+    /// [`DualStackError::V4Subnet`] / [`DualStackError::V6Subnet`] on the first
+    /// family that cannot be leased.
+    pub fn allocate(&mut self, node: &str) -> Result<DualStackLease, DualStackError> {
+        let v4_preexisting = self.v4.lease_for(node).is_some();
+        let l4 = self.v4.allocate(node).map_err(DualStackError::V4Subnet)?;
+        let l6 = match self.v6.allocate(node) {
+            Ok(l6) => l6,
+            Err(e) => {
+                // Only undo the IPv4 lease if this call created it; an existing
+                // pairing's IPv4 lease must survive.
+                if !v4_preexisting {
+                    let _ = self.v4.release(node);
+                }
+                return Err(DualStackError::V6Subnet(e));
+            }
+        };
+        Ok(DualStackLease {
+            node: node.to_owned(),
+            v4: l4.subnet,
+            v6: l6.subnet,
+        })
+    }
+
+    /// Release both families' leases held by `node`.
+    ///
+    /// # Errors
+    /// [`DualStackError::V4Subnet`] / [`DualStackError::V6Subnet`] if either
+    /// family holds no lease for the node.
+    pub fn release(&mut self, node: &str) -> Result<DualStackLease, DualStackError> {
+        let l4 = self.v4.release(node).map_err(DualStackError::V4Subnet)?;
+        let l6 = self.v6.release(node).map_err(DualStackError::V6Subnet)?;
+        Ok(DualStackLease {
+            node: node.to_owned(),
+            v4: l4.subnet,
+            v6: l6.subnet,
+        })
+    }
+
+    /// The paired lease held by `node`, or `None` if it does not hold a
+    /// complete dual-stack lease.
+    #[must_use]
+    pub fn lease_for(&self, node: &str) -> Option<DualStackLease> {
+        let l4 = self.v4.lease_for(node)?;
+        let l6 = self.v6.lease_for(node)?;
+        Some(DualStackLease {
+            node: node.to_owned(),
+            v4: l4.subnet,
+            v6: l6.subnet,
+        })
+    }
+}
+
+/// Allocates a paired IPv4 + IPv6 pod address from a node's two subnets.
+#[derive(Debug)]
+pub struct DualStackIpam {
+    v4: PodIpam,
+    v6: PodIpam,
+}
+
+impl DualStackIpam {
+    /// Build a dual-stack IPAM from a node's IPv4 and IPv6 per-node subnets.
+    ///
+    /// # Errors
+    /// - [`DualStackError::FamilyMismatch`] if `v4_subnet` is not IPv4 or
+    ///   `v6_subnet` is not IPv6.
+    /// - [`DualStackError::V4Ipam`] / [`DualStackError::V6Ipam`] if either
+    ///   subnet is too small to hold a usable host address.
+    pub fn new(v4_subnet: Cidr, v6_subnet: Cidr) -> Result<Self, DualStackError> {
+        if !v4_subnet.is_ipv4() || !v6_subnet.is_ipv6() {
+            return Err(DualStackError::FamilyMismatch);
+        }
+        let v4 = PodIpam::new(v4_subnet).map_err(DualStackError::V4Ipam)?;
+        let v6 = PodIpam::new(v6_subnet).map_err(DualStackError::V6Ipam)?;
+        Ok(Self { v4, v6 })
+    }
+
+    /// The IPv4 single-family IPAM.
+    #[must_use]
+    pub const fn v4(&self) -> &PodIpam {
+        &self.v4
+    }
+
+    /// The IPv6 single-family IPAM.
+    #[must_use]
+    pub const fn v6(&self) -> &PodIpam {
+        &self.v6
+    }
+
+    /// Allocate one IPv4 and one IPv6 address for a pod, atomically: if the
+    /// IPv6 family is full, the IPv4 address taken for the pair is freed.
+    ///
+    /// # Errors
+    /// [`DualStackError::V4Ipam`] / [`DualStackError::V6Ipam`] on the first
+    /// family with no free address.
+    pub fn allocate(&mut self) -> Result<DualStackAddr, DualStackError> {
+        let a4 = self.v4.allocate().map_err(DualStackError::V4Ipam)?;
+        let a6 = match self.v6.allocate() {
+            Ok(a6) => a6,
+            Err(e) => {
+                // Roll back the IPv4 address so the pair is all-or-nothing.
+                let _ = self.v4.free(a4);
+                return Err(DualStackError::V6Ipam(e));
+            }
+        };
+        Ok(DualStackAddr { v4: a4, v6: a6 })
+    }
+
+    /// Free a previously allocated paired pod address (both families).
+    ///
+    /// # Errors
+    /// [`DualStackError::V4Ipam`] / [`DualStackError::V6Ipam`] if either
+    /// address was not assigned.
+    pub fn free(&mut self, addr: DualStackAddr) -> Result<(), DualStackError> {
+        self.v4.free(addr.v4).map_err(DualStackError::V4Ipam)?;
+        self.v6.free(addr.v6).map_err(DualStackError::V6Ipam)?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

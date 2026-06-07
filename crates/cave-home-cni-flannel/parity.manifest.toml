@@ -53,12 +53,12 @@ linux_min_kernel = "7.1"
 # datapaths). The decision core — CIDR/subnet/IPAM/backend-config/routes/CNI-
 # result — is implemented and tested in full. The privileged netlink /
 # WireGuard / etcd / daemon machinery is the larger remaining surface and is
-# all ADR-008 Phase-1b, enumerated below. Honest measured share ~0.42.
-fill_ratio          = 0.42
-fill_ratio_basis    = "CIDR math (v4+v6) + per-node subnet leasing + pod IPAM + backend config model + route/FDB computation + ARP/NDP proxy-neighbor computation + CNI ADD/DEL result model, fully implemented & unit-tested; netlink datapath, WireGuard tunnel setup, durable lease store, daemon watch loop deferred"
+# all ADR-008 Phase-1b, enumerated below. Honest measured share ~0.44.
+fill_ratio          = 0.44
+fill_ratio_basis    = "CIDR math (v4+v6) + per-node subnet leasing + pod IPAM + backend config model + route/FDB computation + ARP/NDP proxy-neighbor computation + v4/v6 dual-stack pairing (atomic dual lease + dual pod-IPAM) + CNI ADD/DEL result model, fully implemented & unit-tested; netlink datapath, WireGuard tunnel setup, durable lease store, daemon watch loop deferred"
 test_port_ratio     = 0.0   # tests designed from spec/RFC reference values, not ported from upstream Go tests
 adr_justified_ratio = 1.00  # every unfilled item below carries a phase disposition (priority + note)
-honest_ratio        = 1.00  # 0.42 / (0.42 + (1-0.42)*(1-1.00)) = 1.00
+honest_ratio        = 1.00  # 0.44 / (0.44 + (1-0.44)*(1-1.00)) = 1.00
 
 # ---------------------------------------------------------------------------
 # Mapped — documented flannel/CNI behaviour → our Rust symbol.
@@ -131,6 +131,10 @@ ours = "src/cni.rs::{cni_add,cni_add_specific,CniResult,IpConfig,CniRoute}"
 [[mapped]]
 spec = "CNI DEL: free pod IP; DEL is idempotent (deleting an unassigned addr is success)"
 ours = "src/cni.rs::cni_del"
+
+[[mapped]]
+spec = "flannel dual-stack: parallel v4+v6 cluster pod CIDRs; each node leases both a v4 and a v6 per-node subnet (paired, atomic — never a half lease); each pod gets both a v4 and a v6 address; family-swapped config rejected"
+ours = "src/dualstack.rs::{DualStackSubnetManager,DualStackIpam,DualStackLease,DualStackAddr,DualStackError}"
 
 # ---------------------------------------------------------------------------
 # Unmapped — explicit Phase 1b backlog / permanent out-of-scope. Each carries
@@ -232,6 +236,10 @@ ours         = "src/routes.rs::tests"
 [[spec_test]]
 designed_for = "ARP/NDP proxy-neighbor computation: one permanent neighbor per VXLAN peer (VTEP IP=subnet base → VTEP MAC), v4→ARP / v6→NDP family, none for host-gw/wireguard, skip own subnet, directRouting same-underlay skip vs different-underlay emit, mismatched-backend skip, deterministic ordering"
 ours         = "src/neigh.rs::tests"
+
+[[spec_test]]
+designed_for = "dual-stack pairing: paired v4+v6 node lease, idempotent, distinct-per-node, atomic v4 roll-back on v6 exhaustion, paired release/lease_for; paired pod address (.2 each past reserved net+gw), atomic v4 roll-back on v6-full, paired free; family-swap rejection"
+ours         = "src/dualstack.rs::tests"
 
 [[spec_test]]
 designed_for = "CNI ADD result (ip/prefix + gateway + default route + dns); specific-address assign; idempotent DEL; add/del/re-add reuse; subnet-full propagation (CNI v1.0.0 result schema)"

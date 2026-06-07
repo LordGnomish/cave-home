@@ -25,6 +25,8 @@
 //!   VXLAN overlay device needs to resolve each peer VTEP IP to its MAC.
 //! - [`cni`] — model a CNI ADD (allocate + build result) and DEL (free)
 //!   decision, returning the CNI result schema (IP, gateway, routes, DNS).
+//! - [`dualstack`] — pair the v4 and v6 subnet managers / pod IPAMs so a node
+//!   leases both families and a pod gets both addresses, atomically.
 //!
 //! # What is deferred
 //!
