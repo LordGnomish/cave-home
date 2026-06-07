@@ -10,6 +10,7 @@
 #![doc(html_root_url = "https://docs.rs/cave-home-core")]
 
 pub mod area_registry;
+pub mod automation;
 pub mod context;
 pub mod device_registry;
 pub mod entity;
