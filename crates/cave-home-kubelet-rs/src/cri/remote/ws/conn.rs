@@ -38,35 +38,156 @@ pub struct WsConnection<S> {
     pub subprotocol: Option<String>,
 }
 
-// stub — replaced in the GREEN step
+/// Read from `io` until the HTTP header terminator (`\r\n\r\n`); return the
+/// header text and stash any bytes that arrived after it into `rbuf` (they
+/// belong to the post-upgrade frame stream).
+async fn read_headers<S: AsyncRead + Unpin>(io: &mut S, rbuf: &mut Vec<u8>) -> Result<String> {
+    let mut chunk = [0u8; 1024];
+    loop {
+        if let Some(pos) = rbuf.windows(4).position(|w| w == b"\r\n\r\n") {
+            let headers = String::from_utf8_lossy(&rbuf[..pos]).into_owned();
+            rbuf.drain(..pos + 4);
+            return Ok(headers);
+        }
+        let n = io.read(&mut chunk).await?;
+        if n == 0 {
+            return Err(Error::new(ErrorKind::UnexpectedEof, "eof during ws handshake"));
+        }
+        rbuf.extend_from_slice(&chunk[..n]);
+    }
+}
+
+/// Case-insensitively fetch a header value from a raw header block.
+fn header_value<'a>(headers: &'a str, name: &str) -> Option<&'a str> {
+    headers.lines().find_map(|line| {
+        let (k, v) = line.split_once(':')?;
+        k.trim().eq_ignore_ascii_case(name).then(|| v.trim())
+    })
+}
+
 impl<S: AsyncRead + AsyncWrite + Unpin> WsConnection<S> {
     /// Perform the client opening handshake over `io`.
     ///
     /// # Errors
     /// Fails if the peer does not return `101` with a valid accept token.
     pub async fn connect(
-        _io: S,
-        _host: &str,
-        _path: &str,
-        _subprotocols: &[&str],
+        mut io: S,
+        host: &str,
+        path: &str,
+        subprotocols: &[&str],
     ) -> Result<Self> {
-        Err(Error::new(ErrorKind::Other, "unimplemented"))
+        // 16 random-ish bytes -> base64, per RFC 6455 §4.1. The mask seed is
+        // derived from the same source; it need not be cryptographic for a
+        // trusted localhost CRI streaming socket (no caching proxies in path).
+        let mut seed = 0x9E37_79B9_u32;
+        for byte in host.bytes().chain(path.bytes()) {
+            seed = seed.wrapping_mul(31).wrapping_add(u32::from(byte));
+        }
+        let mut nonce = [0u8; 16];
+        let mut x = seed | 1;
+        for b in &mut nonce {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            *b = (x & 0xFF) as u8;
+        }
+        let key = base64_encode(&nonce);
+
+        let proto_hdr = if subprotocols.is_empty() {
+            String::new()
+        } else {
+            format!("Sec-WebSocket-Protocol: {}\r\n", subprotocols.join(", "))
+        };
+        let req = format!(
+            "GET {path} HTTP/1.1\r\n\
+             Host: {host}\r\n\
+             Upgrade: websocket\r\n\
+             Connection: Upgrade\r\n\
+             Sec-WebSocket-Key: {key}\r\n\
+             Sec-WebSocket-Version: 13\r\n\
+             {proto_hdr}\r\n"
+        );
+        io.write_all(req.as_bytes()).await?;
+        io.flush().await?;
+
+        let mut rbuf = Vec::new();
+        let headers = read_headers(&mut io, &mut rbuf).await?;
+        let status = headers.lines().next().unwrap_or_default();
+        if !status.contains("101") {
+            return Err(Error::new(
+                ErrorKind::ConnectionRefused,
+                format!("ws upgrade rejected: {status}"),
+            ));
+        }
+        match header_value(&headers, "sec-websocket-accept") {
+            Some(got) if got == accept_key(&key) => {}
+            other => {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!("bad Sec-WebSocket-Accept: {other:?}"),
+                ));
+            }
+        }
+        let subprotocol = header_value(&headers, "sec-websocket-protocol").map(str::to_owned);
+
+        Ok(Self { io, role: Role::Client, rbuf, mask_seed: seed | 1, subprotocol })
     }
 
     /// Perform the server side of the opening handshake over `io`.
     ///
     /// # Errors
     /// Fails if the request is not a valid WebSocket upgrade.
-    pub async fn accept(_io: S, _subprotocol: &str) -> Result<Self> {
-        Err(Error::new(ErrorKind::Other, "unimplemented"))
+    pub async fn accept(mut io: S, subprotocol: &str) -> Result<Self> {
+        let mut rbuf = Vec::new();
+        let headers = read_headers(&mut io, &mut rbuf).await?;
+        let key = header_value(&headers, "sec-websocket-key")
+            .ok_or_else(|| Error::new(ErrorKind::InvalidData, "missing Sec-WebSocket-Key"))?;
+        let accept = accept_key(key);
+
+        // Echo the sub-protocol only if the client offered it.
+        let offered = header_value(&headers, "sec-websocket-protocol")
+            .is_some_and(|line| line.split(',').any(|p| p.trim() == subprotocol));
+        let proto_hdr = if offered {
+            format!("Sec-WebSocket-Protocol: {subprotocol}\r\n")
+        } else {
+            String::new()
+        };
+        let resp = format!(
+            "HTTP/1.1 101 Switching Protocols\r\n\
+             Upgrade: websocket\r\n\
+             Connection: Upgrade\r\n\
+             Sec-WebSocket-Accept: {accept}\r\n\
+             {proto_hdr}\r\n"
+        );
+        io.write_all(resp.as_bytes()).await?;
+        io.flush().await?;
+
+        let subprotocol = offered.then(|| subprotocol.to_owned());
+        Ok(Self { io, role: Role::Server, rbuf, mask_seed: 0x1234_5678, subprotocol })
+    }
+
+    /// Next non-cryptographic masking key (xorshift32).
+    const fn next_mask(&mut self) -> [u8; 4] {
+        let mut x = self.mask_seed;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        self.mask_seed = x;
+        x.to_be_bytes()
     }
 
     /// Send one message frame (masked iff this side is a client).
     ///
     /// # Errors
     /// Propagates the underlying write error.
-    pub async fn send(&mut self, _frame: &Frame) -> Result<()> {
-        Ok(())
+    pub async fn send(&mut self, frame: &Frame) -> Result<()> {
+        let mask = match self.role {
+            Role::Client => Some(self.next_mask()),
+            Role::Server => None,
+        };
+        let bytes = frame::encode(frame, mask);
+        self.io.write_all(&bytes).await?;
+        self.io.flush().await
     }
 
     /// Receive the next frame of any kind (including control frames).
@@ -75,7 +196,23 @@ impl<S: AsyncRead + AsyncWrite + Unpin> WsConnection<S> {
     /// # Errors
     /// Propagates read errors and frame-decode protocol errors.
     pub async fn recv_raw(&mut self) -> Result<Option<Frame>> {
-        Ok(None)
+        let mut chunk = [0u8; 8192];
+        loop {
+            match frame::decode(&self.rbuf) {
+                Ok(Some((f, consumed))) => {
+                    self.rbuf.drain(..consumed);
+                    return Ok(Some(f));
+                }
+                Ok(None) => {
+                    let n = self.io.read(&mut chunk).await?;
+                    if n == 0 {
+                        return Ok(None);
+                    }
+                    self.rbuf.extend_from_slice(&chunk[..n]);
+                }
+                Err(e) => return Err(Error::new(ErrorKind::InvalidData, e)),
+            }
+        }
     }
 
     /// Receive the next application message. `Ok(None)` on clean close/EOF.
@@ -84,7 +221,20 @@ impl<S: AsyncRead + AsyncWrite + Unpin> WsConnection<S> {
     /// # Errors
     /// Propagates read errors and frame-decode protocol errors.
     pub async fn recv(&mut self) -> Result<Option<Frame>> {
-        Ok(None)
+        loop {
+            match self.recv_raw().await? {
+                None => return Ok(None),
+                Some(f) => match f.opcode {
+                    OpCode::Close => return Ok(None),
+                    OpCode::Ping => {
+                        self.send(&Frame { fin: true, opcode: OpCode::Pong, payload: f.payload })
+                            .await?;
+                    }
+                    OpCode::Pong => {} // ignore unsolicited pongs
+                    _ => return Ok(Some(f)),
+                },
+            }
+        }
     }
 }
 
