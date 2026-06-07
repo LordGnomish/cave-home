@@ -67,16 +67,16 @@ pub enum Condition {
     /// `condition: template` — the template renders truthy.
     Template { template: String },
     /// `condition: and`.
-    And(Vec<Condition>),
+    And(Vec<Self>),
     /// `condition: or`.
-    Or(Vec<Condition>),
+    Or(Vec<Self>),
     /// `condition: not`.
-    Not(Box<Condition>),
+    Not(Box<Self>),
 }
 
 /// Port of the action steps the script engine runs. Only the service-call step
 /// is modelled here (the engine emits calls; it does not run them).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Action {
     /// `service: domain.service` with `data`, optionally targeting an entity.
     CallService {
@@ -114,12 +114,54 @@ impl AutomationRule {
 }
 
 impl Trigger {
-    /// Whether `event` fires this trigger, consulting `states` for the
-    /// numeric-crossing "was outside the band" check.
+    /// Whether `event` fires this trigger. State/numeric triggers read the
+    /// old and new values straight from the `state_changed` payload, so no
+    /// state-machine lookup is needed.
     #[must_use]
-    pub fn matches(&self, event: &Event, states: &StateMachine) -> bool {
-        let _ = (event, states);
-        unimplemented!("RED")
+    pub fn matches(&self, event: &Event) -> bool {
+        match self {
+            Self::Event { event_type } => &event.event_type == event_type,
+            Self::State { entity_id, from, to } => {
+                let Some(change) = StateChangePayload::parse(event) else {
+                    return false;
+                };
+                if change.entity_id != entity_id.to_string() {
+                    return false;
+                }
+                // Filter checks; an absent filter matches anything.
+                if let Some(want_from) = from {
+                    if change.old.as_deref() != Some(want_from.as_str()) {
+                        return false;
+                    }
+                }
+                if let Some(want_to) = to {
+                    if change.new.as_deref() != Some(want_to.as_str()) {
+                        return false;
+                    }
+                }
+                // With no `to`/`from`, require a genuine value change.
+                if from.is_none() && to.is_none() {
+                    return change.old != change.new;
+                }
+                true
+            }
+            Self::NumericState { entity_id, above, below } => {
+                let Some(change) = StateChangePayload::parse(event) else {
+                    return false;
+                };
+                if change.entity_id != entity_id.to_string() {
+                    return false;
+                }
+                let new_val = change.new.as_deref().and_then(|s| s.parse::<f64>().ok());
+                let old_val = change.old.as_deref().and_then(|s| s.parse::<f64>().ok());
+                let Some(new_val) = new_val else { return false };
+                // Crossing: new value inside the band, old value outside (or
+                // unparseable / absent — i.e. it was not already inside).
+                let now_inside = within_band(new_val, *above, *below);
+                let was_inside = old_val.is_some_and(|v| within_band(v, *above, *below));
+                now_inside && !was_inside
+            }
+        }
     }
 }
 
@@ -128,8 +170,20 @@ impl Condition {
     /// `template`.
     #[must_use]
     pub fn evaluate(&self, states: &StateMachine, template: &TemplateEngine) -> bool {
-        let _ = (states, template);
-        unimplemented!("RED")
+        match self {
+            Self::State { entity_id, state } => {
+                states.get(entity_id).is_some_and(|s| &s.state == state)
+            }
+            Self::NumericState { entity_id, above, below } => {
+                numeric_value(states, entity_id).is_some_and(|v| within_band(v, *above, *below))
+            }
+            Self::Template { template: tmpl } => template
+                .render(tmpl)
+                .is_ok_and(|rendered| render_truthy(&rendered)),
+            Self::And(parts) => parts.iter().all(|c| c.evaluate(states, template)),
+            Self::Or(parts) => parts.iter().any(|c| c.evaluate(states, template)),
+            Self::Not(inner) => !inner.evaluate(states, template),
+        }
     }
 }
 
@@ -170,12 +224,85 @@ impl AutomationEngine {
     /// the event's context). Returns the calls in rule, then action, order.
     #[must_use]
     pub fn handle_event(&self, event: &Event) -> Vec<ServiceCall> {
-        let _ = event;
-        unimplemented!("RED")
+        let mut calls = Vec::new();
+        for rule in &self.rules {
+            let triggered = rule.triggers.iter().any(|t| t.matches(event));
+            if !triggered {
+                continue;
+            }
+            let pass = rule
+                .conditions
+                .iter()
+                .all(|c| c.evaluate(&self.states, &self.template));
+            if !pass {
+                continue;
+            }
+            for action in &rule.actions {
+                if let Some(call) = action.to_service_call(&event.context) {
+                    calls.push(call);
+                }
+            }
+        }
+        calls
     }
 }
 
-/// Render `s`'s numeric value (HA parses the state string as a float).
+impl Action {
+    /// Turn an action into the [`ServiceCall`] it represents, threading a
+    /// [`Context`] that descends from `parent` (the triggering event's
+    /// context). A target entity is folded into the call data as `entity_id`,
+    /// matching HA's target→data expansion. Returns `None` only if the
+    /// domain/service names are malformed.
+    fn to_service_call(&self, parent: &Context) -> Option<ServiceCall> {
+        match self {
+            Self::CallService { domain, service, data, target } => {
+                let mut data = data.clone();
+                if let Some(entity_id) = target {
+                    if let Some(map) = data.as_object_mut() {
+                        map.insert(
+                            "entity_id".to_owned(),
+                            serde_json::Value::String(entity_id.to_string()),
+                        );
+                    }
+                }
+                ServiceCall::new(domain, service, data, Context::child_of(parent)).ok()
+            }
+        }
+    }
+}
+
+/// The fields a `state_changed` event carries that the trigger logic needs:
+/// the entity id and the old/new state *values* (attributes are ignored here).
+struct StateChangePayload {
+    entity_id: String,
+    old: Option<String>,
+    new: Option<String>,
+}
+
+impl StateChangePayload {
+    /// Parse a `state_changed` event's data, or `None` for any other event.
+    fn parse(event: &Event) -> Option<Self> {
+        if event.event_type != EVENT_STATE_CHANGED {
+            return None;
+        }
+        let entity_id = event.data.get("entity_id")?.as_str()?.to_owned();
+        let value = |key: &str| {
+            event
+                .data
+                .get(key)
+                .and_then(|s| s.get("state"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        };
+        Some(Self {
+            entity_id,
+            old: value("old_state"),
+            new: value("new_state"),
+        })
+    }
+}
+
+/// Read `entity_id`'s numeric value (HA parses the state string as a float).
 fn numeric_value(states: &StateMachine, entity_id: &EntityId) -> Option<f64> {
     states.get(entity_id)?.state.parse::<f64>().ok()
 }
@@ -232,57 +359,52 @@ mod tests {
 
     #[test]
     fn event_trigger_matches_by_type() {
-        let states = StateMachine::new(EventBus::new());
         let t = Trigger::Event { event_type: "my_event".into() };
-        assert!(t.matches(&Event::local("my_event", json!({})), &states));
-        assert!(!t.matches(&Event::local("other", json!({})), &states));
+        assert!(t.matches(&Event::local("my_event", json!({}))));
+        assert!(!t.matches(&Event::local("other", json!({}))));
     }
 
     #[test]
     fn state_trigger_honours_from_to_filters() {
-        let states = StateMachine::new(EventBus::new());
         let to_on = Trigger::State { entity_id: light("kitchen"), from: None, to: Some("on".into()) };
-        assert!(to_on.matches(&state_changed("light.kitchen", Some("off"), "on"), &states));
+        assert!(to_on.matches(&state_changed("light.kitchen", Some("off"), "on")));
         // wrong target value
-        assert!(!to_on.matches(&state_changed("light.kitchen", Some("off"), "off"), &states));
+        assert!(!to_on.matches(&state_changed("light.kitchen", Some("off"), "off")));
         // wrong entity
-        assert!(!to_on.matches(&state_changed("light.hall", Some("off"), "on"), &states));
+        assert!(!to_on.matches(&state_changed("light.hall", Some("off"), "on")));
 
         let off_to_on =
             Trigger::State { entity_id: light("kitchen"), from: Some("off".into()), to: Some("on".into()) };
-        assert!(off_to_on.matches(&state_changed("light.kitchen", Some("off"), "on"), &states));
+        assert!(off_to_on.matches(&state_changed("light.kitchen", Some("off"), "on")));
         // from filter fails (was unavailable, not off)
-        assert!(!off_to_on.matches(&state_changed("light.kitchen", Some("unavailable"), "on"), &states));
+        assert!(!off_to_on.matches(&state_changed("light.kitchen", Some("unavailable"), "on")));
     }
 
     #[test]
     fn state_trigger_no_filters_fires_on_real_change_only() {
-        let states = StateMachine::new(EventBus::new());
         let any = Trigger::State { entity_id: light("kitchen"), from: None, to: None };
-        assert!(any.matches(&state_changed("light.kitchen", Some("off"), "on"), &states));
+        assert!(any.matches(&state_changed("light.kitchen", Some("off"), "on")));
         // same old==new value is not a change
-        assert!(!any.matches(&state_changed("light.kitchen", Some("on"), "on"), &states));
+        assert!(!any.matches(&state_changed("light.kitchen", Some("on"), "on")));
         // a non-state_changed event never matches a state trigger
-        assert!(!any.matches(&Event::local("other", json!({})), &states));
+        assert!(!any.matches(&Event::local("other", json!({}))));
     }
 
     #[test]
     fn numeric_state_trigger_fires_on_crossing() {
-        let states = StateMachine::new(EventBus::new());
-        // seed a previous value of 18 (outside the >20 band)
+        // The trigger reads both old and new values from the event payload.
         let temp = EntityId::new("sensor", "temp").expect("id");
-        states.set(temp.clone(), "18", StateAttributes::new(), Context::new());
         let t = Trigger::NumericState {
-            entity_id: temp.clone(),
+            entity_id: temp,
             above: Some(20.0),
             below: None,
         };
         // crossing 18 -> 21 fires (old outside, new inside)
-        assert!(t.matches(&state_changed("sensor.temp", Some("18"), "21"), &states));
+        assert!(t.matches(&state_changed("sensor.temp", Some("18"), "21")));
         // 21 -> 22 stays inside the band: not a crossing
-        assert!(!t.matches(&state_changed("sensor.temp", Some("21"), "22"), &states));
+        assert!(!t.matches(&state_changed("sensor.temp", Some("21"), "22")));
         // 18 -> 19 never enters the band
-        assert!(!t.matches(&state_changed("sensor.temp", Some("18"), "19"), &states));
+        assert!(!t.matches(&state_changed("sensor.temp", Some("18"), "19")));
     }
 
     #[test]
