@@ -61,6 +61,7 @@
 pub mod arpa;
 pub mod cache;
 pub mod error;
+pub mod file;
 pub mod hosts;
 pub mod kubernetes;
 pub mod message;
@@ -72,6 +73,7 @@ pub mod wire;
 
 pub use cache::{Cache, CacheKey, CachePlugin};
 pub use error::{Result, WireError};
+pub use file::{FilePlugin, Zone, ZoneReply};
 pub use hosts::Hosts;
 pub use kubernetes::{Endpoint, Kubernetes, Port, Protocol, Service};
 pub use message::{Message, Question};
