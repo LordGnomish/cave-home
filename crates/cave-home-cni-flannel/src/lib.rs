@@ -70,6 +70,7 @@
 pub mod backend;
 pub mod cidr;
 pub mod cni;
+pub mod dualstack;
 pub mod ipam;
 pub mod neigh;
 pub mod routes;
