@@ -84,6 +84,7 @@ pub mod bootstrap;
 pub mod bringup;
 pub mod component;
 pub mod config;
+pub mod local_path_provisioner;
 pub mod role;
 pub mod shutdown;
 
