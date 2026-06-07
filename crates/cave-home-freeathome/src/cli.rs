@@ -71,7 +71,7 @@ pub fn parse(args: &[String]) -> core::result::Result<FreeAtHomeCommand, CliErro
         .split_first()
         .ok_or_else(|| CliError::MissingArgs("expected a subcommand".to_string()))?;
     match head.as_str() {
-        "list" => Ok(FreeAtHomeCommand::List),
+        "list" | "list-devices" => Ok(FreeAtHomeCommand::List),
         "watch" => Ok(FreeAtHomeCommand::Watch),
         "get" => match rest {
             [serial, channel, datapoint] => Ok(FreeAtHomeCommand::Get {
@@ -139,7 +139,7 @@ pub fn to_rest_request(command: &FreeAtHomeCommand) -> Result<Option<RestRequest
 pub fn usage() -> String {
     [
         "usage: cave-home-ctl freeathome <command>",
-        "  list                                  list devices and state",
+        "  list | list-devices                   list devices and state",
         "  get  <serial> <channel> <datapoint>   read a datapoint",
         "  set  <serial> <channel> <datapoint> <value>   write a datapoint",
         "  watch                                 stream live state changes",
@@ -159,6 +159,14 @@ mod tests {
     fn parse_list() {
         assert_eq!(
             parse(&args(&["list"])).expect("ok"),
+            FreeAtHomeCommand::List
+        );
+    }
+
+    #[test]
+    fn parse_list_devices_alias() {
+        assert_eq!(
+            parse(&args(&["list-devices"])).expect("ok"),
             FreeAtHomeCommand::List
         );
     }
