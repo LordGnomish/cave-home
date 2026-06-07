@@ -40,6 +40,9 @@ pub enum Card {
     RawEntity { entity_id: String },
     /// Cluster / hub topology. Developer only.
     ClusterTopology,
+    /// Live node / workload CPU + memory usage (the `metrics_server` dashboard).
+    /// Developer only.
+    ClusterMetrics,
     /// Live log tail for an add-on. Developer only.
     Logs { entity_id: String },
 }
@@ -51,7 +54,10 @@ impl Card {
     pub const fn is_developer_only(&self) -> bool {
         matches!(
             self,
-            Self::RawEntity { .. } | Self::ClusterTopology | Self::Logs { .. }
+            Self::RawEntity { .. }
+                | Self::ClusterTopology
+                | Self::ClusterMetrics
+                | Self::Logs { .. }
         )
     }
 
@@ -83,16 +89,46 @@ mod tests {
     #[test]
     fn developer_cards_flagged() {
         assert!(Card::ClusterTopology.is_developer_only());
-        assert!(Card::RawEntity { entity_id: "x".into() }.is_developer_only());
-        assert!(Card::Logs { entity_id: "x".into() }.is_developer_only());
+        assert!(
+            Card::RawEntity {
+                entity_id: "x".into()
+            }
+            .is_developer_only()
+        );
+        assert!(
+            Card::Logs {
+                entity_id: "x".into()
+            }
+            .is_developer_only()
+        );
     }
 
     #[test]
     fn resident_cards_not_flagged() {
-        assert!(!Card::Entity { entity_id: "x".into() }.is_developer_only());
-        assert!(!Card::Light { entity_id: "x".into() }.is_developer_only());
-        assert!(!Card::AreaSummary { area_id: "a".into() }.is_developer_only());
-        assert!(!Card::Scene { entity_id: "s".into() }.is_developer_only());
+        assert!(
+            !Card::Entity {
+                entity_id: "x".into()
+            }
+            .is_developer_only()
+        );
+        assert!(
+            !Card::Light {
+                entity_id: "x".into()
+            }
+            .is_developer_only()
+        );
+        assert!(
+            !Card::AreaSummary {
+                area_id: "a".into()
+            }
+            .is_developer_only()
+        );
+        assert!(
+            !Card::Scene {
+                entity_id: "s".into()
+            }
+            .is_developer_only()
+        );
     }
 
     #[test]
