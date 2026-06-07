@@ -59,6 +59,7 @@ pub mod area;
 pub mod autogen;
 pub mod card;
 pub mod dashboard;
+pub mod energy;
 pub mod label;
 pub mod theme;
 pub mod view_mode;
@@ -68,6 +69,10 @@ pub use area::{Area, Domain, Entity, Home};
 pub use autogen::auto_dashboard;
 pub use card::Card;
 pub use dashboard::{Dashboard, Favorite, View};
+pub use energy::{
+    BackupToggle, EnergyFlowView, EnergyMode, EnergyPage, FlowEdge, FlowNode, HistoryGraph,
+    ModeOption, SocBar,
+};
 pub use label::{Lang, Phrase};
 pub use theme::{Breakpoint, Mode, Theme, ThemeError};
 pub use view_mode::{Surface, ViewMode};
