@@ -61,11 +61,13 @@
 pub mod error;
 pub mod message;
 pub mod name;
+pub mod plugin;
 pub mod rr;
 pub mod wire;
 
 pub use error::{Result, WireError};
 pub use message::{Message, Question};
 pub use name::Name;
+pub use plugin::{Chain, Next, Outcome, Plugin, Request, ServerError};
 pub use rr::{Class, Rdata, RecordType, ResourceRecord};
 pub use wire::{Header, Opcode, Rcode, Reader, Writer};
