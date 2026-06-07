@@ -41,26 +41,91 @@ impl Encoding {
 /// nothing usable is offered.
 #[must_use]
 pub fn negotiate(accept_encoding: Option<&str>, supported: &[Encoding]) -> Encoding {
-    unimplemented!()
+    let Some(header) = accept_encoding else {
+        return Encoding::Identity;
+    };
+    // Parse the client's q-value for each supported token (default q = 1.0,
+    // scaled to integer thousandths to avoid floating-point comparison).
+    let q_for = |token: &str| -> Option<u32> {
+        for part in header.split(',') {
+            let mut bits = part.split(';');
+            let name = bits.next().unwrap_or("").trim();
+            if !name.eq_ignore_ascii_case(token) && name != "*" {
+                continue;
+            }
+            let mut q = 1000_u32;
+            for param in bits {
+                if let Some(v) = param.trim().strip_prefix("q=") {
+                    q = parse_q_milli(v);
+                }
+            }
+            return Some(q);
+        }
+        None
+    };
+
+    // Best q among supported encodings; ties broken by server preference order.
+    let mut best: Option<(Encoding, u32)> = None;
+    for &enc in supported {
+        if let Some(token) = enc.header_value() {
+            if let Some(q) = q_for(token) {
+                if q > 0 && best.is_none_or(|(_, bq)| q > bq) {
+                    best = Some((enc, q));
+                }
+            }
+        }
+    }
+    best.map_or(Encoding::Identity, |(enc, _)| enc)
 }
+
+/// Parse a `q` value (`0`..`1` with up to 3 decimals) into integer thousandths.
+fn parse_q_milli(s: &str) -> u32 {
+    let s = s.trim();
+    let (int_part, frac_part) = s.split_once('.').unwrap_or((s, ""));
+    let int_val: u32 = int_part.parse().unwrap_or(0);
+    let mut frac = String::from(frac_part);
+    frac.truncate(3);
+    while frac.len() < 3 {
+        frac.push('0');
+    }
+    let frac_val: u32 = frac.parse().unwrap_or(0);
+    (int_val * 1000 + frac_val).min(1000)
+}
+
+/// Media-type prefixes/values that are already compressed and not worth re-encoding.
+const PRECOMPRESSED: &[&str] = &[
+    "image/", "video/", "audio/", "application/zip", "application/gzip",
+    "application/x-gzip", "application/x-7z-compressed", "application/x-rar-compressed",
+    "application/zstd", "application/br", "font/woff",
+];
 
 /// Whether a body of `content_type` / `content_length` is worth compressing:
 /// at or above `min_size` and not an already-compressed media type.
 #[must_use]
 pub fn should_compress(content_type: &str, content_length: Option<u64>, min_size: u64) -> bool {
-    unimplemented!()
+    if let Some(len) = content_length {
+        if len < min_size {
+            return false;
+        }
+    }
+    let ct = content_type.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    !PRECOMPRESSED.iter().any(|p| ct.starts_with(p))
 }
 
 /// gzip-encode `data`.
 #[must_use]
 pub fn gzip(data: &[u8]) -> Vec<u8> {
-    unimplemented!()
+    let mut enc = GzEncoder::new(Vec::new(), Compression::default());
+    let _ = enc.write_all(data);
+    enc.finish().unwrap_or_default()
 }
 
 /// raw-deflate-encode `data`.
 #[must_use]
 pub fn deflate(data: &[u8]) -> Vec<u8> {
-    unimplemented!()
+    let mut enc = DeflateEncoder::new(Vec::new(), Compression::default());
+    let _ = enc.write_all(data);
+    enc.finish().unwrap_or_default()
 }
 
 /// Encode `data` with `encoding` (identity returns it unchanged).

@@ -37,14 +37,17 @@ pub struct CorsPolicy {
 /// `Access-Control-Request-Method` header present.
 #[must_use]
 pub fn is_preflight(method: &str, has_request_method_header: bool) -> bool {
-    unimplemented!()
+    method.eq_ignore_ascii_case("OPTIONS") && has_request_method_header
 }
 
 impl CorsPolicy {
     /// Whether `origin` is permitted by this policy.
     #[must_use]
     pub fn allows(&self, origin: &str) -> bool {
-        unimplemented!()
+        match &self.allow_origins {
+            Origins::Any => true,
+            Origins::List(list) => list.iter().any(|o| o == origin),
+        }
     }
 
     /// The `Access-Control-Allow-Origin` value to send for `origin`, or `None`
@@ -52,19 +55,52 @@ impl CorsPolicy {
     /// (never `*`).
     #[must_use]
     pub fn allow_origin_value(&self, origin: &str) -> Option<String> {
-        unimplemented!()
+        if !self.allows(origin) {
+            return None;
+        }
+        // Per the Fetch spec, `*` is invalid with credentials: echo the origin.
+        if matches!(self.allow_origins, Origins::Any) && !self.allow_credentials {
+            Some("*".to_string())
+        } else {
+            Some(origin.to_string())
+        }
     }
 
     /// Headers for a preflight (`204`) response, or empty if `origin` is denied.
     #[must_use]
     pub fn preflight_headers(&self, origin: &str) -> Vec<(String, String)> {
-        unimplemented!()
+        let Some(acao) = self.allow_origin_value(origin) else {
+            return Vec::new();
+        };
+        let mut headers = vec![
+            ("access-control-allow-origin".to_string(), acao),
+            ("access-control-allow-methods".to_string(), self.allow_methods.join(", ")),
+            ("access-control-allow-headers".to_string(), self.allow_headers.join(", ")),
+            ("access-control-max-age".to_string(), self.max_age_secs.to_string()),
+        ];
+        if self.allow_credentials {
+            headers.push(("access-control-allow-credentials".to_string(), "true".to_string()));
+        }
+        headers
     }
 
     /// Headers to decorate an actual cross-origin response, or empty if denied.
     #[must_use]
     pub fn actual_headers(&self, origin: &str) -> Vec<(String, String)> {
-        unimplemented!()
+        let Some(acao) = self.allow_origin_value(origin) else {
+            return Vec::new();
+        };
+        let mut headers = vec![("access-control-allow-origin".to_string(), acao)];
+        if !self.expose_headers.is_empty() {
+            headers.push((
+                "access-control-expose-headers".to_string(),
+                self.expose_headers.join(", "),
+            ));
+        }
+        if self.allow_credentials {
+            headers.push(("access-control-allow-credentials".to_string(), "true".to_string()));
+        }
+        headers
     }
 }
 

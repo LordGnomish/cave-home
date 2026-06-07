@@ -19,19 +19,41 @@ use subtle::ConstantTimeEq;
 /// Decode a `Basic` `Authorization` header value into `(user, password)`.
 #[must_use]
 pub fn parse_basic_auth(header_value: &str) -> Option<(String, String)> {
-    unimplemented!()
+    let token = header_value.strip_prefix("Basic ").or_else(|| header_value.strip_prefix("basic "))?;
+    let decoded = base64::engine::general_purpose::STANDARD.decode(token.trim()).ok()?;
+    let text = String::from_utf8(decoded).ok()?;
+    let (user, pass) = text.split_once(':')?;
+    Some((user.to_string(), pass.to_string()))
+}
+
+/// Constant-time byte equality (length is allowed to leak).
+fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && bool::from(a.ct_eq(b))
 }
 
 /// Verify `plain` against an `htpasswd` hash field (constant-time).
 #[must_use]
 pub fn verify_password(plain: &str, htpasswd_hash: &str) -> bool {
-    unimplemented!()
+    if let Some(b64) = htpasswd_hash.strip_prefix("{SHA}") {
+        let Ok(expected) = base64::engine::general_purpose::STANDARD.decode(b64) else {
+            return false;
+        };
+        let mut h = Sha1::new();
+        h.update(plain.as_bytes());
+        return ct_eq(&h.finalize(), &expected);
+    }
+    // bcrypt / apr1-MD5 / crypt are not supported offline: fail closed rather
+    // than mis-compare a hashed field against the plaintext.
+    if htpasswd_hash.starts_with('$') {
+        return false;
+    }
+    ct_eq(plain.as_bytes(), htpasswd_hash.as_bytes())
 }
 
 /// The `WWW-Authenticate` challenge value for `realm`.
 #[must_use]
 pub fn challenge(realm: &str) -> String {
-    unimplemented!()
+    format!("Basic realm=\"{realm}\"")
 }
 
 /// The outcome of a basic-auth check.
@@ -55,13 +77,26 @@ impl BasicAuthChecker {
     /// Malformed entries (no colon) are ignored.
     #[must_use]
     pub fn new(realm: &str, entries: &[String]) -> Self {
-        unimplemented!()
+        let mut users = HashMap::new();
+        for entry in entries {
+            if let Some((user, hash)) = entry.split_once(':') {
+                users.insert(user.to_string(), hash.to_string());
+            }
+        }
+        Self { realm: realm.to_string(), users }
     }
 
     /// Check an inbound `Authorization` header value (if any).
     #[must_use]
     pub fn check(&self, authorization: Option<&str>) -> AuthResult {
-        unimplemented!()
+        let unauthorized = || AuthResult::Unauthorized(challenge(&self.realm));
+        let Some((user, pass)) = authorization.and_then(parse_basic_auth) else {
+            return unauthorized();
+        };
+        match self.users.get(&user) {
+            Some(hash) if verify_password(&pass, hash) => AuthResult::Authorized(user),
+            _ => unauthorized(),
+        }
     }
 }
 
