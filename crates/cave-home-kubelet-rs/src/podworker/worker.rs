@@ -66,11 +66,7 @@ impl PodWorker {
     }
 
     /// Drive one sync iteration.
-    pub async fn sync(
-        &self,
-        pod: &Pod,
-        work: WorkType,
-    ) -> Result<SyncOutcome, PodWorkerError> {
+    pub async fn sync(&self, pod: &Pod, work: WorkType) -> Result<SyncOutcome, PodWorkerError> {
         match work {
             WorkType::Sync => self.do_sync(pod).await,
             WorkType::Terminating => self.do_terminating(pod).await,
@@ -103,7 +99,8 @@ impl PodWorker {
 
         // 3. For each desired container, decide what action to take.
         for desired in &pod.spec.containers {
-            let action = compute_container_action(desired, &cri_containers, pod.spec.restart_policy);
+            let action =
+                compute_container_action(desired, &cri_containers, pod.spec.restart_policy);
             match action {
                 ContainerAction::Skip => {}
                 ContainerAction::Create => {

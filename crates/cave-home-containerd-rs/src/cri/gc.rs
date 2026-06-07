@@ -50,7 +50,11 @@ mod tests {
     }
 
     fn img(c: char, pinned: bool) -> ImageRecord {
-        ImageRecord { digest: dig(c), pinned, size: 100 }
+        ImageRecord {
+            digest: dig(c),
+            pinned,
+            size: 100,
+        }
     }
 
     #[test]

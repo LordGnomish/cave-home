@@ -15,8 +15,8 @@
 //! kubelet here is cgroupv2-only).
 
 use cave_home_kubelet_rs::cgroup::{
-    cpu_max, memory_max, milli_cpu_to_cpu_weight, milli_cpu_to_quota_us, milli_cpu_to_shares,
-    shares_to_cpu_weight, CgroupHierarchy, CgroupV2Resources, DEFAULT_CPU_PERIOD_US,
+    CgroupHierarchy, CgroupV2Resources, DEFAULT_CPU_PERIOD_US, cpu_max, memory_max,
+    milli_cpu_to_cpu_weight, milli_cpu_to_quota_us, milli_cpu_to_shares, shares_to_cpu_weight,
 };
 use cave_home_kubelet_rs::eviction::QosClass;
 use cave_home_kubelet_rs::resources::ResourceRequirements;
@@ -163,13 +163,19 @@ fn guaranteed_pod_sits_directly_under_root() {
 #[test]
 fn burstable_pod_under_burstable_subtree() {
     let h = CgroupHierarchy::default();
-    assert_eq!(h.pod_path(QosClass::Burstable, "abc"), "/kubepods/burstable/podabc");
+    assert_eq!(
+        h.pod_path(QosClass::Burstable, "abc"),
+        "/kubepods/burstable/podabc"
+    );
 }
 
 #[test]
 fn besteffort_pod_under_besteffort_subtree() {
     let h = CgroupHierarchy::default();
-    assert_eq!(h.pod_path(QosClass::BestEffort, "abc"), "/kubepods/besteffort/podabc");
+    assert_eq!(
+        h.pod_path(QosClass::BestEffort, "abc"),
+        "/kubepods/besteffort/podabc"
+    );
 }
 
 #[test]

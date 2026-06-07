@@ -113,7 +113,9 @@ impl VolumePlugin for HostPathPlugin {
 
     async fn set_up(&self, _pod_uid: &PodUid, volume: &Volume) -> VolumeResult<PathBuf> {
         let VolumeSource::HostPath(hp) = &volume.source else {
-            return Err(VolumeError::Unsupported("HostPathPlugin::set_up requires HostPath"));
+            return Err(VolumeError::Unsupported(
+                "HostPathPlugin::set_up requires HostPath",
+            ));
         };
         let path = PathBuf::from(&hp.path);
         check_type(&path, hp.host_path_type)?;

@@ -13,7 +13,7 @@
 //!
 //! Pure, `std`-only.
 
-use crate::resources::{sum_requests, ResourceList, ResourceRequirements};
+use crate::resources::{ResourceList, ResourceRequirements, sum_requests};
 
 /// Per-node resource accounting.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -38,7 +38,10 @@ impl NodeResources {
     #[must_use]
     pub const fn available(&self) -> ResourceList {
         ResourceList {
-            cpu_milli: self.allocatable.cpu_milli.saturating_sub(self.requested.cpu_milli),
+            cpu_milli: self
+                .allocatable
+                .cpu_milli
+                .saturating_sub(self.requested.cpu_milli),
             memory_bytes: self
                 .allocatable
                 .memory_bytes
@@ -123,7 +126,10 @@ mod tests {
     #[test]
     fn pod_fits_on_empty_node() {
         let n = node(2000, 4_000_000);
-        assert_eq!(admit_pod(&n, &[req(1000, 2_000_000)]), AdmissionResult::Admit);
+        assert_eq!(
+            admit_pod(&n, &[req(1000, 2_000_000)]),
+            AdmissionResult::Admit
+        );
         assert!(pod_fits(&n, &[req(1000, 2_000_000)]));
     }
 
@@ -144,7 +150,9 @@ mod tests {
         let n = node(1000, 4_000_000);
         assert_eq!(
             admit_pod(&n, &[req(1500, 1000)]),
-            AdmissionResult::Reject(InsufficientResource::Cpu { short_by_milli: 500 })
+            AdmissionResult::Reject(InsufficientResource::Cpu {
+                short_by_milli: 500
+            })
         );
     }
 
@@ -165,7 +173,9 @@ mod tests {
         let n = node(100, 100);
         assert_eq!(
             admit_pod(&n, &[req(200, 200)]),
-            AdmissionResult::Reject(InsufficientResource::Cpu { short_by_milli: 100 })
+            AdmissionResult::Reject(InsufficientResource::Cpu {
+                short_by_milli: 100
+            })
         );
     }
 

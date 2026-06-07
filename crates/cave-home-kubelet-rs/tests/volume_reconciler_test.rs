@@ -11,10 +11,10 @@
 use std::sync::Arc;
 
 use cave_home_kubelet_rs::api::{EmptyDirVolumeSource, PodUid, Volume, VolumeSource};
+use cave_home_kubelet_rs::volume::emptydir::EmptyDirPlugin;
 use cave_home_kubelet_rs::volume::{
     ActualStateOfWorld, DesiredStateOfWorld, Reconciler, VolumePlugin,
 };
-use cave_home_kubelet_rs::volume::emptydir::EmptyDirPlugin;
 
 fn empty_dir(name: &str) -> Volume {
     Volume {

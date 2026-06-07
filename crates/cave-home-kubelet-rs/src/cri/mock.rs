@@ -137,7 +137,8 @@ impl CriClient for MockCriClient {
         }
         s.sandboxes.remove(sandbox_id);
         // Remove every container belonging to this sandbox too.
-        s.containers.retain(|_, c| c.container.pod_sandbox_id != sandbox_id);
+        s.containers
+            .retain(|_, c| c.container.pod_sandbox_id != sandbox_id);
         Ok(())
     }
 

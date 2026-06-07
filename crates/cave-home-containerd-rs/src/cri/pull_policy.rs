@@ -72,12 +72,18 @@ mod tests {
 
     #[test]
     fn if_not_present_uses_local_when_present() {
-        assert_eq!(decide_pull(PullPolicy::IfNotPresent, true), PullDecision::UseLocal);
+        assert_eq!(
+            decide_pull(PullPolicy::IfNotPresent, true),
+            PullDecision::UseLocal
+        );
     }
 
     #[test]
     fn if_not_present_pulls_when_absent() {
-        assert_eq!(decide_pull(PullPolicy::IfNotPresent, false), PullDecision::Pull);
+        assert_eq!(
+            decide_pull(PullPolicy::IfNotPresent, false),
+            PullDecision::Pull
+        );
     }
 
     #[test]
@@ -87,6 +93,9 @@ mod tests {
 
     #[test]
     fn never_errors_when_absent() {
-        assert_eq!(decide_pull(PullPolicy::Never, false), PullDecision::ErrImageNeverPull);
+        assert_eq!(
+            decide_pull(PullPolicy::Never, false),
+            PullDecision::ErrImageNeverPull
+        );
     }
 }

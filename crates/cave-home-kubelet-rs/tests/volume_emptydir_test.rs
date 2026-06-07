@@ -66,9 +66,10 @@ async fn set_up_creates_directory() {
         .unwrap();
     assert!(path.exists());
     assert!(path.is_dir());
-    assert!(path
-        .to_string_lossy()
-        .contains("kubernetes.io~empty-dir/data"));
+    assert!(
+        path.to_string_lossy()
+            .contains("kubernetes.io~empty-dir/data")
+    );
 }
 
 #[tokio::test]

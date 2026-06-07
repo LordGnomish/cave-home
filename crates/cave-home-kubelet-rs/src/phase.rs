@@ -166,9 +166,7 @@ pub fn derive_phase(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::{
-        ContainerStateRunning, ContainerStateTerminated, ContainerStateWaiting,
-    };
+    use crate::api::{ContainerStateRunning, ContainerStateTerminated, ContainerStateWaiting};
 
     fn waiting(name: &str) -> ContainerStatus {
         ContainerStatus {
@@ -199,27 +197,42 @@ mod tests {
 
     #[test]
     fn empty_pod_is_succeeded() {
-        assert_eq!(derive_phase(&[], 0, RestartPolicy::Always), PodPhase::Succeeded);
+        assert_eq!(
+            derive_phase(&[], 0, RestartPolicy::Always),
+            PodPhase::Succeeded
+        );
     }
 
     #[test]
     fn all_waiting_is_pending() {
         let cs = [waiting("a"), waiting("b")];
-        assert_eq!(derive_phase(&cs, 2, RestartPolicy::Always), PodPhase::Pending);
-        assert_eq!(derive_phase(&cs, 2, RestartPolicy::Never), PodPhase::Pending);
+        assert_eq!(
+            derive_phase(&cs, 2, RestartPolicy::Always),
+            PodPhase::Pending
+        );
+        assert_eq!(
+            derive_phase(&cs, 2, RestartPolicy::Never),
+            PodPhase::Pending
+        );
     }
 
     #[test]
     fn unobserved_containers_keep_pod_pending() {
         // 1 status present (waiting), spec declares 2 -> still all waiting.
         let cs = [waiting("a")];
-        assert_eq!(derive_phase(&cs, 2, RestartPolicy::Always), PodPhase::Pending);
+        assert_eq!(
+            derive_phase(&cs, 2, RestartPolicy::Always),
+            PodPhase::Pending
+        );
     }
 
     #[test]
     fn any_running_is_running() {
         let cs = [running("a"), waiting("b")];
-        assert_eq!(derive_phase(&cs, 2, RestartPolicy::Never), PodPhase::Running);
+        assert_eq!(
+            derive_phase(&cs, 2, RestartPolicy::Never),
+            PodPhase::Running
+        );
     }
 
     #[test]
@@ -231,39 +244,57 @@ mod tests {
     #[test]
     fn never_all_succeeded_is_succeeded() {
         let cs = [terminated("a", 0), terminated("b", 0)];
-        assert_eq!(derive_phase(&cs, 2, RestartPolicy::Never), PodPhase::Succeeded);
+        assert_eq!(
+            derive_phase(&cs, 2, RestartPolicy::Never),
+            PodPhase::Succeeded
+        );
     }
 
     #[test]
     fn onfailure_all_succeeded_is_succeeded() {
         let cs = [terminated("a", 0), terminated("b", 0)];
-        assert_eq!(derive_phase(&cs, 2, RestartPolicy::OnFailure), PodPhase::Succeeded);
+        assert_eq!(
+            derive_phase(&cs, 2, RestartPolicy::OnFailure),
+            PodPhase::Succeeded
+        );
     }
 
     #[test]
     fn onfailure_with_failure_stays_running_pending_restart() {
         // OnFailure: a non-zero exit will be restarted -> treated as Running.
         let cs = [terminated("a", 0), terminated("b", 1)];
-        assert_eq!(derive_phase(&cs, 2, RestartPolicy::OnFailure), PodPhase::Running);
+        assert_eq!(
+            derive_phase(&cs, 2, RestartPolicy::OnFailure),
+            PodPhase::Running
+        );
     }
 
     #[test]
     fn always_terminated_zero_is_running_pending_restart() {
         // Always: even a clean exit will be restarted -> Running, never Succeeded.
         let cs = [terminated("a", 0)];
-        assert_eq!(derive_phase(&cs, 1, RestartPolicy::Always), PodPhase::Running);
+        assert_eq!(
+            derive_phase(&cs, 1, RestartPolicy::Always),
+            PodPhase::Running
+        );
     }
 
     #[test]
     fn always_terminated_nonzero_is_running_pending_restart() {
         let cs = [terminated("a", 5)];
-        assert_eq!(derive_phase(&cs, 1, RestartPolicy::Always), PodPhase::Running);
+        assert_eq!(
+            derive_phase(&cs, 1, RestartPolicy::Always),
+            PodPhase::Running
+        );
     }
 
     #[test]
     fn never_single_success_is_succeeded() {
         let cs = [terminated("a", 0)];
-        assert_eq!(derive_phase(&cs, 1, RestartPolicy::Never), PodPhase::Succeeded);
+        assert_eq!(
+            derive_phase(&cs, 1, RestartPolicy::Never),
+            PodPhase::Succeeded
+        );
     }
 
     #[test]
@@ -276,14 +307,20 @@ mod tests {
     fn never_mixed_succeeded_and_waiting_is_running() {
         // One done (success), one still starting -> the pod is progressing.
         let cs = [terminated("a", 0), waiting("b")];
-        assert_eq!(derive_phase(&cs, 2, RestartPolicy::Never), PodPhase::Running);
+        assert_eq!(
+            derive_phase(&cs, 2, RestartPolicy::Never),
+            PodPhase::Running
+        );
     }
 
     #[test]
     fn never_failed_and_waiting_is_running_not_failed_yet() {
         // One failed terminally, one still waiting -> not all terminal -> Running.
         let cs = [terminated("a", 2), waiting("b")];
-        assert_eq!(derive_phase(&cs, 2, RestartPolicy::Never), PodPhase::Running);
+        assert_eq!(
+            derive_phase(&cs, 2, RestartPolicy::Never),
+            PodPhase::Running
+        );
     }
 
     #[test]
@@ -291,7 +328,10 @@ mod tests {
         // The classic difference vs Never: OnFailure never reports Failed for a
         // restartable container.
         let cs = [terminated("a", 99)];
-        assert_eq!(derive_phase(&cs, 1, RestartPolicy::OnFailure), PodPhase::Running);
+        assert_eq!(
+            derive_phase(&cs, 1, RestartPolicy::OnFailure),
+            PodPhase::Running
+        );
         assert_eq!(derive_phase(&cs, 1, RestartPolicy::Never), PodPhase::Failed);
     }
 }

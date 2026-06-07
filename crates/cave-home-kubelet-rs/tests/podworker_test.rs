@@ -20,9 +20,7 @@
 
 use std::sync::Arc;
 
-use cave_home_kubelet_rs::api::{
-    Container, ObjectMeta, Pod, PodSpec, PodUid, RestartPolicy,
-};
+use cave_home_kubelet_rs::api::{Container, ObjectMeta, Pod, PodSpec, PodUid, RestartPolicy};
 use cave_home_kubelet_rs::cri::types::{ContainerState as CriState, PodSandboxState};
 use cave_home_kubelet_rs::cri::{CriClient, MockCriClient};
 use cave_home_kubelet_rs::podworker::{PodWorker, PodWorkerState, WorkType};

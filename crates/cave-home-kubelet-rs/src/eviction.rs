@@ -149,7 +149,12 @@ pub fn rank_for_eviction(
 mod tests {
     use super::*;
 
-    fn req(cr: Option<u64>, cl: Option<u64>, mr: Option<u64>, ml: Option<u64>) -> ResourceRequirements {
+    fn req(
+        cr: Option<u64>,
+        cl: Option<u64>,
+        mr: Option<u64>,
+        ml: Option<u64>,
+    ) -> ResourceRequirements {
         ResourceRequirements {
             cpu_request_milli: cr,
             cpu_limit_milli: cl,
@@ -160,7 +165,10 @@ mod tests {
 
     #[test]
     fn no_resources_is_besteffort() {
-        assert_eq!(qos_class(&[ResourceRequirements::default()]), QosClass::BestEffort);
+        assert_eq!(
+            qos_class(&[ResourceRequirements::default()]),
+            QosClass::BestEffort
+        );
     }
 
     #[test]

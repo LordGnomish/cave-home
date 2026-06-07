@@ -231,12 +231,27 @@ fn default_mounts() -> Vec<Mount> {
 /// is added separately (it may join the sandbox's netns).
 fn default_namespaces(network_ns_path: Option<String>) -> Vec<LinuxNamespace> {
     let mut ns = vec![
-        LinuxNamespace { kind: NamespaceType::Pid, path: None },
-        LinuxNamespace { kind: NamespaceType::Ipc, path: None },
-        LinuxNamespace { kind: NamespaceType::Uts, path: None },
-        LinuxNamespace { kind: NamespaceType::Mount, path: None },
+        LinuxNamespace {
+            kind: NamespaceType::Pid,
+            path: None,
+        },
+        LinuxNamespace {
+            kind: NamespaceType::Ipc,
+            path: None,
+        },
+        LinuxNamespace {
+            kind: NamespaceType::Uts,
+            path: None,
+        },
+        LinuxNamespace {
+            kind: NamespaceType::Mount,
+            path: None,
+        },
     ];
-    ns.push(LinuxNamespace { kind: NamespaceType::Network, path: network_ns_path });
+    ns.push(LinuxNamespace {
+        kind: NamespaceType::Network,
+        path: network_ns_path,
+    });
     ns
 }
 
@@ -310,7 +325,10 @@ pub fn generate_spec(
         terminal: false,
     };
 
-    let root = Root { path: "rootfs".to_owned(), readonly: config.readonly_rootfs };
+    let root = Root {
+        path: "rootfs".to_owned(),
+        readonly: config.readonly_rootfs,
+    };
 
     let mut mounts = default_mounts();
     mounts.extend(config.mounts.iter().cloned());
@@ -387,9 +405,15 @@ mod tests {
     fn malformed_env_is_rejected() {
         let mut cfg = base_config();
         cfg.env = vec!["NOTANENV".to_owned()];
-        assert!(matches!(generate_spec("c1", "", &cfg), Err(SpecError::MalformedEnv(_))));
+        assert!(matches!(
+            generate_spec("c1", "", &cfg),
+            Err(SpecError::MalformedEnv(_))
+        ));
         cfg.env = vec!["=novalue".to_owned()];
-        assert!(matches!(generate_spec("c1", "", &cfg), Err(SpecError::MalformedEnv(_))));
+        assert!(matches!(
+            generate_spec("c1", "", &cfg),
+            Err(SpecError::MalformedEnv(_))
+        ));
     }
 
     #[test]
@@ -456,7 +480,10 @@ mod tests {
             cpu_period_us: Some(100_000),
         };
         let spec = generate_spec("c1", "", &cfg).expect("spec");
-        assert_eq!(spec.linux.resources.memory_limit_bytes, Some(256 * 1024 * 1024));
+        assert_eq!(
+            spec.linux.resources.memory_limit_bytes,
+            Some(256 * 1024 * 1024)
+        );
         assert_eq!(spec.linux.resources.cpu_shares, Some(512));
         assert_eq!(spec.linux.resources.cpu_quota_us, Some(50_000));
     }

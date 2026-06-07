@@ -80,7 +80,11 @@ pub struct IllegalTransition {
 
 impl fmt::Display for IllegalTransition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "illegal transition: cannot {:?} from {}", self.action, self.from)
+        write!(
+            f,
+            "illegal transition: cannot {:?} from {}",
+            self.action, self.from
+        )
     }
 }
 
@@ -103,7 +107,10 @@ impl Task {
     /// A freshly-created task (`created`, no exit code yet).
     #[must_use]
     pub const fn new() -> Self {
-        Self { state: TaskState::Created, exit_code: None }
+        Self {
+            state: TaskState::Created,
+            exit_code: None,
+        }
     }
 
     /// The current state.
@@ -184,7 +191,10 @@ mod tests {
     fn running_stops_with_exit_code() {
         let mut t = Task::new();
         t.apply(Action::Start).expect("start");
-        assert_eq!(t.apply(Action::Stop { exit_code: 137 }), Ok(TaskState::Stopped));
+        assert_eq!(
+            t.apply(Action::Stop { exit_code: 137 }),
+            Ok(TaskState::Stopped)
+        );
         assert_eq!(t.exit_code(), Some(137));
         assert!(t.state().is_terminal());
     }
@@ -194,7 +204,10 @@ mod tests {
         let mut t = Task::new();
         t.apply(Action::Start).expect("start");
         t.apply(Action::Pause).expect("pause");
-        assert_eq!(t.apply(Action::Stop { exit_code: 0 }), Ok(TaskState::Stopped));
+        assert_eq!(
+            t.apply(Action::Stop { exit_code: 0 }),
+            Ok(TaskState::Stopped)
+        );
         assert_eq!(t.exit_code(), Some(0));
     }
 

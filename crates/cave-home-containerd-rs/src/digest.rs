@@ -129,12 +129,21 @@ impl Digest {
         }
         let algorithm = Algorithm::parse(algo)?;
         if encoded.len() != algorithm.hex_len() {
-            return Err(DigestError::BadLength { algorithm, got: encoded.len() });
+            return Err(DigestError::BadLength {
+                algorithm,
+                got: encoded.len(),
+            });
         }
-        if !encoded.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        if !encoded
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
             return Err(DigestError::NonHex(encoded.to_owned()));
         }
-        Ok(Self { algorithm, encoded: encoded.to_owned() })
+        Ok(Self {
+            algorithm,
+            encoded: encoded.to_owned(),
+        })
     }
 
     /// The digest algorithm.
@@ -222,7 +231,12 @@ impl Descriptor {
         if size == 0 {
             return Err(DescriptorError::ZeroSize);
         }
-        Ok(Self { media_type, digest, size, urls: Vec::new() })
+        Ok(Self {
+            media_type,
+            digest,
+            size,
+            urls: Vec::new(),
+        })
     }
 }
 
@@ -257,8 +271,14 @@ mod tests {
 
     #[test]
     fn rejects_empty_algorithm_or_encoding() {
-        assert!(matches!(Digest::parse(":abc"), Err(DigestError::Malformed(_))));
-        assert!(matches!(Digest::parse("sha256:"), Err(DigestError::Malformed(_))));
+        assert!(matches!(
+            Digest::parse(":abc"),
+            Err(DigestError::Malformed(_))
+        ));
+        assert!(matches!(
+            Digest::parse("sha256:"),
+            Err(DigestError::Malformed(_))
+        ));
     }
 
     #[test]
@@ -272,7 +292,13 @@ mod tests {
     #[test]
     fn rejects_wrong_length() {
         let err = Digest::parse("sha256:abcd").expect_err("too short");
-        assert_eq!(err, DigestError::BadLength { algorithm: Algorithm::Sha256, got: 4 });
+        assert_eq!(
+            err,
+            DigestError::BadLength {
+                algorithm: Algorithm::Sha256,
+                got: 4
+            }
+        );
     }
 
     #[test]

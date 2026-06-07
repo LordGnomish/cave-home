@@ -272,8 +272,14 @@ mod tests {
 
     #[test]
     fn pod_ready_requires_all_containers_ready() {
-        assert!(pod_ready(&[ProbeResult::Success, ProbeResult::Success], &[]));
-        assert!(!pod_ready(&[ProbeResult::Success, ProbeResult::Failure], &[]));
+        assert!(pod_ready(
+            &[ProbeResult::Success, ProbeResult::Success],
+            &[]
+        ));
+        assert!(!pod_ready(
+            &[ProbeResult::Success, ProbeResult::Failure],
+            &[]
+        ));
         assert!(!pod_ready(&[ProbeResult::Unknown], &[]));
     }
 
@@ -293,8 +299,14 @@ mod tests {
             condition_type: "www.example.com/feature-1".into(),
             status_true: true,
         };
-        assert!(!pod_ready(&ready_containers, std::slice::from_ref(&gate_false)));
-        assert!(pod_ready(&ready_containers, std::slice::from_ref(&gate_true)));
+        assert!(!pod_ready(
+            &ready_containers,
+            std::slice::from_ref(&gate_false)
+        ));
+        assert!(pod_ready(
+            &ready_containers,
+            std::slice::from_ref(&gate_true)
+        ));
     }
 
     #[test]
@@ -304,6 +316,9 @@ mod tests {
             status_true: true,
         };
         // Container not ready -> pod not ready even with all gates true.
-        assert!(!pod_ready(&[ProbeResult::Failure], std::slice::from_ref(&gate_true)));
+        assert!(!pod_ready(
+            &[ProbeResult::Failure],
+            std::slice::from_ref(&gate_true)
+        ));
     }
 }
