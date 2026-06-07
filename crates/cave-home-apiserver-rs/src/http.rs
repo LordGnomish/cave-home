@@ -224,15 +224,29 @@ pub struct Response {
     pub status: u16,
     /// Headers (a `content-length` is added automatically by [`Response::to_bytes`]).
     pub headers: Headers,
-    /// Body bytes.
+    /// Body bytes. For a chunked response this holds the already-framed chunks
+    /// ([`encode_chunk`] output), not the raw payload.
     pub body: Vec<u8>,
+    /// When set, the response is `transfer-encoding: chunked` (used for watch
+    /// streams): [`Response::to_bytes`] emits the streaming head, then `body`,
+    /// then the terminating [`last_chunk`], and never a `content-length`.
+    pub chunked: bool,
 }
 
 impl Response {
     /// A response with the given status and no body.
     #[must_use]
     pub fn new(status: u16) -> Self {
-        Self { status, headers: Headers::new(), body: Vec::new() }
+        Self { status, headers: Headers::new(), body: Vec::new(), chunked: false }
+    }
+
+    /// A chunked `application/json` streaming response whose `body` already holds
+    /// the framed chunks (see [`encode_chunk`]). Used for watch streams.
+    #[must_use]
+    pub fn chunked_json(framed_body: Vec<u8>) -> Self {
+        let mut headers = Headers::new();
+        headers.insert("content-type", "application/json");
+        Self { status: 200, headers, body: framed_body, chunked: true }
     }
 
     /// Append a header (builder style).
@@ -254,6 +268,12 @@ impl Response {
     /// blank line, body).
     #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
+        if self.chunked {
+            let mut out = self.streaming_head();
+            out.extend_from_slice(&self.body);
+            out.extend_from_slice(last_chunk());
+            return out;
+        }
         let mut out = format!("HTTP/1.1 {} {}\r\n", self.status, reason_phrase(self.status))
             .into_bytes();
         for (k, v) in self.headers.iter() {

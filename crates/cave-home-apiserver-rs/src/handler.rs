@@ -20,7 +20,7 @@ use crate::json::{self, obj, Value};
 use crate::meta;
 use crate::path::{self, ResourcePath};
 use crate::rbac::{Attributes, Decision, RbacAuthorizer, UserInfo};
-use crate::registry::{ListOptions, ListResult, Registry};
+use crate::registry::{ListOptions, ListResult, Registry, WatchEvent, WatchEventKind};
 use crate::selector::{FieldSelector, LabelSelector};
 use crate::status::{Result, Status};
 
@@ -200,6 +200,31 @@ impl ApiServer {
                 let result = self.registry.list(gvr, &opts)?;
                 Ok(object_response(200, &list_object(gvr, &result)))
             }
+            "watch" => {
+                let after = req
+                    .query_get("resourceVersion")
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0);
+                let label_selector = match req.query_get("labelSelector") {
+                    Some(ls) => LabelSelector::parse(&ls)?,
+                    None => LabelSelector::default(),
+                };
+                let events = self.registry.watch_since(gvr, after)?;
+                let mut body = Vec::new();
+                for event in events {
+                    let m = meta::read_meta(&event.object);
+                    if !rp.namespace.is_empty() && m.namespace != rp.namespace {
+                        continue;
+                    }
+                    if !label_selector.matches(&m.labels) {
+                        continue;
+                    }
+                    let mut line = watch_event_object(&event).to_json_string().into_bytes();
+                    line.push(b'\n');
+                    body.extend_from_slice(&crate::http::encode_chunk(&line));
+                }
+                Ok(Response::chunked_json(body))
+            }
             "create" => {
                 let mut body = parse_body(req)?;
                 inject_namespace(&mut body, &rp.namespace);
@@ -351,6 +376,21 @@ pub fn success_status(message: impl Into<String>) -> Value {
         ("status", Value::from("Success")),
         ("message", Value::from(message.into())),
         ("code", Value::from(200_i64)),
+    ])
+}
+
+/// Encode a single watch event as the `{"type": …, "object": …}` frame the
+/// apiserver streams for `?watch=true` requests.
+#[must_use]
+pub fn watch_event_object(event: &WatchEvent) -> Value {
+    let kind = match event.kind {
+        WatchEventKind::Added => "ADDED",
+        WatchEventKind::Modified => "MODIFIED",
+        WatchEventKind::Deleted => "DELETED",
+    };
+    obj([
+        ("type", Value::from(kind)),
+        ("object", event.object.clone()),
     ])
 }
 
