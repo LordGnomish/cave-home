@@ -120,3 +120,15 @@ pub mod forwarded;
 /// Reverse-proxy upstream request-URI assembly.
 #[cfg(feature = "runtime")]
 pub mod backend;
+
+/// Circuit breaker for backend forwarding.
+#[cfg(feature = "runtime")]
+pub mod circuit;
+
+/// Bounded retry policy with exponential backoff.
+#[cfg(feature = "runtime")]
+pub mod retry;
+
+/// Token-bucket rate limiting.
+#[cfg(feature = "runtime")]
+pub mod ratelimit;
