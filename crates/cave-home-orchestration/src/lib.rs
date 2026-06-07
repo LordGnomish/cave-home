@@ -85,6 +85,7 @@ pub mod bringup;
 pub mod component;
 pub mod config;
 pub mod role;
+pub mod secrets_encryption;
 pub mod shutdown;
 
 pub use bootstrap::{Bootstrap, FailureKind, Phase, Transition};
