@@ -51,7 +51,10 @@ async fn read_headers<S: AsyncRead + Unpin>(io: &mut S, rbuf: &mut Vec<u8>) -> R
         }
         let n = io.read(&mut chunk).await?;
         if n == 0 {
-            return Err(Error::new(ErrorKind::UnexpectedEof, "eof during ws handshake"));
+            return Err(Error::new(
+                ErrorKind::UnexpectedEof,
+                "eof during ws handshake",
+            ));
         }
         rbuf.extend_from_slice(&chunk[..n]);
     }
@@ -70,12 +73,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> WsConnection<S> {
     ///
     /// # Errors
     /// Fails if the peer does not return `101` with a valid accept token.
-    pub async fn connect(
-        mut io: S,
-        host: &str,
-        path: &str,
-        subprotocols: &[&str],
-    ) -> Result<Self> {
+    pub async fn connect(mut io: S, host: &str, path: &str, subprotocols: &[&str]) -> Result<Self> {
         // 16 random-ish bytes -> base64, per RFC 6455 §4.1. The mask seed is
         // derived from the same source; it need not be cryptographic for a
         // trusted localhost CRI streaming socket (no caching proxies in path).
@@ -130,7 +128,13 @@ impl<S: AsyncRead + AsyncWrite + Unpin> WsConnection<S> {
         }
         let subprotocol = header_value(&headers, "sec-websocket-protocol").map(str::to_owned);
 
-        Ok(Self { io, role: Role::Client, rbuf, mask_seed: seed | 1, subprotocol })
+        Ok(Self {
+            io,
+            role: Role::Client,
+            rbuf,
+            mask_seed: seed | 1,
+            subprotocol,
+        })
     }
 
     /// Perform the server side of the opening handshake over `io`.
@@ -163,7 +167,13 @@ impl<S: AsyncRead + AsyncWrite + Unpin> WsConnection<S> {
         io.flush().await?;
 
         let subprotocol = offered.then(|| subprotocol.to_owned());
-        Ok(Self { io, role: Role::Server, rbuf, mask_seed: 0x1234_5678, subprotocol })
+        Ok(Self {
+            io,
+            role: Role::Server,
+            rbuf,
+            mask_seed: 0x1234_5678,
+            subprotocol,
+        })
     }
 
     /// Next non-cryptographic masking key (xorshift32).
@@ -227,8 +237,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin> WsConnection<S> {
                 Some(f) => match f.opcode {
                     OpCode::Close => return Ok(None),
                     OpCode::Ping => {
-                        self.send(&Frame { fin: true, opcode: OpCode::Pong, payload: f.payload })
-                            .await?;
+                        self.send(&Frame {
+                            fin: true,
+                            opcode: OpCode::Pong,
+                            payload: f.payload,
+                        })
+                        .await?;
                     }
                     OpCode::Pong => {} // ignore unsolicited pongs
                     _ => return Ok(Some(f)),
@@ -244,7 +258,9 @@ mod tests {
     use tokio::io::DuplexStream;
 
     async fn server(io: DuplexStream) -> WsConnection<DuplexStream> {
-        WsConnection::accept(io, V5_CHANNEL_PROTOCOL).await.expect("accept")
+        WsConnection::accept(io, V5_CHANNEL_PROTOCOL)
+            .await
+            .expect("accept")
     }
 
     #[tokio::test]
@@ -264,7 +280,10 @@ mod tests {
                 .expect("client handshake");
         assert_eq!(client.subprotocol.as_deref(), Some(V5_CHANNEL_PROTOCOL));
 
-        client.send(&Frame::binary(b"\x00hello".to_vec())).await.unwrap();
+        client
+            .send(&Frame::binary(b"\x00hello".to_vec()))
+            .await
+            .unwrap();
         let echo = client.recv().await.unwrap().expect("echo");
         assert_eq!(echo.payload, b"\x00hello");
 
@@ -283,8 +302,9 @@ mod tests {
             let msg = conn.recv().await.unwrap().expect("frame");
             conn.send(&Frame::binary(msg.payload)).await.unwrap();
         });
-        let mut client =
-            WsConnection::connect(c, "h", "/p", &[V5_CHANNEL_PROTOCOL]).await.unwrap();
+        let mut client = WsConnection::connect(c, "h", "/p", &[V5_CHANNEL_PROTOCOL])
+            .await
+            .unwrap();
         client.send(&Frame::binary(big)).await.unwrap();
         let echo = client.recv().await.unwrap().unwrap();
         assert_eq!(echo.payload, expect);
@@ -298,16 +318,21 @@ mod tests {
             let mut conn = server(s).await;
             // Server pings, then expects the client's transparent pong, then
             // sends a data frame the client must surface.
-            conn.send(&Frame { fin: true, opcode: OpCode::Ping, payload: b"hb".to_vec() })
-                .await
-                .unwrap();
+            conn.send(&Frame {
+                fin: true,
+                opcode: OpCode::Ping,
+                payload: b"hb".to_vec(),
+            })
+            .await
+            .unwrap();
             let pong = conn.recv_raw().await.unwrap().expect("pong");
             assert_eq!(pong.opcode, OpCode::Pong);
             assert_eq!(pong.payload, b"hb");
             conn.send(&Frame::binary(b"after".to_vec())).await.unwrap();
         });
-        let mut client =
-            WsConnection::connect(c, "h", "/p", &[V5_CHANNEL_PROTOCOL]).await.unwrap();
+        let mut client = WsConnection::connect(c, "h", "/p", &[V5_CHANNEL_PROTOCOL])
+            .await
+            .unwrap();
         let data = client.recv().await.unwrap().expect("data");
         assert_eq!(data.payload, b"after");
         srv.await.unwrap();

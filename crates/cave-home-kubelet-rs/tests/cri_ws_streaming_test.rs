@@ -45,6 +45,7 @@ async fn exec_streams_stdin_to_stdout_and_stderr() {
         conn.send(&channel_frame(channel::STDERR, b"warn: noop")).await.unwrap();
         conn.send(&channel_frame(channel::ERROR, b"")).await.unwrap();
         conn.send(&Frame::close()).await.unwrap();
+        while let Ok(Some(_)) = conn.recv().await {} // polite close (drain to EOF)
     })
     .await;
 
@@ -77,6 +78,7 @@ async fn exec_half_closes_stdin_on_eof() {
         assert_eq!(close.payload[0], channel::CLOSE);
         assert_eq!(close.payload[1], channel::STDIN);
         conn.send(&Frame::close()).await.unwrap();
+        while let Ok(Some(_)) = conn.recv().await {} // polite close (drain to EOF)
     })
     .await;
 
@@ -100,6 +102,7 @@ async fn port_forward_bridges_a_local_stream() {
         let echo = &first.payload[3..];
         conn.send(&channel_frame(channel::STDIN, echo)).await.unwrap();
         conn.send(&Frame::close()).await.unwrap();
+        while let Ok(Some(_)) = conn.recv().await {} // polite close (drain to EOF)
     })
     .await;
 

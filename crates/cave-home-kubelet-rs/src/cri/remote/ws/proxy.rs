@@ -77,7 +77,10 @@ pub async fn dial(url: &str, subprotocols: &[&str]) -> Result<WsConnection<TcpSt
         .strip_prefix("http://")
         .or_else(|| url.strip_prefix("ws://"))
         .ok_or_else(|| {
-            Error::new(ErrorKind::InvalidInput, format!("unsupported streaming URL: {url}"))
+            Error::new(
+                ErrorKind::InvalidInput,
+                format!("unsupported streaming URL: {url}"),
+            )
         })?;
     let (authority, path) = match rest.split_once('/') {
         Some((a, p)) => (a, format!("/{p}")),
@@ -142,7 +145,8 @@ where
 {
     if let Some((w, h)) = term_size {
         let json = format!("{{\"Width\":{w},\"Height\":{h}}}");
-        conn.send(&channel_frame(channel::RESIZE, json.as_bytes())).await?;
+        conn.send(&channel_frame(channel::RESIZE, json.as_bytes()))
+            .await?;
     }
 
     let mut error = None;
@@ -154,12 +158,18 @@ where
             tokio::select! {
                 read = src.read(&mut buf) => {
                     let n = read?;
-                    if n == 0 {
+                    // Stdin pumping is best-effort: once the container process
+                    // exits the runtime closes the stream, so a send failure
+                    // here (e.g. connection reset) means "stdin is done", not a
+                    // session error. The output side drives completion.
+                    let sent = if n == 0 {
                         // v5 half-close: tell the runtime stdin is done.
-                        conn.send(&channel_frame(channel::CLOSE, &[channel::STDIN])).await?;
-                        stdin = None;
+                        conn.send(&channel_frame(channel::CLOSE, &[channel::STDIN])).await
                     } else {
-                        conn.send(&channel_frame(channel::STDIN, &buf[..n])).await?;
+                        conn.send(&channel_frame(channel::STDIN, &buf[..n])).await
+                    };
+                    if n == 0 || sent.is_err() {
+                        stdin = None;
                     }
                 }
                 msg = conn.recv() => {
@@ -208,9 +218,11 @@ where
             tokio::select! {
                 read = rd.read(&mut buf) => {
                     let n = read?;
-                    if n == 0 {
-                        conn.send(&channel_frame(channel::CLOSE, &[channel::STDIN])).await?;
-                        rd_open = false;
+                    // Best-effort local->remote pump: a send failure means the
+                    // forwarded connection went away, so stop reading rather
+                    // than failing the whole forward.
+                    let sent = if n == 0 {
+                        conn.send(&channel_frame(channel::CLOSE, &[channel::STDIN])).await
                     } else {
                         let data = if first {
                             first = false;
@@ -220,7 +232,10 @@ where
                         } else {
                             buf[..n].to_vec()
                         };
-                        conn.send(&channel_frame(channel::STDIN, &data)).await?;
+                        conn.send(&channel_frame(channel::STDIN, &data)).await
+                    };
+                    if n == 0 || sent.is_err() {
+                        rd_open = false;
                     }
                 }
                 msg = conn.recv() => {

@@ -51,13 +51,21 @@ impl Frame {
     /// Convenience: a binary frame with FIN set.
     #[must_use]
     pub const fn binary(payload: Vec<u8>) -> Self {
-        Self { fin: true, opcode: OpCode::Binary, payload }
+        Self {
+            fin: true,
+            opcode: OpCode::Binary,
+            payload,
+        }
     }
 
     /// Convenience: a close frame with FIN set.
     #[must_use]
     pub const fn close() -> Self {
-        Self { fin: true, opcode: OpCode::Close, payload: Vec::new() }
+        Self {
+            fin: true,
+            opcode: OpCode::Close,
+            payload: Vec::new(),
+        }
     }
 }
 
@@ -173,7 +181,12 @@ pub fn decode(buf: &[u8]) -> Result<Option<(Frame, usize)>, FrameError> {
         if buf.len() < cursor + 4 {
             return Ok(None);
         }
-        let k = [buf[cursor], buf[cursor + 1], buf[cursor + 2], buf[cursor + 3]];
+        let k = [
+            buf[cursor],
+            buf[cursor + 1],
+            buf[cursor + 2],
+            buf[cursor + 3],
+        ];
         cursor += 4;
         Some(k)
     } else {
@@ -188,7 +201,14 @@ pub fn decode(buf: &[u8]) -> Result<Option<(Frame, usize)>, FrameError> {
         || raw.to_vec(),
         |k| raw.iter().enumerate().map(|(i, b)| b ^ k[i % 4]).collect(),
     );
-    Ok(Some((Frame { fin, opcode, payload }, cursor + len)))
+    Ok(Some((
+        Frame {
+            fin,
+            opcode,
+            payload,
+        },
+        cursor + len,
+    )))
 }
 
 #[cfg(test)]
@@ -225,11 +245,19 @@ mod tests {
     fn roundtrips_control_frames() {
         roundtrip(&Frame::close(), Some([5, 5, 5, 5]));
         roundtrip(
-            &Frame { fin: true, opcode: OpCode::Ping, payload: b"pp".to_vec() },
+            &Frame {
+                fin: true,
+                opcode: OpCode::Ping,
+                payload: b"pp".to_vec(),
+            },
             Some([0, 0, 0, 0]),
         );
         roundtrip(
-            &Frame { fin: true, opcode: OpCode::Pong, payload: vec![] },
+            &Frame {
+                fin: true,
+                opcode: OpCode::Pong,
+                payload: vec![],
+            },
             None,
         );
     }

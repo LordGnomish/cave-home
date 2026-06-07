@@ -102,6 +102,9 @@ async fn spawn_ws_echo_upper() -> String {
         conn.send(&channel_frame(channel::STDOUT, &upper)).await.unwrap();
         conn.send(&channel_frame(channel::ERROR, b"")).await.unwrap();
         conn.send(&Frame::close()).await.unwrap();
+        // Polite close: keep the socket open until the client finishes reading
+        // (drain its remaining frames to EOF) so it never sees a TCP reset.
+        while let Ok(Some(_)) = conn.recv().await {}
     });
     format!("http://{addr}/exec/streamed")
 }
