@@ -158,7 +158,45 @@ pub trait Entity {
     ///   `friendly_name` / `device_class` / `icon` / `supported_features` /
     ///   `assumed_state` / `attribution` keys are added when present.
     fn state_snapshot(&self) -> (String, StateAttributes) {
-        unimplemented!("RED")
+        // Unavailable short-circuits: HA writes STATE_UNAVAILABLE with no
+        // attributes regardless of what the property getters return.
+        if !self.available() {
+            return (STATE_UNAVAILABLE.to_owned(), StateAttributes::new());
+        }
+
+        let state = self.state().unwrap_or_else(|| STATE_UNKNOWN.to_owned());
+
+        // capability attributes form the base; extra (dynamic) attributes are
+        // layered on top so an integration can shadow a capability key.
+        let mut attrs = self.capability_attributes();
+        attrs.extend(self.extra_state_attributes());
+
+        // Standard keys, added only when meaningful (mirrors upstream, which
+        // omits absent metadata and the zero/false defaults).
+        if let Some(name) = self.name() {
+            attrs.insert(ATTR_FRIENDLY_NAME.into(), serde_json::Value::String(name));
+        }
+        if let Some(dc) = self.device_class() {
+            attrs.insert(ATTR_DEVICE_CLASS.into(), serde_json::Value::String(dc));
+        }
+        if let Some(icon) = self.icon() {
+            attrs.insert(ATTR_ICON.into(), serde_json::Value::String(icon));
+        }
+        if let Some(attribution) = self.attribution() {
+            attrs.insert(
+                ATTR_ATTRIBUTION.into(),
+                serde_json::Value::String(attribution),
+            );
+        }
+        let features = self.supported_features();
+        if features != 0 {
+            attrs.insert(ATTR_SUPPORTED_FEATURES.into(), features.into());
+        }
+        if self.assumed_state() {
+            attrs.insert(ATTR_ASSUMED_STATE.into(), serde_json::Value::Bool(true));
+        }
+
+        (state, attrs)
     }
 }
 
