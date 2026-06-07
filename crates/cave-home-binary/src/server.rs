@@ -152,7 +152,7 @@ where
 pub async fn run(cfg: RuntimeConfig) -> std::io::Result<()> {
     let (sig_tx, sig_rx) = watch::channel(false);
     let signal_task = tokio::spawn(async move {
-        let _ = tokio::signal::ctrl_c().await;
+        wait_for_shutdown_signal().await;
         let _ = sig_tx.send(true);
     });
     let shutdown = async move {
@@ -167,6 +167,31 @@ pub async fn run(cfg: RuntimeConfig) -> std::io::Result<()> {
     let result = run_until(cfg, shutdown).await;
     signal_task.abort();
     result
+}
+
+/// Resolve when the OS asks us to stop — Ctrl-C (SIGINT) or, on unix, SIGTERM
+/// (what an init system / `kill` sends), matching K3s' shutdown handling.
+async fn wait_for_shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        match signal(SignalKind::terminate()) {
+            Ok(mut term) => {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {}
+                    _ = term.recv() => {}
+                }
+            }
+            // If SIGTERM can't be registered, fall back to Ctrl-C only.
+            Err(_) => {
+                let _ = tokio::signal::ctrl_c().await;
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
 }
 
 /// The apiserver accept loop. Serves each connection then closes it
