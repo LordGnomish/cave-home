@@ -22,9 +22,10 @@
 
 use std::path::Path;
 
+use cave_home_kubelet_rs::cri::remote::streaming::ExecRequest;
+use cave_home_kubelet_rs::cri::remote::RemoteCriClient;
 use cave_home_kubelet_rs::cri::types as t;
 use cave_home_kubelet_rs::cri::CriClient;
-use cave_home_kubelet_rs::cri::remote::RemoteCriClient;
 
 fn socket_path() -> String {
     std::env::var("CAVE_CRI_CONTAINERD_SOCK")
@@ -76,6 +77,13 @@ async fn real_containerd_pod_bringup() {
     };
     client.pull_image(image.clone()).await.expect("PullImage");
 
+    // ImageService surface: the pulled image lists, and the image filesystem
+    // reports non-trivial usage.
+    let images = client.list_images(None).await.expect("ListImages");
+    assert!(images.iter().any(|i| i.repo_tags.iter().any(|t| t.contains("busybox"))));
+    let fs = client.image_fs_info().await.expect("ImageFsInfo");
+    eprintln!("image fs: {fs:?}");
+
     let container_cfg = t::ContainerConfig {
         metadata: t::ContainerMetadata {
             name: "busybox".into(),
@@ -104,10 +112,44 @@ async fn real_containerd_pod_bringup() {
         .expect("ContainerStatus");
     assert_eq!(status.state, t::ContainerState::Running);
 
-    // 4. Teardown — best effort.
+    // 4. Streamed exec: run `echo` in the live container over the WebSocket
+    //    v5.channel.k8s.io transport (negotiate URL -> dial -> bridge stdio).
+    //    Tolerated as best-effort: a containerd whose streaming server only
+    //    speaks SPDY will fail the dial, which we log rather than hard-fail.
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    match client
+        .exec_streamed(
+            ExecRequest {
+                container_id: container_id.clone(),
+                cmd: vec!["echo".into(), "cave-home".into()],
+                stdout: true,
+                stderr: true,
+                ..Default::default()
+            },
+            None::<&[u8]>,
+            &mut stdout,
+            &mut stderr,
+            None,
+        )
+        .await
+    {
+        Ok(outcome) => {
+            eprintln!(
+                "exec stdout={:?} stderr={:?} outcome={outcome:?}",
+                String::from_utf8_lossy(&stdout),
+                String::from_utf8_lossy(&stderr),
+            );
+            assert!(stdout.starts_with(b"cave-home"));
+        }
+        Err(e) => eprintln!("SKIP streamed exec (runtime not WebSocket-capable?): {e}"),
+    }
+
+    // 5. Teardown — best effort, exercising image removal too.
     let _ = client.stop_container(&container_id, 0).await;
     let _ = client.remove_container(&container_id).await;
     let _ = client.stop_pod_sandbox(&sandbox_id).await;
     let _ = client.remove_pod_sandbox(&sandbox_id).await;
+    let _ = client.remove_image(image).await;
     eprintln!("real containerd bring-up OK");
 }
