@@ -75,7 +75,9 @@ pub mod wire;
 pub use cache::{Cache, CacheKey, CachePlugin};
 pub use error::{Result, WireError};
 pub use file::{FilePlugin, Zone, ZoneReply};
-pub use forward::{Forward, Policy, Pool};
+// `forward::Policy` (load-balancing) is re-exported under a distinct name to
+// avoid colliding with `rewrite::Policy` (rule continue/stop).
+pub use forward::{Forward, Policy as ForwardPolicy, Pool};
 pub use hosts::Hosts;
 pub use kubernetes::{Endpoint, Kubernetes, Port, Protocol, Service};
 pub use message::{Message, Question};
