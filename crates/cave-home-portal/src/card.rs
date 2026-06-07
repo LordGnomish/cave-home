@@ -35,6 +35,9 @@ pub enum Card {
     Scene { entity_id: String },
     /// A summary of a whole room (count of lights on, temperature, …).
     AreaSummary { area_id: String },
+    /// The voice-assistant status panel — listening rooms, wake words, and
+    /// recent spoken interactions. Resident-facing (see [`crate::jarvis`]).
+    Jarvis,
     // ---- developer-only cards (hidden from residents, mobile) --------------
     /// Raw device state inspector — id, attributes, last-seen. Developer only.
     RawEntity { entity_id: String },

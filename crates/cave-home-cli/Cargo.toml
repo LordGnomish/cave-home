@@ -22,6 +22,8 @@ path = "src/main.rs"
 [dependencies]
 clap = { version = "4.5", features = ["derive", "env"] }
 cave-home-tesla = { path = "../cave-home-tesla" }
+cave-home-jarvis = { path = "../cave-home-jarvis" }
+cave-home-voice = { path = "../cave-home-voice" }
 
 [dev-dependencies]
 assert_cmd = "2.0"
