@@ -220,7 +220,9 @@ fn mark_running(reg: &mut Registry, plan: &PodPlan) {
                 ("ready", Value::from(true)),
                 ("started", Value::from(true)),
                 ("restartCount", Value::from(0_i64)),
-                ("state", obj([("running", obj([("startedAt", Value::from("mock-cri"))]))])),
+                // A real RFC3339 start time — kubectl parses this field (e.g. for
+                // `kubectl logs`), so a placeholder string makes it error.
+                ("state", obj([("running", obj([("startedAt", Value::from(crate::table::now_rfc3339()))]))])),
             ])
         })
         .collect();
