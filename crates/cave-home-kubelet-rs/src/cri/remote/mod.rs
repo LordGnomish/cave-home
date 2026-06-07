@@ -28,5 +28,8 @@ pub mod proto {
     tonic::include_proto!("runtime.v1");
 }
 
+mod client;
 mod conv;
 pub mod error;
+
+pub use client::RemoteCriClient;
