@@ -63,6 +63,7 @@ pub mod dashboard;
 pub mod energy;
 pub mod label;
 pub mod theme;
+pub mod unifi;
 pub mod view_mode;
 pub mod viewmodel;
 
