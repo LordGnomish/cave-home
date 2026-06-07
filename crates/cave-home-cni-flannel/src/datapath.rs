@@ -112,7 +112,7 @@ impl VxlanLink {
                     netlink::push_attr(
                         data,
                         IFLA_VXLAN_LINK,
-                        &(self.vtep_index as u32).to_le_bytes(),
+                        &u32::try_from(self.vtep_index).unwrap_or(0).to_le_bytes(),
                     );
                 }
                 if let Some(addr) = self.vtep_addr {
@@ -158,7 +158,7 @@ impl LinkAddr {
             self.prefix,
             0,
             RT_SCOPE_UNIVERSE,
-            self.index as u32,
+            u32::try_from(self.index).unwrap_or(0),
         ));
         netlink::push_attr(&mut m.body, IFA_LOCAL, &ip_octets(self.ip));
         netlink::push_attr(&mut m.body, IFA_ADDRESS, &ip_octets(self.ip));
@@ -186,7 +186,7 @@ impl Route {
     /// `Dst=subnet, Gw=subnet.IP (the peer's .0 VTEP gateway), oif=vxlan dev,
     /// scope=UNIVERSE, flags=RTNH_F_ONLINK` (`vxlan_network.go::vxlanRoute`).
     #[must_use]
-    pub fn vxlan(dest: Cidr, gw: IpAddr, vxlan_index: i32) -> Self {
+    pub const fn vxlan(dest: Cidr, gw: IpAddr, vxlan_index: i32) -> Self {
         Self {
             dest,
             gw: Some(gw),
@@ -199,7 +199,7 @@ impl Route {
     /// The host-gw / VXLAN-directRouting route: `Dst=subnet, Gw=peer public IP,
     /// oif=ext iface` (`hostgw.go` `GetRoute` / `vxlan_network.go::directRoute`).
     #[must_use]
-    pub fn host_gw(dest: Cidr, gw: IpAddr, link_index: i32) -> Self {
+    pub const fn host_gw(dest: Cidr, gw: IpAddr, link_index: i32) -> Self {
         Self {
             dest,
             gw: Some(gw),
@@ -231,7 +231,11 @@ impl Route {
             netlink::push_attr(&mut m.body, RTA_GATEWAY, &ip_octets(gw));
         }
         if self.oif > 0 {
-            netlink::push_attr(&mut m.body, RTA_OIF, &(self.oif as u32).to_le_bytes());
+            netlink::push_attr(
+                &mut m.body,
+                RTA_OIF,
+                &u32::try_from(self.oif).unwrap_or(0).to_le_bytes(),
+            );
         }
         m.serialize()
     }
@@ -261,7 +265,7 @@ impl Neigh {
     /// MAC=peer VTEP` (`device.go::AddFDB`). Maps the peer's VTEP MAC to the
     /// underlay endpoint the encapsulated frame is sent to.
     #[must_use]
-    pub fn fdb(ifindex: i32, public_ip: IpAddr, mac: MacAddr) -> Self {
+    pub const fn fdb(ifindex: i32, public_ip: IpAddr, mac: MacAddr) -> Self {
         Self {
             family: AF_BRIDGE,
             ifindex,
@@ -277,7 +281,7 @@ impl Neigh {
     /// VTEP gateway, MAC=peer VTEP` (`device.go::AddARP`). Resolves the remote
     /// overlay gateway IP to the remote VTEP MAC on the VXLAN device.
     #[must_use]
-    pub fn arp(ifindex: i32, gw_ip: IpAddr, mac: MacAddr) -> Self {
+    pub const fn arp(ifindex: i32, gw_ip: IpAddr, mac: MacAddr) -> Self {
         let family = if gw_ip.is_ipv6() { AF_INET6 } else { AF_INET };
         Self {
             family,
@@ -350,24 +354,57 @@ pub enum Op {
 }
 
 /// The datapath every flannel backend programs against.
+///
+/// # Errors
+///
+/// Every method returns [`NetError`] if the underlying datapath rejects the
+/// request — for the real socket that means a socket I/O failure or a non-zero
+/// errno in the kernel's netlink ACK; the mock never errors.
 pub trait Datapath {
     /// Create the VXLAN device. Returns the new link's index.
+    ///
+    /// # Errors
+    /// [`NetError`] if the datapath rejects the link creation.
     fn link_add(&mut self, link: &VxlanLink) -> Result<i32, NetError>;
     /// Delete a link by index.
+    ///
+    /// # Errors
+    /// [`NetError`] if the datapath rejects the deletion.
     fn link_del(&mut self, index: i32) -> Result<(), NetError>;
     /// Bring a link administratively up.
+    ///
+    /// # Errors
+    /// [`NetError`] if the datapath rejects the state change.
     fn link_set_up(&mut self, index: i32) -> Result<(), NetError>;
     /// Add an address to a link.
+    ///
+    /// # Errors
+    /// [`NetError`] if the datapath rejects the address.
     fn addr_add(&mut self, addr: &LinkAddr) -> Result<(), NetError>;
     /// Add or replace a route (`netlink.RouteReplace`).
+    ///
+    /// # Errors
+    /// [`NetError`] if the datapath rejects the route.
     fn route_replace(&mut self, route: &Route) -> Result<(), NetError>;
     /// Add a route, failing if an identical one exists (`netlink.RouteAdd`).
+    ///
+    /// # Errors
+    /// [`NetError`] if the datapath rejects the route (incl. already-exists).
     fn route_add(&mut self, route: &Route) -> Result<(), NetError>;
     /// Delete a route (`netlink.RouteDel`).
+    ///
+    /// # Errors
+    /// [`NetError`] if the datapath rejects the deletion.
     fn route_del(&mut self, route: &Route) -> Result<(), NetError>;
     /// Add or replace a neighbour entry (`netlink.NeighSet`).
+    ///
+    /// # Errors
+    /// [`NetError`] if the datapath rejects the neighbour.
     fn neigh_set(&mut self, neigh: &Neigh) -> Result<(), NetError>;
     /// Delete a neighbour entry (`netlink.NeighDel`).
+    ///
+    /// # Errors
+    /// [`NetError`] if the datapath rejects the deletion.
     fn neigh_del(&mut self, neigh: &Neigh) -> Result<(), NetError>;
 }
 
@@ -387,7 +424,7 @@ pub struct MockDatapath {
 impl MockDatapath {
     /// A fresh recorder whose first created link gets index 1.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             ops: Vec::new(),
             next_index: 1,

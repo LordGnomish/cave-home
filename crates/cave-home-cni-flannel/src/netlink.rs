@@ -179,12 +179,13 @@ pub const fn nlmsg_align(len: usize) -> usize {
 /// alignment padding — exactly as the kernel ABI specifies.
 pub fn push_attr(buf: &mut Vec<u8>, atype: u16, payload: &[u8]) {
     let len = 4 + payload.len();
-    // rta_len: u16 — must fit. flannel attrs are tiny (≤ 16 bytes).
-    buf.extend_from_slice(&(len as u16).to_le_bytes());
+    // rta_len: u16 — flannel attrs are tiny (≤ 16 bytes), so this never truncates.
+    let len_u16 = u16::try_from(len).unwrap_or(u16::MAX);
+    buf.extend_from_slice(&len_u16.to_le_bytes());
     buf.extend_from_slice(&atype.to_le_bytes());
     buf.extend_from_slice(payload);
     let pad = nlmsg_align(len) - len;
-    buf.extend(std::iter::repeat(0u8).take(pad));
+    buf.extend(std::iter::repeat_n(0u8, pad));
 }
 
 /// Append a nested attribute whose payload is itself a sequence of attrs.
@@ -226,7 +227,7 @@ pub struct NlMsg {
 impl NlMsg {
     /// A request message of `msg_type` with `NLM_F_REQUEST | NLM_F_ACK | extra`.
     #[must_use]
-    pub fn request(msg_type: u16, extra_flags: u16) -> Self {
+    pub const fn request(msg_type: u16, extra_flags: u16) -> Self {
         Self {
             msg_type,
             flags: NLM_F_REQUEST | NLM_F_ACK | extra_flags,
@@ -241,8 +242,9 @@ impl NlMsg {
     #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
         let total = 16 + self.body.len();
+        let total_u32 = u32::try_from(total).unwrap_or(u32::MAX);
         let mut out = Vec::with_capacity(nlmsg_align(total));
-        out.extend_from_slice(&(total as u32).to_le_bytes());
+        out.extend_from_slice(&total_u32.to_le_bytes());
         out.extend_from_slice(&self.msg_type.to_le_bytes());
         out.extend_from_slice(&self.flags.to_le_bytes());
         out.extend_from_slice(&self.seq.to_le_bytes());
