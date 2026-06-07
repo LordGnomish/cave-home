@@ -14,6 +14,10 @@ port-method  = "behavioral-reimplementation"
 phase        = "orchestration-phase-1"
 
 [dependencies]
+# Storage backend seam: the apiserver persists objects through kine's
+# etcd-compatible MVCC KV store (the same datastore k3s embeds). Intra-workspace
+# dependency only — no external crates are introduced.
+cave-home-kine-rs = { path = "../cave-home-kine-rs" }
 
 [dev-dependencies]
 

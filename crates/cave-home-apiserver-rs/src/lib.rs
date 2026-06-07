@@ -85,6 +85,7 @@ pub mod rbac;
 pub mod registry;
 pub mod selector;
 pub mod status;
+pub mod storage;
 
 pub use admission::{
     AdmissionChain, AdmissionRequest, DefaultFields, MutatingPlugin, NamespaceExists, Operation,
