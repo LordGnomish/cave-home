@@ -73,5 +73,7 @@ pub mod device;
 pub mod ipam;
 pub mod mac;
 pub mod netlink;
+pub mod route_network;
 pub mod routes;
 pub mod subnet;
+pub mod vxlan_network;
