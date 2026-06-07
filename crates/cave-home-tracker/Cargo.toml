@@ -1,0 +1,34 @@
+[package]
+name              = "cave-home-tracker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-tracker — persistent, config-driven upstream delta tracker: shallow-clones tracked upstreams, measures honest port LOC / test / stub metrics per subsystem, emits daily markdown progress reports and a Prometheus metrics endpoint; first-party, no upstream port"
+
+[package.metadata.cave-home]
+upstream    = "none"
+port-method = "first-party"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "cave-home-tracker"
+path = "src/main.rs"
+
+[dependencies]
+chrono     = { version = "0.4", default-features = false, features = ["clock", "std"] }
+clap       = { version = "4.5", features = ["derive", "env"] }
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+thiserror  = "2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

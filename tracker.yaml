@@ -1,0 +1,191 @@
+# cave-home-tracker configuration — the cave-home project.
+#
+# `cave-home-tracker poll`   shallow-clones every `upstreams:` entry below.
+# `cave-home-tracker measure` counts upstream LOC vs. each subsystem's Rust port,
+#                             runs the port tests, counts stubs, and writes a
+#                             dated snapshot under work_dir/snapshots/.
+# `cave-home-tracker report`  renders docs/audit/daily-progress-<date>.md.
+#
+# real % = coverage (port_loc/upstream_loc, capped) × test-pass-rate ×
+#          stub-integrity. A subsystem that declares an upstream which has not
+#          been polled (or whose Rust crate does not exist yet on this branch)
+#          honestly scores 0 — it is never inflated to "first-party 100%".
+
+project: cave-home
+root: .
+work_dir: ~/.cache/cave-home-tracker
+
+upstreams:
+  # ---- K3s control / data plane ------------------------------------------
+  - name: k3s
+    repo: https://github.com/k3s-io/k3s
+    languages: [go]
+  - name: kubernetes
+    repo: https://github.com/kubernetes/kubernetes
+    languages: [go]
+    note: "source for apiserver/scheduler/controller-manager/kubelet/kube-proxy"
+  - name: kine
+    repo: https://github.com/k3s-io/kine
+    languages: [go]
+  - name: flannel
+    repo: https://github.com/flannel-io/flannel
+    languages: [go]
+  - name: coredns
+    repo: https://github.com/coredns/coredns
+    languages: [go]
+  - name: traefik
+    repo: https://github.com/traefik/traefik
+    languages: [go]
+  - name: local-path-provisioner
+    repo: https://github.com/rancher/local-path-provisioner
+    languages: [go]
+  - name: metrics-server
+    repo: https://github.com/kubernetes-sigs/metrics-server
+    languages: [go]
+  - name: containerd
+    repo: https://github.com/containerd/containerd
+    languages: [go]
+  - name: klipper-lb
+    repo: https://github.com/k3s-io/klipper-lb
+    languages: [shell, go]
+  - name: helm-controller
+    repo: https://github.com/k3s-io/helm-controller
+    languages: [go]
+
+  # ---- Smart-home upstreams / API specs ----------------------------------
+  - name: home-assistant
+    repo: https://github.com/home-assistant/core
+    languages: [python]
+  - name: paho-mqtt
+    repo: https://github.com/eclipse/paho.mqtt.testing
+    languages: [python]
+    note: "MQTT 3.1.1/5.0 spec conformance test suite"
+  - name: hue-clip-v2
+    repo: https://github.com/home-assistant-libs/aiohue
+    languages: [python]
+    note: "reference client for the Philips Hue CLIP API v2 surface"
+  - name: freeathome
+    repo: https://github.com/Busch-Jaeger/free-at-home
+    languages: [python, javascript]
+    note: "Busch-Jaeger free@home SysAP API — community/spec docs"
+  - name: voice
+    repo: https://github.com/rhasspy/rhasspy3
+    languages: [python]
+    note: "open voice assistant pipeline (openjarvis-class reference)"
+
+subsystems:
+  # ============================ K3s ======================================
+  - name: kine
+    group: k3s
+    port_crates: [crates/cave-home-kine-rs]
+    upstreams:
+      - name: kine
+  - name: apiserver
+    group: k3s
+    port_crates: [crates/cave-home-apiserver-rs]
+    upstreams:
+      - name: kubernetes
+        subpaths: [staging/src/k8s.io/apiserver]
+  - name: scheduler
+    group: k3s
+    port_crates: [crates/cave-home-scheduler-rs]
+    upstreams:
+      - name: kubernetes
+        subpaths: [pkg/scheduler]
+  - name: controller-manager
+    group: k3s
+    port_crates: [crates/cave-home-controller-manager-rs]
+    upstreams:
+      - name: kubernetes
+        subpaths: [pkg/controller]
+  - name: kubelet
+    group: k3s
+    port_crates: [crates/cave-home-kubelet-rs]
+    upstreams:
+      - name: kubernetes
+        subpaths: [pkg/kubelet]
+  - name: kube-proxy
+    group: k3s
+    port_crates: [crates/cave-home-kube-proxy-rs]
+    upstreams:
+      - name: kubernetes
+        subpaths: [pkg/proxy]
+  - name: containerd
+    group: k3s
+    port_crates: [crates/cave-home-containerd-rs]
+    upstreams:
+      - name: containerd
+        subpaths: [pkg/cri]
+  - name: cni-flannel
+    group: k3s
+    port_crates: [crates/cave-home-cni-flannel]
+    upstreams:
+      - name: flannel
+  - name: coredns
+    group: k3s
+    # crate not yet merged on this branch -> honestly measures 0% until it lands.
+    port_crates: [crates/cave-home-coredns-rs]
+    upstreams:
+      - name: coredns
+  - name: traefik
+    group: k3s
+    port_crates: [crates/cave-home-traefik-rs]
+    upstreams:
+      - name: traefik
+        subpaths: [pkg]
+  - name: servicelb
+    group: k3s
+    port_crates: [crates/cave-home-klipper-lb-rs]
+    upstreams:
+      - name: klipper-lb
+  - name: helm-controller
+    group: k3s
+    port_crates: [crates/cave-home-helm-controller-rs]
+    upstreams:
+      - name: helm-controller
+        subpaths: [pkg]
+  - name: metrics-server
+    group: k3s
+    # lives as a module in cave-home-orchestration on a feature branch.
+    port_crates: [crates/cave-home-orchestration/src/metrics_server]
+    upstreams:
+      - name: metrics-server
+  - name: local-path-provisioner
+    group: k3s
+    port_crates: [crates/cave-home-orchestration/src/local_path_provisioner]
+    upstreams:
+      - name: local-path-provisioner
+
+  # ========================= Smart-Home ==================================
+  - name: mqtt
+    group: smart-home
+    port_crates: [crates/cave-home-mqtt]
+    upstreams:
+      - name: paho-mqtt
+  - name: hue
+    group: smart-home
+    port_crates: [crates/cave-home-hue]
+    upstreams:
+      - name: hue-clip-v2
+  - name: free-home
+    group: smart-home
+    port_crates: [crates/cave-home-free-home]
+    upstreams:
+      - name: freeathome
+  - name: voice
+    group: smart-home
+    port_crates: [crates/cave-home-voice]
+    upstreams:
+      - name: voice
+  - name: automation
+    group: smart-home
+    port_crates: [crates/cave-home-automation]
+    upstreams:
+      - name: home-assistant
+        subpaths: [homeassistant/helpers]
+  - name: integrations
+    group: smart-home
+    port_crates: [crates/cave-home-integrations]
+    upstreams:
+      - name: home-assistant
+        subpaths: [homeassistant/components]
