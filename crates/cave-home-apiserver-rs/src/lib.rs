@@ -73,6 +73,7 @@ pub mod admission;
 pub mod authn;
 pub mod discovery;
 pub mod gvk;
+pub mod handler;
 pub mod http;
 pub mod json;
 pub mod meta;
