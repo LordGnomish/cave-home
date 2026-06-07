@@ -22,6 +22,9 @@ path = "src/main.rs"
 [dependencies]
 clap = { version = "4.5", features = ["derive", "env"] }
 cave-home-tesla = { path = "../cave-home-tesla" }
+# Pure model/colour/scene types only — the CLI does not link the async
+# transport, so `runtime` is off (keeps reqwest out of the cavehomectl build).
+cave-home-hue = { path = "../cave-home-hue", default-features = false }
 
 [dev-dependencies]
 assert_cmd = "2.0"
