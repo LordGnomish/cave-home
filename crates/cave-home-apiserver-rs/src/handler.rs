@@ -12,6 +12,7 @@
 //! [`crate::server`].
 
 use crate::authn::{AnonymousAuthenticator, AuthenticatorChain};
+use crate::discovery::{self, ApiGroup, ApiResource, GroupVersionEntry};
 use crate::gvk::{self, GroupVersionResource};
 use crate::http::{Method, Request, Response};
 use crate::json::{self, obj, Value};
@@ -94,8 +95,20 @@ impl ApiServer {
     }
 
     fn route(&mut self, req: &Request) -> Result<Response> {
+        // 0. Unauthenticated liveness/health probes (kubelet + load balancers hit
+        //    these without credentials).
+        if let Some(resp) = health_endpoint(req.path()) {
+            return Ok(resp);
+        }
+
         // 1. Authentication.
         let user = self.authn.authenticate(req)?;
+
+        // 1b. Non-resource API-surface endpoints (discovery + version) sit behind
+        //     authn but are not RBAC resource requests.
+        if let Some(resp) = discovery_endpoint(req.path()) {
+            return Ok(resp);
+        }
 
         // 2. Resolve the resource path + verb.
         let rp = path::parse(req.path())?;
@@ -323,6 +336,121 @@ pub fn object_response(code: u16, body: &Value) -> Response {
 #[must_use]
 pub fn status_response(s: &Status) -> Response {
     object_response(s.code, &status_object(s))
+}
+
+/// Handle the unauthenticated health probes. `Some` iff `path` is a probe.
+fn health_endpoint(path: &str) -> Option<Response> {
+    match path {
+        "/healthz" | "/livez" | "/readyz" => {
+            Some(Response::new(200).with_body("text/plain; charset=utf-8", b"ok".to_vec()))
+        }
+        _ => None,
+    }
+}
+
+/// Handle the discovery + version surface. Returns `Some` iff `path` is one of
+/// the discovery endpoints (`/api`, `/apis`, `/api/{v}`, `/apis/{g}/{v}`) or
+/// `/version`; an unknown group/version inside that surface yields a `404`.
+fn discovery_endpoint(path: &str) -> Option<Response> {
+    if path == "/version" {
+        return Some(object_response(200, &version_object()));
+    }
+    let segs: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    match segs.as_slice() {
+        ["api"] => Some(object_response(200, &api_versions_object())),
+        ["apis"] => Some(object_response(200, &api_group_list_object())),
+        ["api", version] => Some(resource_list_response("", version)),
+        ["apis", group, version] => Some(resource_list_response(group, version)),
+        _ => None,
+    }
+}
+
+/// `APIVersions` served at `/api`.
+fn api_versions_object() -> Value {
+    obj([
+        ("kind", Value::from("APIVersions")),
+        (
+            "versions",
+            Value::Array(discovery::api_versions().into_iter().map(Value::from).collect()),
+        ),
+    ])
+}
+
+/// `APIGroupList` served at `/apis`.
+fn api_group_list_object() -> Value {
+    let groups = discovery::api_groups().iter().map(api_group_object).collect();
+    obj([
+        ("kind", Value::from("APIGroupList")),
+        ("apiVersion", Value::from("v1")),
+        ("groups", Value::Array(groups)),
+    ])
+}
+
+fn group_version_entry_object(e: &GroupVersionEntry) -> Value {
+    obj([
+        ("groupVersion", Value::from(e.group_version.clone())),
+        ("version", Value::from(e.version.clone())),
+    ])
+}
+
+fn api_group_object(g: &ApiGroup) -> Value {
+    let versions = g.versions.iter().map(group_version_entry_object).collect();
+    obj([
+        ("name", Value::from(g.name.clone())),
+        ("versions", Value::Array(versions)),
+        ("preferredVersion", group_version_entry_object(&g.preferred_version)),
+    ])
+}
+
+fn api_resource_object(r: &ApiResource) -> Value {
+    obj([
+        ("name", Value::from(r.name.clone())),
+        ("singularName", Value::from(r.singular_name.clone())),
+        ("namespaced", Value::from(r.namespaced)),
+        ("kind", Value::from(r.kind.clone())),
+        (
+            "verbs",
+            Value::Array(r.verbs.iter().cloned().map(Value::from).collect()),
+        ),
+    ])
+}
+
+/// `APIResourceList` for one group/version, or a `404` if nothing is served
+/// there.
+fn resource_list_response(group: &str, version: &str) -> Response {
+    let resources = discovery::api_resources(group, version);
+    if resources.is_empty() {
+        return status_response(&Status::not_found(
+            "the server could not find the requested resource",
+        ));
+    }
+    let group_version = if group.is_empty() {
+        version.to_string()
+    } else {
+        format!("{group}/{version}")
+    };
+    let items = resources.iter().map(api_resource_object).collect();
+    object_response(
+        200,
+        &obj([
+            ("kind", Value::from("APIResourceList")),
+            ("apiVersion", Value::from("v1")),
+            ("groupVersion", Value::from(group_version)),
+            ("resources", Value::Array(items)),
+        ]),
+    )
+}
+
+/// The `/version` payload (`version.Info`). The minor/gitVersion track the
+/// Kubernetes API surface level this transport targets.
+fn version_object() -> Value {
+    obj([
+        ("major", Value::from("1")),
+        ("minor", Value::from("29")),
+        ("gitVersion", Value::from("v1.29.0-cavehome")),
+        ("compiler", Value::from("rustc")),
+        ("platform", Value::from("cave-home/orchestration")),
+    ])
 }
 
 #[cfg(test)]
