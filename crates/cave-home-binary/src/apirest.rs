@@ -43,8 +43,17 @@ pub fn handle(reg: &mut Registry, req: &HttpRequest) -> HttpResponse {
             return resource_list_response(segs[0], segs[1]);
         }
     }
-    // OpenAPI schema probes: served as a clean 404 so kubectl skips client-side
-    // schema validation gracefully instead of erroring on a malformed-path 400.
+    // OpenAPI v3 discovery: kubectl downloads the root then each group/version's
+    // schema document before `apply`, and resolves the object's kind through the
+    // x-kubernetes-group-version-kind extension. We serve real (permissive)
+    // schemas so the GVK resolves and client-side validation passes; the legacy
+    // v2 swagger stays absent.
+    if req.path == "/openapi/v3" {
+        return openapi_v3_root_response();
+    }
+    if let Some(rest) = req.path.strip_prefix("/openapi/v3/") {
+        return openapi_v3_gv_response(rest);
+    }
     if req.path.starts_with("/openapi") {
         return status_response(&Status::not_found("openapi schema is not served"));
     }
@@ -267,6 +276,107 @@ fn resource_list_response(group: &str, version: &str) -> HttpResponse {
 
 /// The verbs every served resource supports (used in discovery).
 const VERBS: &[&str] = &["get", "list", "create", "update", "patch", "delete", "watch"];
+
+/// `GET /openapi/v3` → the discovery root mapping each served group/version to
+/// its schema document URL (`api/v1`, `apis/{group}/{version}`).
+fn openapi_v3_root_response() -> HttpResponse {
+    let mut paths = std::collections::BTreeMap::new();
+    for (group, version) in gvk::registered_group_versions() {
+        let (key, url) = if group.is_empty() {
+            (format!("api/{version}"), format!("/openapi/v3/api/{version}"))
+        } else {
+            (format!("apis/{group}/{version}"), format!("/openapi/v3/apis/{group}/{version}"))
+        };
+        paths.insert(key, json::obj([("serverRelativeURL", Value::from(url.as_str()))]));
+    }
+    let body = json::obj([("paths", Value::Object(paths))]);
+    HttpResponse::json(200, body.to_json_string())
+}
+
+/// `GET /openapi/v3/{api/v1|apis/group/version}` → an OpenAPI 3.0 document for
+/// that group/version. It carries, per kind:
+///
+/// * a permissive object schema (we model no field rules, so any object is
+///   valid) tagged with `x-kubernetes-group-version-kind`; and
+/// * `paths` entries whose `post`/`put`/`patch` operations advertise the
+///   `fieldValidation` query parameter and the operation's GVK extension.
+///
+/// The `paths` section is what kubectl's query-param verifier requires — without
+/// it the document is rejected as "Invalid OpenAPI V3 document" and `apply`
+/// fails. With it, kubectl uses server-side field validation (which this surface
+/// accepts) and proceeds to create/patch the object.
+fn openapi_v3_gv_response(rest: &str) -> HttpResponse {
+    let segs: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
+    let (group, version) = match segs.as_slice() {
+        ["api", v] => ("", *v),
+        ["apis", g, v] => (*g, *v),
+        _ => return status_response(&Status::not_found("unknown openapi group/version")),
+    };
+    let resources = gvk::registered_resources();
+    let in_gv: Vec<_> = resources.iter().filter(|r| r.group == group && r.version == version).collect();
+    if in_gv.is_empty() {
+        return status_response(&Status::not_found("no schemas for that group/version"));
+    }
+
+    let base = if group.is_empty() { format!("/api/{version}") } else { format!("/apis/{group}/{version}") };
+    let mut schemas = std::collections::BTreeMap::new();
+    let mut paths = std::collections::BTreeMap::new();
+    for r in &in_gv {
+        let gvk_tag = json::obj([
+            ("group", Value::from(r.group)),
+            ("version", Value::from(r.version)),
+            ("kind", Value::from(r.kind)),
+        ]);
+        let dns = if r.group.is_empty() { "core".to_string() } else { r.group.replace('.', "_") };
+        let schema_key = format!("cave.home.{dns}.{}.{}", r.version, r.kind);
+        schemas.insert(
+            schema_key.clone(),
+            json::obj([
+                ("type", Value::from("object")),
+                ("x-kubernetes-group-version-kind", Value::Array(vec![gvk_tag.clone()])),
+            ]),
+        );
+
+        let op = openapi_operation(&schema_key, &gvk_tag);
+        let (collection, item) = if r.namespaced {
+            (format!("{base}/namespaces/{{namespace}}/{}", r.resource), format!("{base}/namespaces/{{namespace}}/{}/{{name}}", r.resource))
+        } else {
+            (format!("{base}/{}", r.resource), format!("{base}/{}/{{name}}", r.resource))
+        };
+        paths.insert(collection, json::obj([("post", op.clone())]));
+        paths.insert(item, json::obj([("put", op.clone()), ("patch", op)]));
+    }
+
+    let body = json::obj([
+        ("openapi", Value::from("3.0.0")),
+        ("info", json::obj([("title", Value::from("cave-home")), ("version", Value::from("v1"))])),
+        ("paths", Value::Object(paths)),
+        ("components", json::obj([("schemas", Value::Object(schemas))])),
+    ]);
+    HttpResponse::json(200, body.to_json_string())
+}
+
+/// One OpenAPI operation advertising the `fieldValidation` query parameter, a
+/// JSON request body referencing the kind's schema, and the operation's GVK
+/// extension — the shape kubectl's query-param verifier matches against.
+fn openapi_operation(schema_key: &str, gvk_tag: &Value) -> Value {
+    let field_validation = json::obj([
+        ("name", Value::from("fieldValidation")),
+        ("in", Value::from("query")),
+        ("schema", json::obj([("type", Value::from("string"))])),
+    ]);
+    let body_schema = json::obj([("$ref", Value::from(format!("#/components/schemas/{schema_key}").as_str()))]);
+    let request_body = json::obj([(
+        "content",
+        json::obj([("application/json", json::obj([("schema", body_schema)]))]),
+    )]);
+    json::obj([
+        ("parameters", Value::Array(vec![field_validation])),
+        ("requestBody", request_body),
+        ("responses", json::obj([("200", json::obj([("description", Value::from("OK"))]))])),
+        ("x-kubernetes-group-version-kind", gvk_tag.clone()),
+    ])
+}
 
 /// The `apiVersion` string for a GVR (`v1`, or `group/version`).
 fn api_version_of(gvr: &gvk::GroupVersionResource) -> String {
@@ -523,12 +633,45 @@ mod tests {
     }
 
     #[test]
-    fn openapi_is_404_not_400() {
-        // kubectl probes /openapi/* for schema validation; a clean 404 makes it
-        // skip validation gracefully rather than erroring on a 400.
+    fn openapi_v3_root_lists_every_group_version() {
+        // kubectl downloads the OpenAPI v3 root before `apply`; each served
+        // group/version must point at its schema document.
+        let mut reg = Registry::new();
+        let resp = handle(&mut reg, &get("/openapi/v3"));
+        assert_eq!(resp.status, 200);
+        let body = String::from_utf8(resp.body).unwrap();
+        assert!(body.contains("\"api/v1\""), "{body}");
+        assert!(body.contains("\"apis/apps/v1\""), "{body}");
+        assert!(body.contains("serverRelativeURL"), "{body}");
+        assert!(body.contains("/openapi/v3/api/v1"), "{body}");
+    }
+
+    #[test]
+    fn openapi_v3_gv_doc_tags_each_kind_with_its_gvk() {
+        // The per-GV document resolves a kind by its x-kubernetes-group-version-kind
+        // extension; the schema itself is permissive (we model no field rules),
+        // so client-side validation passes for any well-formed object.
+        let mut reg = Registry::new();
+        // kubectl appends a ?hash= query — the codec strips it to the bare path.
+        let resp = handle(&mut reg, &get("/openapi/v3/api/v1"));
+        assert_eq!(resp.status, 200);
+        let body = String::from_utf8(resp.body).unwrap();
+        assert!(body.contains("\"openapi\":\"3.0.0\""), "{body}");
+        assert!(body.contains("x-kubernetes-group-version-kind"), "{body}");
+        assert!(body.contains("\"kind\":\"Pod\""), "{body}");
+        // paths + fieldValidation make the doc valid to kubectl's verifier.
+        assert!(body.contains("/api/v1/namespaces/{namespace}/pods"), "{body}");
+        assert!(body.contains("fieldValidation"), "{body}");
+        // grouped GV resolves too
+        let g = handle(&mut reg, &get("/openapi/v3/apis/apps/v1"));
+        assert_eq!(g.status, 200);
+        assert!(String::from_utf8(g.body).unwrap().contains("\"kind\":\"Deployment\""));
+    }
+
+    #[test]
+    fn openapi_v2_swagger_stays_absent() {
         let mut reg = Registry::new();
         assert_eq!(handle(&mut reg, &get("/openapi/v2")).status, 404);
-        assert_eq!(handle(&mut reg, &get("/openapi/v3")).status, 404);
     }
 
     #[test]
