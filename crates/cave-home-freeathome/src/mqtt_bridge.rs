@@ -75,7 +75,9 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn state_is_retained() {
+        // Compile-time contract: late subscribers must see the last value.
         assert!(STATE_RETAINED);
     }
 }

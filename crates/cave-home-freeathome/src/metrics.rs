@@ -58,7 +58,8 @@ impl Metrics {
 
     /// Set the connected gauge (true → 1, false → 0).
     pub fn set_connected(&self, connected: bool) {
-        self.connected.store(u64::from(connected), Ordering::Relaxed);
+        self.connected
+            .store(u64::from(connected), Ordering::Relaxed);
     }
 
     /// The number of state changes observed.

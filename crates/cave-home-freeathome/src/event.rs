@@ -160,11 +160,11 @@ mod tests {
     #[test]
     fn parses_datapoint_updates() {
         let evs = parse_ws_frame(WS_FRAME).expect("parse");
-        let updates: Vec<_> = evs
+        let updates = evs
             .iter()
             .filter_map(FreeAtHomeEvent::as_datapoint_update)
-            .collect();
-        assert_eq!(updates.len(), 2);
+            .count();
+        assert_eq!(updates, 2);
     }
 
     #[test]
@@ -182,8 +182,7 @@ mod tests {
 
     #[test]
     fn parse_address_triple() {
-        let (s, c, d) =
-            parse_datapoint_address("ABB700C12345/ch0003/idp0001").expect("address");
+        let (s, c, d) = parse_datapoint_address("ABB700C12345/ch0003/idp0001").expect("address");
         assert_eq!(s.as_str(), "ABB700C12345");
         assert_eq!(c, ChannelId::new(3));
         assert_eq!(d, DatapointId::new(Direction::Input, 1));
@@ -217,9 +216,11 @@ mod tests {
             "devicesRemoved": ["ABB700C99999"]
         } }"#;
         let evs = parse_ws_frame(json).expect("parse");
-        assert!(evs.iter().any(
-            |e| matches!(e, FreeAtHomeEvent::DeviceAdded(s) if s.as_str() == "ABB700C12345")
-        ));
+        assert!(
+            evs.iter().any(
+                |e| matches!(e, FreeAtHomeEvent::DeviceAdded(s) if s.as_str() == "ABB700C12345")
+            )
+        );
         assert!(evs.iter().any(
             |e| matches!(e, FreeAtHomeEvent::DeviceRemoved(s) if s.as_str() == "ABB700C99999")
         ));

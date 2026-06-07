@@ -8,4 +8,6 @@
 
 pub mod viewmodel;
 
-pub use viewmodel::{controls, detail, kind_label, sensors, tile, Control, DeviceDetailView, DeviceTile};
+pub use viewmodel::{
+    Control, DeviceDetailView, DeviceTile, controls, detail, kind_label, sensors, tile,
+};

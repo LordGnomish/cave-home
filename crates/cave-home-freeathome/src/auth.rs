@@ -122,7 +122,10 @@ mod tests {
     #[test]
     fn auth_method_exposes_basic_header() {
         let m = AuthMethod::basic("user", "pass");
-        assert_eq!(m.basic_auth_header_value(), Some("Basic dXNlcjpwYXNz".to_string()));
+        assert_eq!(
+            m.basic_auth_header_value(),
+            Some("Basic dXNlcjpwYXNz".to_string())
+        );
     }
 
     #[test]

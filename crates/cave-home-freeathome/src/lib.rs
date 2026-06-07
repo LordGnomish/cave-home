@@ -26,6 +26,8 @@
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::must_use_candidate)]
+// Tests lean on expect/unwrap/assert for clarity (workspace convention).
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used, clippy::panic))]
 // This crate's docs are dense with protocol acronyms (SysAP, HTTPS, WSS, mTLS,
 // fhapi); backticking every one hurts readability more than it helps.
 #![allow(clippy::doc_markdown)]
@@ -37,29 +39,29 @@ pub mod config;
 pub mod core_bridge;
 pub mod device;
 pub mod error;
+pub mod event;
 pub mod metrics;
+pub mod model;
 pub mod mqtt_bridge;
 pub mod portal;
-pub mod event;
-pub mod model;
 pub mod reconnect;
 pub mod rest;
 pub mod state;
 
 pub use auth::{AuthMethod, ClientCertConfig, Credentials};
+pub use cli::{CliError, FreeAtHomeCommand, parse as parse_cli, to_rest_request};
+pub use client::{FreeAtHomeClient, run_event_loop};
 pub use config::ClientConfig;
-pub use cli::{parse as parse_cli, to_rest_request, CliError, FreeAtHomeCommand};
-pub use client::{run_event_loop, FreeAtHomeClient};
 pub use core_bridge::{entity_id, on_off_state, register};
-pub use device::{writable_pairings, Device, FreeAtHomeDevice};
+pub use device::{Device, FreeAtHomeDevice, writable_pairings};
 pub use error::{FreeAtHomeError, Result};
+pub use event::{DatapointUpdate, FreeAtHomeEvent, parse_datapoint_address, parse_ws_frame};
 pub use metrics::Metrics;
-pub use mqtt_bridge::{availability_topic, state_payload, state_topic};
-pub use portal::{Control, DeviceDetailView, DeviceTile};
-pub use event::{parse_datapoint_address, parse_ws_frame, DatapointUpdate, FreeAtHomeEvent};
-pub use reconnect::Backoff;
-pub use state::StateCache;
 pub use model::{
     ChannelDto, ConfigurationResponse, DatapointDto, DeviceDto, DeviceListResponse, SysApConfig,
 };
+pub use mqtt_bridge::{availability_topic, state_payload, state_topic};
+pub use portal::{Control, DeviceDetailView, DeviceTile};
+pub use reconnect::Backoff;
 pub use rest::{HttpMethod, RestRequest};
+pub use state::StateCache;

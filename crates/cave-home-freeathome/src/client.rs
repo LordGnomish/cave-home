@@ -13,16 +13,16 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use futures_util::{Stream, StreamExt as _};
-use tokio_tungstenite::tungstenite::http::header::AUTHORIZATION;
-use tokio_tungstenite::tungstenite::http::HeaderValue;
-use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
 use tokio_tungstenite::Connector;
+use tokio_tungstenite::tungstenite::http::HeaderValue;
+use tokio_tungstenite::tungstenite::http::header::AUTHORIZATION;
+use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest};
 
 use cave_home_free_home::{ChannelId, DatapointId, DeviceSerial};
 
 use crate::config::ClientConfig;
 use crate::error::{FreeAtHomeError, Result};
-use crate::event::{parse_ws_frame, FreeAtHomeEvent};
+use crate::event::{FreeAtHomeEvent, parse_ws_frame};
 use crate::metrics::Metrics;
 use crate::model::{ConfigurationResponse, DeviceListResponse};
 use crate::rest::{HttpMethod, RestRequest};
@@ -92,7 +92,9 @@ impl FreeAtHomeClient {
         let status = response.status();
         if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
             self.metrics.record_auth_failure();
-            return Err(FreeAtHomeError::Auth(format!("SysAP rejected credentials ({status})")));
+            return Err(FreeAtHomeError::Auth(format!(
+                "SysAP rejected credentials ({status})"
+            )));
         }
         if !status.is_success() {
             self.metrics.record_error();
@@ -133,9 +135,11 @@ impl FreeAtHomeClient {
         datapoint: DatapointId,
         value: impl Into<String>,
     ) -> Result<()> {
-        self.send_rest(RestRequest::set_datapoint(serial, channel, datapoint, value))
-            .await
-            .map(|_| ())
+        self.send_rest(RestRequest::set_datapoint(
+            serial, channel, datapoint, value,
+        ))
+        .await
+        .map(|_| ())
     }
 
     /// Open the live WebSocket, run the read loop, and reconnect with backoff.
@@ -239,9 +243,7 @@ where
 /// For LAN SysAPs that ship a self-signed certificate; gated behind
 /// [`ClientConfig::insecure_tls`]. Certificate pinning is the future hardening.
 fn insecure_rustls_config() -> Result<Arc<rustls::ClientConfig>> {
-    use rustls::client::danger::{
-        HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
-    };
+    use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
     use rustls::crypto::CryptoProvider;
     use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
     use rustls::{DigitallySignedStruct, SignatureScheme};

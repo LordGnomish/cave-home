@@ -132,7 +132,12 @@ mod tests {
     fn dev(function: Function, name: &str) -> Device {
         Device::new(
             DeviceSerial::parse("ABB700C12345").expect("serial"),
-            Channel::new(ChannelId::new(0), function, Some("Living Room".into()), None),
+            Channel::new(
+                ChannelId::new(0),
+                function,
+                Some("Living Room".into()),
+                None,
+            ),
             name,
         )
     }
@@ -146,12 +151,18 @@ mod tests {
 
     #[test]
     fn switch_actuator_is_switch() {
-        assert_eq!(dev(Function::SwitchActuator, "Plug").kind(), DeviceKind::Switch);
+        assert_eq!(
+            dev(Function::SwitchActuator, "Plug").kind(),
+            DeviceKind::Switch
+        );
     }
 
     #[test]
     fn blind_is_cover() {
-        assert_eq!(dev(Function::BlindActuator, "Shade").kind(), DeviceKind::Cover);
+        assert_eq!(
+            dev(Function::BlindActuator, "Shade").kind(),
+            DeviceKind::Cover
+        );
     }
 
     #[test]

@@ -5,7 +5,7 @@
 use cave_home_free_home::{DeviceKind, Lang, Pairing};
 
 use crate::core_bridge::entity_id;
-use crate::device::{writable_pairings, FreeAtHomeDevice};
+use crate::device::{FreeAtHomeDevice, writable_pairings};
 use crate::error::Result;
 
 /// A control a household can operate on a device's detail page.

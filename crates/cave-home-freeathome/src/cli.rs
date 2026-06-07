@@ -105,8 +105,8 @@ pub fn parse(args: &[String]) -> core::result::Result<FreeAtHomeCommand, CliErro
 /// malformed input).
 pub fn to_rest_request(command: &FreeAtHomeCommand) -> Result<Option<RestRequest>> {
     let parse_ids = |serial: &str, channel: &str, datapoint: &str| -> Result<_> {
-        let serial = DeviceSerial::parse(serial)
-            .map_err(|e| FreeAtHomeError::Domain(e.to_string()))?;
+        let serial =
+            DeviceSerial::parse(serial).map_err(|e| FreeAtHomeError::Domain(e.to_string()))?;
         let channel =
             ChannelId::parse(channel).map_err(|e| FreeAtHomeError::Domain(e.to_string()))?;
         let datapoint =
@@ -157,12 +157,18 @@ mod tests {
 
     #[test]
     fn parse_list() {
-        assert_eq!(parse(&args(&["list"])).expect("ok"), FreeAtHomeCommand::List);
+        assert_eq!(
+            parse(&args(&["list"])).expect("ok"),
+            FreeAtHomeCommand::List
+        );
     }
 
     #[test]
     fn parse_watch() {
-        assert_eq!(parse(&args(&["watch"])).expect("ok"), FreeAtHomeCommand::Watch);
+        assert_eq!(
+            parse(&args(&["watch"])).expect("ok"),
+            FreeAtHomeCommand::Watch
+        );
     }
 
     #[test]
