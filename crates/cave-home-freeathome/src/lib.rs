@@ -33,9 +33,13 @@
 pub mod auth;
 pub mod config;
 pub mod error;
-mod model;
-mod rest;
+pub mod model;
+pub mod rest;
 
 pub use auth::{AuthMethod, ClientCertConfig, Credentials};
 pub use config::ClientConfig;
 pub use error::{FreeAtHomeError, Result};
+pub use model::{
+    ChannelDto, ConfigurationResponse, DatapointDto, DeviceDto, DeviceListResponse, SysApConfig,
+};
+pub use rest::{HttpMethod, RestRequest};
