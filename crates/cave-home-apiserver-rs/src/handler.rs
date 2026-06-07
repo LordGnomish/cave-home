@@ -158,4 +158,155 @@ mod tests {
         let body = String::from_utf8(resp.body.clone()).expect("utf8");
         assert!(body.contains("\"name\":\"p\""));
     }
+
+    // --- REST dispatch (verb resolution + storage) --------------------------
+
+    use crate::http::Request;
+
+    fn req(method: &str, target: &str, ctype: &str, body: &str) -> Request {
+        let raw = format!(
+            "{method} {target} HTTP/1.1\r\ncontent-type: {ctype}\r\ncontent-length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        Request::parse(raw.as_bytes()).expect("parse")
+    }
+
+    fn body_str(resp: &crate::http::Response) -> String {
+        String::from_utf8(resp.body.clone()).expect("utf8")
+    }
+
+    fn pod_json(ns: &str, name: &str) -> String {
+        format!(r#"{{"apiVersion":"v1","kind":"Pod","metadata":{{"name":"{name}","namespace":"{ns}"}}}}"#)
+    }
+
+    #[test]
+    fn create_returns_201_with_resource_version() {
+        let mut s = ApiServer::new();
+        let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        assert_eq!(resp.status, 201);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert_eq!(v.pointer("metadata.resourceVersion"), Some(&Value::from("1")));
+        assert_eq!(v.pointer("metadata.name"), Some(&Value::from("nginx")));
+    }
+
+    #[test]
+    fn get_existing_returns_200() {
+        let mut s = ApiServer::new();
+        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        let resp = s.handle(&req("GET", "/api/v1/namespaces/default/pods/nginx", "application/json", ""));
+        assert_eq!(resp.status, 200);
+        assert!(body_str(&resp).contains("\"name\":\"nginx\""));
+    }
+
+    #[test]
+    fn get_missing_returns_404_status() {
+        let mut s = ApiServer::new();
+        let resp = s.handle(&req("GET", "/api/v1/namespaces/default/pods/ghost", "application/json", ""));
+        assert_eq!(resp.status, 404);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert_eq!(v.pointer("kind"), Some(&Value::from("Status")));
+        assert_eq!(v.pointer("reason"), Some(&Value::from("NotFound")));
+    }
+
+    #[test]
+    fn list_returns_podlist_with_items() {
+        let mut s = ApiServer::new();
+        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "a")));
+        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "b")));
+        let resp = s.handle(&req("GET", "/api/v1/namespaces/default/pods", "application/json", ""));
+        assert_eq!(resp.status, 200);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert_eq!(v.pointer("kind"), Some(&Value::from("PodList")));
+        assert_eq!(v.pointer("items").and_then(Value::as_array).map(<[_]>::len), Some(2));
+    }
+
+    #[test]
+    fn list_honours_label_selector() {
+        let mut s = ApiServer::new();
+        let labeled = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"web","namespace":"default","labels":{"app":"web"}}}"#;
+        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", labeled));
+        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "db")));
+        let resp = s.handle(&req("GET", "/api/v1/namespaces/default/pods?labelSelector=app%3Dweb", "application/json", ""));
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert_eq!(v.pointer("items").and_then(Value::as_array).map(<[_]>::len), Some(1));
+    }
+
+    #[test]
+    fn update_bumps_resource_version() {
+        let mut s = ApiServer::new();
+        let created = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        let body = body_str(&created);
+        let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx", "application/json", &body));
+        assert_eq!(resp.status, 200);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert_eq!(v.pointer("metadata.resourceVersion"), Some(&Value::from("2")));
+    }
+
+    #[test]
+    fn update_with_stale_rv_returns_409() {
+        let mut s = ApiServer::new();
+        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        // Stale rv on the PUT body.
+        let stale = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default","resourceVersion":"999"}}"#;
+        let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx", "application/json", stale));
+        assert_eq!(resp.status, 409);
+    }
+
+    #[test]
+    fn merge_patch_updates_field() {
+        let mut s = ApiServer::new();
+        let with_spec = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default"},"spec":{"replicas":1}}"#;
+        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", with_spec));
+        let resp = s.handle(&req(
+            "PATCH",
+            "/api/v1/namespaces/default/pods/nginx",
+            "application/merge-patch+json",
+            r#"{"spec":{"replicas":5}}"#,
+        ));
+        assert_eq!(resp.status, 200);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert_eq!(v.pointer("spec.replicas"), Some(&Value::from(5_i64)));
+    }
+
+    #[test]
+    fn delete_returns_200_and_removes() {
+        let mut s = ApiServer::new();
+        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        let del = s.handle(&req("DELETE", "/api/v1/namespaces/default/pods/nginx", "application/json", ""));
+        assert_eq!(del.status, 200);
+        let get = s.handle(&req("GET", "/api/v1/namespaces/default/pods/nginx", "application/json", ""));
+        assert_eq!(get.status, 404);
+    }
+
+    #[test]
+    fn unknown_resource_returns_404() {
+        let mut s = ApiServer::new();
+        let resp = s.handle(&req("GET", "/apis/example.com/v1/widgets", "application/json", ""));
+        assert_eq!(resp.status, 404);
+    }
+
+    #[test]
+    fn put_on_collection_is_405() {
+        let mut s = ApiServer::new();
+        let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods", "application/json", "{}"));
+        assert_eq!(resp.status, 405);
+    }
+
+    #[test]
+    fn update_status_subresource_persists_only_status() {
+        let mut s = ApiServer::new();
+        let with_spec = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default"},"spec":{"replicas":1}}"#;
+        let created = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", with_spec));
+        let cv = crate::json::parse(&body_str(&created)).expect("json");
+        let rv = cv.pointer("metadata.resourceVersion").and_then(Value::as_str).expect("rv");
+        // Status write also tries to change spec; spec must be ignored.
+        let submit = format!(
+            r#"{{"apiVersion":"v1","kind":"Pod","metadata":{{"name":"nginx","namespace":"default","resourceVersion":"{rv}"}},"spec":{{"replicas":99}},"status":{{"phase":"Running"}}}}"#
+        );
+        let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx/status", "application/json", &submit));
+        assert_eq!(resp.status, 200);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert_eq!(v.pointer("spec.replicas"), Some(&Value::from(1_i64)));
+        assert_eq!(v.pointer("status.phase"), Some(&Value::from("Running")));
+    }
 }
