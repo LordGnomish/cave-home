@@ -206,7 +206,7 @@ pub struct Service {
 impl Service {
     /// A service with the given metadata and selector.
     #[must_use]
-    pub fn new(meta: ObjectMeta, selector: BTreeMap<String, String>) -> Self {
+    pub const fn new(meta: ObjectMeta, selector: BTreeMap<String, String>) -> Self {
         Self { meta, selector }
     }
 }
