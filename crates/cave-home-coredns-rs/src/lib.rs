@@ -64,6 +64,7 @@ pub mod hosts;
 pub mod message;
 pub mod name;
 pub mod plugin;
+pub mod rewrite;
 pub mod rr;
 pub mod wire;
 
@@ -72,5 +73,6 @@ pub use hosts::Hosts;
 pub use message::{Message, Question};
 pub use name::Name;
 pub use plugin::{Chain, Next, Outcome, Plugin, Request, ServerError};
+pub use rewrite::{NameRule, Policy, Rewriter, Rule};
 pub use rr::{Class, Rdata, RecordType, ResourceRecord};
 pub use wire::{Header, Opcode, Rcode, Reader, Writer};
