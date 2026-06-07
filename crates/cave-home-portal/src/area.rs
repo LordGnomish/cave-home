@@ -214,18 +214,8 @@ mod tests {
             Domain::Light,
             Some("living"),
         ));
-        h.add_entity(Entity::new(
-            "l2",
-            "Floor lamp",
-            Domain::Light,
-            Some("living"),
-        ));
-        h.add_entity(Entity::new(
-            "lk",
-            "Front door",
-            Domain::Lock,
-            Some("living"),
-        ));
+        h.add_entity(Entity::new("l2", "Floor lamp", Domain::Light, Some("living")));
+        h.add_entity(Entity::new("lk", "Front door", Domain::Lock, Some("living")));
         h.add_entity(Entity::new(
             "bl",
             "Reading light",

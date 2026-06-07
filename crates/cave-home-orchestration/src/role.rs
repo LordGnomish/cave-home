@@ -203,10 +203,7 @@ mod tests {
         let ext = NodeIntent::Worker.external_prerequisites();
         assert_eq!(ext, vec![Component::Apiserver]);
         let plan = crate::bringup::BringUpPlan::compute_with_external(&comps, &ext);
-        assert!(
-            plan.is_ok(),
-            "agent set must plan with external apiserver: {plan:?}"
-        );
+        assert!(plan.is_ok(), "agent set must plan with external apiserver: {plan:?}");
     }
 
     #[test]

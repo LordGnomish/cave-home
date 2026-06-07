@@ -101,9 +101,7 @@ pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
         }
         Err(e) => {
             // Grandma-friendly error first; verbose adds the raw error.
-            eprintln!(
-                "Could not set up cave-home on this device. Try running with admin permissions."
-            );
+            eprintln!("Could not set up cave-home on this device. Try running with admin permissions.");
             if verbose {
                 eprintln!("  error: {e}");
             }

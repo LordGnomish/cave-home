@@ -79,11 +79,7 @@ impl Theme {
     /// # Errors
     /// Returns [`ThemeError`] if the accent is not a 6-digit hex colour or the
     /// brand name is blank.
-    pub fn new(
-        brand: impl Into<String>,
-        mode: Mode,
-        accent: impl Into<String>,
-    ) -> Result<Self, ThemeError> {
+    pub fn new(brand: impl Into<String>, mode: Mode, accent: impl Into<String>) -> Result<Self, ThemeError> {
         let brand = brand.into();
         if brand.trim().is_empty() {
             return Err(ThemeError::EmptyBrand);
@@ -92,11 +88,7 @@ impl Theme {
         if !is_hex_color(&accent) {
             return Err(ThemeError::BadAccentHex);
         }
-        Ok(Self {
-            brand,
-            mode,
-            accent,
-        })
+        Ok(Self { brand, mode, accent })
     }
 
     /// The validated accent colour.
@@ -153,26 +145,14 @@ mod tests {
 
     #[test]
     fn bad_accent_rejected() {
-        assert_eq!(
-            Theme::new("Home", Mode::Light, "ffb000"),
-            Err(ThemeError::BadAccentHex)
-        );
-        assert_eq!(
-            Theme::new("Home", Mode::Light, "#fff"),
-            Err(ThemeError::BadAccentHex)
-        );
-        assert_eq!(
-            Theme::new("Home", Mode::Light, "#gggggg"),
-            Err(ThemeError::BadAccentHex)
-        );
+        assert_eq!(Theme::new("Home", Mode::Light, "ffb000"), Err(ThemeError::BadAccentHex));
+        assert_eq!(Theme::new("Home", Mode::Light, "#fff"), Err(ThemeError::BadAccentHex));
+        assert_eq!(Theme::new("Home", Mode::Light, "#gggggg"), Err(ThemeError::BadAccentHex));
     }
 
     #[test]
     fn blank_brand_rejected() {
-        assert_eq!(
-            Theme::new("  ", Mode::Light, "#ffffff"),
-            Err(ThemeError::EmptyBrand)
-        );
+        assert_eq!(Theme::new("  ", Mode::Light, "#ffffff"), Err(ThemeError::EmptyBrand));
     }
 
     #[test]

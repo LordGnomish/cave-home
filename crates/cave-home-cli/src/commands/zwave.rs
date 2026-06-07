@@ -13,9 +13,18 @@ use clap::Command;
 pub fn cmd() -> Command {
     Command::new("zwave")
         .about("Z-Wave controller")
-        .subcommand(Command::new("pair").about("Add a Z-Wave node"))
-        .subcommand(Command::new("list").about("List Z-Wave nodes"))
-        .subcommand(Command::new("heal").about("Heal the Z-Wave mesh"))
+        .subcommand(
+            Command::new("pair")
+                .about("Add a Z-Wave node")
+        )
+        .subcommand(
+            Command::new("list")
+                .about("List Z-Wave nodes")
+        )
+        .subcommand(
+            Command::new("heal")
+                .about("Heal the Z-Wave mesh")
+        )
 }
 
 pub fn run() -> i32 {
@@ -30,10 +39,7 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c
-            .get_subcommands()
-            .map(|s| s.get_name().to_string())
-            .collect();
+        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
         for sub in ["pair", "list", "heal"] {
             assert!(
                 names.iter().any(|n| n == sub),

@@ -16,16 +16,25 @@ pub fn cmd() -> Command {
         .subcommand(
             Command::new("play")
                 .about("Play a queue / artist / playlist")
-                .arg(Arg::new("what").long("what").required(true)),
+                .arg(Arg::new("what").long("what").required(true))
         )
-        .subcommand(Command::new("pause").about("Pause playback"))
-        .subcommand(Command::new("skip").about("Skip to next track"))
+        .subcommand(
+            Command::new("pause")
+                .about("Pause playback")
+        )
+        .subcommand(
+            Command::new("skip")
+                .about("Skip to next track")
+        )
         .subcommand(
             Command::new("volume")
                 .about("Set volume 0-100")
-                .arg(Arg::new("level").long("level").required(true)),
+                .arg(Arg::new("level").long("level").required(true))
         )
-        .subcommand(Command::new("rooms").about("List rooms that are playing"))
+        .subcommand(
+            Command::new("rooms")
+                .about("List rooms that are playing")
+        )
 }
 
 pub fn run() -> i32 {
@@ -40,10 +49,7 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c
-            .get_subcommands()
-            .map(|s| s.get_name().to_string())
-            .collect();
+        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
         for sub in ["play", "pause", "skip", "volume", "rooms"] {
             assert!(
                 names.iter().any(|n| n == sub),

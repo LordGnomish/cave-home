@@ -16,19 +16,22 @@ pub fn cmd() -> Command {
         .subcommand(
             Command::new("view")
                 .about("Open the live stream")
-                .arg(Arg::new("name").long("name").required(true)),
+                .arg(Arg::new("name").long("name").required(true))
         )
         .subcommand(
             Command::new("snapshot")
                 .about("Save a still image now")
-                .arg(Arg::new("name").long("name").required(true)),
+                .arg(Arg::new("name").long("name").required(true))
         )
         .subcommand(
             Command::new("clips")
                 .about("List recent motion clips")
-                .arg(Arg::new("name").long("name").required(true)),
+                .arg(Arg::new("name").long("name").required(true))
         )
-        .subcommand(Command::new("list").about("List every camera by location"))
+        .subcommand(
+            Command::new("list")
+                .about("List every camera by location")
+        )
 }
 
 pub fn run() -> i32 {
@@ -43,10 +46,7 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c
-            .get_subcommands()
-            .map(|s| s.get_name().to_string())
-            .collect();
+        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
         for sub in ["view", "snapshot", "clips", "list"] {
             assert!(
                 names.iter().any(|n| n == sub),

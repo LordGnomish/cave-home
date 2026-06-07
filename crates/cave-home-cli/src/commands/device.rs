@@ -63,7 +63,9 @@ pub fn cmd() -> Command {
         .about("Manage devices in your cave-home")
         .subcommand_required(true)
         .arg_required_else_help(true)
-        .subcommand(Command::new("list").about("Show every device cave-home knows about"))
+        .subcommand(
+            Command::new("list").about("Show every device cave-home knows about"),
+        )
         .subcommand(
             Command::new("add")
                 .about("Add a new device (scans for 5s by default)")
@@ -81,12 +83,14 @@ pub fn cmd() -> Command {
                 ),
         )
         .subcommand(
-            Command::new("remove").about("Forget a device").arg(
-                Arg::new("name")
-                    .help("Device name to remove (use `device list` first)")
-                    .required(true)
-                    .num_args(1),
-            ),
+            Command::new("remove")
+                .about("Forget a device")
+                .arg(
+                    Arg::new("name")
+                        .help("Device name to remove (use `device list` first)")
+                        .required(true)
+                        .num_args(1),
+                ),
         )
 }
 

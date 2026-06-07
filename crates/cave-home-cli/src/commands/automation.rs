@@ -57,20 +57,24 @@ pub fn cmd() -> Command {
         .arg_required_else_help(true)
         .subcommand(Command::new("list").about("Show every automation"))
         .subcommand(
-            Command::new("enable").about("Turn an automation on").arg(
-                Arg::new("name")
-                    .help("Automation name (from `automation list`)")
-                    .required(true)
-                    .num_args(1),
-            ),
+            Command::new("enable")
+                .about("Turn an automation on")
+                .arg(
+                    Arg::new("name")
+                        .help("Automation name (from `automation list`)")
+                        .required(true)
+                        .num_args(1),
+                ),
         )
         .subcommand(
-            Command::new("disable").about("Turn an automation off").arg(
-                Arg::new("name")
-                    .help("Automation name")
-                    .required(true)
-                    .num_args(1),
-            ),
+            Command::new("disable")
+                .about("Turn an automation off")
+                .arg(
+                    Arg::new("name")
+                        .help("Automation name")
+                        .required(true)
+                        .num_args(1),
+                ),
         )
 }
 

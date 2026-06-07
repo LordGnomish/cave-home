@@ -16,24 +16,27 @@ pub fn cmd() -> Command {
         .subcommand(
             Command::new("start")
                 .about("Start a cleaning cycle")
-                .arg(Arg::new("name").long("name").required(true)),
+                .arg(Arg::new("name").long("name").required(true))
         )
         .subcommand(
             Command::new("stop")
                 .about("Stop the current cycle")
-                .arg(Arg::new("name").long("name").required(true)),
+                .arg(Arg::new("name").long("name").required(true))
         )
         .subcommand(
             Command::new("dock")
                 .about("Send back to dock")
-                .arg(Arg::new("name").long("name").required(true)),
+                .arg(Arg::new("name").long("name").required(true))
         )
         .subcommand(
             Command::new("status")
                 .about("Show battery + state")
-                .arg(Arg::new("name").long("name").required(true)),
+                .arg(Arg::new("name").long("name").required(true))
         )
-        .subcommand(Command::new("list").about("List every vacuum"))
+        .subcommand(
+            Command::new("list")
+                .about("List every vacuum")
+        )
 }
 
 pub fn run() -> i32 {
@@ -48,10 +51,7 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c
-            .get_subcommands()
-            .map(|s| s.get_name().to_string())
-            .collect();
+        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
         for sub in ["start", "stop", "dock", "status", "list"] {
             assert!(
                 names.iter().any(|n| n == sub),

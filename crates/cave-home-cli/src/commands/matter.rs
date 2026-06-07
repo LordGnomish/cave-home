@@ -16,10 +16,16 @@ pub fn cmd() -> Command {
         .subcommand(
             Command::new("commission")
                 .about("Commission a Matter device")
-                .arg(Arg::new("code").long("code").required(true)),
+                .arg(Arg::new("code").long("code").required(true))
         )
-        .subcommand(Command::new("fabric").about("Show the local Matter Fabric"))
-        .subcommand(Command::new("list").about("List paired Matter devices"))
+        .subcommand(
+            Command::new("fabric")
+                .about("Show the local Matter Fabric")
+        )
+        .subcommand(
+            Command::new("list")
+                .about("List paired Matter devices")
+        )
 }
 
 pub fn run() -> i32 {
@@ -34,10 +40,7 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c
-            .get_subcommands()
-            .map(|s| s.get_name().to_string())
-            .collect();
+        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
         for sub in ["commission", "fabric", "list"] {
             assert!(
                 names.iter().any(|n| n == sub),

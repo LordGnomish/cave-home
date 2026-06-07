@@ -116,44 +116,14 @@ mod tests {
         h.add_area(Area::new("living", "Living room", "sofa"));
         h.add_area(Area::new("bed", "Bedroom", "bed"));
         h.add_area(Area::new("empty", "Spare room", "door")); // no devices
-        h.add_entity(Entity::new(
-            "l1",
-            "Ceiling light",
-            Domain::Light,
-            Some("living"),
-        ));
-        h.add_entity(Entity::new(
-            "cam",
-            "Front cam",
-            Domain::Camera,
-            Some("living"),
-        ));
-        h.add_entity(Entity::new(
-            "th",
-            "Thermostat",
-            Domain::Climate,
-            Some("living"),
-        ));
+        h.add_entity(Entity::new("l1", "Ceiling light", Domain::Light, Some("living")));
+        h.add_entity(Entity::new("cam", "Front cam", Domain::Camera, Some("living")));
+        h.add_entity(Entity::new("th", "Thermostat", Domain::Climate, Some("living")));
         h.add_entity(Entity::new("cv", "Blinds", Domain::Cover, Some("living")));
-        h.add_entity(Entity::new(
-            "temp",
-            "Temperature",
-            Domain::Sensor,
-            Some("bed"),
-        ));
-        h.add_entity(Entity::new(
-            "bl",
-            "Reading light",
-            Domain::Light,
-            Some("bed"),
-        ));
+        h.add_entity(Entity::new("temp", "Temperature", Domain::Sensor, Some("bed")));
+        h.add_entity(Entity::new("bl", "Reading light", Domain::Light, Some("bed")));
         h.add_entity(Entity::new("ev", "Evening", Domain::Scene, Some("living")));
-        h.add_entity(Entity::new(
-            "plug",
-            "Garage plug",
-            Domain::Switch,
-            None::<String>,
-        ));
+        h.add_entity(Entity::new("plug", "Garage plug", Domain::Switch, None::<String>));
         h
     }
 
@@ -182,34 +152,16 @@ mod tests {
     #[test]
     fn cards_match_domain() {
         let d = auto_dashboard(&furnished_home(), Lang::En);
-        let living = d
-            .views
-            .iter()
-            .find(|v| v.title == "Living room")
-            .expect("living");
+        let living = d.views.iter().find(|v| v.title == "Living room").expect("living");
         // light → Light, camera → Camera, climate → Thermostat, cover → Cover, scene → Scene
         assert!(living.cards.iter().any(|c| matches!(c, Card::Light { .. })));
-        assert!(
-            living
-                .cards
-                .iter()
-                .any(|c| matches!(c, Card::Camera { .. }))
-        );
-        assert!(
-            living
-                .cards
-                .iter()
-                .any(|c| matches!(c, Card::Thermostat { .. }))
-        );
+        assert!(living.cards.iter().any(|c| matches!(c, Card::Camera { .. })));
+        assert!(living.cards.iter().any(|c| matches!(c, Card::Thermostat { .. })));
         assert!(living.cards.iter().any(|c| matches!(c, Card::Cover { .. })));
         assert!(living.cards.iter().any(|c| matches!(c, Card::Scene { .. })));
 
         let bed = d.views.iter().find(|v| v.title == "Bedroom").expect("bed");
-        assert!(
-            bed.cards
-                .iter()
-                .any(|c| matches!(c, Card::SensorGraph { .. }))
-        );
+        assert!(bed.cards.iter().any(|c| matches!(c, Card::SensorGraph { .. })));
     }
 
     #[test]

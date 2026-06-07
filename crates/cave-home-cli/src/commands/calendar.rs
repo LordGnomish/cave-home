@@ -13,8 +13,14 @@ use clap::Command;
 pub fn cmd() -> Command {
     Command::new("calendar")
         .about("Family calendar")
-        .subcommand(Command::new("today").about("Show today's events"))
-        .subcommand(Command::new("week").about("Show this week's events"))
+        .subcommand(
+            Command::new("today")
+                .about("Show today's events")
+        )
+        .subcommand(
+            Command::new("week")
+                .about("Show this week's events")
+        )
 }
 
 pub fn run() -> i32 {
@@ -29,10 +35,7 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c
-            .get_subcommands()
-            .map(|s| s.get_name().to_string())
-            .collect();
+        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
         for sub in ["today", "week"] {
             assert!(
                 names.iter().any(|n| n == sub),

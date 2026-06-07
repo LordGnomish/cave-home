@@ -66,7 +66,10 @@ impl EntityState {
     }
 
     fn number(&self, key: &str) -> Option<f64> {
-        self.numbers.iter().find(|(k, _)| k == key).map(|(_, v)| *v)
+        self.numbers
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| *v)
     }
 
     fn text(&self, key: &str) -> Option<&str> {
@@ -226,7 +229,8 @@ fn render_domain(domain: Domain, state: &EntityState, lang: Lang) -> (String, bo
                 || Phrase::Unavailable.text(lang).to_string(),
                 format_temperature,
             );
-            let heating = !state.state.eq_ignore_ascii_case("off") && !state.state.is_empty();
+            let heating = !state.state.eq_ignore_ascii_case("off")
+                && !state.state.is_empty();
             (status, heating, Vec::new())
         }
         Domain::Sensor => {
@@ -325,39 +329,20 @@ mod tests {
         assert_eq!(on.name, "Ceiling light");
         assert_eq!(on.status, "On");
         assert!(on.active);
-        assert_eq!(
-            on.actions,
-            vec![Action {
-                kind: ActionKind::TurnOff
-            }]
-        );
+        assert_eq!(on.actions, vec![Action { kind: ActionKind::TurnOff }]);
 
         let off = tile(&e, &EntityState::on_off("off"), Lang::En);
         assert_eq!(off.status, "Off");
         assert!(!off.active);
-        assert_eq!(
-            off.actions,
-            vec![Action {
-                kind: ActionKind::TurnOn
-            }]
-        );
+        assert_eq!(off.actions, vec![Action { kind: ActionKind::TurnOn }]);
     }
 
     #[test]
     fn lock_state_text_localised() {
         let e = ent(Domain::Lock);
-        assert_eq!(
-            tile(&e, &EntityState::on_off("locked"), Lang::En).status,
-            "Locked"
-        );
-        assert_eq!(
-            tile(&e, &EntityState::on_off("locked"), Lang::De).status,
-            "Verriegelt"
-        );
-        assert_eq!(
-            tile(&e, &EntityState::on_off("locked"), Lang::Tr).status,
-            "Kilitli"
-        );
+        assert_eq!(tile(&e, &EntityState::on_off("locked"), Lang::En).status, "Locked");
+        assert_eq!(tile(&e, &EntityState::on_off("locked"), Lang::De).status, "Verriegelt");
+        assert_eq!(tile(&e, &EntityState::on_off("locked"), Lang::Tr).status, "Kilitli");
         let unlocked = tile(&e, &EntityState::on_off("unlocked"), Lang::En);
         assert_eq!(unlocked.status, "Unlocked");
         assert_eq!(unlocked.actions[0].kind, ActionKind::Lock);
@@ -377,20 +362,12 @@ mod tests {
     #[test]
     fn cover_uses_position_attribute() {
         let e = ent(Domain::Cover);
-        let open = tile(
-            &e,
-            &EntityState::on_off("open").with_number("position", 80.0),
-            Lang::En,
-        );
+        let open = tile(&e, &EntityState::on_off("open").with_number("position", 80.0), Lang::En);
         assert_eq!(open.status, "Open");
         assert!(open.active);
         assert_eq!(open.actions[0].kind, ActionKind::Close);
 
-        let closed = tile(
-            &e,
-            &EntityState::on_off("open").with_number("position", 0.0),
-            Lang::En,
-        );
+        let closed = tile(&e, &EntityState::on_off("open").with_number("position", 0.0), Lang::En);
         assert_eq!(closed.status, "Closed");
         assert_eq!(closed.actions[0].kind, ActionKind::Open);
     }
@@ -398,26 +375,16 @@ mod tests {
     #[test]
     fn cover_falls_back_to_state_when_no_position() {
         let e = ent(Domain::Cover);
-        assert_eq!(
-            tile(&e, &EntityState::on_off("open"), Lang::En).status,
-            "Open"
-        );
-        assert_eq!(
-            tile(&e, &EntityState::on_off("closed"), Lang::En).status,
-            "Closed"
-        );
+        assert_eq!(tile(&e, &EntityState::on_off("open"), Lang::En).status, "Open");
+        assert_eq!(tile(&e, &EntityState::on_off("closed"), Lang::En).status, "Closed");
     }
 
     #[test]
     fn sensor_shows_value_with_unit() {
         let e = ent(Domain::Sensor);
-        let humidity = EntityState::on_off("")
-            .with_number("value", 62.0)
-            .with_string("unit", "%");
+        let humidity = EntityState::on_off("").with_number("value", 62.0).with_string("unit", "%");
         assert_eq!(tile(&e, &humidity, Lang::En).status, "62 %");
-        let power = EntityState::on_off("")
-            .with_number("value", 4.2)
-            .with_string("unit", "W");
+        let power = EntityState::on_off("").with_number("value", 4.2).with_string("unit", "W");
         assert_eq!(tile(&e, &power, Lang::En).status, "4.2 W");
     }
 
@@ -427,26 +394,15 @@ mod tests {
         let t = tile(&e, &EntityState::unavailable(), Lang::En);
         assert_eq!(t.status, "Not responding");
         assert!(t.actions.is_empty());
-        assert_eq!(
-            tile(&e, &EntityState::unavailable(), Lang::De).status,
-            "Keine Antwort"
-        );
-        assert_eq!(
-            tile(&e, &EntityState::unavailable(), Lang::Tr).status,
-            "Yanıt vermiyor"
-        );
+        assert_eq!(tile(&e, &EntityState::unavailable(), Lang::De).status, "Keine Antwort");
+        assert_eq!(tile(&e, &EntityState::unavailable(), Lang::Tr).status, "Yanıt vermiyor");
     }
 
     #[test]
     fn scene_offers_only_a_run_action() {
         let e = ent(Domain::Scene);
         let t = tile(&e, &EntityState::on_off("idle"), Lang::Tr);
-        assert_eq!(
-            t.actions,
-            vec![Action {
-                kind: ActionKind::Run
-            }]
-        );
+        assert_eq!(t.actions, vec![Action { kind: ActionKind::Run }]);
         assert_eq!(t.actions[0].kind.caption(Lang::Tr), "Başlat");
     }
 
@@ -475,9 +431,7 @@ mod tests {
             EntityState::on_off("open"),
             EntityState::unavailable(),
             EntityState::on_off("heat").with_number("current_temperature", 19.0),
-            EntityState::on_off("")
-                .with_number("value", 7.0)
-                .with_string("unit", "W"),
+            EntityState::on_off("").with_number("value", 7.0).with_string("unit", "W"),
         ];
         for d in Domain::ALL {
             let e = ent(d);

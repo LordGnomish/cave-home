@@ -101,8 +101,6 @@ mod tests {
         assert!(!token_is_well_formed(""));
         assert!(!token_is_well_formed("foo"));
         assert!(!token_is_well_formed("K10::short::ok"));
-        assert!(!token_is_well_formed(
-            "K10::abcdefghijklmnopqrstuvwxyz012345"
-        ));
+        assert!(!token_is_well_formed("K10::abcdefghijklmnopqrstuvwxyz012345"));
     }
 }

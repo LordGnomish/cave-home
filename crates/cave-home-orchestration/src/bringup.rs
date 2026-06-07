@@ -116,11 +116,8 @@ impl BringUpPlan {
             if !progressed {
                 // Some requested components are not yet started but none became
                 // ready -> a cycle among the remaining set.
-                let remaining: Vec<Component> = nodes
-                    .iter()
-                    .copied()
-                    .filter(|c| !started.contains(c))
-                    .collect();
+                let remaining: Vec<Component> =
+                    nodes.iter().copied().filter(|c| !started.contains(c)).collect();
                 return Err(OrderError::Cycle { remaining });
             }
         }
@@ -229,8 +226,12 @@ mod tests {
 
     #[test]
     fn duplicates_in_request_are_collapsed() {
-        let plan = BringUpPlan::compute(&[Component::Kine, Component::Kine, Component::Apiserver])
-            .expect("ok");
+        let plan = BringUpPlan::compute(&[
+            Component::Kine,
+            Component::Kine,
+            Component::Apiserver,
+        ])
+        .expect("ok");
         assert_eq!(plan.order(), &[Component::Kine, Component::Apiserver]);
     }
 

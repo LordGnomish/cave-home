@@ -35,13 +35,7 @@ pub fn resolve<'a>(scenes: &'a [&'a str], query: &str) -> Option<&'a str> {
 
 #[must_use]
 pub fn demo_scenes() -> &'static [&'static str] {
-    &[
-        "Akşam",
-        "Romantic Dinner",
-        "Movie Night",
-        "Wake Up",
-        "Sleep",
-    ]
+    &["Akşam", "Romantic Dinner", "Movie Night", "Wake Up", "Sleep"]
 }
 
 pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {

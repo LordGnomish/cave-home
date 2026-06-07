@@ -155,12 +155,8 @@ mod tests {
             "Living room",
             "sofa",
             vec![
-                Card::Light {
-                    entity_id: "l1".into(),
-                },
-                Card::RawEntity {
-                    entity_id: "l1".into(),
-                }, // dev card mixed in
+                Card::Light { entity_id: "l1".into() },
+                Card::RawEntity { entity_id: "l1".into() }, // dev card mixed in
             ],
         ));
         d.push_view(View::developer(

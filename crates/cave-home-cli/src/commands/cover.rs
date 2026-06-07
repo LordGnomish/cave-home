@@ -16,25 +16,28 @@ pub fn cmd() -> Command {
         .subcommand(
             Command::new("open")
                 .about("Open a cover")
-                .arg(Arg::new("name").long("name").required(true)),
+                .arg(Arg::new("name").long("name").required(true))
         )
         .subcommand(
             Command::new("close")
                 .about("Close a cover")
-                .arg(Arg::new("name").long("name").required(true)),
+                .arg(Arg::new("name").long("name").required(true))
         )
         .subcommand(
             Command::new("stop")
                 .about("Stop a moving cover")
-                .arg(Arg::new("name").long("name").required(true)),
+                .arg(Arg::new("name").long("name").required(true))
         )
         .subcommand(
             Command::new("position")
                 .about("Set position 0-100 (0=closed, 100=open)")
                 .arg(Arg::new("name").long("name").required(true))
-                .arg(Arg::new("value").long("value").required(true)),
+                .arg(Arg::new("value").long("value").required(true))
         )
-        .subcommand(Command::new("list").about("List every cover grouped by room"))
+        .subcommand(
+            Command::new("list")
+                .about("List every cover grouped by room")
+        )
 }
 
 pub fn run() -> i32 {
@@ -49,10 +52,7 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c
-            .get_subcommands()
-            .map(|s| s.get_name().to_string())
-            .collect();
+        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
         for sub in ["open", "close", "stop", "position", "list"] {
             assert!(
                 names.iter().any(|n| n == sub),

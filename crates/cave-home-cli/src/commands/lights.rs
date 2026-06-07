@@ -16,26 +16,29 @@ pub fn cmd() -> Command {
         .subcommand(
             Command::new("on")
                 .about("Turn a light on")
-                .arg(Arg::new("name").long("name").required(true)),
+                .arg(Arg::new("name").long("name").required(true))
         )
         .subcommand(
             Command::new("off")
                 .about("Turn a light off")
-                .arg(Arg::new("name").long("name").required(true)),
+                .arg(Arg::new("name").long("name").required(true))
         )
         .subcommand(
             Command::new("dim")
                 .about("Set brightness 0-100")
                 .arg(Arg::new("name").long("name").required(true))
-                .arg(Arg::new("level").long("level").required(true)),
+                .arg(Arg::new("level").long("level").required(true))
         )
         .subcommand(
             Command::new("color")
                 .about("Set color (e.g. warm/cool/red/#RRGGBB)")
                 .arg(Arg::new("name").long("name").required(true))
-                .arg(Arg::new("value").long("value").required(true)),
+                .arg(Arg::new("value").long("value").required(true))
         )
-        .subcommand(Command::new("list").about("List every light grouped by room"))
+        .subcommand(
+            Command::new("list")
+                .about("List every light grouped by room")
+        )
 }
 
 pub fn run() -> i32 {
@@ -50,10 +53,7 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c
-            .get_subcommands()
-            .map(|s| s.get_name().to_string())
-            .collect();
+        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
         for sub in ["on", "off", "dim", "color", "list"] {
             assert!(
                 names.iter().any(|n| n == sub),

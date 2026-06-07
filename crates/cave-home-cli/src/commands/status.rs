@@ -101,11 +101,7 @@ pub fn render(rows: &[StatusRow], verbose: bool) -> String {
     out.push_str("cave-home status\n");
     out.push_str("================\n");
     for r in rows {
-        let label = if verbose {
-            r.health.technical()
-        } else {
-            r.health.friendly()
-        };
+        let label = if verbose { r.health.technical() } else { r.health.friendly() };
         out.push_str(&format!("  {:<12}  {}\n", r.label, label));
         if verbose {
             out.push_str(&format!("                  {}\n", r.technical));

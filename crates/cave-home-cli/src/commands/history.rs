@@ -16,14 +16,14 @@ pub fn cmd() -> Command {
         .subcommand(
             Command::new("show")
                 .about("Show recent values for a sensor")
-                .arg(Arg::new("name").long("name").required(true)),
+                .arg(Arg::new("name").long("name").required(true))
         )
         .subcommand(
             Command::new("export")
                 .about("Export a range to CSV")
                 .arg(Arg::new("name").long("name").required(true))
                 .arg(Arg::new("from").long("from").required(true))
-                .arg(Arg::new("to").long("to").required(true)),
+                .arg(Arg::new("to").long("to").required(true))
         )
 }
 
@@ -39,10 +39,7 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c
-            .get_subcommands()
-            .map(|s| s.get_name().to_string())
-            .collect();
+        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
         for sub in ["show", "export"] {
             assert!(
                 names.iter().any(|n| n == sub),

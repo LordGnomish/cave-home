@@ -148,10 +148,7 @@ mod tests {
     fn cmd_name_and_yes_flag() {
         let c = cmd();
         assert_eq!(c.get_name(), "destroy");
-        let names: Vec<_> = c
-            .get_arguments()
-            .map(|a| a.get_id().as_str().to_string())
-            .collect();
+        let names: Vec<_> = c.get_arguments().map(|a| a.get_id().as_str().to_string()).collect();
         assert!(names.contains(&"yes".to_string()));
     }
 }

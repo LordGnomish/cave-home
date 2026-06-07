@@ -13,16 +13,19 @@ use clap::{Arg, Command};
 pub fn cmd() -> Command {
     Command::new("household")
         .about("Chores, shopping list, batteries")
-        .subcommand(Command::new("chores").about("Show today's chores"))
+        .subcommand(
+            Command::new("chores")
+                .about("Show today's chores")
+        )
         .subcommand(
             Command::new("shop")
                 .about("Add to shopping list")
-                .arg(Arg::new("item").long("item").required(true)),
+                .arg(Arg::new("item").long("item").required(true))
         )
         .subcommand(
             Command::new("inventory")
                 .about("Show food / battery inventory")
-                .arg(Arg::new("kind").long("kind").required(false)),
+                .arg(Arg::new("kind").long("kind").required(false))
         )
 }
 
@@ -38,10 +41,7 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c
-            .get_subcommands()
-            .map(|s| s.get_name().to_string())
-            .collect();
+        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
         for sub in ["chores", "shop", "inventory"] {
             assert!(
                 names.iter().any(|n| n == sub),

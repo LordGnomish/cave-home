@@ -17,9 +17,12 @@ pub fn cmd() -> Command {
             Command::new("send")
                 .about("Send a notification to a person / channel")
                 .arg(Arg::new("to").long("to").required(true))
-                .arg(Arg::new("message").long("message").required(true)),
+                .arg(Arg::new("message").long("message").required(true))
         )
-        .subcommand(Command::new("channels").about("List notification channels"))
+        .subcommand(
+            Command::new("channels")
+                .about("List notification channels")
+        )
 }
 
 pub fn run() -> i32 {
@@ -34,10 +37,7 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c
-            .get_subcommands()
-            .map(|s| s.get_name().to_string())
-            .collect();
+        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
         for sub in ["send", "channels"] {
             assert!(
                 names.iter().any(|n| n == sub),
