@@ -31,6 +31,16 @@
 # kernel side-effects are enumerated under [[unmapped]] with an ADR-004 phase
 # disposition, so the honest ratio reflects the implemented share of what
 # remains in scope.
+#
+# remote-cri feature (2026-06-07). The decision core remains std/tokio with NO
+# gRPC stack by default. A NON-DEFAULT `remote-cri` cargo feature adds the real
+# CRI v1 gRPC client (tonic) that drives the CriClient trait against containerd
+# — a verbatim port of the CRI wire contract (proto/api.proto, copied from
+# kubernetes-1.30.0 minus gogo annotations) plus a line-by-line port of
+# pkg/kubelet/cri/remote/{remote_runtime.go,remote_image.go,utils.go}. This is
+# the transport the ground-truth audit named as THE blocker. The byte-streaming
+# dialer (SPDX/WebSocket over the Exec/Attach/PortForward URLs) and the
+# stats/metrics/checkpoint RPCs remain phase-1b (enumerated below).
 
 [crate]
 name             = "cave-home-kubelet-rs"
@@ -68,11 +78,11 @@ linux_min_kernel = "7.1"  # ADR-003: Linux-only deployment baseline.
 # lifecycle decision a node makes about a pod is implemented and exhaustively
 # tested here today; what remains is the runtime/syscall/server plumbing that
 # executes those decisions against the kernel.
-fill_ratio          = 0.20
-fill_ratio_basis    = "node-lifecycle decision core (phase + restart/backoff + probes + sync diff + eviction QoS ranking + admission/resource accounting) fully implemented & tested, plus the syncPod execution slice (CRI trait+mock, PLEG, PodWorker, emptyDir/hostPath volumes, status manager); CRI runtime exec, cgroup + eviction-manager syscalls, kubelet HTTP server, image/secret/configmap managers, device plugins, full volume manager deferred (ADR-004 phase-1b), all enumerated below"
+fill_ratio          = 0.23
+fill_ratio_basis    = "node-lifecycle decision core (phase + restart/backoff + probes + sync diff + eviction QoS ranking + admission/resource accounting) fully implemented & tested, plus the syncPod execution slice (CRI trait+mock, PLEG, PodWorker, emptyDir/hostPath volumes, status manager), plus (remote-cri feature) the real CRI v1 gRPC client to containerd — sandbox + container lifecycle + image pull/status + Exec/Attach/PortForward URL negotiation, exercised end-to-end over a real Unix socket. The +0.03 over the prior 0.20 reflects the transport layer the audit named as the blocker now being built & tested. CRI byte-streaming dialer, stats/metrics/checkpoint RPCs, cgroup + eviction-manager syscalls, kubelet HTTP server, image/secret/configmap managers, device plugins, full volume manager deferred (ADR-004 phase-1b), all enumerated below"
 test_port_ratio     = 0.0   # tests are designed from the documented kubelet contract, not ported from upstream _test.go
 adr_justified_ratio = 1.00  # every [[unmapped]] gap below carries a justified priority + a note
-honest_ratio        = 1.00  # 0.20 / (0.20 + (1-0.20)*(1-1.00)) = 0.20/0.20 = 1.00
+honest_ratio        = 1.00  # 0.23 / (0.23 + (1-0.23)*(1-1.00)) = 0.23/0.23 = 1.00
 
 # ---- mapped (behavioural reference -> cave-home Rust path) ------------------
 # `upstream`/`spec` names the documented reference for each item, not a claim of
@@ -158,6 +168,32 @@ ours     = "src/cri/client.rs::CriClient + src/cri/mock.rs::MockCriClient"
 upstream = "k8s.io/cri-api/.../api.proto::{PodSandboxConfig, ContainerConfig, ContainerStatus}"
 ours     = "src/cri/types.rs::{PodSandboxConfig, ContainerConfig, ContainerStatus}"
 
+# -- real CRI v1 gRPC client (remote-cri feature; verbatim wire port) --
+
+[[mapped]]
+upstream = "k8s.io/cri-api/pkg/apis/runtime/v1/api.proto (kubernetes-1.30.0, verbatim minus gogo annotations)"
+ours     = "proto/api.proto + build.rs (tonic codegen) -> src/cri/remote/proto"
+
+[[mapped]]
+upstream = "pkg/kubelet/cri/remote/remote_runtime.go::RemoteRuntimeService (Version, {Run,Stop,Remove,Status,List}PodSandbox, {Create,Start,Stop,Remove,Status,List}Container)"
+ours     = "src/cri/remote/client.rs::RemoteCriClient (runtime methods, impl CriClient)"
+
+[[mapped]]
+upstream = "pkg/kubelet/cri/remote/remote_image.go::RemoteImageService (PullImage, ImageStatus)"
+ours     = "src/cri/remote/client.rs::RemoteCriClient (image methods, impl CriClient)"
+
+[[mapped]]
+upstream = "pkg/kubelet/cri/remote/remote_runtime.go::{Exec,Attach,PortForward} (streaming-URL negotiation half)"
+ours     = "src/cri/remote/client.rs::RemoteCriClient::{exec,attach,port_forward} + src/cri/remote/streaming.rs"
+
+[[mapped]]
+upstream = "kuberuntime CRI<->kube struct marshalling (toKubeContainer/Status, sandbox/container config builders) + remote/utils.go status mapping"
+ours     = "src/cri/remote/conv.rs (From impls) + src/cri/remote/error.rs (gRPC Status -> CriError)"
+
+[[mapped]]
+upstream = "containerd CRI Unix-socket transport (dial /run/containerd/containerd.sock)"
+ours     = "src/cri/remote/client.rs::RemoteCriClient::{connect_uds,connect_tcp,from_channel}"
+
 [[mapped]]
 upstream = "pkg/kubelet/volumemanager/cache + reconciler/reconciler.go::reconcile"
 ours     = "src/volume/{desired.rs, actual.rs, reconciler.rs}"
@@ -182,9 +218,14 @@ priority = "phase-1b"
 note     = "ADR-004 frames the orchestration layer as a long-term line-by-line k3s port. Phase 1 ships a behavioural reimplementation from public Kubernetes docs + the CRI API shape; the verbatim-parity pass (matching upstream symbol-for-symbol) is deferred and must be done against the actual Apache-2.0 k3s source."
 
 [[unmapped]]
-area     = "pkg/kubelet/cri/remote (real CRI gRPC runtime exec)"
+area     = "pkg/kubelet/cri/remote remaining RPCs (ContainerStats, ListContainerStats, PodSandboxStats, ListPodSandboxStats, UpdateRuntimeConfig, Status, CheckpointContainer, GetContainerEvents stream, List*Metrics, RuntimeConfig, UpdateContainerResources, ReopenContainerLog) + ImageService {ListImages, RemoveImage, ImageFsInfo}"
 priority = "phase-1b"
-note     = "ADR-004: the decision core + PodWorker drive a CriClient trait; the production gRPC client that actually creates sandboxes/containers on containerd is workspace-integration wiring. Phase 1 ships the trait + MockCriClient only."
+note     = "The remote-cri RemoteCriClient implements the kubelet decision-core CRI surface (sandbox + container lifecycle + image pull/status + Exec/Attach/PortForward URL negotiation), tested end-to-end over a real Unix socket. The remaining RPCs above are stats/metrics/checkpoint/runtime-admin calls not yet driven by the Phase-1 decision core; the generated stubs exist (src/cri/remote/proto), so these are thin follow-on adapters."
+
+[[unmapped]]
+area     = "CRI Exec/Attach/PortForward byte-streaming dialer (SPDY/WebSocket client over the negotiated URL)"
+priority = "phase-1b"
+note     = "remote-cri negotiates the streaming URL via the Exec/Attach/PortForward RPCs (src/cri/remote/streaming.rs); the SPDY/WebSocket client that then dials that URL to move stdin/stdout/stderr/port bytes is the larger second half (upstream pkg/kubelet/cri/streaming client side) and is deferred. The server side stays under the kubelet HTTP-server unmapped entry below."
 
 [[unmapped]]
 area     = "pkg/kubelet/prober (probe execution: HTTP/TCP/Exec/gRPC dialers + scheduling)"
@@ -304,6 +345,10 @@ ours         = "tests/status_manager_test.rs"
 [[spec_test]]
 designed_for = "CRI mock + API type model exercised end-to-end"
 ours         = "tests/{cri_test.rs, api_test.rs}"
+
+[[spec_test]]
+designed_for = "remote-cri gRPC client: native<->proto conversions (12), gRPC Status->CriError mapping (3), RemoteCriClient over a real Unix-socket CRI server incl. end-to-end RunPodSandbox->CreateContainer->StartContainer->ContainerStatus->ListContainers (6), Exec/Attach/PortForward URL negotiation (3), and an #[ignore] real-containerd bring-up (CAVE_CRI_CONTAINERD_SOCK)"
+ours         = "tests/{cri_remote_conv_test.rs, cri_remote_error_test.rs, cri_remote_client_test.rs, cri_remote_streaming_test.rs, cri_remote_containerd_test.rs, common/mod.rs}"
 
 # ---- no-backcompat (Charter §8) ---------------------------------------------
 # Recorded explicitly so the stance is auditable: this crate ships against the
