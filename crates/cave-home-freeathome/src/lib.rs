@@ -48,7 +48,7 @@ pub mod state;
 
 pub use auth::{AuthMethod, ClientCertConfig, Credentials};
 pub use config::ClientConfig;
-pub use cli::{parse as parse_cli, CliError, FreeAtHomeCommand};
+pub use cli::{parse as parse_cli, to_rest_request, CliError, FreeAtHomeCommand};
 pub use client::{run_event_loop, FreeAtHomeClient};
 pub use core_bridge::{entity_id, on_off_state, register};
 pub use device::{writable_pairings, Device, FreeAtHomeDevice};

@@ -9,6 +9,11 @@
 
 use std::fmt;
 
+use cave_home_free_home::{ChannelId, DatapointId, DeviceSerial};
+
+use crate::error::{FreeAtHomeError, Result};
+use crate::rest::RestRequest;
+
 /// A parsed `freeathome` subcommand.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FreeAtHomeCommand {
@@ -90,6 +95,43 @@ pub fn parse(args: &[String]) -> core::result::Result<FreeAtHomeCommand, CliErro
             )),
         },
         other => Err(CliError::UnknownSubcommand(other.to_string())),
+    }
+}
+
+/// Map a parsed command to a single REST request, if it is one.
+///
+/// `list` and `watch` are not single REST calls, so they map to `None`. `get`
+/// and `set` parse their string ids into typed free@home ids (erroring on
+/// malformed input).
+pub fn to_rest_request(command: &FreeAtHomeCommand) -> Result<Option<RestRequest>> {
+    let parse_ids = |serial: &str, channel: &str, datapoint: &str| -> Result<_> {
+        let serial = DeviceSerial::parse(serial)
+            .map_err(|e| FreeAtHomeError::Domain(e.to_string()))?;
+        let channel =
+            ChannelId::parse(channel).map_err(|e| FreeAtHomeError::Domain(e.to_string()))?;
+        let datapoint =
+            DatapointId::parse(datapoint).map_err(|e| FreeAtHomeError::Domain(e.to_string()))?;
+        Ok((serial, channel, datapoint))
+    };
+    match command {
+        FreeAtHomeCommand::List | FreeAtHomeCommand::Watch => Ok(None),
+        FreeAtHomeCommand::Get {
+            serial,
+            channel,
+            datapoint,
+        } => {
+            let (s, c, d) = parse_ids(serial, channel, datapoint)?;
+            Ok(Some(RestRequest::get_datapoint(s, c, d)))
+        }
+        FreeAtHomeCommand::Set {
+            serial,
+            channel,
+            datapoint,
+            value,
+        } => {
+            let (s, c, d) = parse_ids(serial, channel, datapoint)?;
+            Ok(Some(RestRequest::set_datapoint(s, c, d, value.clone())))
+        }
     }
 }
 
