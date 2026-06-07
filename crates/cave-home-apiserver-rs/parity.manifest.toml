@@ -69,11 +69,11 @@ linux_min_kernel = "7.1"  # ADR-003: Linux-only deployment baseline.
 # of what remains in scope. (The fill is reported against capability, not raw
 # Go LOC: the decision core is disproportionately load-bearing relative to its
 # size — it is the part that every other path is a transport/storage lowering of.)
-fill_ratio          = 0.27
-fill_ratio_basis    = "REST decision core (GVK/GVR+RESTMapper, path grammar, ObjectMeta optimistic concurrency + generation + finalizers + ownerRefs, CRUD+list+watch verb semantics with correct status codes + pagination, the /status subresource write path, label/field selectors, RFC-7396/6902 patch, metav1.Status, mutating+validating admission pipeline) PLUS the additive RBAC authorizer (Role/ClusterRole/RoleBinding/ClusterRoleBinding rule matching with wildcard/subresource/resourceName/non-resource-URL semantics + cluster-vs-namespaced binding scope) PLUS the group/version/resource discovery surface (APIVersions/APIGroupList/APIResourceList over the static kind table) implemented & tested std-only; HTTP server, etcd/kine storage, TLS/authn, Node-authorizer + RBAC aggregation + SubjectAccessReview/webhook-authz, admission webhooks, CRDs, OpenAPI + aggregated/subresource discovery, API aggregation, audit deferred"
+fill_ratio          = 0.45
+fill_ratio_basis    = "REST decision core (GVK/GVR+RESTMapper, path grammar, ObjectMeta optimistic concurrency + generation + finalizers + ownerRefs, CRUD+list+watch verb semantics with correct status codes + pagination, the /status subresource write path, label/field selectors, RFC-7396/6902 patch, metav1.Status, mutating+validating admission pipeline) PLUS the additive RBAC authorizer PLUS the group/version/resource discovery surface PLUS — NEW in the HTTP-transport phase — the full transport stack: a std-only HTTP/1.1 message codec (parse/serialize/chunked, src/http.rs), a std-only JSON request-body parser (src/json.rs::parse), the authentication chain (bearer-token + anonymous, src/authn.rs), the ApiServer request pipeline that wires authentication→authorization→admission→storage→audit and serves the REST verb surface + /status subresource + discovery (/api,/apis,/api/{v},/apis/{g}/{v}) + /version + /openapi/v2 + health probes (/healthz,/livez,/readyz) + /metrics (src/handler.rs), chunked watch streams (src/handler.rs), audit.k8s.io/v1 events + sink (src/audit.rs), Prometheus metrics (src/metrics.rs), the etcd/kine storage KV seam (src/storage.rs::{Backend,KineBackend}), and the std TcpListener socket loop with a kubectl-style real-TCP integration test (src/server.rs) — all std-only, TDD, 208 tests. Still deferred: HTTP/2 + TLS (rustls) termination + keep-alive, protobuf/YAML content negotiation, mTLS/OIDC authenticators, Node-authorizer + RBAC aggregation + SubjectAccessReview/webhook-authz, admission webhooks, CRDs, OpenAPI v3 + aggregated/subresource discovery, API aggregation, wiring Backend in as the registry's persistence layer, audit webhook/file backends + policy"
 test_port_ratio     = 0.0   # tests designed from the documented spec, not ported
 adr_justified_ratio = 1.00  # every unfilled item below carries an ADR-004 phase disposition + note
-honest_ratio        = 1.00  # 0.27 / (0.27 + (1-0.27)*(1-1.0)) = 1.00
+honest_ratio        = 1.00  # 0.45 / (0.45 + (1-0.45)*(1-1.0)) = 1.00
 
 # ---------------------------------------------------------------------------
 # [[mapped]] — documented k8s REST/admission concept -> cave-home Rust path
@@ -163,6 +163,48 @@ ours = "src/discovery.rs::{api_versions, api_groups, api_resources, ApiGroup, Ap
 spec = "JSON object model the REST/patch/selector logic operates on (std-only value tree; no serialization-framework dependency)"
 ours = "src/json.rs::Value"
 
+# --- HTTP transport layer (added in the apiserver-http-transport phase) -----
+
+[[mapped]]
+spec = "HTTP/1.1 message syntax (RFC 9112): request line + headers parse, response status-line/header/body serialize, chunked transfer-encoding framing, RFC-3986 percent-decoding of query parameters"
+ours = "src/http.rs::{Request, Response, Method, Headers, encode_chunk, last_chunk, reason_phrase, percent_decode}"
+
+[[mapped]]
+spec = "JSON request-body decode (RFC 8259) into the in-crate value tree — literals, numbers, strings with \\uXXXX + surrogate pairs, arrays, objects, trailing-garbage rejection"
+ours = "src/json.rs::{parse, JsonError}"
+
+[[mapped]]
+spec = "Authentication contract: an ordered authenticator chain; bearer-token (token-file) authenticator; anonymous identity (system:anonymous / system:unauthenticated); presented-but-invalid credential -> 401; no-credential fallthrough policy"
+ours = "src/authn.rs::{Authenticator, AuthenticatorChain, TokenAuthenticator, AnonymousAuthenticator}; src/status.rs::StatusReason::Unauthorized"
+
+[[mapped]]
+spec = "The apiserver handler chain: authentication -> authorization -> admission -> storage -> audit; HTTP-method+path-scope -> REST verb resolution; the metav1.Status / <Kind>List / object response encoders; create=201, get/list/update/patch/delete=200; content-type-driven patch-strategy dispatch (merge vs json-patch); the /status subresource write path; authorization modes (AlwaysAllow / AlwaysDeny / RBAC)"
+ours = "src/handler.rs::{ApiServer, Authorization, status_object, success_status, list_object, object_response, status_response}"
+
+[[mapped]]
+spec = "Non-resource API surface: discovery (/api, /apis, /api/{v}, /apis/{g}/{v}) served as live HTTP; /version (version.Info); /openapi/v2 (Swagger 2.0 paths per registered kind); unauthenticated health probes /healthz /livez /readyz; /metrics"
+ours = "src/handler.rs::{discovery_endpoint, health_endpoint, api_versions_object, api_group_list_object, resource_list_response, version_object, openapi_v2_object}"
+
+[[mapped]]
+spec = "WATCH over HTTP: ?watch=true chunked stream of {\"type\":ADDED|MODIFIED|DELETED,\"object\":...} frames, replayed after ?resourceVersion, namespace- and label-selector-scoped"
+ours = "src/handler.rs::{ApiServer (watch verb), watch_event_object}; src/http.rs::Response::chunked_json"
+
+[[mapped]]
+spec = "Audit (audit.k8s.io/v1) Event records at the ResponseComplete stage: verb, user.username, objectRef (group/resource/subresource/namespace/name), requestURI, responseStatus.code; pluggable sink"
+ours = "src/audit.rs::{AuditEvent, AuditSink, MemoryAuditSink, NoopAuditSink}"
+
+[[mapped]]
+spec = "Prometheus instrumentation: apiserver_request_total{verb,code} counter + apiserver_current_inflight_requests gauge in the text exposition format"
+ours = "src/metrics.rs::Metrics"
+
+[[mapped]]
+spec = "Storage backend seam to the etcd-compatible kine datastore: conditional create / revisioned update / delete / prefix-range list over /registry/<resource>/<ns>/<name> keys, revision -> resourceVersion"
+ours = "src/storage.rs::{Backend, KineBackend, registry_key} over cave_home_kine_rs::Store"
+
+[[mapped]]
+spec = "The HTTP/1.1 socket loop: read one complete request (Content-Length de-framing), dispatch under a shared lock, write the response (incl. chunked), Connection: close; std TcpListener server generic over any Read+Write so TLS slots in front"
+ours = "src/server.rs::{Server, serve_stream, read_request}"
+
 # ---------------------------------------------------------------------------
 # [[unmapped]] — deferred / out-of-scope, each with an ADR-004 disposition
 # ---------------------------------------------------------------------------
@@ -173,19 +215,19 @@ priority = "phase-1b"
 note     = "ADR-004 frames the orchestration layer as a long-term line-by-line k3s port. Phase 1 ships a behavioural reimplementation from public docs/RFCs; the verbatim-parity pass (matching upstream symbol-for-symbol) is deferred and must be done against the actual Apache-2.0 k3s/kubernetes source. This replaces an earlier FALSE claim of a completed line-by-line port at a pinned SHA."
 
 [[unmapped]]
-area     = "HTTP/2 server + request routing + content negotiation (the transport that dispatches parsed paths to the registry)"
+area     = "HTTP/2 + protobuf/YAML content negotiation (the HTTP/1.1 server itself is now implemented)"
 priority = "phase-1b"
-note     = "ADR-004: the decision core parses/builds paths and computes verb outcomes + status codes; wiring it behind an HTTP/2 server (TLS-terminated) with protobuf/JSON/YAML content negotiation is transport plumbing over the existing logic, not new decision logic."
+note     = "ADR-004: the std-only HTTP/1.1 server + router + content-negotiation-by-content-type is implemented (src/server.rs, src/handler.rs, src/http.rs) and exercised by a real-TCP kubectl-style integration test. Still deferred: HTTP/2 (h2 framing), protobuf (application/vnd.kubernetes.protobuf) + YAML body codecs, and HTTP keep-alive (each connection currently serves one request then closes)."
 
 [[unmapped]]
-area     = "etcd / kine storage backend (durable, watch-capable, transactional)"
+area     = "etcd / kine storage backend wiring (the kine KV seam exists; persisting the Registry through it does not yet)"
 priority = "phase-1b"
-note     = "ADR-004: Phase 1 ships an in-memory Registry with a global resourceVersion counter + replayable watch history; the durable etcd v3 (or kine/SQLite) backend with real revisions, leases, compaction and txn-based optimistic concurrency lands in a later phase and slots behind the same verb semantics."
+note     = "ADR-004: the kine KV seam is now implemented + tested (src/storage.rs::{Backend, KineBackend} over cave_home_kine_rs::Store: conditional create, revisioned update, delete, prefix list, revision->resourceVersion). Still deferred: wiring Backend in *behind* the Registry so ApiServer writes are durable (object<->KV (de)serialization + watch off the kine watch stream + lease/compaction), and a remote kine over gRPC. The in-memory Registry remains the default."
 
 [[unmapped]]
-area     = "TLS termination + authentication (x509 client certs / bearer + service-account tokens / OIDC) + the authenticated-request chain"
+area     = "TLS termination (rustls) + mTLS/OIDC authenticators (bearer-token + anonymous authn is now implemented)"
 priority = "phase-1b"
-note     = "ADR-004: identity is a precondition the transport layer establishes; the decision core is identity-agnostic. The authn chain is deferred to the security phase of the orchestration layer."
+note     = "ADR-004: the authentication chain (bearer-token token-file + anonymous, with 401 on invalid credentials) is implemented + tested (src/authn.rs) and wired into the handler. The connection handler (src/server.rs::serve_stream) is generic over any Read+Write, so a rustls StreamOwned (TLS termination) wraps it without touching the chain. Still deferred: TLS itself, x509 client-cert authn, service-account-token (JWT) authn, and OIDC — additional Authenticator impls on the same chain."
 
 [[unmapped]]
 area     = "Authorization — Node authorizer, aggregated ClusterRoles, and the SubjectAccessReview / webhook-authorizer surfaces"
@@ -203,9 +245,9 @@ priority = "phase-1b"
 note     = "ADR-004: the RESTMapper ships a static built-in kind table; CRD-driven dynamic registration + OpenAPI structural validation is deferred. The registry already stores arbitrary value-tree objects, so CRDs are a registration/validation overlay, not a storage change."
 
 [[unmapped]]
-area     = "Discovery remainder: OpenAPI v2/v3 schema documents, aggregated discovery (APIGroupDiscoveryList), and subresource/CRD-contributed discovery entries"
+area     = "Discovery remainder: OpenAPI v3 + full per-field schema definitions, aggregated discovery (APIGroupDiscoveryList), and subresource/CRD-contributed discovery entries"
 priority = "phase-1b"
-note     = "ADR-004: the group/version/resource discovery surface (APIVersions / APIGroupList / APIResourceList over the static kind table) is implemented in src/discovery.rs. Still deferred: the OpenAPI v2/v3 schema documents, the v2 aggregated-discovery document, and listing subresources (pods/status, pods/log) + CRD-contributed groups — these follow once the structural-schema / CRD registration overlay lands."
+note     = "ADR-004: the group/version/resource discovery surface (APIVersions / APIGroupList / APIResourceList) and a minimal OpenAPI v2 (Swagger 2.0) paths document (one collection + one item path per registered kind, with the served verbs) are now implemented and served live (src/discovery.rs, src/handler.rs::openapi_v2_object). Still deferred: full OpenAPI v2/v3 per-field `definitions` schemas, the v2 aggregated-discovery document, and listing subresources (pods/log) + CRD-contributed groups — these follow once the structural-schema / CRD registration overlay lands."
 
 [[unmapped]]
 area     = "API aggregation layer (APIService delegation to extension apiservers)"
@@ -213,9 +255,9 @@ priority = "phase-1b"
 note     = "ADR-004: routing a sub-path to a delegated extension apiserver is a transport concern layered above this decision core; deferred."
 
 [[unmapped]]
-area     = "Audit subsystem (request/response audit events + policy + backends)"
+area     = "Audit remainder: policy-driven level selection + webhook/file backends (the event model + in-process sink are now implemented)"
 priority = "phase-1b"
-note     = "ADR-004: observability/compliance surface; not decision-core logic. Deferred to the security phase."
+note     = "ADR-004: audit.k8s.io/v1 Event records at the ResponseComplete stage + a pluggable AuditSink (with an in-memory backend) are implemented + tested (src/audit.rs) and wired into the handler. Still deferred: the audit Policy (per-resource Level rules: None/Metadata/Request/RequestResponse), the RequestReceived stage, and the file/webhook backends — all layered over the same event + sink."
 
 [[unmapped]]
 area     = "Strategic Merge Patch (the k8s list-merge-key strategy) + Server-Side Apply (field management / managedFields)"
