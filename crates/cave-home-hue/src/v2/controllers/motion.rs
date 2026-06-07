@@ -5,6 +5,79 @@
 //! `MotionController`: tracks the typed motion map, the `enabled` PUT, and
 //! ingests live state via the EventStream router (`apply_event`).
 
+use crate::errors::HueResult;
+use crate::v2::controllers::base::{ResourcesController, V2Request};
+use crate::v2::models::motion::Motion;
+use serde_json::json;
+
+/// `aiohue.v2.controllers.sensors.MotionController`.
+pub struct MotionController {
+    inner: ResourcesController<Motion>,
+}
+
+impl Default for MotionController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MotionController {
+    /// Wire up against `/clip/v2/resource/motion`.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            inner: ResourcesController::new("motion"),
+        }
+    }
+
+    /// Pull the current motion-sensor snapshot from the bridge.
+    pub async fn update(&mut self, req: &dyn V2Request) -> HueResult<()> {
+        self.inner.update(req).await
+    }
+
+    /// Iterate motion sensors.
+    pub fn iter(&self) -> impl Iterator<Item = &Motion> {
+        self.inner.iter()
+    }
+
+    /// Lookup by UUID.
+    #[must_use]
+    pub fn get(&self, id: &str) -> Option<&Motion> {
+        self.inner.get(id)
+    }
+
+    /// Number of motion sensors tracked.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Enable / disable a motion sensor. Source:
+    /// `MotionController.set_enabled` — PUTs `{"enabled": <bool>}`.
+    pub async fn set_enabled(
+        &self,
+        req: &dyn V2Request,
+        id: &str,
+        enabled: bool,
+    ) -> HueResult<()> {
+        let _ = req
+            .put(&format!("resource/motion/{id}"), json!({ "enabled": enabled }))
+            .await?;
+        Ok(())
+    }
+
+    /// Apply one event payload (called by the event router) — this is how
+    /// live SSE motion-state changes land in the controller.
+    pub fn apply_event(&mut self, raw: serde_json::Value) -> HueResult<()> {
+        self.inner.apply_event(raw)
+    }
+
+    /// Forget an id (for `delete` events).
+    pub fn remove(&mut self, id: &str) {
+        self.inner.remove(id);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

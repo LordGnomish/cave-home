@@ -5,6 +5,110 @@
 //! a room / zone at once". Mirrors `aiohue.v2.controllers.groups`'s
 //! `GroupedLightController`: room-level on/off + brightness PUTs.
 
+use crate::errors::HueResult;
+use crate::v2::controllers::base::{ResourcesController, V2Request};
+use crate::v2::models::feature::{DimmingFeatureBase, OnFeature};
+use crate::v2::models::grouped_light::{GroupedLight, GroupedLightPut};
+use serde_json::json;
+
+/// `aiohue.v2.controllers.groups.GroupedLightController`.
+pub struct GroupedLightController {
+    inner: ResourcesController<GroupedLight>,
+}
+
+impl Default for GroupedLightController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GroupedLightController {
+    /// Wire up against `/clip/v2/resource/grouped_light`.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            inner: ResourcesController::new("grouped_light"),
+        }
+    }
+
+    /// Pull the current grouped-light snapshot from the bridge.
+    pub async fn update(&mut self, req: &dyn V2Request) -> HueResult<()> {
+        self.inner.update(req).await
+    }
+
+    /// Iterate grouped lights.
+    pub fn iter(&self) -> impl Iterator<Item = &GroupedLight> {
+        self.inner.iter()
+    }
+
+    /// Lookup by UUID.
+    #[must_use]
+    pub fn get(&self, id: &str) -> Option<&GroupedLight> {
+        self.inner.get(id)
+    }
+
+    /// Number of grouped lights tracked.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// PUT a pre-built body. Source: `GroupedLightController.set_state`.
+    pub async fn set_state(
+        &self,
+        req: &dyn V2Request,
+        id: &str,
+        put: &GroupedLightPut,
+    ) -> HueResult<()> {
+        let body = serde_json::to_value(put).unwrap_or(json!({}));
+        let _ = req
+            .put(&format!("resource/grouped_light/{id}"), body)
+            .await?;
+        Ok(())
+    }
+
+    /// Convenience: switch a whole room / zone on or off.
+    pub async fn set_on(&self, req: &dyn V2Request, id: &str, on: bool) -> HueResult<()> {
+        self.set_state(
+            req,
+            id,
+            &GroupedLightPut {
+                on: Some(OnFeature { on }),
+                ..Default::default()
+            },
+        )
+        .await
+    }
+
+    /// Convenience: set a room / zone brightness (0..=100 percent).
+    pub async fn set_brightness(
+        &self,
+        req: &dyn V2Request,
+        id: &str,
+        brightness: f32,
+    ) -> HueResult<()> {
+        self.set_state(
+            req,
+            id,
+            &GroupedLightPut {
+                dimming: Some(DimmingFeatureBase { brightness }),
+                ..Default::default()
+            },
+        )
+        .await
+    }
+
+    /// Apply one event payload (called by the event router).
+    pub fn apply_event(&mut self, raw: serde_json::Value) -> HueResult<()> {
+        self.inner.apply_event(raw)
+    }
+
+    /// Forget an id (for `delete` events).
+    pub fn remove(&mut self, id: &str) {
+        self.inner.remove(id);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

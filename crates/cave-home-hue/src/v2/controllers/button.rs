@@ -6,6 +6,75 @@
 //! controller tracks the typed map and folds in live presses delivered over
 //! the EventStream via `apply_event`.
 
+use crate::errors::HueResult;
+use crate::v2::controllers::base::{ResourcesController, V2Request};
+use crate::v2::models::button::Button;
+use crate::v2::models::feature::ButtonReportEvent;
+
+/// `aiohue.v2.controllers.sensors.ButtonController`.
+pub struct ButtonController {
+    inner: ResourcesController<Button>,
+}
+
+impl Default for ButtonController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ButtonController {
+    /// Wire up against `/clip/v2/resource/button`.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            inner: ResourcesController::new("button"),
+        }
+    }
+
+    /// Pull the current button snapshot from the bridge.
+    pub async fn update(&mut self, req: &dyn V2Request) -> HueResult<()> {
+        self.inner.update(req).await
+    }
+
+    /// Iterate buttons.
+    pub fn iter(&self) -> impl Iterator<Item = &Button> {
+        self.inner.iter()
+    }
+
+    /// Lookup by UUID.
+    #[must_use]
+    pub fn get(&self, id: &str) -> Option<&Button> {
+        self.inner.get(id)
+    }
+
+    /// Number of buttons tracked.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// The most recent press event reported by a button, if any. This is the
+    /// value an automation reads after an SSE button-press event lands.
+    #[must_use]
+    pub fn last_event(&self, id: &str) -> Option<ButtonReportEvent> {
+        self.inner
+            .get(id)
+            .and_then(|b| b.button.button_report.as_ref())
+            .map(|r| r.event)
+    }
+
+    /// Apply one event payload (called by the event router) — this is how
+    /// live SSE button presses land in the controller.
+    pub fn apply_event(&mut self, raw: serde_json::Value) -> HueResult<()> {
+        self.inner.apply_event(raw)
+    }
+
+    /// Forget an id (for `delete` events).
+    pub fn remove(&mut self, id: &str) {
+        self.inner.remove(id);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

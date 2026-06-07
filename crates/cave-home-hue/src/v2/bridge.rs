@@ -5,7 +5,10 @@
 
 use crate::errors::HueResult;
 use crate::v2::controllers::base::V2Request;
+use crate::v2::controllers::button::ButtonController;
+use crate::v2::controllers::grouped_light::GroupedLightController;
 use crate::v2::controllers::lights::LightsController;
+use crate::v2::controllers::motion::MotionController;
 use crate::v2::controllers::scenes::ScenesController;
 use std::sync::Arc;
 
@@ -16,6 +19,9 @@ pub struct HueBridgeV2 {
     pub request: Arc<dyn V2Request>,
     pub lights: LightsController,
     pub scenes: ScenesController,
+    pub grouped_lights: GroupedLightController,
+    pub motion: MotionController,
+    pub buttons: ButtonController,
 }
 
 impl HueBridgeV2 {
@@ -28,6 +34,9 @@ impl HueBridgeV2 {
             request,
             lights: LightsController::new(),
             scenes: ScenesController::new(),
+            grouped_lights: GroupedLightController::new(),
+            motion: MotionController::new(),
+            buttons: ButtonController::new(),
         }
     }
 
@@ -35,6 +44,9 @@ impl HueBridgeV2 {
     pub async fn initialize(&mut self) -> HueResult<()> {
         self.lights.update(self.request.as_ref()).await?;
         self.scenes.update(self.request.as_ref()).await?;
+        self.grouped_lights.update(self.request.as_ref()).await?;
+        self.motion.update(self.request.as_ref()).await?;
+        self.buttons.update(self.request.as_ref()).await?;
         Ok(())
     }
 }
