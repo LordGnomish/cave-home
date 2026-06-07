@@ -48,11 +48,13 @@
 // Modules land test-first, one TDD cycle at a time (see git history and
 // `parity.manifest.toml`).
 
+pub mod adapter;
 pub mod crypto;
 pub mod error;
 pub mod fleet_api;
 pub mod models;
 
+pub use adapter::{EnergyProvider, TeslaProvider};
 pub use error::{Result, TeslaError};
 pub use models::{
     BatteryData, DateRange, HistoryData, HistorySample, Lang, OpMode, PowerFlowData, SiteStatus,
