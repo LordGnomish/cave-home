@@ -76,6 +76,8 @@
 pub mod compact;
 pub mod dialect;
 pub mod error;
+#[cfg(feature = "grpc")]
+pub mod grpc;
 pub mod lease;
 pub mod range;
 pub mod revision;
