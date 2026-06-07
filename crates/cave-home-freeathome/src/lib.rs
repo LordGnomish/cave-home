@@ -31,6 +31,7 @@
 #![allow(clippy::doc_markdown)]
 
 pub mod auth;
+mod cli;
 pub mod config;
 pub mod core_bridge;
 pub mod device;
