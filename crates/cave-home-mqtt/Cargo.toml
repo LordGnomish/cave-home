@@ -13,9 +13,47 @@ upstream    = "eclipse/mosquitto"
 port-method = "clean-room"
 spec-source = "MQTT 3.1.1 (OASIS) + MQTT 5.0 (OASIS)"
 
+[features]
+# The decision core (codec + broker) is dependency-free and always built.
+# The async listeners (TCP/TLS/WebSocket) live behind `runtime`, which is
+# the only thing that pulls in tokio / rustls / tungstenite.
+default = []
+runtime = [
+    "dep:tokio",
+    "dep:tokio-rustls",
+    "dep:rustls",
+    "dep:rustls-pemfile",
+    "dep:tokio-tungstenite",
+    "dep:futures-util",
+]
+
 [dependencies]
 bytes     = "1"
 thiserror = "2"
+
+tokio = { version = "1", default-features = false, features = [
+    "rt", "rt-multi-thread", "net", "io-util", "sync", "macros", "time",
+], optional = true }
+rustls = { version = "0.23", default-features = false, features = [
+    "ring", "std", "tls12",
+], optional = true }
+tokio-rustls = { version = "0.26", default-features = false, features = [
+    "ring", "tls12",
+], optional = true }
+rustls-pemfile = { version = "2", optional = true }
+tokio-tungstenite = { version = "0.24", default-features = false, features = [
+    "handshake",
+], optional = true }
+futures-util = { version = "0.3", default-features = false, features = [
+    "std", "sink",
+], optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", default-features = false, features = [
+    "rt", "rt-multi-thread", "net", "io-util", "sync", "macros", "time",
+] }
+rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 
 [lints]
 workspace = true
