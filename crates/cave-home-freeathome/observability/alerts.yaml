@@ -1,0 +1,57 @@
+# cave-home-freeathome — Prometheus alerting rules for the Busch-Jaeger
+# free@home SysAP client. Load alongside the hub's other rule files.
+groups:
+  - name: cave-home-freeathome
+    rules:
+      - alert: FreeAtHomeSysApDisconnected
+        expr: freeathome_connected == 0
+        for: 5m
+        labels:
+          severity: warning
+          integration: freeathome
+        annotations:
+          summary: "free@home SysAP WebSocket disconnected"
+          description: >-
+            The free@home WebSocket has been disconnected for 5 minutes.
+            Live device-state updates are not flowing; check the SysAP and the
+            hub's network path to it.
+
+      - alert: FreeAtHomeAuthFailing
+        expr: increase(freeathome_auth_failures_total[10m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          integration: freeathome
+        annotations:
+          summary: "free@home authentication is failing"
+          description: >-
+            The SysAP rejected the hub's credentials (HTTP 401/403) within the
+            last 10 minutes. Verify the configured username/password (or client
+            certificate) for the System Access Point.
+
+      - alert: FreeAtHomeHighApiErrorRate
+        expr: >-
+          rate(freeathome_api_errors_total[5m])
+            / clamp_min(rate(freeathome_api_requests_total[5m]), 1) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          integration: freeathome
+        annotations:
+          summary: "free@home REST error rate above 10%"
+          description: >-
+            More than 10% of REST requests to the SysAP have failed over the
+            last 10 minutes. The SysAP may be overloaded, rebooting, or
+            unreachable.
+
+      - alert: FreeAtHomeFrequentReconnects
+        expr: increase(freeathome_ws_reconnects_total[15m]) > 5
+        for: 15m
+        labels:
+          severity: warning
+          integration: freeathome
+        annotations:
+          summary: "free@home WebSocket reconnecting frequently"
+          description: >-
+            The free@home WebSocket has reconnected more than 5 times in 15
+            minutes, indicating a flaky link or an unstable SysAP.
