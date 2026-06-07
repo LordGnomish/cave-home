@@ -89,6 +89,7 @@ pub mod error;
 pub mod file;
 pub mod forward;
 pub mod hosts;
+pub mod k8s;
 pub mod kubernetes;
 pub mod message;
 pub mod name;
