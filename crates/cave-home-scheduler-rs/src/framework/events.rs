@@ -5,6 +5,112 @@
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
 //!         pkg/scheduler/framework/types.go (GVK, ActionType, ClusterEvent)
 
+/// Upstream: `pkg/scheduler/framework/types.go::ActionType` — a `uint64`
+/// bitmask describing what happened to a cluster resource. Plugins register
+/// the action(s) that, when observed, could make a previously-unschedulable
+/// pod schedulable, and the queue consults the mask to decide whether to move
+/// a waiting pod back to the active queue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ActionType(u64);
+
+impl ActionType {
+    /// Upstream: `framework.Add`.
+    pub const ADD: ActionType = ActionType(1 << 0);
+    /// Upstream: `framework.Delete`.
+    pub const DELETE: ActionType = ActionType(1 << 1);
+    /// Upstream: `framework.UpdateNodeAllocatable`.
+    pub const UPDATE_NODE_ALLOCATABLE: ActionType = ActionType(1 << 2);
+    /// Upstream: `framework.UpdateNodeLabel`.
+    pub const UPDATE_NODE_LABEL: ActionType = ActionType(1 << 3);
+    /// Upstream: `framework.UpdateNodeTaint`.
+    pub const UPDATE_NODE_TAINT: ActionType = ActionType(1 << 4);
+    /// Upstream: `framework.UpdateNodeCondition`.
+    pub const UPDATE_NODE_CONDITION: ActionType = ActionType(1 << 5);
+    /// Upstream: `framework.UpdatePodLabel` — assigned-pod label change.
+    pub const UPDATE_POD_LABEL: ActionType = ActionType(1 << 6);
+
+    /// Upstream: `framework.All` — the union of every specific action.
+    pub const ALL: ActionType = ActionType(u64::MAX);
+
+    /// Empty mask (no action).
+    pub const NONE: ActionType = ActionType(0);
+
+    /// True if `self` contains every bit of `other`.
+    #[must_use]
+    pub fn contains(self, other: ActionType) -> bool {
+        self.0 & other.0 == other.0
+    }
+
+    /// True if `self` and `other` share at least one action bit.
+    #[must_use]
+    pub fn intersects(self, other: ActionType) -> bool {
+        self.0 & other.0 != 0
+    }
+}
+
+impl std::ops::BitOr for ActionType {
+    type Output = ActionType;
+    fn bitor(self, rhs: ActionType) -> ActionType {
+        ActionType(self.0 | rhs.0)
+    }
+}
+
+impl std::ops::BitOrAssign for ActionType {
+    fn bitor_assign(&mut self, rhs: ActionType) {
+        self.0 |= rhs.0;
+    }
+}
+
+/// Upstream: `pkg/scheduler/framework/types.go::GVK` — the resource kind a
+/// `ClusterEvent` refers to. Phase 2 needs only the kinds the default plugin
+/// set reacts to; `WildCard` matches any kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Gvk {
+    Pod,
+    Node,
+    /// Upstream: `framework.WildCard` — matches any resource kind.
+    WildCard,
+}
+
+/// Upstream: `pkg/scheduler/framework/types.go::ClusterEvent`.
+///
+/// A registered event (what a pod is waiting for) is matched against an
+/// occurred event (what the informer just saw). Both the resource kind and at
+/// least one action bit must line up — modulo `WildCard`, which matches all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClusterEvent {
+    pub resource: Gvk,
+    pub action_type: ActionType,
+}
+
+impl ClusterEvent {
+    #[must_use]
+    pub fn new(resource: Gvk, action_type: ActionType) -> Self {
+        Self {
+            resource,
+            action_type,
+        }
+    }
+
+    /// Upstream: `clusterEvent.Match` — does the `occurred` event satisfy the
+    /// wake-up condition expressed by `self` (the registered event)?
+    #[must_use]
+    pub fn matches(&self, occurred: &ClusterEvent) -> bool {
+        let resource_ok = self.resource == Gvk::WildCard
+            || occurred.resource == Gvk::WildCard
+            || self.resource == occurred.resource;
+        resource_ok && self.action_type.intersects(occurred.action_type)
+    }
+}
+
+/// Upstream: `pkg/scheduler/framework/types.go::WildCardEvent` — the event
+/// every pod is implicitly registered for, so any cluster change at least
+/// considers waking it.
+pub const WILD_CARD_EVENT: ClusterEvent = ClusterEvent {
+    resource: Gvk::WildCard,
+    action_type: ActionType::ALL,
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
