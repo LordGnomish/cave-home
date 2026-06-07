@@ -84,6 +84,7 @@ pub mod path;
 pub mod rbac;
 pub mod registry;
 pub mod selector;
+pub mod server;
 pub mod status;
 pub mod storage;
 
