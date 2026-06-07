@@ -45,6 +45,7 @@ pub mod config;
 pub mod health;
 pub mod http;
 pub mod node;
+pub mod server;
 pub mod shutdown;
 pub mod version;
 
