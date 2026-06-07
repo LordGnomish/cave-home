@@ -11,6 +11,75 @@
 //! reimplementation over the in-crate decision core; the socket loop is in
 //! [`crate::server`].
 
+use crate::gvk::{self, GroupVersionResource};
+use crate::http::Response;
+use crate::json::{obj, Value};
+use crate::registry::ListResult;
+use crate::status::Status;
+
+/// Render a [`Status`] failure as a `metav1.Status` object (the body the
+/// apiserver returns for every error).
+#[must_use]
+pub fn status_object(s: &Status) -> Value {
+    obj([
+        ("kind", Value::from("Status")),
+        ("apiVersion", Value::from("v1")),
+        ("metadata", Value::object()),
+        ("status", Value::from("Failure")),
+        ("message", Value::from(s.message.clone())),
+        ("reason", Value::from(s.reason.as_str())),
+        ("code", Value::from(i64::from(s.code))),
+    ])
+}
+
+/// A `metav1.Status` success object (returned by `delete`, and by collection
+/// operations that produce no object).
+#[must_use]
+pub fn success_status(message: impl Into<String>) -> Value {
+    obj([
+        ("kind", Value::from("Status")),
+        ("apiVersion", Value::from("v1")),
+        ("metadata", Value::object()),
+        ("status", Value::from("Success")),
+        ("message", Value::from(message.into())),
+        ("code", Value::from(200_i64)),
+    ])
+}
+
+/// Wrap a [`ListResult`] in the `<Kind>List` envelope per the API conventions:
+/// `apiVersion`, `kind`, `metadata.resourceVersion` (+ `continue` when more
+/// pages remain), and `items`.
+#[must_use]
+pub fn list_object(gvr: &GroupVersionResource, result: &ListResult) -> Value {
+    let kind = gvk::kind_for(gvr).map_or_else(|| "List".to_string(), |k| format!("{}List", k.kind));
+    let mut metadata = obj([(
+        "resourceVersion",
+        Value::from(result.resource_version.to_string()),
+    )]);
+    if let Some(token) = &result.continue_token {
+        metadata.insert("continue", Value::from(token.clone()));
+    }
+    obj([
+        ("kind", Value::from(kind)),
+        ("apiVersion", Value::from(gvr.group_version())),
+        ("metadata", metadata),
+        ("items", Value::Array(result.items.clone())),
+    ])
+}
+
+/// Encode a JSON body `Value` into an `application/json` [`Response`] with the
+/// given status code.
+#[must_use]
+pub fn object_response(code: u16, body: &Value) -> Response {
+    Response::new(code).with_body("application/json", body.to_json_string().into_bytes())
+}
+
+/// Encode a [`Status`] failure into a [`Response`] (its HTTP code + JSON body).
+#[must_use]
+pub fn status_response(s: &Status) -> Response {
+    object_response(s.code, &status_object(s))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
