@@ -78,11 +78,11 @@ the I/O layer enumerated as deferred under [[unmapped]] below.
 # Every remaining item is enumerated under [[unmapped]] with an ADR-004 phase
 # disposition + note, so the honest ratio reflects the implemented share of
 # what remains in scope after ADR-justified deferrals leave scope.
-fill_ratio          = 0.18
-fill_ratio_basis    = "image-ref parse/normalise + Digest/Descriptor model + OCI runtime-spec construction + task lifecycle state machine + CRI sandbox/container status + image-pull policy + image GC selection, all implemented & tested std-only; runc/shim exec + snapshotter + content store + gRPC server + registry pull deferred (ADR-004 phase-1b)"
+fill_ratio          = 0.20
+fill_ratio_basis    = "image-ref parse/normalise + Digest/Descriptor model + OCI runtime-spec construction + task lifecycle state machine + CRI sandbox/container status + image-pull policy + image GC selection + overlayfs/native snapshotter mount assembly (lowerdir/upperdir/workdir + bind-vs-overlay decision), all implemented & tested std-only; runc/shim exec + on-disk layer materialisation/content store + gRPC server + registry pull deferred (ADR-004 phase-1b)"
 test_port_ratio     = 0.0   # tests designed from the documented specs, not ported from upstream _test.go
 adr_justified_ratio = 1.00  # every [[unmapped]] gap below carries a justified priority + a note
-honest_ratio        = 1.00  # 0.18 / (0.18 + (1-0.18)*(1-1.00)) = 0.18/0.18 = 1.00
+honest_ratio        = 1.00  # 0.20 / (0.20 + (1-0.20)*(1-1.00)) = 0.20/0.20 = 1.00
 
 # ---------------------------------------------------------------------------
 # [[mapped]] — documented OCI/CRI/containerd concept -> cave-home Rust path
@@ -144,6 +144,14 @@ ours = "src/cri/pull_policy.rs::{PullPolicy, PullDecision, decide_pull}"
 spec = "containerd CRI image GC — select unreferenced + unpinned images for removal"
 ours = "src/cri/gc.rs::{ImageRecord, select_unused_images}"
 
+[[mapped]]
+spec = "containerd overlayfs snapshotter mounts() — bind-vs-overlay decision: no-parent bind fallback (overlay needs >=2 dirs), single-parent read-only-view bind, active workdir+upperdir, lowerdir parent join (most-recent-first), index=off/userxattr option prefixes; <root>/snapshots/<id>{/fs,/work} layout"
+ours = "src/snapshot.rs::{OverlaySnapshotter, OverlaySnapshotter::mounts, upper_path, work_path, snapshot_dir, Mount, Snapshot, Kind}"
+
+[[mapped]]
+spec = "containerd native snapshotter mounts() — single bind mount of own dir (active/no-parents) or immediate-parent dir (read-only view), ro/rw + rbind flags"
+ours = "src/snapshot.rs::{NativeSnapshotter, NativeSnapshotter::mounts}"
+
 # ---------------------------------------------------------------------------
 # [[unmapped]] — deferred / out-of-scope, each with an ADR-004 disposition
 # ---------------------------------------------------------------------------
@@ -164,9 +172,9 @@ priority = "phase-1b"
 note     = "ADR-004: the shim is the long-running supervisor between containerd and runc. It drives the lifecycle state machine modelled here; the actual shim process + its ttrpc transport are deferred I/O wiring."
 
 [[unmapped]]
-area     = "overlayfs snapshotter + on-disk content store (blob filesystem layout, layer unpack/diff, mount assembly)"
+area     = "overlayfs/native snapshotter on-disk materialisation + content store (blob filesystem layout, layer unpack/diff, mkdir of fs/work dirs, the mount(2) syscalls)"
 priority = "phase-1b"
-note     = "ADR-004: the Digest/Descriptor model here addresses content; materialising layers to disk (overlay lowerdir/upperdir/workdir, the blobs/sha256 store, tar extraction with verify-on-write) is filesystem/syscall-bound and deferred."
+note     = "ADR-004: the snapshotter *mount-assembly decision* (which mounts to apply, the overlay lowerdir/upperdir/workdir option string, the bind-vs-overlay choice) is now implemented in src/snapshot.rs and produces exactly the mounts containerd hands to its mount layer. What remains deferred is the filesystem/syscall side that *consumes* those mounts: mkdir of the <id>/fs and <id>/work dirs, tar layer unpack/diff to disk with verify-on-write, the blobs/sha256 content store, and the mount(2)/unmount(2) syscalls themselves."
 
 [[unmapped]]
 area     = "gRPC CRI server (RuntimeService + ImageService over tonic/ttrpc) feeding the kubelet"
@@ -244,6 +252,10 @@ ours         = "src/cri/pull_policy.rs::tests (5 cases)"
 [[spec_test]]
 designed_for = "Image GC selection: unreferenced+unpinned selected, pinned never selected, referenced retained, deterministic order, empty inputs"
 ours         = "src/cri/gc.rs::tests (5 cases)"
+
+[[spec_test]]
+designed_for = "Snapshotter mount assembly: overlay no-parent rw/ro bind, single-parent active overlay (workdir+upperdir+lowerdir order), single-parent view ro-bind-of-parent, multi-parent active option order, multi-parent view lowerdir-only, lowerdir most-recent-parent-first join, index=off/userxattr prefixes + defaults-off, path layout (fs/work) + trailing-slash root; native rw/ro bind of own dir (active/no-parents) vs immediate-parent dir (view); Kind writability"
+ours         = "src/snapshot.rs::tests (18 cases)"
 
 # ---------------------------------------------------------------------------
 # no-backcompat (Charter §8) — recorded so the stance is auditable: this crate
