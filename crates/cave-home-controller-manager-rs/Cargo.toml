@@ -6,7 +6,7 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-controller-manager-rs — K3s controller-manager decision core (workqueue + reconcile + informer cache + GC/node-lifecycle/cleanup controllers); behavioural reimplementation of documented kube-controller-manager contracts (Orchestration Phase 2, ADR-004); std-only, I/O deferred"
+description = "cave-home-controller-manager-rs — K3s controller-manager (workqueue + reconcile + informer cache + in-memory apiserver + 12 reconcilers incl. ReplicaSet/Deployment/StatefulSet/DaemonSet/Job/CronJob/Namespace/ServiceAccount/Endpoints + manager run loop + lease-based leader election); behavioural reimplementation of documented kube-controller-manager contracts (Orchestration Phase 2, ADR-004); std-only, networked transport deferred"
 
 [package.metadata.cave-home]
 upstream    = "kubernetes/kubernetes (K3s-vendored)"

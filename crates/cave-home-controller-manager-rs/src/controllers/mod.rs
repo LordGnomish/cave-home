@@ -1,14 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Concrete controllers — pure reconcile/decision logic, no apiserver I/O.
+//! Concrete controllers.
 //!
-//! Each controller computes *what should change* (a delete set, a taint
-//! decision, a finalizer sweep) over an in-memory view of objects. Performing
-//! those changes against a live apiserver is the deferred client phase (see
-//! `parity.manifest.toml`). The three shipped here are the smallest set that
-//! exercises the three distinct controller shapes: graph-based (GC),
-//! condition/heartbeat-based (node lifecycle), and finalizer/TTL-based
-//! (cleanup).
+//! Two shapes live here. The original three — graph-based (GC),
+//! condition/heartbeat-based (node lifecycle) and finalizer/TTL-based
+//! (cleanup) — are **pure decision functions**: they compute *what should
+//! change* over an in-memory view and return it.
+//!
+//! The workload controllers (starting with [`replicaset`]) are **full
+//! reconcilers**: each `reconcile`s one object key against the in-memory
+//! apiserver ([`crate::apis::Cluster`]), reading the informer cache and issuing
+//! create/update/delete writes — the real controller loop, with only the
+//! network transport deferred.
 
 pub mod cleanup;
+pub mod cronjob;
+pub mod daemonset;
+pub mod deployment;
+pub mod endpoints;
 pub mod gc;
+pub mod job;
+pub mod namespace;
 pub mod node_lifecycle;
+pub mod replicaset;
+pub mod serviceaccount;
+pub mod statefulset;
