@@ -54,20 +54,30 @@ linux_min_kernel = "7.1"
 #     NodeVolumeLimits, DynamicResources deferred).
 #   * Default-profile SCORE plugins: BalancedAllocation, LeastAllocated,
 #     ImageLocality implemented — 3 of ~6.
-#   * Scheduling spine: PriorityQueue (active + exponential-backoff sub-queue),
-#     SchedulerCache + NodeInfo aggregation + assumed-pod tracking, the
-#     scheduleOne filter→postFilter→score cycle, DefaultPreemption, the
-#     Scheduler driver, and the bind/event sink — ALL implemented & tested.
-# Weighing the fully-implemented spine + the filter/score/preemption slice
-# against the full default-profile scope lands at ~0.28. This is deliberately
-# conservative (LOC ratio would read ~0.10) and defensible: a real cluster
-# could schedule and bind ordinary, tainted, affinity-constrained, and
-# priority/preemption workloads onto nodes today using only this crate.
-fill_ratio          = 0.28
-fill_ratio_basis    = "default-profile scheduling spine (queue+cache+framework cycle+preemption+bind) fully implemented & tested, plus 7/13 filter plugins, 3/6 score plugins, 3/9 framework extension points; remaining plugins + extension points + apiserver wiring deferred (ADR-004 Phase 2), all enumerated below"
+#   * Scheduling spine: PriorityQueue (active + exponential-backoff sub-queue +
+#     unschedulablePods set with event-driven MoveAllToActiveOrBackoffQueue and
+#     blocking pop_wait), SchedulerCache + NodeInfo aggregation + assumed-pod
+#     tracking, the full scheduleOne cycle (PreFilter→Filter→PostFilter→PreScore
+#     →Score) plus the binding cycle (Reserve→Permit→PreBind→Bind with Unreserve
+#     rollback), DefaultPreemption, the event-driven Scheduler.run loop with
+#     pod/node informers (SchedulerSource watch streams) + a periodic backoff/
+#     leftover flush, and the bind/event sink — ALL implemented & tested.
+#   * Framework extension points: PreFilter, Filter, PostFilter, PreScore, Score,
+#     Reserve, Permit, PreBind, Bind implemented — 8 of 9 (Bind realised as the
+#     DefaultBinder/sink; only PostBind deferred). QueueingHints deferred.
+#   * Config: percentageOfNodesToScore + the adaptive numFeasibleNodesToFind
+#     heuristic implemented; multi-profile registries deferred.
+# Weighing the fully-implemented spine + event loop + the filter/score/preemption
+# slice + the full framework cycle against the default-profile scope lands at
+# ~0.42. This stays conservative (LOC ratio reads ~0.16) and defensible: a real
+# cluster can event-drive, schedule, and bind ordinary, tainted, affinity-
+# constrained, and priority/preemption workloads onto nodes today using only
+# this crate, reacting to live pod/node watch events.
+fill_ratio          = 0.42
+fill_ratio_basis    = "default-profile scheduling spine (event-driven queue+cache+full framework cycle+binding cycle+preemption+bind) and the Scheduler.run informer loop fully implemented & tested, plus 7/13 filter plugins, 3/6 score plugins, 8/9 framework extension points, percentageOfNodesToScore config; remaining plugins + PostBind + multi-profile + QueueingHints deferred (ADR-004 Phase 2), all enumerated below"
 test_port_ratio     = 0.0   # tests are designed from the documented scheduling contract, not ported from upstream _test.go
 adr_justified_ratio = 1.00  # every [[unmapped]] gap below carries a justified priority + a note
-honest_ratio        = 1.00  # 0.28 / (0.28 + (1-0.28)*(1-1.00)) = 0.28/0.28 = 1.00
+honest_ratio        = 1.00  # 0.42 / (0.42 + (1-0.42)*(1-1.00)) = 0.42/0.42 = 1.00
 
 # ---- mapped (line-by-line port present in this crate) -----------------------
 
@@ -82,6 +92,38 @@ ours     = "src/schedule_one.rs::schedule_one"
 [[mapped]]
 upstream = "pkg/scheduler/schedule_one.go::ScheduleResult"
 ours     = "src/schedule_one.rs::ScheduleResult"
+
+[[mapped]]
+upstream = "pkg/scheduler/scheduler.go::Scheduler.Run"
+ours     = "src/scheduler.rs::Scheduler::run"
+
+[[mapped]]
+upstream = "pkg/scheduler/eventhandlers.go (pod/node informer event handlers)"
+ours     = "src/scheduler.rs::watch_pods_loop + watch_nodes_loop + src/source_sink.rs::watch_pods/watch_nodes"
+
+[[mapped]]
+upstream = "pkg/scheduler/backend/queue/scheduling_queue.go::PriorityQueue.{AddUnschedulableIfNotPresent,MoveAllToActiveOrBackoffQueue,flushUnschedulablePodsLeftover,Pop,Close}"
+ours     = "src/queue/priority_queue.rs::PriorityQueue (unschedulable set + cycle race + pop_wait/close)"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/types.go::{GVK,ActionType,ClusterEvent}"
+ours     = "src/framework/events.rs"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/interface.go::PreFilterPlugin"
+ours     = "src/framework/mod.rs::PreFilterPlugin"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/interface.go::PreScorePlugin"
+ours     = "src/framework/mod.rs::PreScorePlugin"
+
+[[mapped]]
+upstream = "pkg/scheduler/framework/interface.go::{ReservePlugin,PermitPlugin,PreBindPlugin}"
+ours     = "src/framework/mod.rs::{ReservePlugin,PermitPlugin,PreBindPlugin} + src/scheduler.rs::run_binding_cycle"
+
+[[mapped]]
+upstream = "pkg/scheduler/schedule_one.go::numFeasibleNodesToFind"
+ours     = "src/config.rs::SchedulerConfig::num_feasible_nodes_to_find + src/schedule_one.rs::schedule_one_limited"
 
 [[mapped]]
 upstream = "pkg/scheduler/framework/interface.go::FilterPlugin"
@@ -277,14 +319,14 @@ priority = "phase-2"
 note     = "Dynamic Resource Allocation (DRA) — beta in v1.32+."
 
 [[unmapped]]
-area     = "pkg/scheduler/framework/runtime (Reserve/Permit/PreBind extension points)"
+area     = "pkg/scheduler/framework/runtime (PostBind extension point)"
 priority = "phase-2"
-note     = "Phase 2 uses only Filter/Score/PostFilter."
+note     = "PreFilter/Filter/PostFilter/PreScore/Score/Reserve/Permit/PreBind/Bind are now implemented; only the post-bind callback remains deferred (no Phase-2 default plugin uses it)."
 
 [[unmapped]]
 area     = "pkg/scheduler/apis/config (multi-profile, custom plugin registry)"
 priority = "phase-2"
-note     = "Single hard-coded default-scheduler profile in Phase 2."
+note     = "percentageOfNodesToScore + adaptive numFeasibleNodesToFind are implemented (src/config.rs); multiple named profiles and a reflective plugin registry remain a single hard-coded default-scheduler profile in Phase 2."
 
 [[unmapped]]
 area     = "pkg/scheduler/framework/plugins/imagelocality (image-size weighting)"
@@ -302,9 +344,9 @@ priority = "phase-2"
 note     = "Legacy extension mechanism; superseded by the framework plugin model."
 
 [[unmapped]]
-area     = "pkg/scheduler/eventhandlers.go (informer wiring)"
+area     = "pkg/scheduler/eventhandlers.go (typed client-go informer factories)"
 priority = "phase-2"
-note     = "Replaced by the SchedulerSource trait + in-process drivers in Phase 2."
+note     = "The informer EVENT HANDLERS (pod/node Add/Update/Delete → cache + queue moves) and the Scheduler.run loop are now implemented over the SchedulerSource watch streams; only the concrete client-go SharedInformerFactory binding to a real apiserver remains (provided by the apiserver crate's shim, ADR-004)."
 
 [[unmapped]]
 area     = "pkg/scheduler/profile (multi-profile registry)"

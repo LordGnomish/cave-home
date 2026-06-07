@@ -7,7 +7,10 @@
 
 use std::sync::Arc;
 
-use super::{FilterPlugin, PostFilterPlugin, ScorePlugin};
+use super::{
+    FilterPlugin, PermitPlugin, PostFilterPlugin, PreBindPlugin, PreFilterPlugin, PreScorePlugin,
+    ReservePlugin, ScorePlugin,
+};
 
 /// Upstream: `pkg/scheduler/framework/runtime/framework.go::frameworkImpl`.
 ///
@@ -17,9 +20,14 @@ use super::{FilterPlugin, PostFilterPlugin, ScorePlugin};
 /// each extension point — is preserved 1:1.
 #[derive(Clone, Default)]
 pub struct PluginRegistry {
+    pre_filters: Vec<Arc<dyn PreFilterPlugin>>,
     filters: Vec<Arc<dyn FilterPlugin>>,
+    pre_scores: Vec<Arc<dyn PreScorePlugin>>,
     scores: Vec<Arc<dyn ScorePlugin>>,
     post_filters: Vec<Arc<dyn PostFilterPlugin>>,
+    reserves: Vec<Arc<dyn ReservePlugin>>,
+    permits: Vec<Arc<dyn PermitPlugin>>,
+    pre_binds: Vec<Arc<dyn PreBindPlugin>>,
 }
 
 impl PluginRegistry {
@@ -29,8 +37,33 @@ impl PluginRegistry {
     }
 
     #[must_use]
+    pub fn reserves(&self) -> &[Arc<dyn ReservePlugin>] {
+        &self.reserves
+    }
+
+    #[must_use]
+    pub fn permits(&self) -> &[Arc<dyn PermitPlugin>] {
+        &self.permits
+    }
+
+    #[must_use]
+    pub fn pre_binds(&self) -> &[Arc<dyn PreBindPlugin>] {
+        &self.pre_binds
+    }
+
+    #[must_use]
+    pub fn pre_filters(&self) -> &[Arc<dyn PreFilterPlugin>] {
+        &self.pre_filters
+    }
+
+    #[must_use]
     pub fn filters(&self) -> &[Arc<dyn FilterPlugin>] {
         &self.filters
+    }
+
+    #[must_use]
+    pub fn pre_scores(&self) -> &[Arc<dyn PreScorePlugin>] {
+        &self.pre_scores
     }
 
     #[must_use]
@@ -47,15 +80,50 @@ impl PluginRegistry {
 /// Builder for [`PluginRegistry`].
 #[derive(Default)]
 pub struct RegistryBuilder {
+    pre_filters: Vec<Arc<dyn PreFilterPlugin>>,
     filters: Vec<Arc<dyn FilterPlugin>>,
+    pre_scores: Vec<Arc<dyn PreScorePlugin>>,
     scores: Vec<Arc<dyn ScorePlugin>>,
     post_filters: Vec<Arc<dyn PostFilterPlugin>>,
+    reserves: Vec<Arc<dyn ReservePlugin>>,
+    permits: Vec<Arc<dyn PermitPlugin>>,
+    pre_binds: Vec<Arc<dyn PreBindPlugin>>,
 }
 
 impl RegistryBuilder {
     #[must_use]
+    pub fn with_pre_filter(mut self, p: Arc<dyn PreFilterPlugin>) -> Self {
+        self.pre_filters.push(p);
+        self
+    }
+
+    #[must_use]
+    pub fn with_reserve(mut self, p: Arc<dyn ReservePlugin>) -> Self {
+        self.reserves.push(p);
+        self
+    }
+
+    #[must_use]
+    pub fn with_permit(mut self, p: Arc<dyn PermitPlugin>) -> Self {
+        self.permits.push(p);
+        self
+    }
+
+    #[must_use]
+    pub fn with_pre_bind(mut self, p: Arc<dyn PreBindPlugin>) -> Self {
+        self.pre_binds.push(p);
+        self
+    }
+
+    #[must_use]
     pub fn with_filter(mut self, p: Arc<dyn FilterPlugin>) -> Self {
         self.filters.push(p);
+        self
+    }
+
+    #[must_use]
+    pub fn with_pre_score(mut self, p: Arc<dyn PreScorePlugin>) -> Self {
+        self.pre_scores.push(p);
         self
     }
 
@@ -74,9 +142,14 @@ impl RegistryBuilder {
     #[must_use]
     pub fn build(self) -> PluginRegistry {
         PluginRegistry {
+            pre_filters: self.pre_filters,
             filters: self.filters,
+            pre_scores: self.pre_scores,
             scores: self.scores,
             post_filters: self.post_filters,
+            reserves: self.reserves,
+            permits: self.permits,
+            pre_binds: self.pre_binds,
         }
     }
 }
@@ -120,5 +193,41 @@ mod tests {
         assert_eq!(reg.scores().len(), 1);
         assert_eq!(reg.filters()[0].name(), "PassFilter");
         assert_eq!(reg.scores()[0].name(), "ZeroScore");
+    }
+
+    struct NoopPreFilter;
+    impl super::super::PreFilterPlugin for NoopPreFilter {
+        fn name(&self) -> &'static str {
+            "NoopPreFilter"
+        }
+        fn pre_filter(
+            &self,
+            _: &mut CycleState,
+            _: &Pod,
+        ) -> (Option<super::super::PreFilterResult>, Status) {
+            (None, Status::success())
+        }
+    }
+
+    struct NoopPreScore;
+    impl super::super::PreScorePlugin for NoopPreScore {
+        fn name(&self) -> &'static str {
+            "NoopPreScore"
+        }
+        fn pre_score(&self, _: &mut CycleState, _: &Pod, _: &[NodeInfo]) -> Status {
+            Status::success()
+        }
+    }
+
+    #[test]
+    fn registry_records_pre_filter_and_pre_score_plugins_in_order() {
+        let reg = PluginRegistry::builder()
+            .with_pre_filter(Arc::new(NoopPreFilter))
+            .with_pre_score(Arc::new(NoopPreScore))
+            .build();
+        assert_eq!(reg.pre_filters().len(), 1);
+        assert_eq!(reg.pre_scores().len(), 1);
+        assert_eq!(reg.pre_filters()[0].name(), "NoopPreFilter");
+        assert_eq!(reg.pre_scores()[0].name(), "NoopPreScore");
     }
 }

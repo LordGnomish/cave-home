@@ -13,18 +13,27 @@
 //! * Score plugins  — `NodeResourcesBalancedAllocation`, `LeastRequested`,
 //!   `ImageLocality`.
 //! * `DefaultPreemption` PostFilter plugin (priority-based).
-//! * Priority `SchedulingQueue` with active + backoff sub-queues.
+//! * Priority `SchedulingQueue` with active + backoff sub-queues, an
+//!   `unschedulablePods` set, event-driven `MoveAllToActiveOrBackoffQueue`
+//!   (driven by `ClusterEvent`s), leftover flush, and a blocking `pop_wait`.
 //! * `SchedulerCache` + `NodeInfo` aggregation + assumed-pod tracking.
-//! * `scheduleOne` cycle plus a top-level `Scheduler` struct that wires
-//!   it to `SchedulerSource` / `SchedulerSink` traits.
+//! * The full framework cycle — `PreFilter → Filter → PostFilter → PreScore →
+//!   Score` (scheduling) and `Reserve → Permit → PreBind → Bind` with
+//!   `Unreserve` rollback (binding).
+//! * Event-driven `Scheduler::run` loop with pod/node informers over the
+//!   `SchedulerSource` watch streams and a periodic backoff/leftover flush,
+//!   plus the legacy `sync`/`run_once` poll driver.
+//! * `SchedulerConfig` — `percentageOfNodesToScore` + adaptive
+//!   `numFeasibleNodesToFind`.
 //!
 //! Phase 2b deferred (see `parity.manifest.toml`): `PodTopologySpread`,
 //! inter-pod affinity, preferred node affinity, custom plugin registry,
-//! multiple profiles, `Reserve`/`Permit`/`PreBind` extension points,
+//! multiple profiles, the `PostBind` extension point, `QueueingHints`,
 //! image-size weighted `ImageLocality`, lower-priority victim
 //! minimisation in `DefaultPreemption`.
 
 pub mod cache;
+pub mod config;
 pub mod framework;
 pub mod plugins;
 pub mod preemption;
@@ -35,15 +44,19 @@ pub mod source_sink;
 pub mod types;
 
 pub use cache::{NodeInfo, SchedulerCache};
-pub use framework::{CycleState, PluginRegistry, RegistryBuilder, Status};
+pub use framework::{
+    ActionType, ClusterEvent, CycleState, Gvk, PermitPlugin, PluginRegistry, PreBindPlugin,
+    PreFilterPlugin, PreFilterResult, PreScorePlugin, RegistryBuilder, ReservePlugin, Status,
+};
 pub use plugins::default_registry;
 pub use preemption::DefaultPreemption;
 pub use queue::{PriorityQueue, QueuedPodInfo, SchedulingQueue};
-pub use schedule_one::{schedule_one, ScheduleResult};
+pub use config::SchedulerConfig;
+pub use schedule_one::{schedule_one, schedule_one_limited, ScheduleResult};
 pub use scheduler::{CycleOutcome, Scheduler};
 pub use source_sink::{
-    EventStream, InMemorySink, InMemorySource, PodEvent, SchedulerSink, SchedulerSource,
-    SourceSinkError,
+    EventStream, InMemorySink, InMemorySource, NodeEvent, NodeEventStream, PodEvent, SchedulerSink,
+    SchedulerSource, SourceSinkError,
 };
 pub use types::{
     Affinity, Container, ContainerPort, HostPathSource, Node, NodeAffinity, NodeSelector,

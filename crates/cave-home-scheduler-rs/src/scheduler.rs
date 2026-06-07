@@ -5,12 +5,16 @@
 //!         pkg/scheduler/scheduler.go
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use tokio::sync::Notify;
 
 use crate::cache::SchedulerCache;
-use crate::framework::PluginRegistry;
-use crate::queue::{PriorityQueue, SchedulingQueue};
-use crate::schedule_one::{schedule_one, ScheduleResult};
-use crate::source_sink::{Result, SchedulerSink, SchedulerSource};
+use crate::config::SchedulerConfig;
+use crate::framework::{ActionType, ClusterEvent, CycleState, Gvk, PluginRegistry};
+use crate::queue::{PriorityQueue, QueuedPodInfo, SchedulingQueue};
+use crate::schedule_one::{schedule_one_limited, ScheduleResult};
+use crate::source_sink::{NodeEvent, PodEvent, Result, SchedulerSink, SchedulerSource};
 
 /// Upstream: `pkg/scheduler/scheduler.go::Scheduler`.
 pub struct Scheduler {
@@ -21,6 +25,8 @@ pub struct Scheduler {
     pub registry: PluginRegistry,
     /// Profile name — `default-scheduler` in Phase 2.
     pub profile_name: String,
+    /// Scheduler configuration (percentage-of-nodes-to-score, profile).
+    pub config: SchedulerConfig,
 }
 
 /// Outcome of a single `run_once` cycle (the pod that was processed +
@@ -37,14 +43,24 @@ impl Scheduler {
         source: Arc<dyn SchedulerSource>,
         sink: Arc<dyn SchedulerSink>,
     ) -> Self {
+        let config = SchedulerConfig::default();
         Self {
             source,
             sink,
             cache: SchedulerCache::new(),
             queue: PriorityQueue::new(),
             registry: crate::plugins::default_registry(),
-            profile_name: "default-scheduler".into(),
+            profile_name: config.profile_name.clone(),
+            config,
         }
+    }
+
+    /// Replace the scheduler configuration.
+    #[must_use]
+    pub fn with_config(mut self, config: SchedulerConfig) -> Self {
+        self.profile_name = config.profile_name.clone();
+        self.config = config;
+        self
     }
 
     /// Replace the registry — useful for tests that exercise a subset.
@@ -79,7 +95,8 @@ impl Scheduler {
         };
         let pod = info.pod.clone();
         let full = pod.full_name();
-        let result = schedule_one(&pod, &self.cache, &self.registry);
+        let limit = self.config.num_feasible_nodes_to_find(self.cache.node_count());
+        let result = schedule_one_limited(&pod, &self.cache, &self.registry, limit);
 
         if let Some(host) = &result.suggested_host {
             // Assume the pod into the cache and emit the bind.
@@ -141,7 +158,7 @@ impl Scheduler {
             let reasons: Vec<String> = result
                 .filter_failures
                 .values()
-                .map(|s| s.message())
+                .map(crate::framework::Status::message)
                 .collect();
             let _ = self
                 .sink
@@ -167,6 +184,250 @@ impl Scheduler {
             out.push(c);
         }
         Ok(out)
+    }
+
+    /// Upstream: `pkg/scheduler/scheduler.go::Scheduler.Run`.
+    ///
+    /// The real event-driven loop. Three concurrent informers feed the queue
+    /// and cache from the source's watch streams (pods, nodes) and a periodic
+    /// flush promotes backed-off / leftover pods; the main loop blocks on
+    /// `queue.pop_wait()` and schedules+binds each pod as it becomes ready.
+    /// Runs until `cancel` is notified.
+    pub async fn run(self: Arc<Self>, cancel: Arc<Notify>) {
+        let start = Instant::now();
+        let now_ms = move || u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
+
+        let pod_task = tokio::spawn(Self::watch_pods_loop(self.clone(), now_ms));
+        let node_task = tokio::spawn(Self::watch_nodes_loop(self.clone(), now_ms));
+        let flush_task = tokio::spawn(Self::flush_loop(self.queue.clone(), now_ms));
+
+        // Upstream `wait.UntilWithContext(ctx, sched.scheduleOne, 0)`.
+        loop {
+            tokio::select! {
+                biased;
+                () = cancel.notified() => break,
+                maybe = self.queue.pop_wait() => match maybe {
+                    Some(info) => self.schedule_and_bind(info, now_ms()).await,
+                    None => break,
+                },
+            }
+        }
+
+        self.queue.close();
+        pod_task.abort();
+        node_task.abort();
+        flush_task.abort();
+    }
+
+    /// Informer: fold pod watch events into the queue/cache.
+    /// Upstream: `pkg/scheduler/eventhandlers.go::addPodToSchedulingQueue` etc.
+    async fn watch_pods_loop(self: Arc<Self>, now_ms: impl Fn() -> u64) {
+        let Ok(mut stream) = self.source.watch_pods().await else {
+            return;
+        };
+        while let Some(ev) = stream.recv().await {
+            match ev {
+                PodEvent::Add(p) | PodEvent::Update { new: p, .. } => {
+                    if p.spec.node_name.is_empty() {
+                        // Still pending → (re)enqueue for scheduling.
+                        self.queue.add(p);
+                    } else {
+                        // Already bound elsewhere → reflect in the cache.
+                        let _ = self.cache.add_pod(p);
+                    }
+                }
+                PodEvent::Delete(p) => {
+                    let _ = self.cache.remove_pod(&p);
+                    // Freed capacity may unblock waiters.
+                    let ev = ClusterEvent::new(Gvk::Pod, ActionType::DELETE);
+                    self.queue.move_all_to_active_or_backoff_queue(&ev, now_ms());
+                }
+            }
+        }
+    }
+
+    /// Informer: fold node watch events into the cache and wake pods waiting on
+    /// node changes. Upstream: `pkg/scheduler/eventhandlers.go::addNodeToCache`.
+    async fn watch_nodes_loop(self: Arc<Self>, now_ms: impl Fn() -> u64) {
+        let Ok(mut stream) = self.source.watch_nodes().await else {
+            return;
+        };
+        while let Some(ev) = stream.recv().await {
+            match ev {
+                NodeEvent::Add(n) => {
+                    self.cache.add_node(n);
+                    let ev = ClusterEvent::new(Gvk::Node, ActionType::ADD);
+                    self.queue.move_all_to_active_or_backoff_queue(&ev, now_ms());
+                }
+                NodeEvent::Update { new, .. } => {
+                    self.cache.update_node(new);
+                    let ev = ClusterEvent::new(
+                        Gvk::Node,
+                        ActionType::UPDATE_NODE_ALLOCATABLE
+                            | ActionType::UPDATE_NODE_TAINT
+                            | ActionType::UPDATE_NODE_LABEL,
+                    );
+                    self.queue.move_all_to_active_or_backoff_queue(&ev, now_ms());
+                }
+                NodeEvent::Delete(n) => {
+                    self.cache.remove_node(&n.metadata.name);
+                }
+            }
+        }
+    }
+
+    /// Periodic flush: promote backed-off pods whose timer elapsed and rescue
+    /// pods stranded in the unschedulable set past the leftover threshold.
+    /// Upstream: the `flushBackoffQCompleted` / `flushUnschedulablePodsLeftover`
+    /// timers in `pkg/scheduler/backend/queue`.
+    async fn flush_loop(queue: PriorityQueue, now_ms: impl Fn() -> u64) {
+        let mut tick = tokio::time::interval(Duration::from_millis(200));
+        loop {
+            tick.tick().await;
+            let now = now_ms();
+            queue.flush_backoff(now);
+            queue.flush_unschedulable_pods_leftover(now);
+        }
+    }
+
+    /// Schedule a single popped pod and drive its binding, re-queueing it on
+    /// any failure. Shared bind path for the event loop.
+    async fn schedule_and_bind(&self, info: QueuedPodInfo, now_ms: u64) {
+        // The scheduling cycle this pod was popped in (set by `pop_wait`).
+        let pod_cycle = self.queue.scheduling_cycle();
+        let pod = info.pod.clone();
+        let full = pod.full_name();
+        let limit = self.config.num_feasible_nodes_to_find(self.cache.node_count());
+        let result = schedule_one_limited(&pod, &self.cache, &self.registry, limit);
+
+        if let Some(host) = result.suggested_host.clone() {
+            match self.run_binding_cycle(&pod, &host).await {
+                Ok(()) => {
+                    let _ = self
+                        .sink
+                        .record_event(
+                            &pod,
+                            "Scheduled",
+                            &format!(
+                                "Successfully assigned {full} to {host} (profile={})",
+                                self.profile_name
+                            ),
+                        )
+                        .await;
+                }
+                Err(reason) => {
+                    let _ = self
+                        .sink
+                        .record_event(&pod, "FailedScheduling", &reason)
+                        .await;
+                    self.queue
+                        .add_unschedulable_if_not_present(info, pod_cycle, now_ms);
+                }
+            }
+        } else if let Some(nominee) = result.nominated_node.clone() {
+            let _ = self
+                .sink
+                .record_event(
+                    &pod,
+                    "Preempted",
+                    &format!("preempted lower-priority pods on {nominee}"),
+                )
+                .await;
+            self.queue
+                .add_unschedulable_if_not_present(info, pod_cycle, now_ms);
+        } else {
+            let reasons: Vec<String> = result
+                .filter_failures
+                .values()
+                .map(crate::framework::Status::message)
+                .collect();
+            let _ = self
+                .sink
+                .record_event(
+                    &pod,
+                    "FailedScheduling",
+                    &format!("no nodes available; reasons: {}", reasons.join(", ")),
+                )
+                .await;
+            self.queue
+                .add_unschedulable_if_not_present(info, pod_cycle, now_ms);
+        }
+    }
+
+    /// Upstream: the binding cycle — `Reserve -> Permit -> PreBind -> Bind`,
+    /// with `Unreserve` rollback if any stage rejects. The built-in
+    /// node-resource reservation is the cache `assume_pod`; the bind itself is
+    /// the `DefaultBinder` (the sink). On any failure the assumption and every
+    /// Reserve plugin that ran are unwound, and an `Err(reason)` is returned so
+    /// the caller re-queues the pod.
+    async fn run_binding_cycle(
+        &self,
+        pod: &crate::types::Pod,
+        host: &str,
+    ) -> std::result::Result<(), String> {
+        // Built-in Reserve: tentatively place the pod (claims its resources).
+        self.cache
+            .assume_pod(pod.clone(), host)
+            .map_err(|e| format!("assume failed: {e}"))?;
+
+        let mut state = CycleState::new();
+
+        // ---------- Reserve ----------
+        let mut reserved = 0_usize;
+        for plugin in self.registry.reserves() {
+            reserved += 1;
+            let status = plugin.reserve(&mut state, pod, host);
+            if !status.is_success() {
+                self.unwind(&mut state, pod, host, reserved);
+                return Err(format!(
+                    "reserve {} failed: {}",
+                    plugin.name(),
+                    status.message()
+                ));
+            }
+        }
+
+        // ---------- Permit ----------
+        for plugin in self.registry.permits() {
+            let status = plugin.permit(&mut state, pod, host);
+            if !status.is_success() {
+                self.unwind(&mut state, pod, host, reserved);
+                return Err(format!(
+                    "permit {} denied: {}",
+                    plugin.name(),
+                    status.message()
+                ));
+            }
+        }
+
+        // ---------- PreBind ----------
+        for plugin in self.registry.pre_binds() {
+            let status = plugin.pre_bind(&mut state, pod, host);
+            if !status.is_success() {
+                self.unwind(&mut state, pod, host, reserved);
+                return Err(format!(
+                    "prebind {} failed: {}",
+                    plugin.name(),
+                    status.message()
+                ));
+            }
+        }
+
+        // ---------- Bind (DefaultBinder -> sink) ----------
+        if let Err(e) = self.sink.bind(pod, host).await {
+            self.unwind(&mut state, pod, host, reserved);
+            return Err(format!("bind failed: {e}"));
+        }
+        Ok(())
+    }
+
+    /// Roll back a partial binding cycle: Unreserve the Reserve plugins that
+    /// ran (reverse order) and release the cache assumption.
+    fn unwind(&self, state: &mut CycleState, pod: &crate::types::Pod, host: &str, reserved: usize) {
+        for plugin in self.registry.reserves().iter().take(reserved).rev() {
+            plugin.unreserve(state, pod, host);
+        }
+        self.cache.forget_pod(&pod.metadata.uid);
     }
 }
 
@@ -279,5 +540,96 @@ mod tests {
         sched.sync().await.unwrap();
         sched.run_once().await.unwrap();
         assert_eq!(sink.binds(), vec![("default/a".into(), "clean".into())]);
+    }
+
+    // ---------- Binding cycle (Reserve / Permit / PreBind) ----------
+
+    use crate::framework::{CycleState, PermitPlugin, ReservePlugin, Status};
+    use crate::queue::QueuedPodInfo;
+
+    #[derive(Default)]
+    struct Calls {
+        log: std::sync::Mutex<Vec<String>>,
+    }
+    impl Calls {
+        fn push(&self, s: String) {
+            self.log.lock().unwrap().push(s);
+        }
+        fn snapshot(&self) -> Vec<String> {
+            self.log.lock().unwrap().clone()
+        }
+    }
+
+    struct RecordingReserve(Arc<Calls>);
+    impl ReservePlugin for RecordingReserve {
+        fn name(&self) -> &'static str {
+            "RecordingReserve"
+        }
+        fn reserve(&self, _: &mut CycleState, pod: &Pod, node_name: &str) -> Status {
+            self.0
+                .push(format!("reserve:{}:{node_name}", pod.metadata.name));
+            Status::success()
+        }
+        fn unreserve(&self, _: &mut CycleState, pod: &Pod, node_name: &str) {
+            self.0
+                .push(format!("unreserve:{}:{node_name}", pod.metadata.name));
+        }
+    }
+
+    struct DenyPermit;
+    impl PermitPlugin for DenyPermit {
+        fn name(&self) -> &'static str {
+            "DenyPermit"
+        }
+        fn permit(&self, _: &mut CycleState, _: &Pod, _: &str) -> Status {
+            Status::unschedulable("DenyPermit", "permit denied")
+        }
+    }
+
+    #[tokio::test]
+    async fn binding_cycle_reserves_then_binds_on_success() {
+        let src = Arc::new(InMemorySource::new());
+        let sink = Arc::new(InMemorySink::new());
+        let calls = Arc::new(Calls::default());
+        let reg = PluginRegistry::builder()
+            .with_reserve(Arc::new(RecordingReserve(calls.clone())))
+            .build();
+        let sched = Scheduler::new(src.clone(), sink.clone()).with_registry(reg);
+        sched.cache.add_node(node("n1", 1000, 1024));
+
+        let info = QueuedPodInfo::new(pod("alpha", 100, 256));
+        sched.schedule_and_bind(info, 0).await;
+
+        assert_eq!(sink.binds(), vec![("default/alpha".into(), "n1".into())]);
+        let log = calls.snapshot();
+        assert!(log.contains(&"reserve:alpha:n1".to_string()));
+        assert!(!log.iter().any(|s| s.starts_with("unreserve")));
+    }
+
+    #[tokio::test]
+    async fn permit_denial_unreserves_and_requeues() {
+        let src = Arc::new(InMemorySource::new());
+        let sink = Arc::new(InMemorySink::new());
+        let calls = Arc::new(Calls::default());
+        let reg = PluginRegistry::builder()
+            .with_reserve(Arc::new(RecordingReserve(calls.clone())))
+            .with_permit(Arc::new(DenyPermit))
+            .build();
+        let sched = Scheduler::new(src.clone(), sink.clone()).with_registry(reg);
+        sched.cache.add_node(node("n1", 1000, 1024));
+
+        let info = QueuedPodInfo::new(pod("beta", 100, 256));
+        sched.schedule_and_bind(info, 0).await;
+
+        // Permit denied -> no bind happened.
+        assert!(sink.binds().is_empty());
+        // Reserve must have been rolled back via Unreserve.
+        let log = calls.snapshot();
+        assert!(log.contains(&"reserve:beta:n1".to_string()));
+        assert!(log.contains(&"unreserve:beta:n1".to_string()));
+        // The assumed placement is released from the cache.
+        assert!(!sched.cache.is_assumed("beta"));
+        // The pod is re-queued for a later attempt.
+        assert!(sched.queue.unschedulable_count() + sched.queue.backoff_count() >= 1);
     }
 }
