@@ -70,6 +70,7 @@ pub mod cidr;
 pub mod cni;
 pub mod datapath;
 pub mod device;
+pub mod hostgw;
 pub mod ipam;
 pub mod mac;
 pub mod netlink;
