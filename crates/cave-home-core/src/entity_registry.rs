@@ -67,13 +67,13 @@ pub struct RegistryEntry {
 impl RegistryEntry {
     /// `RegistryEntry.disabled` — true when any disabler is set.
     #[must_use]
-    pub fn disabled(&self) -> bool {
+    pub const fn disabled(&self) -> bool {
         self.disabled_by.is_some()
     }
 
     /// `RegistryEntry.hidden` — true when any hider is set.
     #[must_use]
-    pub fn hidden(&self) -> bool {
+    pub const fn hidden(&self) -> bool {
         self.hidden_by.is_some()
     }
 }
@@ -81,6 +81,8 @@ impl RegistryEntry {
 /// Parameters for [`EntityRegistry::get_or_create`] beyond the identity triple.
 #[derive(Clone, Debug, Default)]
 pub struct EntityCreate {
+    /// Preferred `object_id` base; slugged and de-duplicated into the
+    /// allocated `entity_id`. Falls back to the `unique_id` when absent.
     pub suggested_object_id: Option<String>,
     pub device_id: Option<String>,
     pub entity_category: Option<EntityCategory>,
@@ -89,9 +91,9 @@ pub struct EntityCreate {
 
 #[derive(Default)]
 struct EntityRegInner {
-    /// entity_id -> entry
+    /// `entity_id` -> entry
     entries: HashMap<String, RegistryEntry>,
-    /// (platform, domain, unique_id) -> entity_id
+    /// `(platform, domain, unique_id)` -> `entity_id`
     by_unique: HashMap<(String, String, String), String>,
 }
 
@@ -117,8 +119,46 @@ impl EntityRegistry {
         unique_id: &str,
         opts: EntityCreate,
     ) -> RegistryEntry {
-        let _ = (domain, platform, unique_id, opts);
-        unimplemented!("RED")
+        let key = (platform.to_owned(), domain.to_owned(), unique_id.to_owned());
+        let mut guard = self.inner.write();
+
+        // Idempotent on the identity triple.
+        if let Some(entity_id) = guard.by_unique.get(&key) {
+            if let Some(entry) = guard.entries.get(entity_id) {
+                return entry.clone();
+            }
+        }
+
+        // Allocate an entity_id: slug of the suggested object id (or the unique
+        // id), made unique *within the domain* with `_2`/`_3` suffixes.
+        let object_base = opts
+            .suggested_object_id
+            .as_deref()
+            .map_or_else(|| slugify(unique_id), slugify);
+        let taken: std::collections::HashSet<String> = guard
+            .entries
+            .keys()
+            .filter_map(|eid| eid.strip_prefix(&format!("{domain}.")).map(str::to_owned))
+            .collect();
+        let object_id = ensure_unique_string(&object_base, &taken);
+        let entity_id = format!("{domain}.{object_id}");
+
+        let entry = RegistryEntry {
+            entity_id: entity_id.clone(),
+            unique_id: unique_id.to_owned(),
+            platform: platform.to_owned(),
+            domain: domain.to_owned(),
+            device_id: opts.device_id,
+            area_id: None,
+            disabled_by: opts.disabled_by,
+            hidden_by: None,
+            entity_category: opts.entity_category,
+            name: None,
+            icon: None,
+        };
+        guard.entries.insert(entity_id.clone(), entry.clone());
+        guard.by_unique.insert(key, entity_id);
+        entry
     }
 
     /// `async_get` — fetch by `entity_id`.
@@ -138,16 +178,38 @@ impl EntityRegistry {
     }
 
     /// `async_update_entity` — overwrite mutable fields.
+    ///
+    /// # Errors
+    /// [`EntityRegistryError::UnknownEntityId`] if `entity_id` is not registered.
     pub fn update(
         &self,
         entity_id: &str,
         changes: EntityUpdate,
     ) -> Result<RegistryEntry, EntityRegistryError> {
-        let _ = (entity_id, changes);
-        unimplemented!("RED")
+        let mut guard = self.inner.write();
+        let Some(entry) = guard.entries.get_mut(entity_id) else {
+            return Err(EntityRegistryError::UnknownEntityId(entity_id.to_owned()));
+        };
+        if let Some(name) = changes.name {
+            entry.name = name;
+        }
+        if let Some(icon) = changes.icon {
+            entry.icon = icon;
+        }
+        if let Some(area_id) = changes.area_id {
+            entry.area_id = area_id;
+        }
+        if let Some(disabled_by) = changes.disabled_by {
+            entry.disabled_by = disabled_by;
+        }
+        if let Some(hidden_by) = changes.hidden_by {
+            entry.hidden_by = hidden_by;
+        }
+        Ok(entry.clone())
     }
 
     /// `async_remove` — drop an entry and its identity index.
+    #[must_use]
     pub fn remove(&self, entity_id: &str) -> Option<RegistryEntry> {
         let mut guard = self.inner.write();
         let removed = guard.entries.remove(entity_id)?;

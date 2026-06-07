@@ -38,11 +38,13 @@ pub struct AreaEntry {
     pub picture: Option<String>,
 }
 
-/// Normalise a name for duplicate detection — `homeassistant`'s area registry
-/// casefolds and collapses internal whitespace before comparing.
+/// Normalise a name for duplicate detection. HA's area registry compares
+/// names after folding case, whitespace and punctuation — the same fold the
+/// slug id uses — so `"Living Room"`, `"living-room"` and `"Living  Room!"`
+/// are all the same area name.
 #[must_use]
 fn normalize_name(name: &str) -> String {
-    name.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+    slugify(name)
 }
 
 #[derive(Default)]
@@ -65,9 +67,25 @@ impl AreaRegistry {
     /// `async_create` — create an area from a name, generating a unique
     /// slug id. Rejects an empty name or a name colliding (after
     /// normalisation) with an existing area.
+    ///
+    /// # Errors
+    /// [`AreaError::EmptyName`] if `name` slugs to nothing;
+    /// [`AreaError::DuplicateName`] if it normalises to an existing area.
     pub fn create(&self, name: impl Into<String>) -> Result<AreaEntry, AreaError> {
-        let _ = name;
-        unimplemented!("RED")
+        let name = name.into();
+        let normalized = normalize_name(&name);
+        if normalized.is_empty() {
+            return Err(AreaError::EmptyName);
+        }
+        let mut guard = self.inner.write();
+        if guard.areas.values().any(|a| normalize_name(&a.name) == normalized) {
+            return Err(AreaError::DuplicateName(name));
+        }
+        let existing: HashSet<String> = guard.areas.keys().cloned().collect();
+        let id = ensure_unique_string(&slugify(&name), &existing);
+        let entry = AreaEntry { id: id.clone(), name, ..AreaEntry::default() };
+        guard.areas.insert(id, entry.clone());
+        Ok(entry)
     }
 
     /// `async_get_area`.
@@ -79,18 +97,63 @@ impl AreaRegistry {
     /// `async_get_area_by_name` — match on the normalised name.
     #[must_use]
     pub fn get_by_name(&self, name: &str) -> Option<AreaEntry> {
-        let _ = name;
-        unimplemented!("RED")
+        let normalized = normalize_name(name);
+        self.inner
+            .read()
+            .areas
+            .values()
+            .find(|a| normalize_name(&a.name) == normalized)
+            .cloned()
     }
 
     /// `async_update` — replace the mutable fields of an existing area.
     /// Renaming to a name that collides with a *different* area is rejected.
+    ///
+    /// # Errors
+    /// [`AreaError::UnknownId`] if `id` is not registered;
+    /// [`AreaError::EmptyName`] / [`AreaError::DuplicateName`] on a bad rename.
     pub fn update(&self, id: &str, changes: AreaUpdate) -> Result<AreaEntry, AreaError> {
-        let _ = (id, changes);
-        unimplemented!("RED")
+        let mut guard = self.inner.write();
+        if !guard.areas.contains_key(id) {
+            return Err(AreaError::UnknownId(id.to_owned()));
+        }
+        // A rename must not collide with a *different* area's normalised name.
+        if let Some(new_name) = &changes.name {
+            let normalized = normalize_name(new_name);
+            if normalized.is_empty() {
+                return Err(AreaError::EmptyName);
+            }
+            if guard
+                .areas
+                .iter()
+                .any(|(other_id, a)| other_id != id && normalize_name(&a.name) == normalized)
+            {
+                return Err(AreaError::DuplicateName(new_name.clone()));
+            }
+        }
+        let Some(entry) = guard.areas.get_mut(id) else {
+            return Err(AreaError::UnknownId(id.to_owned()));
+        };
+        if let Some(name) = changes.name {
+            entry.name = name;
+        }
+        if let Some(aliases) = changes.aliases {
+            entry.aliases = aliases;
+        }
+        if let Some(floor_id) = changes.floor_id {
+            entry.floor_id = floor_id;
+        }
+        if let Some(icon) = changes.icon {
+            entry.icon = icon;
+        }
+        if let Some(picture) = changes.picture {
+            entry.picture = picture;
+        }
+        Ok(entry.clone())
     }
 
     /// `async_delete` — remove an area, returning the removed entry.
+    #[must_use]
     pub fn delete(&self, id: &str) -> Option<AreaEntry> {
         self.inner.write().areas.remove(id)
     }

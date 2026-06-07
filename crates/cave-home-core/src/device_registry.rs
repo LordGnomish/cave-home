@@ -64,6 +64,14 @@ impl DeviceEntry {
     }
 }
 
+/// Overwrite `slot` with `incoming` only when the hint actually supplies a
+/// value — a `None` hint never erases data already on the device entry.
+fn merge_opt(slot: &mut Option<String>, incoming: Option<&String>) {
+    if let Some(value) = incoming {
+        *slot = Some(value.clone());
+    }
+}
+
 #[derive(Default)]
 struct DeviceInner {
     devices: HashMap<String, DeviceEntry>,
@@ -87,15 +95,70 @@ impl DeviceRegistry {
     /// device. `via_device` in `info` is resolved to the parent's `id` when the
     /// parent is already registered.
     ///
-    /// Errors if `info` carries neither identifiers nor connections (HA
-    /// rejects identity-less devices).
+    /// # Errors
+    /// [`DeviceError::NoIdentity`] if `info` carries neither identifiers nor
+    /// connections (HA rejects identity-less devices).
     pub fn get_or_create(
         &self,
         config_entry_id: &str,
         info: &DeviceInfo,
     ) -> Result<DeviceEntry, DeviceError> {
-        let _ = (config_entry_id, info);
-        unimplemented!("RED")
+        let identifiers: BTreeSet<(String, String)> = info.identifiers.iter().cloned().collect();
+        let connections: BTreeSet<(String, String)> = info.connections.iter().cloned().collect();
+        if identifiers.is_empty() && connections.is_empty() {
+            return Err(DeviceError::NoIdentity);
+        }
+
+        let mut guard = self.inner.write();
+
+        // Resolve a `via_device` (domain, id) tuple to the parent device's id
+        // by scanning current identifiers — done before the mutable borrow.
+        let via_device_id = info.via_device.as_ref().and_then(|tuple| {
+            guard
+                .devices
+                .values()
+                .find(|d| d.identifiers.contains(tuple))
+                .map(|d| d.id.clone())
+        });
+
+        // Find an existing device sharing any identifier or connection.
+        let existing_id = guard
+            .devices
+            .values()
+            .find(|d| {
+                d.identifiers.iter().any(|i| identifiers.contains(i))
+                    || d.connections.iter().any(|c| connections.contains(c))
+            })
+            .map(|d| d.id.clone());
+
+        let id = existing_id.unwrap_or_else(|| Uuid::new_v4().simple().to_string());
+        let entry = guard.devices.entry(id.clone()).or_insert_with(|| DeviceEntry {
+            id: id.clone(),
+            ..DeviceEntry::default()
+        });
+
+        // Union the identity sets and record the config entry.
+        entry.identifiers.extend(identifiers);
+        entry.connections.extend(connections);
+        entry.config_entries.insert(config_entry_id.to_owned());
+
+        // Fill metadata fields the hint provides; preserve what is already set.
+        merge_opt(&mut entry.manufacturer, info.manufacturer.as_ref());
+        merge_opt(&mut entry.model, info.model.as_ref());
+        merge_opt(&mut entry.name, info.name.as_ref());
+        merge_opt(&mut entry.sw_version, info.sw_version.as_ref());
+        merge_opt(&mut entry.hw_version, info.hw_version.as_ref());
+        merge_opt(&mut entry.serial_number, info.serial_number.as_ref());
+        if via_device_id.is_some() {
+            entry.via_device_id = via_device_id;
+        }
+        if entry.area_id.is_none() {
+            if let Some(area) = &info.suggested_area {
+                entry.area_id = Some(area.clone());
+            }
+        }
+
+        Ok(entry.clone())
     }
 
     /// `async_get`.
@@ -111,17 +174,40 @@ impl DeviceRegistry {
         identifiers: &BTreeSet<(String, String)>,
         connections: &BTreeSet<(String, String)>,
     ) -> Option<DeviceEntry> {
-        let _ = (identifiers, connections);
-        unimplemented!("RED")
+        self.inner
+            .read()
+            .devices
+            .values()
+            .find(|d| {
+                d.identifiers.iter().any(|i| identifiers.contains(i))
+                    || d.connections.iter().any(|c| connections.contains(c))
+            })
+            .cloned()
     }
 
     /// `async_update_device` — overwrite mutable fields.
+    ///
+    /// # Errors
+    /// [`DeviceError::UnknownId`] if `id` is not registered.
     pub fn update(&self, id: &str, changes: DeviceUpdate) -> Result<DeviceEntry, DeviceError> {
-        let _ = (id, changes);
-        unimplemented!("RED")
+        let mut guard = self.inner.write();
+        let Some(entry) = guard.devices.get_mut(id) else {
+            return Err(DeviceError::UnknownId(id.to_owned()));
+        };
+        if let Some(area_id) = changes.area_id {
+            entry.area_id = area_id;
+        }
+        if let Some(name_by_user) = changes.name_by_user {
+            entry.name_by_user = name_by_user;
+        }
+        if let Some(sw_version) = changes.sw_version {
+            entry.sw_version = sw_version;
+        }
+        Ok(entry.clone())
     }
 
     /// `async_remove_device`.
+    #[must_use]
     pub fn remove(&self, id: &str) -> Option<DeviceEntry> {
         self.inner.write().devices.remove(id)
     }

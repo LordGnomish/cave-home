@@ -7,6 +7,7 @@
 //! entity and area registries use to avoid collisions.
 
 use std::collections::HashSet;
+use std::hash::BuildHasher;
 
 /// Port of `homeassistant.util.slugify`.
 ///
@@ -39,7 +40,7 @@ pub fn slugify(value: &str) -> String {
 /// Returns `preferred` if it is not already in `existing`; otherwise appends
 /// `_2`, `_3`, … until an unused candidate is found.
 #[must_use]
-pub fn ensure_unique_string(preferred: &str, existing: &HashSet<String>) -> String {
+pub fn ensure_unique_string<S: BuildHasher>(preferred: &str, existing: &HashSet<String, S>) -> String {
     if !existing.contains(preferred) {
         return preferred.to_owned();
     }
