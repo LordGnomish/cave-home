@@ -18,6 +18,22 @@ pub enum CriError {
     /// The requested operation is invalid in the current state.
     #[error("invalid state: {0}")]
     InvalidState(String),
+    /// The runtime answered with a gRPC status other than `NOT_FOUND`.
+    ///
+    /// `code` is the numeric `tonic::Code` so callers can branch/retry without
+    /// the decision core having to depend on the gRPC stack. Only produced by
+    /// the `remote-cri` transport.
+    #[error("cri rpc failed (code {code}): {message}")]
+    Rpc {
+        /// Numeric gRPC status code.
+        code: i32,
+        /// Human-readable status message returned by the runtime.
+        message: String,
+    },
+    /// The gRPC channel/connection itself failed (dial, TLS, broken pipe…).
+    /// Only produced by the `remote-cri` transport.
+    #[error("cri transport error: {0}")]
+    Transport(String),
 }
 
 /// Result alias.

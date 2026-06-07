@@ -29,3 +29,4 @@ pub mod proto {
 }
 
 mod conv;
+pub mod error;
