@@ -10,7 +10,10 @@
 const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 /// SHA-1 digest of `data` (RFC 3174).
+// a/b/c/d/e/f are the working-variable names from the RFC 3174 pseudo-code;
+// renaming them would obscure the correspondence to the spec.
 #[must_use]
+#[allow(clippy::many_single_char_names)]
 pub fn sha1(data: &[u8]) -> [u8; 20] {
     let mut h: [u32; 5] = [0x6745_2301, 0xEFCD_AB89, 0x98BA_DCFE, 0x1032_5476, 0xC3D2_E1F0];
 
