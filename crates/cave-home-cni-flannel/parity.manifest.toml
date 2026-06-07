@@ -53,12 +53,12 @@ linux_min_kernel = "7.1"
 # datapaths). The decision core — CIDR/subnet/IPAM/backend-config/routes/CNI-
 # result — is implemented and tested in full. The privileged netlink /
 # WireGuard / etcd / daemon machinery is the larger remaining surface and is
-# all ADR-008 Phase-1b, enumerated below. Honest measured share ~0.40.
-fill_ratio          = 0.40
-fill_ratio_basis    = "CIDR math (v4+v6) + per-node subnet leasing + pod IPAM + backend config model + route/FDB computation + CNI ADD/DEL result model, fully implemented & unit-tested; netlink datapath, WireGuard tunnel setup, durable lease store, daemon watch loop deferred"
+# all ADR-008 Phase-1b, enumerated below. Honest measured share ~0.42.
+fill_ratio          = 0.42
+fill_ratio_basis    = "CIDR math (v4+v6) + per-node subnet leasing + pod IPAM + backend config model + route/FDB computation + ARP/NDP proxy-neighbor computation + CNI ADD/DEL result model, fully implemented & unit-tested; netlink datapath, WireGuard tunnel setup, durable lease store, daemon watch loop deferred"
 test_port_ratio     = 0.0   # tests designed from spec/RFC reference values, not ported from upstream Go tests
 adr_justified_ratio = 1.00  # every unfilled item below carries a phase disposition (priority + note)
-honest_ratio        = 1.00  # 0.40 / (0.40 + (1-0.40)*(1-1.00)) = 1.00
+honest_ratio        = 1.00  # 0.42 / (0.42 + (1-0.42)*(1-1.00)) = 1.00
 
 # ---------------------------------------------------------------------------
 # Mapped — documented flannel/CNI behaviour → our Rust symbol.
@@ -121,6 +121,10 @@ spec = "join node→subnet + node→backend-data maps into peer leases"
 ours = "src/routes.rs::peers_from_maps"
 
 [[mapped]]
+spec = "VXLAN L3/connected-mode permanent ARP/NDP proxy neighbors: per peer, resolve its VTEP IP (pod-subnet base) → VTEP MAC (ARP for v4, NDP for v6); none for host-gw/wireguard; skip own subnet + directRouting same-underlay peer"
+ours = "src/neigh.rs::compute_neighbor_plan + NeighborPlan{entries} + NeighborEntry + NeighborFamily::{Arp,Ndp,for_ip}"
+
+[[mapped]]
 spec = "CNI ADD: allocate pod IP, return result (ips[].address ip/prefix, gateway, default route via gateway, dns)"
 ours = "src/cni.rs::{cni_add,cni_add_specific,CniResult,IpConfig,CniRoute}"
 
@@ -134,9 +138,9 @@ ours = "src/cni.rs::cni_del"
 # ---------------------------------------------------------------------------
 
 [[unmapped]]
-area     = "netlink route / FDB programming (RTM_NEWROUTE, AF_BRIDGE RTM_NEWNEIGH)"
+area     = "netlink route / FDB / neighbor programming (RTM_NEWROUTE, AF_BRIDGE RTM_NEWNEIGH, AF_INET/AF_INET6 RTM_NEWNEIGH)"
 priority = "phase-1b"
-note     = "ADR-008: the RoutePlan computed in src/routes.rs is pure data; issuing the netlink messages that install those routes + FDB entries is the privileged datapath layer. Needs CAP_NET_ADMIN and a netlink dependency; deferred so the decision core stays std-only and host-independent."
+note     = "ADR-008: the RoutePlan (src/routes.rs) and NeighborPlan (src/neigh.rs) are pure data; issuing the netlink messages that install those routes, FDB entries and ARP/NDP neighbors is the privileged datapath layer. Needs CAP_NET_ADMIN and a netlink dependency; deferred so the decision core stays std-only and host-independent."
 
 [[unmapped]]
 area     = "VXLAN device setup (the flannel.<vni> link: create, set VTEP MAC, MTU, bring up)"
@@ -224,6 +228,10 @@ ours         = "src/backend.rs::tests"
 [[spec_test]]
 designed_for = "route/FDB computation: VXLAN device+FDB per peer, host-gw gateway route, wireguard device route, DirectRouting same-underlay shortcut, never-route-own-subnet, mismatched-backend skip, deterministic ordering"
 ours         = "src/routes.rs::tests"
+
+[[spec_test]]
+designed_for = "ARP/NDP proxy-neighbor computation: one permanent neighbor per VXLAN peer (VTEP IP=subnet base → VTEP MAC), v4→ARP / v6→NDP family, none for host-gw/wireguard, skip own subnet, directRouting same-underlay skip vs different-underlay emit, mismatched-backend skip, deterministic ordering"
+ours         = "src/neigh.rs::tests"
 
 [[spec_test]]
 designed_for = "CNI ADD result (ip/prefix + gateway + default route + dns); specific-address assign; idempotent DEL; add/del/re-add reuse; subnet-full propagation (CNI v1.0.0 result schema)"

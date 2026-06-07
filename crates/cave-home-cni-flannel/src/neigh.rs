@@ -28,6 +28,123 @@
 //! device — see [`crate::routes::compute_route_plan`]) needs no overlay
 //! neighbor either.
 
+use std::net::IpAddr;
+
+use crate::backend::{BackendConfig, MacAddr, NodeBackendData};
+use crate::cidr::Cidr;
+use crate::routes::PeerLease;
+
+/// The L2 address-resolution protocol a neighbor entry is programmed under.
+///
+/// **ARP** for an IPv4 VTEP address, **NDP** (IPv6 Neighbor Discovery) for an
+/// IPv6 one. flannel installs both as `NUD_PERMANENT` neighbors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NeighborFamily {
+    /// IPv4 — Address Resolution Protocol.
+    Arp,
+    /// IPv6 — Neighbor Discovery Protocol.
+    Ndp,
+}
+
+impl NeighborFamily {
+    /// The resolution protocol for `ip`'s address family.
+    #[must_use]
+    pub const fn for_ip(ip: IpAddr) -> Self {
+        match ip {
+            IpAddr::V4(_) => Self::Arp,
+            IpAddr::V6(_) => Self::Ndp,
+        }
+    }
+
+    /// `true` for the IPv4 (ARP) family.
+    #[must_use]
+    pub const fn is_arp(self) -> bool {
+        matches!(self, Self::Arp)
+    }
+
+    /// `true` for the IPv6 (NDP) family.
+    #[must_use]
+    pub const fn is_ndp(self) -> bool {
+        matches!(self, Self::Ndp)
+    }
+}
+
+/// A permanent ARP/NDP neighbor entry for one peer's VTEP.
+///
+/// The local node installs it on the overlay device so the kernel resolves the
+/// peer's VTEP IP to its VTEP MAC without an `L3MISS` round-trip. Issuing the
+/// `RTM_NEWNEIGH` for it is the deferred netlink datapath; this is the pure
+/// data that drives it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NeighborEntry {
+    /// The peer's VTEP IP — the network base of its pod subnet.
+    pub ip: IpAddr,
+    /// The peer's VTEP MAC the address resolves to.
+    pub mac: MacAddr,
+    /// The resolution protocol (ARP for v4, NDP for v6).
+    pub family: NeighborFamily,
+}
+
+/// The set of permanent overlay neighbor entries the local node must program.
+/// Pure data — programming it is deferred to the netlink layer.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NeighborPlan {
+    /// Neighbor entries, ordered by IP for deterministic programming.
+    pub entries: Vec<NeighborEntry>,
+}
+
+/// Compute the [`NeighborPlan`] the local node must install.
+///
+/// Resolves every peer's VTEP IP over the overlay device, given the cluster
+/// `backend` and the set of `peers` (which may include the local node's own
+/// lease, identified by `local_node`; it is skipped).
+///
+/// `local_underlay` is the local node's underlay subnet, used only for the
+/// VXLAN `directRouting` decision: a peer reached by a direct route (same
+/// underlay) is not reached over the overlay device and so needs no overlay
+/// neighbor — mirroring [`crate::routes::compute_route_plan`].
+///
+/// Only VXLAN produces neighbor entries; host-gw and `WireGuard` return an
+/// empty plan.
+#[must_use]
+pub fn compute_neighbor_plan(
+    local_node: &str,
+    backend: &BackendConfig,
+    peers: &[PeerLease],
+    local_underlay: Option<Cidr>,
+) -> NeighborPlan {
+    let mut entries: Vec<NeighborEntry> = Vec::new();
+
+    // Only the VXLAN overlay needs proxy neighbors: host-gw resolves over a
+    // shared L2 with ordinary ARP/NDP, and WireGuard keys its peer table by
+    // public key, not MAC.
+    if let BackendConfig::Vxlan(cfg) = backend {
+        for peer in peers {
+            if peer.node == local_node {
+                continue; // never resolve our own subnet
+            }
+            let NodeBackendData::Vxlan { public_ip, vtep_mac } = &peer.data else {
+                continue; // peer advertised a non-VXLAN backend; cannot resolve
+            };
+            // A directRouting peer on the same underlay is reached by a direct
+            // route, not via the overlay device — so no overlay neighbor.
+            let same_underlay = local_underlay.is_some_and(|u| u.contains(*public_ip));
+            if cfg.direct_routing && same_underlay {
+                continue;
+            }
+            let ip = peer.subnet.network();
+            entries.push(NeighborEntry {
+                ip,
+                mac: *vtep_mac,
+                family: NeighborFamily::for_ip(ip),
+            });
+        }
+    }
+
+    entries.sort_by_key(|e| e.ip);
+    NeighborPlan { entries }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

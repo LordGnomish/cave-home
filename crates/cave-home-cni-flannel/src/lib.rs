@@ -21,6 +21,8 @@
 //!   and the per-node backend data peers advertise (VTEP MAC + public IP).
 //! - [`routes`] — compute the routes and FDB entries a node must program to
 //!   reach every peer subnet, given the node→subnet map and the backend.
+//! - [`neigh`] — compute the permanent ARP/NDP proxy-neighbor entries the
+//!   VXLAN overlay device needs to resolve each peer VTEP IP to its MAC.
 //! - [`cni`] — model a CNI ADD (allocate + build result) and DEL (free)
 //!   decision, returning the CNI result schema (IP, gateway, routes, DNS).
 //!
