@@ -6,6 +6,7 @@
 //! unit-testable without sockets.
 
 pub mod auth;
+pub mod hooks;
 pub mod retain;
 pub mod session;
 pub mod topic;
