@@ -26,13 +26,18 @@
 //!   (lexical path clean + dedup, relative/root rejection), the shared-vs-local
 //!   decision, and storage-class config pick.
 //!
-//! Further submodules (`path`, `provision`, `helper`, `reclaim`, `metrics`,
-//! `report`) land in subsequent TDD cycles.
+//! - [`path`] — `getPathOnNode` (node fallback, requested-path validation,
+//!   deterministic candidate selection), the `pvName_namespace_pvcName` folder
+//!   name, the `pathPattern` safe-prefix check, and the volume-path join.
+//!
+//! Further submodules (`provision`, `helper`, `reclaim`, `metrics`, `report`)
+//! land in subsequent TDD cycles.
 //!
 //! Like the rest of this crate it is **infrastructure**, hidden from end users
 //! (Charter §6.3, ADR-007): no user-facing strings, no i18n.
 
 pub mod config;
+pub mod path;
 
 /// The node key under which an unlisted node falls back to a default path set
 /// (upstream `NodeDefaultNonListedNodes`).
