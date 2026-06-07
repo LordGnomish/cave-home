@@ -1168,6 +1168,21 @@ mod tests {
     }
 
     #[test]
+    fn openapi_v2_endpoint_returns_swagger_document() {
+        let mut s = ApiServer::new();
+        let resp = s.handle(&req("GET", "/openapi/v2", "application/json", ""));
+        assert_eq!(resp.status, 200);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert_eq!(v.pointer("swagger"), Some(&Value::from("2.0")));
+        assert!(v.pointer("info.title").and_then(Value::as_str).is_some());
+        let paths = v.pointer("paths").and_then(Value::as_object).expect("paths");
+        assert!(paths.contains_key("/api/v1/namespaces/{namespace}/pods"), "paths: {:?}", paths.keys().collect::<Vec<_>>());
+        assert!(paths.contains_key("/apis/apps/v1/namespaces/{namespace}/deployments/{name}"));
+        // A cluster-scoped resource has no namespace segment.
+        assert!(paths.contains_key("/api/v1/nodes/{name}"));
+    }
+
+    #[test]
     fn version_endpoint_reports_major_minor() {
         let mut s = ApiServer::new();
         let resp = s.handle(&req("GET", "/version", "application/json", ""));
