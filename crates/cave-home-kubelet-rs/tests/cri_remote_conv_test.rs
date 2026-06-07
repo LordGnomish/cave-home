@@ -158,8 +158,9 @@ fn container_config_to_proto_maps_command_envs_mounts() {
     };
 
     let p = proto::ContainerConfig::from(cfg);
-    assert_eq!(p.metadata.expect("md").name, "app");
-    assert_eq!(p.metadata.expect("md").attempt, 1);
+    let md = p.metadata.clone().expect("md");
+    assert_eq!(md.name, "app");
+    assert_eq!(md.attempt, 1);
     assert_eq!(p.image.expect("image").image, "nginx:1.27");
     assert_eq!(p.command, vec!["/bin/sh".to_owned()]);
     assert_eq!(p.args, vec!["-c".to_owned(), "sleep 1".to_owned()]);
@@ -176,10 +177,22 @@ fn container_config_to_proto_maps_command_envs_mounts() {
 #[test]
 fn container_state_enum_maps_all_four() {
     for (n, expect) in [
-        (t::ContainerState::Created, proto::ContainerState::ContainerCreated),
-        (t::ContainerState::Running, proto::ContainerState::ContainerRunning),
-        (t::ContainerState::Exited, proto::ContainerState::ContainerExited),
-        (t::ContainerState::Unknown, proto::ContainerState::ContainerUnknown),
+        (
+            t::ContainerState::Created,
+            proto::ContainerState::ContainerCreated,
+        ),
+        (
+            t::ContainerState::Running,
+            proto::ContainerState::ContainerRunning,
+        ),
+        (
+            t::ContainerState::Exited,
+            proto::ContainerState::ContainerExited,
+        ),
+        (
+            t::ContainerState::Unknown,
+            proto::ContainerState::ContainerUnknown,
+        ),
     ] {
         assert_eq!(proto::ContainerState::from(n) as i32, expect as i32);
         assert_eq!(t::ContainerState::from(expect), n);
