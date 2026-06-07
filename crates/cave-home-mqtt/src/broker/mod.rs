@@ -12,9 +12,11 @@ pub mod session;
 pub mod topic;
 
 use crate::broker::auth::{AclAction, Authenticator};
+use crate::broker::hooks::{BrokerHook, PublishDecision, PublishEvent};
 use crate::broker::retain::{RetainedMessage, RetainedStore};
 use crate::broker::session::Session;
 use crate::broker::topic::{topic_matches, valid_topic_filter, valid_topic_name};
+use crate::metrics::BrokerMetrics;
 use crate::packet::QoS;
 use crate::v5::packet::{
     ConnAckV5, ConnectV5, DisconnectV5, PacketV5, PubAckV5, PubCompV5, PubRecV5,
@@ -25,6 +27,7 @@ use crate::v5::property::Property;
 use crate::v5::reason::ReasonCode;
 use bytes::Bytes;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Broker-wide capabilities advertised in CONNACK and applied to QoS /
 /// retain handling.
@@ -60,6 +63,8 @@ pub struct Broker {
     sessions: HashMap<String, Session>,
     wills: HashMap<String, Will>,
     next_auto: u64,
+    metrics: BrokerMetrics,
+    hook: Option<Arc<dyn BrokerHook>>,
 }
 
 impl Broker {
@@ -71,7 +76,16 @@ impl Broker {
             sessions: HashMap::new(),
             wills: HashMap::new(),
             next_auto: 0,
+            metrics: BrokerMetrics::default(),
+            hook: None,
         }
+    }
+
+    /// Install the cave-home automation hook (observer / publish veto).
+    #[must_use]
+    pub fn with_hook(mut self, hook: Arc<dyn BrokerHook>) -> Self {
+        self.hook = Some(hook);
+        self
     }
 
     pub fn session_count(&self) -> usize {
@@ -80,6 +94,23 @@ impl Broker {
 
     pub fn retained_count(&self) -> usize {
         self.retained.len()
+    }
+
+    /// A live snapshot of the broker's counters.
+    pub fn metrics(&self) -> &BrokerMetrics {
+        &self.metrics
+    }
+
+    /// Render Prometheus exposition, refreshing the retained-message and
+    /// subscription gauges from current state.
+    #[must_use]
+    pub fn prometheus(&self) -> String {
+        let mut m = self.metrics.clone();
+        m.set_retained(self.retained.len() as u64);
+        m.set_subscriptions(
+            self.sessions.values().map(|s| s.subscriptions.len() as u64).sum(),
+        );
+        m.render_prometheus()
     }
 
     // ---- CONNECT ---------------------------------------------------------
@@ -142,6 +173,11 @@ impl Broker {
             self.wills.insert(client_id.clone(), w);
         } else {
             self.wills.remove(&client_id);
+        }
+
+        self.metrics.on_client_connected();
+        if let Some(h) = self.hook.clone() {
+            h.on_connect(&client_id);
         }
 
         let mut props = Vec::new();
@@ -263,6 +299,9 @@ impl Broker {
                 .get_mut(client_id)
                 .is_some_and(|sess| sess.add_subscription(stored));
             reason_codes.push(granted_code(granted));
+            if let Some(h) = self.hook.clone() {
+                h.on_subscribe(client_id, &sub.topic_filter);
+            }
 
             let send_retained = match sub.retain_handling {
                 RetainHandling::SendOnSubscribe => true,
@@ -345,8 +384,26 @@ impl Broker {
         if !valid_topic_name(&p.topic) {
             return ack_publish_error(client_id, p, ReasonCode::TopicNameInvalid);
         }
+        self.metrics.on_message_received(p.payload.len());
+
+        // Automation hook may veto the message (§ cave-home integration).
+        if let Some(h) = self.hook.clone() {
+            let decision = h.on_publish(&PublishEvent {
+                client_id,
+                topic: &p.topic,
+                qos: p.qos,
+                retain: p.retain,
+                payload: &p.payload,
+            });
+            if decision == PublishDecision::Reject {
+                self.metrics.on_message_dropped();
+                return ack_publish_error(client_id, p, ReasonCode::NotAuthorized);
+            }
+        }
+
         let username = self.sessions.get(client_id).and_then(|s| s.username.clone());
         if !self.auth.authorize(username.as_deref(), AclAction::Publish, &p.topic) {
+            self.metrics.on_message_dropped();
             return ack_publish_error(client_id, p, ReasonCode::NotAuthorized);
         }
 
@@ -471,6 +528,9 @@ impl Broker {
             }
             // Offline QoS 0 is dropped (§4.1 / non-persistent fan-out).
         }
+        for _ in 0..delivered {
+            self.metrics.on_message_sent(payload.len());
+        }
         (delivered, actions)
     }
 
@@ -516,13 +576,20 @@ impl Broker {
 
     /// Mark the session offline; drop it entirely if it must not persist.
     fn detach(&mut self, client_id: &str) {
-        let expire = match self.sessions.get_mut(client_id) {
+        let (was_connected, expire) = match self.sessions.get_mut(client_id) {
             Some(sess) => {
+                let was = sess.connected;
                 sess.connected = false;
-                sess.session_expiry_secs == 0
+                (was, sess.session_expiry_secs == 0)
             }
             None => return,
         };
+        if was_connected {
+            self.metrics.on_client_disconnected();
+            if let Some(h) = self.hook.clone() {
+                h.on_disconnect(client_id);
+            }
+        }
         if expire {
             self.sessions.remove(client_id);
         }
