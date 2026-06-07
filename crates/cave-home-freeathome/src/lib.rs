@@ -33,6 +33,8 @@
 pub mod auth;
 pub mod config;
 pub mod error;
+mod model;
+mod rest;
 
 pub use auth::{AuthMethod, ClientCertConfig, Credentials};
 pub use config::ClientConfig;
