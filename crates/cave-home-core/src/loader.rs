@@ -151,7 +151,61 @@ impl IntegrationLoader {
     /// [`LoaderError::MissingDependency`] if a hard dependency is unregistered;
     /// [`LoaderError::DependencyCycle`] if the dependency graph has a cycle.
     pub fn setup_order(&self) -> Result<Vec<String>, LoaderError> {
-        unimplemented!("RED")
+        let mut marks: BTreeMap<String, Mark> = BTreeMap::new();
+        let mut order: Vec<String> = Vec::new();
+        // Visit in a stable (sorted) order for deterministic output.
+        for domain in self.integrations.keys() {
+            self.visit(domain, &mut marks, &mut order, &mut Vec::new())?;
+        }
+        Ok(order)
+    }
+
+    /// DFS post-order visit with temporary/permanent marks for cycle
+    /// detection. `stack` carries the active path for cycle reporting.
+    fn visit(
+        &self,
+        domain: &str,
+        marks: &mut BTreeMap<String, Mark>,
+        order: &mut Vec<String>,
+        stack: &mut Vec<String>,
+    ) -> Result<(), LoaderError> {
+        match marks.get(domain) {
+            Some(Mark::Permanent) => return Ok(()),
+            Some(Mark::Temporary) => {
+                let mut cycle = stack.clone();
+                cycle.push(domain.to_owned());
+                return Err(LoaderError::DependencyCycle(cycle));
+            }
+            None => {}
+        }
+        let manifest = self.integrations[domain].manifest();
+        // Hard dependencies must be registered.
+        for dep in &manifest.dependencies {
+            if !self.integrations.contains_key(dep) {
+                return Err(LoaderError::MissingDependency {
+                    domain: domain.to_owned(),
+                    dependency: dep.clone(),
+                });
+            }
+        }
+        // Predecessors that constrain ordering: every hard dependency plus any
+        // soft `after_dependency` that is actually registered.
+        let mut preds: BTreeSet<&str> = manifest.dependencies.iter().map(String::as_str).collect();
+        for soft in &manifest.after_dependencies {
+            if self.integrations.contains_key(soft) {
+                preds.insert(soft.as_str());
+            }
+        }
+
+        marks.insert(domain.to_owned(), Mark::Temporary);
+        stack.push(domain.to_owned());
+        for pred in preds {
+            self.visit(pred, marks, order, stack)?;
+        }
+        stack.pop();
+        marks.insert(domain.to_owned(), Mark::Permanent);
+        order.push(domain.to_owned());
+        Ok(())
     }
 
     /// Set up every registered integration in dependency order. An integration
@@ -162,9 +216,42 @@ impl IntegrationLoader {
     /// [`LoaderError`] from [`setup_order`](Self::setup_order) if the graph is
     /// invalid (nothing is set up in that case).
     pub fn setup_all(&self, ctx: &CoreContext) -> Result<SetupReport, LoaderError> {
-        let _ = ctx;
-        unimplemented!("RED")
+        let order = self.setup_order()?;
+        let mut report = SetupReport::default();
+        for domain in order {
+            let integration = &self.integrations[&domain];
+            // A hard dependency that did not set up cascades a skip — the
+            // dependent's setup is never called (HA's behaviour).
+            if let Some(dep) = integration
+                .manifest()
+                .dependencies
+                .iter()
+                .find(|d| !report.is_set_up(d))
+            {
+                report
+                    .failed
+                    .insert(domain, format!("dependency {dep:?} was not set up"));
+                continue;
+            }
+            match integration.setup(ctx) {
+                Ok(true) => report.set_up.push(domain),
+                Ok(false) => {
+                    report.failed.insert(domain, "setup returned false".to_owned());
+                }
+                Err(err) => {
+                    report.failed.insert(domain, err.reason);
+                }
+            }
+        }
+        Ok(report)
     }
+}
+
+/// DFS visit state for cycle detection in [`IntegrationLoader::setup_order`].
+#[derive(Clone, Copy)]
+enum Mark {
+    Temporary,
+    Permanent,
 }
 
 #[cfg(test)]

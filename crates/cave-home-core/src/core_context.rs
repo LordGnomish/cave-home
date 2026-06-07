@@ -1,6 +1,7 @@
-//! Port of the `homeassistant.core.HomeAssistant` god-object, reduced to the
-//! handles every integration is given: the event bus, the state machine, the
-//! service registry, and the entity/device/area registries.
+//! Port of the `homeassistant.core.HomeAssistant` god-object.
+//!
+//! Reduced to the handles every integration is given: the event bus, the state
+//! machine, the service registry, and the entity/device/area registries.
 //!
 //! HA threads a single `hass` instance through `async_setup_entry`, every
 //! entity platform, and every helper. [`CoreContext`] is that bundle. All its
