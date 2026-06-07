@@ -38,30 +38,101 @@ impl CircuitBreaker {
     /// (0.0–1.0) over at least `min_requests` samples, and stays open for
     /// `recovery_ms` before permitting a half-open probe.
     #[must_use]
-    pub fn new(threshold: f64, min_requests: u64, recovery_ms: u64) -> Self {
-        unimplemented!()
+    pub const fn new(threshold: f64, min_requests: u64, recovery_ms: u64) -> Self {
+        Self {
+            threshold,
+            min_requests,
+            recovery_ms,
+            state: State::Closed,
+            successes: 0,
+            failures: 0,
+            opened_at: 0,
+            probe_inflight: false,
+        }
     }
 
     /// The current state.
     #[must_use]
-    pub fn state(&self) -> State {
-        unimplemented!()
+    pub const fn state(&self) -> State {
+        self.state
     }
 
     /// Decide whether to forward a request now. May transition Open → Half-Open
     /// when the recovery window has elapsed (permitting exactly one probe).
-    pub fn allow(&mut self, now_ms: u64) -> bool {
-        unimplemented!()
+    pub const fn allow(&mut self, now_ms: u64) -> bool {
+        match self.state {
+            State::Closed => true,
+            State::Open => {
+                if now_ms.saturating_sub(self.opened_at) >= self.recovery_ms {
+                    self.state = State::HalfOpen;
+                    self.probe_inflight = true;
+                    true
+                } else {
+                    false
+                }
+            }
+            State::HalfOpen => {
+                if self.probe_inflight {
+                    false
+                } else {
+                    self.probe_inflight = true;
+                    true
+                }
+            }
+        }
     }
 
     /// Record a successful forward.
     pub fn on_success(&mut self) {
-        unimplemented!()
+        if self.state == State::HalfOpen {
+            self.close();
+        } else {
+            self.successes += 1;
+        }
     }
 
     /// Record a failed forward at `now_ms` (used to stamp the open time).
     pub fn on_failure(&mut self, now_ms: u64) {
-        unimplemented!()
+        match self.state {
+            State::HalfOpen => self.trip(now_ms),
+            State::Closed => {
+                self.failures += 1;
+                let total = self.successes + self.failures;
+                if total >= self.min_requests && self.failure_ratio() >= self.threshold {
+                    self.trip(now_ms);
+                }
+            }
+            State::Open => {}
+        }
+    }
+
+    /// Failure ratio over the current sampling window.
+    ///
+    /// Counts are tiny (bounded by `min_requests` plus in-flight requests),
+    /// far below 2^53, so the `u64 → f64` conversion is exact.
+    #[allow(clippy::cast_precision_loss)]
+    fn failure_ratio(&self) -> f64 {
+        let total = self.successes + self.failures;
+        if total == 0 {
+            0.0
+        } else {
+            self.failures as f64 / total as f64
+        }
+    }
+
+    const fn trip(&mut self, now_ms: u64) {
+        self.state = State::Open;
+        self.opened_at = now_ms;
+        self.successes = 0;
+        self.failures = 0;
+        self.probe_inflight = false;
+    }
+
+    const fn close(&mut self) {
+        self.state = State::Closed;
+        self.successes = 0;
+        self.failures = 0;
+        self.probe_inflight = false;
     }
 }
 

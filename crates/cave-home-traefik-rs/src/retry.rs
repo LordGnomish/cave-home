@@ -24,8 +24,8 @@ pub enum Outcome {
 
 /// Whether `outcome` is a retryable network failure.
 #[must_use]
-pub fn is_retryable(outcome: Outcome) -> bool {
-    unimplemented!()
+pub const fn is_retryable(outcome: Outcome) -> bool {
+    matches!(outcome, Outcome::ConnectFailed | Outcome::Timeout | Outcome::Reset)
 }
 
 /// A bounded retry policy with exponential backoff.
@@ -42,28 +42,40 @@ pub struct RetryPolicy {
 impl RetryPolicy {
     /// A policy that never retries (one attempt, no backoff).
     #[must_use]
-    pub fn none() -> Self {
-        unimplemented!()
+    pub const fn none() -> Self {
+        Self { attempts: 1, initial_interval_ms: 0, max_interval_ms: 0 }
     }
 
     /// Whether another attempt is permitted given `attempts_made` so far (≥ 1).
     #[must_use]
-    pub fn should_retry(&self, attempts_made: u32) -> bool {
-        unimplemented!()
+    pub const fn should_retry(&self, attempts_made: u32) -> bool {
+        attempts_made < self.attempts
     }
 
     /// The backoff before the retry that follows `attempts_made` attempts:
     /// `initial · 2^(attempts_made-1)`, capped at `max_interval_ms`.
     #[must_use]
     pub fn backoff_ms(&self, attempts_made: u32) -> u64 {
-        unimplemented!()
+        if attempts_made == 0 {
+            return 0;
+        }
+        let shift = attempts_made - 1;
+        let scaled = self
+            .initial_interval_ms
+            .checked_shl(shift)
+            .unwrap_or(u64::MAX);
+        scaled.min(self.max_interval_ms)
     }
 }
 
 /// The index of the next backend to try, rotating through `n` servers.
 #[must_use]
-pub fn next_server_index(current: usize, n: usize) -> usize {
-    unimplemented!()
+pub const fn next_server_index(current: usize, n: usize) -> usize {
+    if n == 0 {
+        0
+    } else {
+        (current + 1) % n
+    }
 }
 
 #[cfg(test)]

@@ -29,18 +29,39 @@ impl TokenBucket {
     /// capacity. `average == 0` disables the limit.
     #[must_use]
     pub fn new(average_per_sec: u64, burst: u64) -> Self {
-        unimplemented!()
+        let unlimited = average_per_sec == 0;
+        let capacity_milli = burst.max(1).saturating_mul(MILLI);
+        Self {
+            capacity_milli,
+            // average tokens/sec == average milli-tokens per millisecond.
+            refill_milli_per_ms: average_per_sec,
+            tokens_milli: capacity_milli,
+            last_ms: 0,
+            unlimited,
+        }
     }
 
     /// Refill according to elapsed time, then try to consume one token.
     /// Returns `true` if the request is admitted.
     pub fn allow(&mut self, now_ms: u64) -> bool {
-        unimplemented!()
+        if self.unlimited {
+            return true;
+        }
+        let elapsed = now_ms.saturating_sub(self.last_ms);
+        let refill = elapsed.saturating_mul(self.refill_milli_per_ms);
+        self.tokens_milli = (self.tokens_milli.saturating_add(refill)).min(self.capacity_milli);
+        self.last_ms = now_ms;
+        if self.tokens_milli >= MILLI {
+            self.tokens_milli -= MILLI;
+            true
+        } else {
+            false
+        }
     }
 
     /// Current whole-token count (for inspection / metrics).
     #[must_use]
-    pub fn tokens(&self) -> u64 {
+    pub const fn tokens(&self) -> u64 {
         self.tokens_milli / MILLI
     }
 }
@@ -58,12 +79,16 @@ impl RateLimiter {
     /// A limiter that mints a fresh bucket per key on first sight.
     #[must_use]
     pub fn new(average_per_sec: u64, burst: u64) -> Self {
-        unimplemented!()
+        Self { average_per_sec, burst, buckets: HashMap::new() }
     }
 
     /// Admit (or reject) a request from `key` at `now_ms`.
     pub fn allow(&mut self, key: &str, now_ms: u64) -> bool {
-        unimplemented!()
+        let (average, burst) = (self.average_per_sec, self.burst);
+        self.buckets
+            .entry(key.to_string())
+            .or_insert_with(|| TokenBucket::new(average, burst))
+            .allow(now_ms)
     }
 }
 
