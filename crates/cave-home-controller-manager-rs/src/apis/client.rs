@@ -10,8 +10,8 @@
 //! Only the *network transport* (REST + watch) is deferred.
 
 use crate::apis::{
-    selector_matches, Deployment, Endpoints, Job, LabelSelector, Namespace, Node, Pod, ReplicaSet,
-    ServiceAccount,
+    selector_matches, CronJob, Deployment, Endpoints, Job, LabelSelector, Namespace, Node, Pod,
+    ReplicaSet, ServiceAccount,
 };
 use crate::informer::Store;
 use crate::types::Object;
@@ -140,6 +140,8 @@ pub struct Cluster {
     pub deployments: Api<Deployment>,
     /// Jobs (`batch/v1`).
     pub jobs: Api<Job>,
+    /// `CronJobs` (`batch/v1`).
+    pub cronjobs: Api<CronJob>,
     /// Namespaces (`core/v1`).
     pub namespaces: Api<Namespace>,
     /// Nodes (`core/v1`).
@@ -165,6 +167,7 @@ impl Cluster {
             replicasets: Api::new("rs"),
             deployments: Api::new("deploy"),
             jobs: Api::new("job"),
+            cronjobs: Api::new("cronjob"),
             namespaces: Api::new("ns"),
             nodes: Api::new("node"),
             endpoints: Api::new("ep"),
