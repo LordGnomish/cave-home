@@ -58,6 +58,7 @@
 pub mod area;
 pub mod autogen;
 pub mod card;
+pub mod cluster;
 pub mod dashboard;
 pub mod energy;
 pub mod label;

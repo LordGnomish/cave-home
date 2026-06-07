@@ -38,10 +38,14 @@
 //! computed plan; there is no concept here of spawning a separate OS process
 //! for a pillar.
 
+pub mod apirest;
 pub mod bootstrap;
 pub mod cli;
 pub mod config;
 pub mod health;
+pub mod http;
+pub mod node;
+pub mod server;
 pub mod shutdown;
 pub mod version;
 
