@@ -80,6 +80,7 @@ pub mod range;
 pub mod revision;
 pub mod sql;
 pub mod store;
+pub mod txn;
 pub mod watch;
 
 pub use compact::{compact, CompactReport};
