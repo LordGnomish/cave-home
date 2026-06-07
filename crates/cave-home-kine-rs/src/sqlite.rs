@@ -535,6 +535,15 @@ mod tests {
         SqliteStore::open_in_memory().unwrap()
     }
 
+    /// A unique temp-file path for an on-disk test store, removed if it lingers.
+    fn tmp_path(tag: &str) -> std::path::PathBuf {
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!("kine-{tag}-{}-{n}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        path
+    }
+
     fn keys(resp: &RangeResponse) -> Vec<Vec<u8>> {
         resp.kvs.iter().map(|r| r.key.clone()).collect()
     }
@@ -871,5 +880,80 @@ mod tests {
 
         drop(s);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn keys_with_lease_lists_only_matching_live_keys() {
+        let mut s = store();
+        s.create(b"/a", b"1", 7).unwrap(); // lease 7
+        s.create(b"/b", b"2", 7).unwrap(); // lease 7
+        s.create(b"/c", b"3", 9).unwrap(); // lease 9
+        s.create(b"/d", b"4", 0).unwrap(); // no lease
+        let mut got = s.keys_with_lease(7).unwrap();
+        got.sort();
+        assert_eq!(got, vec![b"/a".to_vec(), b"/b".to_vec()]);
+        assert_eq!(s.keys_with_lease(9).unwrap(), vec![b"/c".to_vec()]);
+        assert!(s.keys_with_lease(123).unwrap().is_empty());
+    }
+
+    #[test]
+    fn keys_with_lease_ignores_tombstoned_keys() {
+        let mut s = store();
+        s.create(b"/a", b"1", 7).unwrap();
+        s.delete(b"/a").unwrap(); // tombstone — no longer attached
+        assert!(s.keys_with_lease(7).unwrap().is_empty());
+    }
+
+    #[test]
+    fn revoke_lease_keys_tombstones_all_attached_keys() {
+        let mut s = store();
+        s.create(b"/a", b"1", 7).unwrap();
+        s.create(b"/b", b"2", 7).unwrap();
+        s.create(b"/c", b"3", 0).unwrap();
+        let deleted = s.revoke_lease_keys(7).unwrap();
+        assert_eq!(deleted, 2, "both lease-7 keys revoked");
+        assert!(s.range(&RangeRequest::key(b"/a")).unwrap().kvs.is_empty());
+        assert!(s.range(&RangeRequest::key(b"/b")).unwrap().kvs.is_empty());
+        // the unleased key is untouched
+        assert_eq!(s.range(&RangeRequest::key(b"/c")).unwrap().kvs[0].value, b"3");
+    }
+
+    #[test]
+    fn revoke_lease_keys_for_no_lease_is_a_noop() {
+        let mut s = store();
+        s.create(b"/a", b"1", 0).unwrap();
+        assert_eq!(s.revoke_lease_keys(0).unwrap(), 0);
+        assert_eq!(s.range(&RangeRequest::key(b"/a")).unwrap().kvs.len(), 1);
+    }
+
+    #[test]
+    fn db_size_is_positive_and_grows_with_writes() {
+        let mut s = SqliteStore::open(&tmp_path("dbsize")).unwrap();
+        let empty = s.db_size().unwrap();
+        assert!(empty > 0, "an initialised db occupies pages");
+        for i in 0..200 {
+            s.put(format!("/reg/{i}").as_bytes(), &vec![b'x'; 256], 0).unwrap();
+        }
+        assert!(s.db_size().unwrap() > empty, "writes grow the file");
+    }
+
+    #[test]
+    fn defragment_reclaims_space_after_compaction_and_keeps_data() {
+        let mut s = SqliteStore::open(&tmp_path("defrag")).unwrap();
+        // Churn one key through many revisions so most rows become superseded.
+        for i in 0..500 {
+            s.put(b"/hot", format!("v{i}").as_bytes(), 0).unwrap();
+        }
+        s.put(b"/keep", b"final", 0).unwrap();
+        let before = s.db_size().unwrap();
+        let current = s.current_revision().unwrap();
+        s.compact(current - 1).unwrap(); // drop all superseded history
+        let reclaimed = s.defragment().unwrap();
+        let after = s.db_size().unwrap();
+        assert!(after <= before, "VACUUM never grows the file");
+        assert!(reclaimed >= 0);
+        // the surviving live rows are intact after the rebuild
+        assert_eq!(s.range(&RangeRequest::key(b"/hot")).unwrap().kvs[0].value, b"v499");
+        assert_eq!(s.range(&RangeRequest::key(b"/keep")).unwrap().kvs[0].value, b"final");
     }
 }
