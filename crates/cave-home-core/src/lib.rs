@@ -19,6 +19,7 @@ pub mod event_bus;
 pub mod service;
 pub mod state;
 pub mod state_machine;
+pub mod template;
 pub mod util;
 
 pub use area_registry::{AreaEntry, AreaRegistry};
