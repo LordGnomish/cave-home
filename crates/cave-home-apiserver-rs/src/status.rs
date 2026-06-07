@@ -24,8 +24,9 @@ pub enum StatusReason {
     Invalid,
     /// 400 — the request itself was malformed.
     BadRequest,
-    /// 403 — authenticated but not authorized (modelled for completeness; the
-    /// real authz chain is deferred).
+    /// 401 — the request presented no credentials, or invalid ones.
+    Unauthorized,
+    /// 403 — authenticated but not authorized.
     Forbidden,
     /// 405 — the verb is not supported on this resource.
     MethodNotAllowed,
@@ -39,6 +40,7 @@ impl StatusReason {
     pub fn code(self) -> u16 {
         match self {
             StatusReason::BadRequest => 400,
+            StatusReason::Unauthorized => 401,
             StatusReason::Forbidden => 403,
             StatusReason::NotFound => 404,
             StatusReason::MethodNotAllowed => 405,
@@ -57,6 +59,7 @@ impl StatusReason {
             StatusReason::Conflict => "Conflict",
             StatusReason::Invalid => "Invalid",
             StatusReason::BadRequest => "BadRequest",
+            StatusReason::Unauthorized => "Unauthorized",
             StatusReason::Forbidden => "Forbidden",
             StatusReason::MethodNotAllowed => "MethodNotAllowed",
             StatusReason::InternalError => "InternalError",
@@ -116,6 +119,18 @@ impl Status {
     #[must_use]
     pub fn bad_request(message: impl Into<String>) -> Self {
         Self::new(StatusReason::BadRequest, message)
+    }
+
+    /// 401 Unauthorized helper.
+    #[must_use]
+    pub fn unauthorized(message: impl Into<String>) -> Self {
+        Self::new(StatusReason::Unauthorized, message)
+    }
+
+    /// 403 Forbidden helper.
+    #[must_use]
+    pub fn forbidden(message: impl Into<String>) -> Self {
+        Self::new(StatusReason::Forbidden, message)
     }
 }
 
