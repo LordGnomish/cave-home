@@ -61,5 +61,7 @@
 pub mod encryption_config;
 pub mod envelope;
 pub mod keyring;
+pub mod metrics;
 pub mod provider;
+pub mod status;
 pub mod transformer;
