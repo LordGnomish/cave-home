@@ -406,10 +406,11 @@ fn status(err: KineError) -> Status {
 mod tests {
     use super::etcdserverpb::{
         compare::{CompareResult, CompareTarget, TargetUnion},
+        event::EventType,
         kv_server::Kv,
         maintenance_server::Maintenance,
         request_op, CompactionRequest, Compare, DeleteRangeRequest, PutRequest, RangeRequest,
-        RequestOp, StatusRequest, TxnRequest,
+        RequestOp, StatusRequest, TxnRequest, WatchCreateRequest,
     };
     use super::*;
     use crate::range::prefix_successor;
@@ -626,5 +627,54 @@ mod tests {
         let resp = s.status(Request::new(StatusRequest {})).await.unwrap().into_inner();
         assert_eq!(resp.version, ETCD_VERSION);
         assert_eq!(resp.header.unwrap().revision, 1);
+    }
+
+    fn watch_create(prefix_key: &[u8], start_revision: i64) -> WatchCreateRequest {
+        WatchCreateRequest {
+            key: prefix_key.to_vec(),
+            range_end: prefix_successor(prefix_key),
+            start_revision,
+            progress_notify: false,
+            filters: Vec::new(),
+            prev_kv: false,
+            watch_id: 7,
+        }
+    }
+
+    #[tokio::test]
+    async fn watch_stream_emits_created_then_replays_historical_events() {
+        use tokio_stream::StreamExt;
+        let s = server();
+        s.put(Request::new(put_req(b"/ns/a", b"1"))).await.unwrap(); // rev 1 PUT
+        s.put(Request::new(put_req(b"/ns/b", b"2"))).await.unwrap(); // rev 2 PUT
+        let del = DeleteRangeRequest { key: b"/ns/a".to_vec(), range_end: Vec::new(), prev_kv: false };
+        s.delete_range(Request::new(del)).await.unwrap(); //            rev 3 DELETE /ns/a
+
+        let mut stream = Box::pin(s.watch_stream(watch_create(b"/ns/", 1)));
+
+        let created = stream.next().await.unwrap().unwrap();
+        assert!(created.created);
+        assert_eq!(created.watch_id, 7);
+        assert!(created.events.is_empty());
+
+        let batch = stream.next().await.unwrap().unwrap();
+        let revs: Vec<_> = batch.events.iter().map(|e| e.kv.as_ref().unwrap().mod_revision).collect();
+        assert_eq!(revs, vec![1, 2, 3], "all changes since rev 1, in order");
+        assert_eq!(batch.events[0].r#type, EventType::Put as i32);
+        assert_eq!(batch.events[2].r#type, EventType::Delete as i32);
+        assert_eq!(batch.events[2].kv.as_ref().unwrap().key, b"/ns/a");
+    }
+
+    #[tokio::test]
+    async fn watch_stream_filters_to_its_prefix() {
+        use tokio_stream::StreamExt;
+        let s = server();
+        s.put(Request::new(put_req(b"/ns/x", b"1"))).await.unwrap();
+        s.put(Request::new(put_req(b"/other", b"2"))).await.unwrap();
+        let mut stream = Box::pin(s.watch_stream(watch_create(b"/ns/", 1)));
+        let _created = stream.next().await.unwrap().unwrap();
+        let batch = stream.next().await.unwrap().unwrap();
+        let keys: Vec<_> = batch.events.iter().map(|e| e.kv.as_ref().unwrap().key.clone()).collect();
+        assert_eq!(keys, vec![b"/ns/x".to_vec()]);
     }
 }
