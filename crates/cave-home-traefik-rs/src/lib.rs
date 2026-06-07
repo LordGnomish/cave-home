@@ -152,3 +152,11 @@ pub mod tls;
 /// ACME (RFC 8555) client for automatic certificates.
 #[cfg(feature = "runtime")]
 pub mod acme;
+
+/// Kubernetes service discovery (endpoints → server pool).
+#[cfg(feature = "runtime")]
+pub mod discovery;
+
+/// Kubernetes Ingress controller: reconcile + hot-swap config holder.
+#[cfg(feature = "runtime")]
+pub mod controller;
