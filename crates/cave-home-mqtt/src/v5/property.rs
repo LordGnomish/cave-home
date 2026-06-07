@@ -1,4 +1,208 @@
 //! MQTT 5.0 §2.2.2 — Properties.
+//!
+//! A property block is a Variable Byte Integer length (§2.2.2.1) followed
+//! by zero or more properties, each a property Identifier (a Variable
+//! Byte Integer, §2.2.2.2) and a value whose wire type is fixed by the
+//! identifier. Most identifiers may appear at most once; only User
+//! Property (0x26) and Subscription Identifier (0x0B) repeat.
+
+use super::wire::{
+    get_binary, get_string, get_u16, get_u32, get_u8, get_var_int, put_binary,
+    put_string, put_u16, put_u32, put_u8, put_var_int, Error,
+};
+use bytes::{Bytes, BytesMut};
+
+/// A single MQTT 5.0 property (§2.2.2.2). The enum discriminant is *not*
+/// the wire identifier; [`Property::identifier`] returns that.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Property {
+    PayloadFormatIndicator(u8),
+    MessageExpiryInterval(u32),
+    ContentType(String),
+    ResponseTopic(String),
+    CorrelationData(Bytes),
+    SubscriptionIdentifier(u32),
+    SessionExpiryInterval(u32),
+    AssignedClientIdentifier(String),
+    ServerKeepAlive(u16),
+    AuthenticationMethod(String),
+    AuthenticationData(Bytes),
+    RequestProblemInformation(u8),
+    WillDelayInterval(u32),
+    RequestResponseInformation(u8),
+    ResponseInformation(String),
+    ServerReference(String),
+    ReasonString(String),
+    ReceiveMaximum(u16),
+    TopicAliasMaximum(u16),
+    TopicAlias(u16),
+    MaximumQoS(u8),
+    RetainAvailable(u8),
+    UserProperty(String, String),
+    MaximumPacketSize(u32),
+    WildcardSubscriptionAvailable(u8),
+    SubscriptionIdentifierAvailable(u8),
+    SharedSubscriptionAvailable(u8),
+}
+
+impl Property {
+    /// The on-wire property identifier byte (§2.2.2.2).
+    pub fn identifier(&self) -> u8 {
+        match self {
+            Property::PayloadFormatIndicator(_) => 0x01,
+            Property::MessageExpiryInterval(_) => 0x02,
+            Property::ContentType(_) => 0x03,
+            Property::ResponseTopic(_) => 0x08,
+            Property::CorrelationData(_) => 0x09,
+            Property::SubscriptionIdentifier(_) => 0x0B,
+            Property::SessionExpiryInterval(_) => 0x11,
+            Property::AssignedClientIdentifier(_) => 0x12,
+            Property::ServerKeepAlive(_) => 0x13,
+            Property::AuthenticationMethod(_) => 0x15,
+            Property::AuthenticationData(_) => 0x16,
+            Property::RequestProblemInformation(_) => 0x17,
+            Property::WillDelayInterval(_) => 0x18,
+            Property::RequestResponseInformation(_) => 0x19,
+            Property::ResponseInformation(_) => 0x1A,
+            Property::ServerReference(_) => 0x1C,
+            Property::ReasonString(_) => 0x1F,
+            Property::ReceiveMaximum(_) => 0x21,
+            Property::TopicAliasMaximum(_) => 0x22,
+            Property::TopicAlias(_) => 0x23,
+            Property::MaximumQoS(_) => 0x24,
+            Property::RetainAvailable(_) => 0x25,
+            Property::UserProperty(..) => 0x26,
+            Property::MaximumPacketSize(_) => 0x27,
+            Property::WildcardSubscriptionAvailable(_) => 0x28,
+            Property::SubscriptionIdentifierAvailable(_) => 0x29,
+            Property::SharedSubscriptionAvailable(_) => 0x2A,
+        }
+    }
+
+    /// §2.2.2 — only User Property and Subscription Identifier may repeat.
+    fn repeatable(id: u8) -> bool {
+        id == 0x26 || id == 0x0B
+    }
+
+    fn encode_value(&self, out: &mut BytesMut) -> Result<(), Error> {
+        match self {
+            Property::PayloadFormatIndicator(v)
+            | Property::RequestProblemInformation(v)
+            | Property::RequestResponseInformation(v)
+            | Property::MaximumQoS(v)
+            | Property::RetainAvailable(v)
+            | Property::WildcardSubscriptionAvailable(v)
+            | Property::SubscriptionIdentifierAvailable(v)
+            | Property::SharedSubscriptionAvailable(v) => put_u8(*v, out),
+            Property::ServerKeepAlive(v)
+            | Property::ReceiveMaximum(v)
+            | Property::TopicAliasMaximum(v)
+            | Property::TopicAlias(v) => put_u16(*v, out),
+            Property::MessageExpiryInterval(v)
+            | Property::SessionExpiryInterval(v)
+            | Property::WillDelayInterval(v)
+            | Property::MaximumPacketSize(v) => put_u32(*v, out),
+            Property::SubscriptionIdentifier(v) => put_var_int(*v, out)?,
+            Property::ContentType(s)
+            | Property::ResponseTopic(s)
+            | Property::AssignedClientIdentifier(s)
+            | Property::AuthenticationMethod(s)
+            | Property::ResponseInformation(s)
+            | Property::ServerReference(s)
+            | Property::ReasonString(s) => put_string(s, out)?,
+            Property::CorrelationData(b) | Property::AuthenticationData(b) => {
+                put_binary(b, out)?
+            }
+            Property::UserProperty(k, v) => {
+                put_string(k, out)?;
+                put_string(v, out)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn decode_value(id: u8, buf: &mut &[u8]) -> Result<Property, Error> {
+        Ok(match id {
+            0x01 => Property::PayloadFormatIndicator(get_u8(buf)?),
+            0x02 => Property::MessageExpiryInterval(get_u32(buf)?),
+            0x03 => Property::ContentType(get_string(buf)?),
+            0x08 => Property::ResponseTopic(get_string(buf)?),
+            0x09 => Property::CorrelationData(get_binary(buf)?),
+            0x0B => {
+                let v = get_var_int(buf)?;
+                if v == 0 {
+                    return Err(Error::ZeroSubscriptionId);
+                }
+                Property::SubscriptionIdentifier(v)
+            }
+            0x11 => Property::SessionExpiryInterval(get_u32(buf)?),
+            0x12 => Property::AssignedClientIdentifier(get_string(buf)?),
+            0x13 => Property::ServerKeepAlive(get_u16(buf)?),
+            0x15 => Property::AuthenticationMethod(get_string(buf)?),
+            0x16 => Property::AuthenticationData(get_binary(buf)?),
+            0x17 => Property::RequestProblemInformation(get_u8(buf)?),
+            0x18 => Property::WillDelayInterval(get_u32(buf)?),
+            0x19 => Property::RequestResponseInformation(get_u8(buf)?),
+            0x1A => Property::ResponseInformation(get_string(buf)?),
+            0x1C => Property::ServerReference(get_string(buf)?),
+            0x1F => Property::ReasonString(get_string(buf)?),
+            0x21 => Property::ReceiveMaximum(get_u16(buf)?),
+            0x22 => Property::TopicAliasMaximum(get_u16(buf)?),
+            0x23 => Property::TopicAlias(get_u16(buf)?),
+            0x24 => Property::MaximumQoS(get_u8(buf)?),
+            0x25 => Property::RetainAvailable(get_u8(buf)?),
+            0x26 => {
+                let k = get_string(buf)?;
+                let v = get_string(buf)?;
+                Property::UserProperty(k, v)
+            }
+            0x27 => Property::MaximumPacketSize(get_u32(buf)?),
+            0x28 => Property::WildcardSubscriptionAvailable(get_u8(buf)?),
+            0x29 => Property::SubscriptionIdentifierAvailable(get_u8(buf)?),
+            0x2A => Property::SharedSubscriptionAvailable(get_u8(buf)?),
+            other => return Err(Error::UnknownProperty(other)),
+        })
+    }
+}
+
+/// Encode a property block: a Variable Byte Integer length (§2.2.2.1)
+/// followed by each property as `identifier || value`.
+pub fn encode_properties(props: &[Property], out: &mut BytesMut) -> Result<(), Error> {
+    let mut body = BytesMut::new();
+    for p in props {
+        put_u8(p.identifier(), &mut body);
+        p.encode_value(&mut body)?;
+    }
+    put_var_int(u32::try_from(body.len()).map_err(|_| Error::VarIntTooLong)?, out)?;
+    out.extend_from_slice(&body);
+    Ok(())
+}
+
+/// Decode a property block from the cursor, advancing past it.
+pub fn decode_properties(buf: &mut &[u8]) -> Result<Vec<Property>, Error> {
+    let len = get_var_int(buf)? as usize;
+    if buf.len() < len {
+        return Err(Error::Underflow { needed: len - buf.len() });
+    }
+    let (mut block, rest) = buf.split_at(len);
+    let mut props = Vec::new();
+    let mut seen = [false; 0x2B];
+    while !block.is_empty() {
+        let id = get_var_int(&mut block)?;
+        let id = u8::try_from(id).map_err(|_| Error::UnknownProperty(0xff))?;
+        if !Property::repeatable(id) {
+            if (id as usize) < seen.len() && seen[id as usize] {
+                return Err(Error::DuplicateProperty(id));
+            }
+            if (id as usize) < seen.len() {
+                seen[id as usize] = true;
+            }
+        }
+        props.push(Property::decode_value(id, &mut block)?);
+    }
+    *buf = rest;
+    Ok(props)
+}
 
 #[cfg(test)]
 mod tests {

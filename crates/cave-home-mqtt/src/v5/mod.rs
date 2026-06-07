@@ -14,5 +14,10 @@
 //! Everything is reimplemented from the published OASIS MQTT 5.0
 //! standard; no Eclipse Mosquitto (EPL-2.0) source is consulted.
 
-pub mod reason;
 pub mod property;
+pub mod reason;
+pub(crate) mod wire;
+
+pub use property::{decode_properties, encode_properties, Property};
+pub use reason::ReasonCode;
+pub use wire::Error;
