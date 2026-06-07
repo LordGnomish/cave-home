@@ -8,8 +8,8 @@ use std::collections::BTreeSet;
 
 use crate::cache::{NodeInfo, SchedulerCache};
 use crate::framework::{
-    Code, CycleState, FilterFailureMap, NodeScore, PluginRegistry, Status, MAX_NODE_SCORE,
-    MIN_NODE_SCORE,
+    Code, CycleState, FilterFailureMap, MAX_NODE_SCORE, MIN_NODE_SCORE, NodeScore, PluginRegistry,
+    Status,
 };
 use crate::types::Pod;
 
@@ -441,7 +441,11 @@ mod tests {
             "InvertingScore"
         }
         fn score(&self, _: &mut CycleState, _: &Pod, node: &NodeInfo) -> (i64, Status) {
-            let s = if node.node().metadata.name == "n2" { 90 } else { 10 };
+            let s = if node.node().metadata.name == "n2" {
+                90
+            } else {
+                10
+            };
             (s, Status::success())
         }
         fn normalize_score(

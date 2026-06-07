@@ -622,7 +622,8 @@ mod tests {
             "RecordingBind"
         }
         async fn bind(&self, _: &mut CycleState, pod: &Pod, node_name: &str) -> Status {
-            self.0.push(format!("bind:{}:{node_name}", pod.metadata.name));
+            self.0
+                .push(format!("bind:{}:{node_name}", pod.metadata.name));
             Status::success()
         }
     }
@@ -706,9 +707,8 @@ mod tests {
         sched.schedule_and_bind(info, 0).await;
 
         assert_eq!(sink.binds(), vec![("default/epsilon".into(), "n1".into())]);
-        assert!(calls
-            .snapshot()
-            .contains(&"postbind:epsilon:n1".to_string()));
+        let log = calls.snapshot();
+        assert!(log.contains(&"postbind:epsilon:n1".to_string()));
     }
 
     #[tokio::test]
