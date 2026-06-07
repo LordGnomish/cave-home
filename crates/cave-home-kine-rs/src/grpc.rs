@@ -25,15 +25,19 @@
 // keep kine's single global-revision sequence serialised.
 #![allow(clippy::result_large_err, clippy::significant_drop_tightening)]
 
+use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::sync::Mutex;
-use tonic::{Code, Request, Response, Status};
+use tokio_stream::Stream;
+use tonic::{Code, Request, Response, Status, Streaming};
 
 use crate::error::KineError;
 use crate::range::{prefix_successor, RangeEnd, RangeRequest as KineRange, RangeResponse as KineRangeResp};
 use crate::sqlite::SqliteStore;
 use crate::store::Row;
+use crate::watch::{EventKind, WatchEvent};
 
 /// The generated etcd protobuf types and service stubs.
 pub mod etcdserverpb {
@@ -44,10 +48,16 @@ pub mod etcdserverpb {
 use etcdserverpb::{
     kv_server::{Kv, KvServer},
     maintenance_server::{Maintenance, MaintenanceServer},
+    watch_request, watch_server::{Watch, WatchServer},
     request_op, response_op, CompactionRequest, CompactionResponse, Compare, DeleteRangeRequest,
-    DeleteRangeResponse, KeyValue, PutRequest, PutResponse, RangeRequest, RangeResponse,
+    DeleteRangeResponse, Event, KeyValue, PutRequest, PutResponse, RangeRequest, RangeResponse,
     RequestOp, ResponseHeader, ResponseOp, StatusRequest, StatusResponse, TxnRequest, TxnResponse,
+    WatchCreateRequest, WatchRequest, WatchResponse,
 };
+
+/// How often a watch polls the backend for new revisions (kine's watch is a
+/// poll over the after-query, not a push — this is that interval).
+const WATCH_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// kine's reported etcd server version (the apiserver only checks it is a
 /// 3.x etcd that supports the v3 API).
@@ -90,6 +100,56 @@ impl KineServer {
     #[must_use]
     pub fn maintenance(&self) -> MaintenanceServer<Self> {
         MaintenanceServer::new(self.clone())
+    }
+
+    /// This server as a tonic `Watch` service.
+    #[must_use]
+    pub fn watch(&self) -> WatchServer<Self> {
+        WatchServer::new(self.clone())
+    }
+
+    /// The event stream for one watch: a `created` marker, then the ordered
+    /// change events in the watched range, polled from the backend (kine's
+    /// watch is a poll over the after-query, faithfully reproduced here).
+    ///
+    /// etcd revision semantics: `start_revision == 0` means "future changes
+    /// only"; a positive `start_revision` replays from that revision inclusive.
+    pub fn watch_stream(
+        &self,
+        create: WatchCreateRequest,
+    ) -> impl Stream<Item = Result<WatchResponse, Status>> + Send + use<> {
+        let store = self.store();
+        async_stream::try_stream! {
+            let filter = to_kine_range_bytes(&create.key, &create.range_end)?;
+            let watch_id = create.watch_id;
+
+            let revision = {
+                let s = store.lock().await;
+                s.current_revision().map_err(status)?
+            };
+            yield watch_response(watch_id, revision, true, Vec::new());
+
+            // watch_after is exclusive (mod_revision > last); translate etcd's
+            // inclusive start_revision, and "0 = from now" to the current head.
+            let mut last = if create.start_revision > 0 {
+                create.start_revision - 1
+            } else {
+                revision
+            };
+            loop {
+                let (events, header_rev) = {
+                    let s = store.lock().await;
+                    let evs = s.watch_after(&filter, last).map_err(status)?;
+                    (evs, s.current_revision().map_err(status)?)
+                };
+                if !events.is_empty() {
+                    last = events.last().map_or(last, |e| e.revision);
+                    let proto = events.iter().map(to_event).collect();
+                    yield watch_response(watch_id, header_rev, false, proto);
+                }
+                tokio::time::sleep(WATCH_POLL_INTERVAL).await;
+            }
+        }
     }
 
     /// Build a response header stamped with the store's current revision.
@@ -269,6 +329,35 @@ impl Maintenance for KineServer {
     }
 }
 
+#[tonic::async_trait]
+impl Watch for KineServer {
+    type WatchStream = Pin<Box<dyn Stream<Item = Result<WatchResponse, Status>> + Send>>;
+
+    async fn watch(
+        &self,
+        request: Request<Streaming<WatchRequest>>,
+    ) -> Result<Response<Self::WatchStream>, Status> {
+        let mut inbound = request.into_inner();
+        // Drive the stream from the first create request the client sends
+        // (cancels / others before a create are ignored — the apiserver opens
+        // one watch per stream).
+        let create = loop {
+            match inbound.message().await? {
+                Some(WatchRequest {
+                    request_union: Some(watch_request::RequestUnion::CreateRequest(c)),
+                }) => break c,
+                Some(_) => {}
+                None => {
+                    let empty: Self::WatchStream = Box::pin(tokio_stream::empty());
+                    return Ok(Response::new(empty));
+                }
+            }
+        };
+        let stream: Self::WatchStream = Box::pin(self.watch_stream(create));
+        Ok(Response::new(stream))
+    }
+}
+
 /// Evaluate one etcd `Compare` against the current state of its key.
 fn eval_compare(store: &SqliteStore, cmp: &Compare) -> Result<bool, KineError> {
     use etcdserverpb::compare::{CompareResult, CompareTarget, TargetUnion};
@@ -320,6 +409,38 @@ fn row_to_kv(row: &Row) -> KeyValue {
         version: row.mod_revision - row.create_revision + 1,
         value: row.value.clone(),
         lease: row.lease,
+    }
+}
+
+/// Convert a kine [`WatchEvent`] into an etcd `Event` (PUT / DELETE + the kv).
+fn to_event(e: &WatchEvent) -> Event {
+    use etcdserverpb::event::EventType;
+    let kv = KeyValue {
+        key: e.key.clone(),
+        create_revision: e.create_revision,
+        mod_revision: e.revision,
+        version: e.revision - e.create_revision + 1,
+        value: e.value.clone(),
+        lease: 0,
+    };
+    let kind = match e.kind {
+        EventKind::Put => EventType::Put,
+        EventKind::Delete => EventType::Delete,
+    };
+    Event { r#type: kind as i32, kv: Some(kv), prev_kv: None }
+}
+
+/// Build a `WatchResponse` carrying a header, watch id and event batch.
+const fn watch_response(watch_id: i64, revision: i64, created: bool, events: Vec<Event>) -> WatchResponse {
+    WatchResponse {
+        header: Some(ResponseHeader { cluster_id: 0, member_id: 0, revision, raft_term: 0 }),
+        watch_id,
+        created,
+        canceled: false,
+        compact_revision: 0,
+        cancel_reason: String::new(),
+        fragment: false,
+        events,
     }
 }
 
