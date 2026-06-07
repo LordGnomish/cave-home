@@ -25,14 +25,24 @@
 //!   decision, returning the CNI result schema (IP, gateway, routes, DNS).
 //!
 //! # What is deferred
+//! # The real network backend
 //!
-//! The kernel datapath — bringing up the `flannel.<vni>` VXLAN device,
-//! programming routes and the FDB via netlink, the `WireGuard` tunnel setup,
-//! the long-running flannel daemon watch loop, and the durable subnet-lease
-//! store (etcd / Kubernetes API) — is **not** in this crate. Those are the
-//! I/O / privileged layers, deferred to Phase 1b and enumerated in
-//! `parity.manifest.toml`. Everything here is the pure brain those layers
-//! drive, and it is exercised entirely by unit tests.
+//! The decision core above is *driven* by the real datapath, also in this
+//! crate (the 2026-06-07 real-network port):
+//!
+//! - [`netlink`] — the rtnetlink wire codec (the bytes the kernel expects).
+//! - [`datapath`] — the [`datapath::Datapath`] seam + a recording mock.
+//! - [`device`] — the `flannel.<vni>` VXLAN device (create / address / FDB / ARP).
+//! - [`vxlan_network`] / [`route_network`] / [`hostgw`] — turn a peer lease into
+//!   real ARP/FDB/route state (VXLAN) or a direct route (host-gw).
+//! - [`netlink_socket`] — the live `AF_NETLINK` socket (Linux) behind the seam.
+//! - [`subnet_registry`] — the etcd/kine subnet-lease store + watch→event bridge.
+//! - [`subnet_env`] / [`cni_delegate`] — the `subnet.env` contract and the CNI
+//!   bridge delegate the `/opt/cni/bin/flannel` plugin emits.
+//!
+//! What is still deferred (see `parity.manifest.toml`): the `WireGuard`
+//! genetlink datapath, the long-running daemon watch-loop wiring, the IPv6
+//! VXLAN datapath, and CNI delegate exec/chaining.
 //!
 //! Per ADR-007 / Charter §6.3 this crate is *infrastructure*: it surfaces no
 //! user-facing strings. The household never sees "CNI", "VXLAN" or "subnet".
@@ -68,6 +78,17 @@
 pub mod backend;
 pub mod cidr;
 pub mod cni;
+pub mod cni_delegate;
+pub mod datapath;
+pub mod device;
+pub mod hostgw;
 pub mod ipam;
+pub mod mac;
+pub mod netlink;
+pub mod netlink_socket;
+pub mod route_network;
 pub mod routes;
 pub mod subnet;
+pub mod subnet_env;
+pub mod subnet_registry;
+pub mod vxlan_network;

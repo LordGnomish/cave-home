@@ -6,7 +6,7 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-cni-flannel — flannel CNI subnet-management + IPAM decision core (CIDR math, per-node subnet leasing, pod IPAM, backend config, route computation, CNI ADD/DEL result); std-only; upstream behaviour: flannel-io/flannel Apache-2.0; port method: behavioral reimplementation from public flannel/CNI docs (Orchestration Phase 1, ADR-004 + ADR-008)"
+description = "cave-home-cni-flannel — flannel CNI: subnet-management + IPAM decision core (CIDR/subnet-leasing/pod-IPAM/backend-config/route-plan/CNI-result) PLUS the real network backend (rtnetlink wire codec, VXLAN device + ARP/FDB/route programming, host-gw RouteNetwork, AF_NETLINK socket on Linux, etcd/kine subnet-lease store + watch, subnet.env + CNI bridge delegate, /opt/cni/bin/flannel); line-by-line port of flannel-io/flannel Apache-2.0 datapath (Orchestration Phase 1, ADR-004 + ADR-008)"
 
 [package.metadata.cave-home]
 upstream    = "flannel-io/flannel"
@@ -14,12 +14,24 @@ port-method = "behavioral-reimplementation"
 phase       = "orchestration-phase-1"
 adr         = "ADR-008"
 
-# std-only by design: the decision core (CIDR math, subnet leasing, IPAM,
-# backend config, route computation, CNI result model) needs no external
-# crates. The netlink datapath, durable lease store and daemon watch loop —
-# which would pull in async / netlink / etcd deps — are deferred to Phase 1b
-# (see parity.manifest.toml).
+# The decision core (CIDR math, subnet leasing, IPAM, backend config, route
+# computation, CNI result model) is std-only. The real network backend
+# (`net` module) adds a pure-safe netlink *wire codec* (no deps) plus a
+# `Datapath` trait whose real impl uses `nix`'s safe socket wrappers on Linux
+# to talk to AF_NETLINK — `unsafe_code = "forbid"` rules out raw libc here.
 [dependencies]
+# The durable subnet-lease store is etcd-shaped; in K3s that etcd is kine. We
+# reuse cave-home's kine watch model (WatchEvent/EventKind) to translate lease
+# key/value changes into flannel subnet events. kine is itself std-only, so this
+# adds no transitive weight.
+cave-home-kine-rs = { path = "../cave-home-kine-rs" }
+
+# The real datapath I/O layer: only the Linux AF_NETLINK socket needs an
+# external crate, and only `nix`'s *safe* wrappers (the workspace forbids
+# `unsafe`). Everything else — the codec, the backend logic, the mock
+# datapath — is pure std and builds on every target.
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { version = "0.29", features = ["socket", "net", "uio"] }
 
 [lints]
 workspace = true
