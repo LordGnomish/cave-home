@@ -11,7 +11,7 @@
 //! from [`store::Usage`] and describes the `APIService` to register.
 
 use cave_home_orchestration::metrics_server::api::{
-    ApiService, ContainerMetrics, NodeMetrics, PodMetrics, GROUP, VERSION,
+    ApiService, ContainerMetrics, GROUP, NodeMetrics, PodMetrics, VERSION,
 };
 use cave_home_orchestration::metrics_server::quantity::{Quantity, ResourceList};
 use cave_home_orchestration::metrics_server::store::{Storage, Usage};
@@ -21,12 +21,19 @@ fn usage(ts: u64, window: u64, cpu_nano: u64, mem: u64) -> Usage {
     Usage {
         timestamp_nanos: ts,
         window_nanos: window,
-        usage: ResourceList::new(Quantity::from_cpu_nanocores(cpu_nano), Quantity::from_bytes(mem)),
+        usage: ResourceList::new(
+            Quantity::from_cpu_nanocores(cpu_nano),
+            Quantity::from_bytes(mem),
+        ),
     }
 }
 
 fn point(ts: u64, cpu: u64, mem: u64) -> MetricsPoint {
-    MetricsPoint { timestamp_nanos: ts, cumulative_cpu_nanos: cpu, working_set_bytes: mem }
+    MetricsPoint {
+        timestamp_nanos: ts,
+        cumulative_cpu_nanos: cpu,
+        working_set_bytes: mem,
+    }
 }
 
 #[test]
@@ -43,8 +50,14 @@ fn node_metrics_from_usage_carries_typemeta_and_window() {
 #[test]
 fn pod_metrics_total_sums_containers() {
     let containers = vec![
-        ("nginx".to_string(), usage(10, 1_000, 100_000_000, 32 * 1024 * 1024)),
-        ("log".to_string(), usage(20, 1_000, 150_000_000, 96 * 1024 * 1024)),
+        (
+            "nginx".to_string(),
+            usage(10, 1_000, 100_000_000, 32 * 1024 * 1024),
+        ),
+        (
+            "log".to_string(),
+            usage(20, 1_000, 150_000_000, 96 * 1024 * 1024),
+        ),
     ];
     let pm = PodMetrics::from_container_usages("apps", "web", &containers);
     assert_eq!(pm.namespace, "apps");
@@ -94,7 +107,12 @@ fn lists_metrics_from_storage_skipping_unrateable() {
     assert_eq!(nodes[0].usage.cpu.to_cpu_string(), "1");
 
     store.store_container("apps", "web", "nginx", point(0, 0, 10));
-    store.store_container("apps", "web", "nginx", point(1_000_000_000, 100_000_000, 20));
+    store.store_container(
+        "apps",
+        "web",
+        "nginx",
+        point(1_000_000_000, 100_000_000, 20),
+    );
     let pods = PodMetrics::list_from_storage(&store);
     assert_eq!(pods.len(), 1);
     assert_eq!(pods[0].name, "web");

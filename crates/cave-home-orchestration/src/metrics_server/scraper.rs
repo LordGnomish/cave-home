@@ -173,9 +173,7 @@ impl Scraper {
         self.nodes
             .get(node)
             .and_then(|s| s.last_started_nanos)
-            .map_or(true, |last| {
-                now.saturating_sub(last) >= self.config.resolution_nanos
-            })
+            .is_none_or(|last| now.saturating_sub(last) >= self.config.resolution_nanos)
     }
 
     /// Fold a scrape outcome into the per-node and aggregate counters.
