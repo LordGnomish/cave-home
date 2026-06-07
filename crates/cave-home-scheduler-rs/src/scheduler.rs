@@ -461,4 +461,95 @@ mod tests {
         sched.run_once().await.unwrap();
         assert_eq!(sink.binds(), vec![("default/a".into(), "clean".into())]);
     }
+
+    // ---------- Binding cycle (Reserve / Permit / PreBind) ----------
+
+    use crate::framework::{CycleState, PermitPlugin, ReservePlugin, Status};
+    use crate::queue::QueuedPodInfo;
+
+    #[derive(Default)]
+    struct Calls {
+        log: std::sync::Mutex<Vec<String>>,
+    }
+    impl Calls {
+        fn push(&self, s: String) {
+            self.log.lock().unwrap().push(s);
+        }
+        fn snapshot(&self) -> Vec<String> {
+            self.log.lock().unwrap().clone()
+        }
+    }
+
+    struct RecordingReserve(Arc<Calls>);
+    impl ReservePlugin for RecordingReserve {
+        fn name(&self) -> &'static str {
+            "RecordingReserve"
+        }
+        fn reserve(&self, _: &mut CycleState, pod: &Pod, node_name: &str) -> Status {
+            self.0
+                .push(format!("reserve:{}:{node_name}", pod.metadata.name));
+            Status::success()
+        }
+        fn unreserve(&self, _: &mut CycleState, pod: &Pod, node_name: &str) {
+            self.0
+                .push(format!("unreserve:{}:{node_name}", pod.metadata.name));
+        }
+    }
+
+    struct DenyPermit;
+    impl PermitPlugin for DenyPermit {
+        fn name(&self) -> &'static str {
+            "DenyPermit"
+        }
+        fn permit(&self, _: &mut CycleState, _: &Pod, _: &str) -> Status {
+            Status::unschedulable("DenyPermit", "permit denied")
+        }
+    }
+
+    #[tokio::test]
+    async fn binding_cycle_reserves_then_binds_on_success() {
+        let src = Arc::new(InMemorySource::new());
+        let sink = Arc::new(InMemorySink::new());
+        let calls = Arc::new(Calls::default());
+        let reg = PluginRegistry::builder()
+            .with_reserve(Arc::new(RecordingReserve(calls.clone())))
+            .build();
+        let sched = Scheduler::new(src.clone(), sink.clone()).with_registry(reg);
+        sched.cache.add_node(node("n1", 1000, 1024));
+
+        let info = QueuedPodInfo::new(pod("alpha", 100, 256));
+        sched.schedule_and_bind(info, 0).await;
+
+        assert_eq!(sink.binds(), vec![("default/alpha".into(), "n1".into())]);
+        let log = calls.snapshot();
+        assert!(log.contains(&"reserve:alpha:n1".to_string()));
+        assert!(!log.iter().any(|s| s.starts_with("unreserve")));
+    }
+
+    #[tokio::test]
+    async fn permit_denial_unreserves_and_requeues() {
+        let src = Arc::new(InMemorySource::new());
+        let sink = Arc::new(InMemorySink::new());
+        let calls = Arc::new(Calls::default());
+        let reg = PluginRegistry::builder()
+            .with_reserve(Arc::new(RecordingReserve(calls.clone())))
+            .with_permit(Arc::new(DenyPermit))
+            .build();
+        let sched = Scheduler::new(src.clone(), sink.clone()).with_registry(reg);
+        sched.cache.add_node(node("n1", 1000, 1024));
+
+        let info = QueuedPodInfo::new(pod("beta", 100, 256));
+        sched.schedule_and_bind(info, 0).await;
+
+        // Permit denied -> no bind happened.
+        assert!(sink.binds().is_empty());
+        // Reserve must have been rolled back via Unreserve.
+        let log = calls.snapshot();
+        assert!(log.contains(&"reserve:beta:n1".to_string()));
+        assert!(log.contains(&"unreserve:beta:n1".to_string()));
+        // The assumed placement is released from the cache.
+        assert!(!sched.cache.is_assumed("beta"));
+        // The pod is re-queued for a later attempt.
+        assert!(sched.queue.unschedulable_count() + sched.queue.backoff_count() >= 1);
+    }
 }
