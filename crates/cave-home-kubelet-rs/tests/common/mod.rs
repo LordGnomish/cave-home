@@ -367,12 +367,27 @@ impl RuntimeService for MockCriRuntime {
 impl ImageService for MockCriRuntime {
     async fn list_images(
         &self,
-        _r: Request<proto::ListImagesRequest>,
+        req: Request<proto::ListImagesRequest>,
     ) -> RpcResult<proto::ListImagesResponse> {
+        // Honour the ImageFilter the same way a real runtime does: match the
+        // requested spec against image id or any repo-tag.
+        let want = req
+            .into_inner()
+            .filter
+            .and_then(|f| f.image)
+            .map(|s| s.image)
+            .filter(|s| !s.is_empty());
         let st = self.state.lock();
-        Ok(Response::new(proto::ListImagesResponse {
-            images: st.images.values().cloned().collect(),
-        }))
+        let images = st
+            .images
+            .values()
+            .filter(|i| match &want {
+                Some(w) => i.id == *w || i.repo_tags.iter().any(|t| t == w),
+                None => true,
+            })
+            .cloned()
+            .collect();
+        Ok(Response::new(proto::ListImagesResponse { images }))
     }
 
     async fn image_status(
@@ -425,7 +440,21 @@ impl ImageService for MockCriRuntime {
         &self,
         _r: Request<proto::ImageFsInfoRequest>,
     ) -> RpcResult<proto::ImageFsInfoResponse> {
-        Err(Status::unimplemented("mock: image_fs_info"))
+        let st = self.state.lock();
+        let used: u64 = st.images.values().map(|i| i.size.max(1)).sum();
+        Ok(Response::new(proto::ImageFsInfoResponse {
+            image_filesystems: vec![proto::FilesystemUsage {
+                timestamp: 1_700_000_000,
+                fs_id: Some(proto::FilesystemIdentifier {
+                    mountpoint: "/var/lib/containerd".into(),
+                }),
+                used_bytes: Some(proto::UInt64Value { value: used.max(1) }),
+                inodes_used: Some(proto::UInt64Value {
+                    value: st.images.len() as u64,
+                }),
+            }],
+            container_filesystems: vec![],
+        }))
     }
 }
 

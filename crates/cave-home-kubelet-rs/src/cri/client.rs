@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use thiserror::Error;
 
 use super::types::{
-    Container, ContainerConfig, ContainerFilter, ContainerStatus, Image, ImageSpec, PodSandbox,
-    PodSandboxConfig, PodSandboxFilter, PodSandboxStatus,
+    Container, ContainerConfig, ContainerFilter, ContainerStatus, FilesystemUsage, Image, ImageSpec,
+    PodSandbox, PodSandboxConfig, PodSandboxFilter, PodSandboxStatus,
 };
 
 /// Error returned by every `CriClient` method.
@@ -75,4 +75,11 @@ pub trait CriClient: Send + Sync {
     // ---------- image service --------------------------------------------------
     async fn pull_image(&self, image: ImageSpec) -> CriResult<String>;
     async fn image_status(&self, image: ImageSpec) -> CriResult<Option<Image>>;
+    /// List images known to the runtime, optionally filtered to a single spec.
+    async fn list_images(&self, filter: Option<ImageSpec>) -> CriResult<Vec<Image>>;
+    /// Remove an image. Idempotent: removing an absent image succeeds (the CRI
+    /// runtime treats "already gone" as success).
+    async fn remove_image(&self, image: ImageSpec) -> CriResult<()>;
+    /// Report per-filesystem image-store usage (drives image GC).
+    async fn image_fs_info(&self) -> CriResult<Vec<FilesystemUsage>>;
 }

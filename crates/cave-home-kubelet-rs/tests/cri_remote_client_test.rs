@@ -122,6 +122,55 @@ async fn pull_image_then_image_status() {
     assert!(absent.is_none());
 }
 
+#[tokio::test]
+async fn list_remove_image_round_trips_over_grpc() {
+    let server = start_mock_cri_server().await;
+    let client = connect(&server).await;
+
+    client
+        .pull_image(t::ImageSpec {
+            image: "nginx:1.27".into(),
+        })
+        .await
+        .unwrap();
+    client
+        .pull_image(t::ImageSpec {
+            image: "redis:7".into(),
+        })
+        .await
+        .unwrap();
+
+    let all = client.list_images(None).await.unwrap();
+    assert_eq!(all.len(), 2);
+
+    let only = client
+        .list_images(Some(t::ImageSpec {
+            image: "redis:7".into(),
+        }))
+        .await
+        .unwrap();
+    assert_eq!(only.len(), 1);
+    assert!(only[0].repo_tags.contains(&"redis:7".to_string()));
+
+    client
+        .remove_image(t::ImageSpec {
+            image: "redis:7".into(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(client.list_images(None).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn image_fs_info_round_trips_over_grpc() {
+    let server = start_mock_cri_server().await;
+    let client = connect(&server).await;
+    let fs = client.image_fs_info().await.unwrap();
+    assert!(!fs.is_empty());
+    assert_eq!(fs[0].mountpoint, "/var/lib/containerd");
+    assert!(fs[0].used_bytes > 0);
+}
+
 /// The headline acceptance test: a full pod-bringup sequence driven entirely
 /// over gRPC — RunPodSandbox -> CreateContainer -> StartContainer ->
 /// ContainerStatus -> ListContainers.

@@ -15,8 +15,9 @@ use parking_lot::Mutex;
 
 use super::client::{CriClient, CriError, CriResult};
 use super::types::{
-    Container, ContainerConfig, ContainerFilter, ContainerState, ContainerStatus, Image, ImageSpec,
-    PodSandbox, PodSandboxConfig, PodSandboxFilter, PodSandboxState, PodSandboxStatus,
+    Container, ContainerConfig, ContainerFilter, ContainerState, ContainerStatus, FilesystemUsage,
+    Image, ImageSpec, PodSandbox, PodSandboxConfig, PodSandboxFilter, PodSandboxState,
+    PodSandboxStatus,
 };
 
 /// Per-sandbox record kept by the mock.
@@ -307,5 +308,47 @@ impl CriClient for MockCriClient {
 
     async fn image_status(&self, image: ImageSpec) -> CriResult<Option<Image>> {
         Ok(self.state.lock().images.get(&image.image).cloned())
+    }
+
+    async fn list_images(&self, filter: Option<ImageSpec>) -> CriResult<Vec<Image>> {
+        let want = filter.map(|s| s.image);
+        let mut out: Vec<Image> = {
+            let s = self.state.lock();
+            s.images
+                .values()
+                .filter(|i| {
+                    want.as_ref()
+                        .is_none_or(|w| i.id == *w || i.repo_tags.contains(w))
+                })
+                .cloned()
+                .collect()
+        };
+        out.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(out)
+    }
+
+    async fn remove_image(&self, image: ImageSpec) -> CriResult<()> {
+        // Idempotent: keyed by repo-tag (the pull key) or image id.
+        self.state
+            .lock()
+            .images
+            .retain(|key, img| *key != image.image && img.id != image.image);
+        Ok(())
+    }
+
+    async fn image_fs_info(&self) -> CriResult<Vec<FilesystemUsage>> {
+        let (used_bytes, inodes_used) = {
+            let s = self.state.lock();
+            (
+                s.images.values().map(|i| i.size_bytes.max(1)).sum(),
+                s.images.len() as u64,
+            )
+        };
+        Ok(vec![FilesystemUsage {
+            timestamp: i64::try_from(self.clock.load(Ordering::SeqCst)).unwrap_or(i64::MAX),
+            mountpoint: "/var/lib/cave-home/images".into(),
+            used_bytes,
+            inodes_used,
+        }])
     }
 }

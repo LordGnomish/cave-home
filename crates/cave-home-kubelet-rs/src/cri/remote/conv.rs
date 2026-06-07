@@ -169,6 +169,25 @@ impl From<proto::Image> for t::Image {
     }
 }
 
+impl From<t::ImageSpec> for proto::ImageFilter {
+    fn from(s: t::ImageSpec) -> Self {
+        Self {
+            image: Some(s.into()),
+        }
+    }
+}
+
+impl From<proto::FilesystemUsage> for t::FilesystemUsage {
+    fn from(f: proto::FilesystemUsage) -> Self {
+        Self {
+            timestamp: f.timestamp,
+            mountpoint: f.fs_id.map(|id| id.mountpoint).unwrap_or_default(),
+            used_bytes: f.used_bytes.map(|v| v.value).unwrap_or_default(),
+            inodes_used: f.inodes_used.map(|v| v.value).unwrap_or_default(),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // pod sandbox config (native -> proto only; the kubelet never receives one)
 // ---------------------------------------------------------------------------

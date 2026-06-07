@@ -354,4 +354,44 @@ impl CriClient for RemoteCriClient {
             .map_err(|s| status_to_cri_error(&s))?;
         Ok(resp.into_inner().image.map(Into::into))
     }
+
+    async fn list_images(&self, filter: Option<t::ImageSpec>) -> CriResult<Vec<t::Image>> {
+        let req = proto::ListImagesRequest {
+            filter: filter.map(Into::into),
+        };
+        let resp = self
+            .image
+            .clone()
+            .list_images(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(resp.into_inner().images.into_iter().map(Into::into).collect())
+    }
+
+    async fn remove_image(&self, image: t::ImageSpec) -> CriResult<()> {
+        let req = proto::RemoveImageRequest {
+            image: Some(image.into()),
+        };
+        match self.image.clone().remove_image(req).await {
+            Ok(_) => Ok(()),
+            // RemoveImage is idempotent: a NOT_FOUND means it is already gone.
+            Err(s) if s.code() == tonic::Code::NotFound => Ok(()),
+            Err(s) => Err(status_to_cri_error(&s)),
+        }
+    }
+
+    async fn image_fs_info(&self) -> CriResult<Vec<t::FilesystemUsage>> {
+        let resp = self
+            .image
+            .clone()
+            .image_fs_info(proto::ImageFsInfoRequest {})
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(resp
+            .into_inner()
+            .image_filesystems
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
 }
