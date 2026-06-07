@@ -167,6 +167,131 @@ impl Reconciliation {
             })
             .collect()
     }
+
+    /// Compute the observability snapshot for this reconcile — the gauges an
+    /// operator watches (see [`ServiceLbMetrics`]).
+    #[must_use]
+    pub fn metrics(&self) -> ServiceLbMetrics {
+        let mut m = ServiceLbMetrics::default();
+        for (_, d) in &self.dispositions {
+            m.services_total += 1;
+            match d {
+                ServiceDisposition::Programmed { ingress_ips, .. } => {
+                    m.services_programmed += 1;
+                    if !ingress_ips.is_empty() {
+                        m.services_published += 1;
+                    }
+                }
+                ServiceDisposition::Pending { conflicts } => {
+                    m.services_pending += 1;
+                    m.host_port_conflicts += conflicts.len();
+                }
+                ServiceDisposition::Invalid { .. } => m.services_invalid += 1,
+            }
+        }
+        m.daemonsets_desired = self.apply.len();
+        m.daemonsets_apply = self.apply.len();
+        m.daemonsets_delete = self.delete.len();
+        m
+    }
+}
+
+/// A point-in-time observability snapshot of the ServiceLB controller.
+///
+/// Derived from one [`Reconciliation`] via [`Reconciliation::metrics`], these are
+/// the operational signals the controller surfaces: how many
+/// LoadBalancer Services exist and how they break down (programmed vs pending vs
+/// invalid), how many actually publish an ingress IP (the "endpoint health"
+/// line — a Service with a DaemonSet but no advertised node IP is still pending
+/// from the caller's view), the svclb DaemonSet (pod-set) counts to apply /
+/// delete, and the host-port conflict count.
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
+pub struct ServiceLbMetrics {
+    /// Total LoadBalancer Services seen this reconcile.
+    pub services_total: usize,
+    /// Services admitted with a svclb DaemonSet.
+    pub services_programmed: usize,
+    /// Services left pending by a host-port conflict.
+    pub services_pending: usize,
+    /// Services skipped by structural validation.
+    pub services_invalid: usize,
+    /// Programmed Services that publish at least one ingress IP (endpoint health).
+    pub services_published: usize,
+    /// svclb DaemonSets that should exist (== one per programmed Service).
+    pub daemonsets_desired: usize,
+    /// svclb DaemonSets to create-or-update this reconcile.
+    pub daemonsets_apply: usize,
+    /// Orphan svclb DaemonSets to delete this reconcile.
+    pub daemonsets_delete: usize,
+    /// Total host-port `(protocol, port)` conflicts across all pending Services.
+    pub host_port_conflicts: usize,
+}
+
+impl ServiceLbMetrics {
+    /// Render these gauges as Prometheus text exposition (one `HELP`/`TYPE`
+    /// header + value line per gauge). All metrics are gauges except the
+    /// conflict counter, which carries the conventional `_total` suffix.
+    #[must_use]
+    pub fn to_prometheus(&self) -> String {
+        let gauges: [(&str, &str, usize); 8] = [
+            (
+                "servicelb_services_total",
+                "LoadBalancer Services seen by the ServiceLB controller",
+                self.services_total,
+            ),
+            (
+                "servicelb_services_programmed",
+                "Services admitted with a svclb DaemonSet",
+                self.services_programmed,
+            ),
+            (
+                "servicelb_services_pending",
+                "Services left pending by a host-port conflict",
+                self.services_pending,
+            ),
+            (
+                "servicelb_services_invalid",
+                "Services skipped by structural validation",
+                self.services_invalid,
+            ),
+            (
+                "servicelb_services_published",
+                "Programmed Services publishing at least one ingress IP",
+                self.services_published,
+            ),
+            (
+                "servicelb_daemonsets_desired",
+                "svclb DaemonSets that should exist",
+                self.daemonsets_desired,
+            ),
+            (
+                "servicelb_daemonsets_apply",
+                "svclb DaemonSets to create-or-update",
+                self.daemonsets_apply,
+            ),
+            (
+                "servicelb_daemonsets_delete",
+                "orphan svclb DaemonSets to delete",
+                self.daemonsets_delete,
+            ),
+        ];
+
+        let mut blocks: Vec<String> = gauges
+            .iter()
+            .map(|(name, help, value)| {
+                format!("# HELP {name} {help}\n# TYPE {name} gauge\n{name} {value}")
+            })
+            .collect();
+        // The one counter (conventional `_total` suffix).
+        let c = "servicelb_host_port_conflicts_total";
+        blocks.push(format!(
+            "# HELP {c} host-port conflicts across pending Services\n# TYPE {c} counter\n{c} {}",
+            self.host_port_conflicts
+        ));
+        let mut out = blocks.join("\n");
+        out.push('\n');
+        out
+    }
 }
 
 /// Reconcile one cluster snapshot: decide the svclb DaemonSets to apply, the
