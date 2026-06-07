@@ -42,10 +42,12 @@
 //! against.
 
 pub mod audio;
+pub mod dispatch;
 pub mod error;
 pub mod features;
 pub mod llm;
 pub mod stt;
+pub mod tools;
 pub mod tts;
 pub mod wake;
 
