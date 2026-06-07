@@ -14,12 +14,19 @@ port-method = "behavioral-reimplementation"
 phase       = "orchestration-phase-1"
 adr         = "ADR-008"
 
-# std-only by design: the decision core (CIDR math, subnet leasing, IPAM,
-# backend config, route computation, CNI result model) needs no external
-# crates. The netlink datapath, durable lease store and daemon watch loop —
-# which would pull in async / netlink / etcd deps — are deferred to Phase 1b
-# (see parity.manifest.toml).
+# The decision core (CIDR math, subnet leasing, IPAM, backend config, route
+# computation, CNI result model) is std-only. The real network backend
+# (`net` module) adds a pure-safe netlink *wire codec* (no deps) plus a
+# `Datapath` trait whose real impl uses `nix`'s safe socket wrappers on Linux
+# to talk to AF_NETLINK — `unsafe_code = "forbid"` rules out raw libc here.
 [dependencies]
+
+# The real datapath I/O layer: only the Linux AF_NETLINK socket needs an
+# external crate, and only `nix`'s *safe* wrappers (the workspace forbids
+# `unsafe`). Everything else — the codec, the backend logic, the mock
+# datapath — is pure std and builds on every target.
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { version = "0.29", features = ["socket", "net", "uio"] }
 
 [lints]
 workspace = true

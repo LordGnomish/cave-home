@@ -69,5 +69,6 @@ pub mod backend;
 pub mod cidr;
 pub mod cni;
 pub mod ipam;
+pub mod netlink;
 pub mod routes;
 pub mod subnet;
