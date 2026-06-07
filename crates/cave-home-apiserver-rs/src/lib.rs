@@ -108,6 +108,7 @@ pub mod selector;
 pub mod server;
 pub mod status;
 pub mod storage;
+pub mod webhook;
 pub mod x509;
 
 pub use admission::{
