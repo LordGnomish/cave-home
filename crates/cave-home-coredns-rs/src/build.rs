@@ -479,4 +479,39 @@ mod tests {
         let sb = block(". {\n}");
         assert!(build_chain(&sb).unwrap().plugin_names().is_empty());
     }
+
+    #[test]
+    fn build_chain_with_snapshot_seeds_the_kubernetes_plugin() {
+        use crate::k8s::K8sSnapshot;
+        use crate::message::Message;
+        use crate::rr::Rdata;
+        use std::net::Ipv4Addr;
+
+        let sb = block("cluster.local {\n kubernetes cluster.local {\n fallthrough \n} \n}");
+        let snap = K8sSnapshot::new(
+            r#"{"items":[{"metadata":{"name":"web","namespace":"default"},
+                "spec":{"type":"ClusterIP","clusterIP":"10.0.0.1"}}]}"#,
+            r#"{"items":[]}"#,
+        );
+        let chain = build_chain_with(&sb, Some(&snap)).unwrap();
+        let reply = chain.handle(&Message::query(
+            Name::parse("web.default.svc.cluster.local").unwrap(),
+            RecordType::A,
+            1,
+        ));
+        assert_eq!(reply.answers[0].rdata, Rdata::A(Ipv4Addr::new(10, 0, 0, 1)));
+    }
+
+    #[test]
+    fn corefile_options_apply_on_top_of_the_snapshot() {
+        use crate::k8s::K8sSnapshot;
+
+        // `fallthrough` from the Corefile must still take effect when the
+        // plugin is seeded from a snapshot.
+        let sb = block("cluster.local {\n kubernetes cluster.local {\n fallthrough \n} \n}");
+        let snap = K8sSnapshot::new(r#"{"items":[]}"#, r#"{"items":[]}"#);
+        // It builds without error and is the single kubernetes plugin.
+        let chain = build_chain_with(&sb, Some(&snap)).unwrap();
+        assert_eq!(chain.plugin_names(), vec!["kubernetes"]);
+    }
 }

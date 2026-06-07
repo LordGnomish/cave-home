@@ -428,4 +428,31 @@ mod tests {
     fn a_one_byte_runt_has_no_reply() {
         assert!(formerr_bytes(&[0x00]).is_none());
     }
+
+    #[tokio::test]
+    async fn update_endpoints_feeds_the_running_kubernetes_plugin() {
+        use crate::k8s::K8sSnapshot;
+
+        let r = Resolver::spawn(block("cluster.local {\n kubernetes cluster.local \n}"));
+        // Before the snapshot, the service is unknown (authoritative NXDOMAIN).
+        let svc = Message::query(
+            Name::parse("web.default.svc.cluster.local").unwrap(),
+            RecordType::A,
+            7,
+        );
+        assert_eq!(r.resolve(svc.clone()).await.header.rcode, Rcode::NxDomain);
+
+        // Push a live snapshot; the running chain now resolves the service.
+        r.update_endpoints(&K8sSnapshot::new(
+            r#"{"items":[{"metadata":{"name":"web","namespace":"default"},
+                "spec":{"type":"ClusterIP","clusterIP":"10.0.0.5"}}]}"#,
+            r#"{"items":[]}"#,
+        ))
+        .await
+        .unwrap();
+        assert_eq!(
+            r.resolve(svc).await.answers[0].rdata,
+            Rdata::A(Ipv4Addr::new(10, 0, 0, 5))
+        );
+    }
 }
