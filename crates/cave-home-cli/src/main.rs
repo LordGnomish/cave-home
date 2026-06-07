@@ -99,7 +99,7 @@ where
         // Cross-agent stubs use the simpler signature.
         Some(("solar", _)) => solar::run(),
         Some(("energy", _)) => energy::run(),
-        Some(("unifi", _)) => unifi::run(),
+        Some(("unifi", sub)) => unifi::run_matched(sub, verbose),
         Some(("hue", _)) => hue::run(),
         Some(("knx", _)) => knx::run(),
         Some(("free-home", _)) => free_home::run(),
