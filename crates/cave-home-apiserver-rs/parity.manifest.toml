@@ -6,9 +6,11 @@
 # optimistic-concurrency on ObjectMeta, the create/get/list/update/patch/delete/
 # watch semantics over an in-memory registry, label/field selectors, the
 # RFC-7396/6902 patch algorithms, and the two-phase admission pipeline. The
-# actual HTTP/2 transport, etcd/kine storage, TLS + authn + authz (RBAC), and
-# the dynamic extension surfaces (webhooks, CRDs, aggregation) are deferred and
-# enumerated below.
+# HTTP/1.1 transport, TLS + mTLS termination, authn (bearer/anonymous/x509) +
+# authz (RBAC), and the admission-webhook call mechanism are now implemented;
+# the actual HTTP/2 transport, durable etcd/kine storage wiring, OIDC/JWT authn,
+# the Node authorizer, and the remaining dynamic extension surfaces (CRDs,
+# *WebhookConfiguration objects, aggregation) are deferred and enumerated below.
 #
 # HONEST PORT METHOD. This is a *behavioural reimplementation of the documented
 # Kubernetes REST semantics* — the public API conventions, the label/field
@@ -69,11 +71,11 @@ linux_min_kernel = "7.1"  # ADR-003: Linux-only deployment baseline.
 # of what remains in scope. (The fill is reported against capability, not raw
 # Go LOC: the decision core is disproportionately load-bearing relative to its
 # size — it is the part that every other path is a transport/storage lowering of.)
-fill_ratio          = 0.45
-fill_ratio_basis    = "REST decision core (GVK/GVR+RESTMapper, path grammar, ObjectMeta optimistic concurrency + generation + finalizers + ownerRefs, CRUD+list+watch verb semantics with correct status codes + pagination, the /status subresource write path, label/field selectors, RFC-7396/6902 patch, metav1.Status, mutating+validating admission pipeline) PLUS the additive RBAC authorizer PLUS the group/version/resource discovery surface PLUS — NEW in the HTTP-transport phase — the full transport stack: a std-only HTTP/1.1 message codec (parse/serialize/chunked, src/http.rs), a std-only JSON request-body parser (src/json.rs::parse), the authentication chain (bearer-token + anonymous, src/authn.rs), the ApiServer request pipeline that wires authentication→authorization→admission→storage→audit and serves the REST verb surface + /status subresource + discovery (/api,/apis,/api/{v},/apis/{g}/{v}) + /version + /openapi/v2 + health probes (/healthz,/livez,/readyz) + /metrics (src/handler.rs), chunked watch streams (src/handler.rs), audit.k8s.io/v1 events + sink (src/audit.rs), Prometheus metrics (src/metrics.rs), the etcd/kine storage KV seam (src/storage.rs::{Backend,KineBackend}), and the std TcpListener socket loop with a kubectl-style real-TCP integration test (src/server.rs) — all std-only, TDD, 208 tests. Still deferred: HTTP/2 + TLS (rustls) termination + keep-alive, protobuf/YAML content negotiation, mTLS/OIDC authenticators, Node-authorizer + RBAC aggregation + SubjectAccessReview/webhook-authz, admission webhooks, CRDs, OpenAPI v3 + aggregated/subresource discovery, API aggregation, wiring Backend in as the registry's persistence layer, audit webhook/file backends + policy"
+fill_ratio          = 0.50
+fill_ratio_basis    = "REST decision core (GVK/GVR+RESTMapper, path grammar, ObjectMeta optimistic concurrency + generation + finalizers + ownerRefs, CRUD+list+watch verb semantics with correct status codes + pagination, the /status subresource write path, label/field selectors, RFC-7396/6902 patch, metav1.Status, mutating+validating admission pipeline) PLUS the additive RBAC authorizer PLUS the group/version/resource discovery surface PLUS the HTTP-transport stack: a std-only HTTP/1.1 message codec (parse/serialize/chunked, src/http.rs), a std-only JSON request-body parser (src/json.rs::parse), the authentication chain (bearer-token + anonymous, src/authn.rs), the ApiServer request pipeline that wires authentication→authorization→admission→storage→audit and serves the REST verb surface + /status subresource + discovery (/api,/apis,/api/{v},/apis/{g}/{v}) + /version + /openapi/v2 + health probes (/healthz,/livez,/readyz) + /metrics (src/handler.rs), chunked watch streams (src/handler.rs), audit.k8s.io/v1 events + sink (src/audit.rs), Prometheus metrics (src/metrics.rs), the etcd/kine storage KV seam (src/storage.rs::{Backend,KineBackend}), and the std TcpListener socket loop with a kubectl-style real-TCP integration test (src/server.rs) PLUS — NEW in the TLS/extension phase — real rustls TLS + mTLS termination behind the off-by-default `tls` feature (src/tls.rs: server_config/server_config_mtls + TlsServer + serve_tls_stream reusing the same handler flow over a rustls StreamOwned, ring provider so it builds offline), the std-only X.509 subject parser (src/x509.rs: CN→user, O→groups) + the RequestHeaderAuthenticator that the terminator feeds the verified client-cert identity (with X-Remote-* strip-then-inject anti-spoofing), and the dynamic admission-webhook surface (src/webhook.rs: admission.k8s.io/v1 AdmissionReview codec + WebhookClient seam (Mock + std http:// client) + WebhookMutating/ValidatingPlugin on the existing chain + base64 JSONPatch + FailurePolicy) — all std-only except the feature-gated rustls, TDD, 234 tests (`--features tls`). Still deferred: HTTP/2 + keep-alive, protobuf/YAML content negotiation, OIDC/service-account-JWT authenticators, the Node-authorizer + RBAC aggregation + SubjectAccessReview/webhook-authz, CRDs, OpenAPI v3 + aggregated/subresource discovery, API aggregation, wiring Backend in as the registry's persistence layer, audit webhook/file backends + policy"
 test_port_ratio     = 0.0   # tests designed from the documented spec, not ported
 adr_justified_ratio = 1.00  # every unfilled item below carries an ADR-004 phase disposition + note
-honest_ratio        = 1.00  # 0.45 / (0.45 + (1-0.45)*(1-1.0)) = 1.00
+honest_ratio        = 1.00  # 0.50 / (0.50 + (1-0.50)*(1-1.0)) = 1.00
 
 # ---------------------------------------------------------------------------
 # [[mapped]] — documented k8s REST/admission concept -> cave-home Rust path
@@ -225,9 +227,9 @@ priority = "phase-1b"
 note     = "ADR-004: the kine KV seam is now implemented + tested (src/storage.rs::{Backend, KineBackend} over cave_home_kine_rs::Store: conditional create, revisioned update, delete, prefix list, revision->resourceVersion). Still deferred: wiring Backend in *behind* the Registry so ApiServer writes are durable (object<->KV (de)serialization + watch off the kine watch stream + lease/compaction), and a remote kine over gRPC. The in-memory Registry remains the default."
 
 [[unmapped]]
-area     = "TLS termination (rustls) + mTLS/OIDC authenticators (bearer-token + anonymous authn is now implemented)"
+area     = "OIDC / service-account-JWT authenticators (TLS + mTLS termination + bearer-token + anonymous + x509 client-cert authn are now implemented)"
 priority = "phase-1b"
-note     = "ADR-004: the authentication chain (bearer-token token-file + anonymous, with 401 on invalid credentials) is implemented + tested (src/authn.rs) and wired into the handler. The connection handler (src/server.rs::serve_stream) is generic over any Read+Write, so a rustls StreamOwned (TLS termination) wraps it without touching the chain. Still deferred: TLS itself, x509 client-cert authn, service-account-token (JWT) authn, and OIDC — additional Authenticator impls on the same chain."
+note     = "ADR-004: the authentication chain (bearer-token token-file + anonymous, with 401 on invalid credentials) is implemented + tested (src/authn.rs) and wired into the handler. TLS + mutual-TLS termination is NOW implemented behind the off-by-default `tls` feature (src/tls.rs: rustls 0.23 pinned to the ring provider, server_config/server_config_mtls, TlsServer + serve_tls_stream reusing src/server.rs's generic Read+Write handler flow over a rustls StreamOwned). x509 client-cert authn is NOW implemented end-to-end: the std-only Subject parser (src/x509.rs, CN→user / O→groups) + RequestHeaderAuthenticator (src/authn.rs), with the terminator stripping client-supplied X-Remote-* and injecting the verified identity (anti-spoofing). Still deferred: HTTP/2 + keep-alive on the TLS path, service-account-token (JWT) authn, and OIDC — additional Authenticator impls on the same chain."
 
 [[unmapped]]
 area     = "Authorization — Node authorizer, aggregated ClusterRoles, and the SubjectAccessReview / webhook-authorizer surfaces"
@@ -235,9 +237,9 @@ priority = "phase-1b"
 note     = "ADR-004: the additive RBAC rule-matching authorizer (Role/ClusterRole/RoleBinding/ClusterRoleBinding/PolicyRule over verb/apiGroup/resource/subresource/resourceName/non-resource-URL attributes, with the cluster-vs-namespaced binding scope) is now implemented + tested in src/rbac.rs. Still deferred to the security phase: the Node authorizer (graph-based node->object scoping), ClusterRole aggregation (aggregationRule label selectors), and the dynamic surfaces — the SubjectAccessReview/SelfSubjectAccessReview REST API and the out-of-process webhook authorizer. The authorizer rule-evaluation caches are an optimization layered over the same matching logic."
 
 [[unmapped]]
-area     = "Admission webhooks (dynamic Mutating/ValidatingWebhookConfiguration, out-of-process plugins)"
+area     = "Admission-webhook configuration objects (Mutating/ValidatingWebhookConfiguration registration + namespaceSelector/objectSelector/rules matching) — the webhook call mechanism itself is now implemented"
 priority = "phase-1b"
-note     = "ADR-004: the in-process two-phase pipeline (mutating then validating, ordered, short-circuiting) is implemented + tested; the dynamic webhook plugins that call external HTTPS endpoints are deferred — they are additional plugins on the same chain."
+note     = "ADR-004: the in-process two-phase pipeline (mutating then validating, ordered, short-circuiting) is implemented + tested, and the DYNAMIC out-of-process webhook plugins are NOW implemented (src/webhook.rs): the admission.k8s.io/v1 AdmissionReview request/response codec, a WebhookClient transport seam (MockWebhookClient + a std-only http:// HttpWebhookClient; https:// plugs into the same trait via the tls feature's stream), WebhookMutatingPlugin/WebhookValidatingPlugin that drop straight into the existing AdmissionChain, base64-decoded JSONPatch application for mutating responses (via src/patch.rs), uid correlation, and FailurePolicy Fail/Ignore. Still deferred: the *WebhookConfiguration API objects themselves (registering webhooks declaratively + rule/namespaceSelector/objectSelector matching to decide which webhooks fire for a given request) — a registration overlay above the now-working call mechanism."
 
 [[unmapped]]
 area     = "CustomResourceDefinitions (dynamic kind registration + structural schema validation + conversion webhooks)"

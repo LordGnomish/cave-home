@@ -13,11 +13,25 @@ spec-sources = "public Kubernetes API conventions + label/field selector docs + 
 port-method  = "behavioral-reimplementation"
 phase        = "orchestration-phase-1"
 
+[features]
+# `tls` adds rustls-based TLS/mTLS termination in front of the std socket loop.
+# It is OFF by default so the decision core + std HTTP transport stay
+# dependency-free; the connection handler is generic over `Read + Write`, so a
+# rustls stream slots in without touching the handler chain (see `src/tls.rs`).
+default = []
+tls = ["dep:rustls", "dep:rustls-pemfile", "dep:rustls-pki-types"]
+
 [dependencies]
 # Storage backend seam: the apiserver persists objects through kine's
 # etcd-compatible MVCC KV store (the same datastore k3s embeds). Intra-workspace
-# dependency only — no external crates are introduced.
+# dependency only.
 cave-home-kine-rs = { path = "../cave-home-kine-rs" }
+
+# TLS termination (feature-gated, off by default). Pinned to the `ring` crypto
+# provider so the crate builds fully offline without the aws-lc C toolchain.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging", "tls12"], optional = true }
+rustls-pemfile = { version = "2", optional = true }
+rustls-pki-types = { version = "1", optional = true }
 
 [dev-dependencies]
 
