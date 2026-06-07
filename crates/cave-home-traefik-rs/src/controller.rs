@@ -52,7 +52,9 @@ pub fn reconcile<F>(
 where
     F: Fn(&IngressBackend) -> Vec<Server>,
 {
-    unimplemented!()
+    let translation =
+        translate_ingresses(ingresses, controller_class).map_err(ReconcileError::Translate)?;
+    translation.into_config(resolve).map_err(ReconcileError::Build)
 }
 
 /// A thread-safe holder for the live config, swapped atomically on reconcile.
