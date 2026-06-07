@@ -126,7 +126,9 @@ fn boot(role: ServeRole, cfg: &Config) -> ExitCode {
         node: LocalNode::new(cfg.node_name.clone(), internal_ip),
         bind_addr: cfg.bind_addr.clone(),
         bind_port: cfg.bind_port,
-        reconcile_interval: Duration::from_secs(10),
+        // A snappy reconcile cadence so a freshly-applied pod is scheduled and
+        // run within a second or two rather than up to a tick later.
+        reconcile_interval: Duration::from_secs(1),
     };
 
     let runtime = match tokio::runtime::Runtime::new() {
