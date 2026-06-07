@@ -40,6 +40,9 @@ pub enum Card {
     RawEntity { entity_id: String },
     /// Cluster / hub topology. Developer only.
     ClusterTopology,
+    /// ServiceLB (K3s svclb) status — the LoadBalancer Services exposed on the
+    /// cluster, which are published vs pending. Developer only.
+    ServiceLb,
     /// Live log tail for an add-on. Developer only.
     Logs { entity_id: String },
 }
@@ -51,7 +54,7 @@ impl Card {
     pub const fn is_developer_only(&self) -> bool {
         matches!(
             self,
-            Self::RawEntity { .. } | Self::ClusterTopology | Self::Logs { .. }
+            Self::RawEntity { .. } | Self::ClusterTopology | Self::ServiceLb | Self::Logs { .. }
         )
     }
 
