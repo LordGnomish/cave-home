@@ -13,6 +13,49 @@
 use crate::json::Value;
 use crate::status::Status;
 
+/// Decode an RFC 6902 JSON Patch document (a JSON array of operation objects)
+/// into a [`PatchOp`] list. Each element must carry a string `op` and `path`;
+/// `add`/`replace`/`test` additionally require a `value`.
+///
+/// # Errors
+/// `BadRequest` if the body is not an array, an element is malformed, the `op`
+/// is unknown, or a required field is missing.
+pub fn ops_from_json(value: &Value) -> Result<Vec<PatchOp>, Status> {
+    let arr = value
+        .as_array()
+        .ok_or_else(|| Status::bad_request("JSON Patch body must be a JSON array"))?;
+    let mut ops = Vec::with_capacity(arr.len());
+    for item in arr {
+        let op = item
+            .get("op")
+            .and_then(Value::as_str)
+            .ok_or_else(|| Status::bad_request("JSON Patch operation missing \"op\""))?;
+        let path = item
+            .get("path")
+            .and_then(Value::as_str)
+            .ok_or_else(|| Status::bad_request("JSON Patch operation missing \"path\""))?
+            .to_string();
+        let value_of = || {
+            item.get("value")
+                .cloned()
+                .ok_or_else(|| Status::bad_request(format!("JSON Patch {op:?} op requires \"value\"")))
+        };
+        let parsed = match op {
+            "add" => PatchOp::Add { path, value: value_of()? },
+            "replace" => PatchOp::Replace { path, value: value_of()? },
+            "test" => PatchOp::Test { path, value: value_of()? },
+            "remove" => PatchOp::Remove { path },
+            other => {
+                return Err(Status::bad_request(format!(
+                    "unknown JSON Patch op {other:?}"
+                )))
+            }
+        };
+        ops.push(parsed);
+    }
+    Ok(ops)
+}
+
 /// Apply an RFC 7396 JSON Merge Patch: recursively merge objects; a `null`
 /// value deletes the key; any non-object patch replaces the target wholesale.
 #[must_use]

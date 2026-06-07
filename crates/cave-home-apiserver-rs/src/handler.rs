@@ -174,10 +174,16 @@ impl ApiServer {
                 Ok(object_response(200, &updated))
             }
             "patch" => {
-                let patch_doc = parse_body(req)?;
-                let patched = self
-                    .registry
-                    .patch_merge(gvr, &rp.namespace, &rp.name, &patch_doc)?;
+                let ctype = req.headers.get("content-type").unwrap_or_default();
+                let body = parse_body(req)?;
+                let patched = if ctype.starts_with("application/json-patch+json") {
+                    let ops = crate::patch::ops_from_json(&body)?;
+                    self.registry.patch_json(gvr, &rp.namespace, &rp.name, &ops)?
+                } else {
+                    // merge-patch+json and strategic-merge-patch+json (the latter
+                    // approximated by merge) and the default.
+                    self.registry.patch_merge(gvr, &rp.namespace, &rp.name, &body)?
+                };
                 Ok(object_response(200, &patched))
             }
             "delete" => {
