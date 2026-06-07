@@ -273,17 +273,26 @@ impl RuntimeService for MockCriRuntime {
     async fn exec_sync(&self, _r: Request<proto::ExecSyncRequest>) -> RpcResult<proto::ExecSyncResponse> {
         Err(Status::unimplemented("mock: exec_sync"))
     }
-    async fn exec(&self, _r: Request<proto::ExecRequest>) -> RpcResult<proto::ExecResponse> {
-        Err(Status::unimplemented("mock: exec"))
+    async fn exec(&self, r: Request<proto::ExecRequest>) -> RpcResult<proto::ExecResponse> {
+        let id = r.into_inner().container_id;
+        Ok(Response::new(proto::ExecResponse {
+            url: format!("http://stream.local/exec/{id}"),
+        }))
     }
-    async fn attach(&self, _r: Request<proto::AttachRequest>) -> RpcResult<proto::AttachResponse> {
-        Err(Status::unimplemented("mock: attach"))
+    async fn attach(&self, r: Request<proto::AttachRequest>) -> RpcResult<proto::AttachResponse> {
+        let id = r.into_inner().container_id;
+        Ok(Response::new(proto::AttachResponse {
+            url: format!("http://stream.local/attach/{id}"),
+        }))
     }
     async fn port_forward(
         &self,
-        _r: Request<proto::PortForwardRequest>,
+        r: Request<proto::PortForwardRequest>,
     ) -> RpcResult<proto::PortForwardResponse> {
-        Err(Status::unimplemented("mock: port_forward"))
+        let id = r.into_inner().pod_sandbox_id;
+        Ok(Response::new(proto::PortForwardResponse {
+            url: format!("http://stream.local/portforward/{id}"),
+        }))
     }
     async fn container_stats(
         &self,

@@ -14,6 +14,7 @@ use tonic::transport::{Channel, Endpoint, Uri};
 
 use super::error::{status_to_cri_error, transport_to_cri_error};
 use super::proto;
+use super::streaming;
 use crate::cri::client::{CriClient, CriError, CriResult};
 use crate::cri::types as t;
 
@@ -74,6 +75,68 @@ impl RemoteCriClient {
             .await
             .map_err(|e| transport_to_cri_error(&e))?;
         Ok(Self::from_channel(channel))
+    }
+
+    /// Negotiate an `Exec` streaming endpoint, returning the URL the kubelet's
+    /// streaming client should dial. Byte streaming over that URL is deferred.
+    ///
+    /// # Errors
+    /// Returns a [`CriError`] mapped from the gRPC status on failure.
+    pub async fn exec(&self, req: streaming::ExecRequest) -> CriResult<String> {
+        let req = proto::ExecRequest {
+            container_id: req.container_id,
+            cmd: req.cmd,
+            tty: req.tty,
+            stdin: req.stdin,
+            stdout: req.stdout,
+            stderr: req.stderr,
+        };
+        let resp = self
+            .runtime
+            .clone()
+            .exec(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(resp.into_inner().url)
+    }
+
+    /// Negotiate an `Attach` streaming endpoint, returning the URL to dial.
+    ///
+    /// # Errors
+    /// Returns a [`CriError`] mapped from the gRPC status on failure.
+    pub async fn attach(&self, req: streaming::AttachRequest) -> CriResult<String> {
+        let req = proto::AttachRequest {
+            container_id: req.container_id,
+            stdin: req.stdin,
+            tty: req.tty,
+            stdout: req.stdout,
+            stderr: req.stderr,
+        };
+        let resp = self
+            .runtime
+            .clone()
+            .attach(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(resp.into_inner().url)
+    }
+
+    /// Negotiate a `PortForward` streaming endpoint, returning the URL to dial.
+    ///
+    /// # Errors
+    /// Returns a [`CriError`] mapped from the gRPC status on failure.
+    pub async fn port_forward(&self, req: streaming::PortForwardRequest) -> CriResult<String> {
+        let req = proto::PortForwardRequest {
+            pod_sandbox_id: req.pod_sandbox_id,
+            port: req.ports,
+        };
+        let resp = self
+            .runtime
+            .clone()
+            .port_forward(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(resp.into_inner().url)
     }
 }
 

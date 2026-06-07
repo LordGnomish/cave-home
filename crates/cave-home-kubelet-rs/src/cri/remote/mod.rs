@@ -31,5 +31,6 @@ pub mod proto {
 mod client;
 mod conv;
 pub mod error;
+pub mod streaming;
 
 pub use client::RemoteCriClient;
