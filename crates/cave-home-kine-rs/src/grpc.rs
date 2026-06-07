@@ -798,6 +798,112 @@ mod tests {
         assert!(out.contains("kine_compaction_runs_total 1"));
     }
 
+    /// A server whose lease clock is the shared `now` cell — lets a test drive
+    /// lease expiry / keep-alive renewal deterministically without sleeping.
+    fn server_with_clock() -> (KineServer, Arc<std::sync::atomic::AtomicI64>) {
+        let now = Arc::new(std::sync::atomic::AtomicI64::new(0));
+        let n = Arc::clone(&now);
+        let clock: super::ClockFn =
+            Arc::new(move || n.load(std::sync::atomic::Ordering::Relaxed));
+        (KineServer::with_clock(SqliteStore::open_in_memory().unwrap(), clock), now)
+    }
+
+    #[tokio::test]
+    async fn lease_grant_allocates_an_id_when_zero_and_echoes_ttl() {
+        let s = server();
+        let resp = s.do_lease_grant(30, 0).await.unwrap();
+        assert_ne!(resp.id, 0, "server allocates a non-zero lease id");
+        assert_eq!(resp.ttl, 30);
+        assert!(resp.error.is_empty());
+    }
+
+    #[tokio::test]
+    async fn lease_grant_honours_an_explicit_id() {
+        let s = server();
+        let resp = s.do_lease_grant(30, 42).await.unwrap();
+        assert_eq!(resp.id, 42);
+    }
+
+    #[tokio::test]
+    async fn lease_grant_rejects_non_positive_ttl() {
+        let s = server();
+        let err = s.do_lease_grant(0, 0).await.unwrap_err();
+        assert_eq!(err.code(), Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn lease_revoke_deletes_every_key_attached_to_the_lease() {
+        let s = server();
+        s.do_lease_grant(100, 5).await.unwrap();
+        let mut p = put_req(b"/k1", b"v1");
+        p.lease = 5;
+        s.put(Request::new(p)).await.unwrap();
+        let mut p2 = put_req(b"/k2", b"v2");
+        p2.lease = 5;
+        s.put(Request::new(p2)).await.unwrap();
+        s.put(Request::new(put_req(b"/free", b"x"))).await.unwrap(); // no lease
+
+        s.do_lease_revoke(5).await.unwrap();
+        assert!(s.range(Request::new(point(b"/k1"))).await.unwrap().into_inner().kvs.is_empty());
+        assert!(s.range(Request::new(point(b"/k2"))).await.unwrap().into_inner().kvs.is_empty());
+        // the unleased key is untouched
+        assert_eq!(
+            s.range(Request::new(point(b"/free"))).await.unwrap().into_inner().kvs[0].value,
+            b"x"
+        );
+    }
+
+    #[tokio::test]
+    async fn lease_revoke_of_unknown_lease_is_not_found() {
+        let s = server();
+        let err = s.do_lease_revoke(999).await.unwrap_err();
+        assert_eq!(err.code(), Code::NotFound);
+    }
+
+    #[tokio::test]
+    async fn lease_time_to_live_reports_remaining_granted_and_keys() {
+        let (s, now) = server_with_clock();
+        s.do_lease_grant(100, 7).await.unwrap(); // granted at now=0
+        let mut p = put_req(b"/owned", b"v");
+        p.lease = 7;
+        s.put(Request::new(p)).await.unwrap();
+
+        now.store(30, std::sync::atomic::Ordering::Relaxed);
+        let resp = s.do_lease_time_to_live(7, true).await.unwrap();
+        assert_eq!(resp.id, 7);
+        assert_eq!(resp.granted_ttl, 100);
+        assert_eq!(resp.ttl, 70, "remaining = granted - elapsed");
+        assert_eq!(resp.keys, vec![b"/owned".to_vec()]);
+    }
+
+    #[tokio::test]
+    async fn lease_time_to_live_of_unknown_lease_reports_negative_ttl() {
+        let s = server();
+        let resp = s.do_lease_time_to_live(404, false).await.unwrap();
+        assert_eq!(resp.ttl, -1, "etcd signals a missing lease with TTL -1");
+    }
+
+    #[tokio::test]
+    async fn lease_keep_alive_renews_the_ttl_and_postpones_expiry() {
+        let (s, now) = server_with_clock();
+        s.do_lease_grant(10, 3).await.unwrap(); // expires at 10
+        now.store(8, std::sync::atomic::Ordering::Relaxed);
+        let ka = s.do_keep_alive(3).await.unwrap();
+        assert_eq!(ka.id, 3);
+        assert_eq!(ka.ttl, 10);
+        // renewed at 8 -> now expires at 18; at t=12 still alive with ~6s left
+        now.store(12, std::sync::atomic::Ordering::Relaxed);
+        let ttl = s.do_lease_time_to_live(3, false).await.unwrap();
+        assert_eq!(ttl.ttl, 6);
+    }
+
+    #[tokio::test]
+    async fn lease_keep_alive_of_missing_lease_returns_zero_ttl() {
+        let s = server();
+        let ka = s.do_keep_alive(123).await.unwrap();
+        assert_eq!(ka.ttl, 0, "etcd keep-alive of a dead lease yields TTL 0");
+    }
+
     fn watch_create(prefix_key: &[u8], start_revision: i64) -> WatchCreateRequest {
         WatchCreateRequest {
             key: prefix_key.to_vec(),
