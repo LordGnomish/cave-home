@@ -2,12 +2,12 @@
 // Copyright 2026 cave-home contributors
 //
 //! `cave-home-coredns-rs` — the embedded cluster-DNS decision core: the
-//! in-process CoreDNS that K3s runs for Kubernetes service discovery
+//! in-process `CoreDNS` that K3s runs for Kubernetes service discovery
 //! (ADR-004, Orchestration Phase 3).
 //!
 //! # What this is
 //!
-//! CoreDNS is a DNS server assembled from a *chain of plugins* configured by a
+//! `CoreDNS` is a DNS server assembled from a *chain of plugins* configured by a
 //! Caddy-style `Corefile`. This crate is the **decision core** of that server:
 //! the DNS wire protocol and the per-plugin answer logic, implemented as pure,
 //! `std`-only code so they can be tested exhaustively without a socket, a
@@ -38,7 +38,7 @@
 //!
 //! # Honest port method (Charter §6)
 //!
-//! This is a **behavioural reimplementation** of documented CoreDNS plugin
+//! This is a **behavioural reimplementation** of documented `CoreDNS` plugin
 //! semantics and the DNS protocol RFCs from public sources (RFC 1035 / 2782 /
 //! 3596 / 4034 and the Apache-2.0 `coredns/coredns` plugin docs). It is **not**
 //! a verbatim line-by-line port and is labelled as such in the parity manifest.

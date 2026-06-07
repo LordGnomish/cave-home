@@ -3,7 +3,7 @@
 //
 //! Wire-codec and configuration errors.
 //!
-//! CoreDNS is infrastructure (Charter §6.3): these variants model the DNS
+//! `CoreDNS` is infrastructure (Charter §6.3): these variants model the DNS
 //! protocol's own failure vocabulary — truncation, malformed compression
 //! pointers, oversized labels/names — for the codec and config layers. They are
 //! never surfaced to the homeowner; a *protocol-level* refusal is expressed as
