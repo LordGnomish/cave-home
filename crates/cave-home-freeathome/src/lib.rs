@@ -31,7 +31,7 @@
 #![allow(clippy::doc_markdown)]
 
 pub mod auth;
-mod cli;
+pub mod cli;
 pub mod config;
 pub mod core_bridge;
 pub mod device;
@@ -46,6 +46,7 @@ pub mod state;
 
 pub use auth::{AuthMethod, ClientCertConfig, Credentials};
 pub use config::ClientConfig;
+pub use cli::{parse as parse_cli, CliError, FreeAtHomeCommand};
 pub use core_bridge::{entity_id, on_off_state, register};
 pub use device::{writable_pairings, Device, FreeAtHomeDevice};
 pub use error::{FreeAtHomeError, Result};
