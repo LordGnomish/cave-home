@@ -70,6 +70,7 @@
 //! ```
 
 pub mod admission;
+pub mod audit;
 pub mod authn;
 pub mod discovery;
 pub mod gvk;

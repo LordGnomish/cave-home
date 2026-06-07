@@ -859,6 +859,35 @@ mod tests {
         assert_eq!(resp.status, 403);
     }
 
+    // --- audit logging ------------------------------------------------------
+
+    use crate::audit::MemoryAuditSink;
+    use std::sync::Arc;
+
+    #[test]
+    fn audit_records_successful_request() {
+        let sink = Arc::new(MemoryAuditSink::new());
+        let mut s = ApiServer::new().with_audit(sink.clone());
+        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        assert_eq!(sink.len(), 1);
+        let ev = &sink.events()[0];
+        assert_eq!(ev.verb, "create");
+        assert_eq!(ev.resource, "pods");
+        assert_eq!(ev.namespace, "default");
+        assert_eq!(ev.response_code, 201);
+        assert_eq!(ev.user, "system:anonymous");
+    }
+
+    #[test]
+    fn audit_records_errors() {
+        let sink = Arc::new(MemoryAuditSink::new());
+        let mut s = ApiServer::new().with_audit(sink.clone());
+        s.handle(&req("GET", "/api/v1/namespaces/default/pods/ghost", "application/json", ""));
+        assert_eq!(sink.len(), 1);
+        assert_eq!(sink.events()[0].response_code, 404);
+        assert_eq!(sink.events()[0].verb, "get");
+    }
+
     // --- watch streams ------------------------------------------------------
 
     #[test]
