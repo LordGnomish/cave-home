@@ -17,6 +17,8 @@
 pub mod broker;
 pub mod codec;
 pub mod packet;
+#[cfg(feature = "runtime")]
+pub mod runtime;
 pub mod v5;
 
 pub use codec::{CodecError, decode_packet, encode_packet};

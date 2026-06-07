@@ -211,8 +211,9 @@ async fn websocket_connect_is_acknowledged() {
         let _ = server.serve_ws(listener).await;
     });
 
+    let tcp = TcpStream::connect(addr).await.unwrap();
     let (mut ws, _resp) =
-        tokio_tungstenite::connect_async(format!("ws://{addr}/mqtt")).await.unwrap();
+        tokio_tungstenite::client_async(format!("ws://{addr}/mqtt"), tcp).await.unwrap();
 
     let frame = encode_v5(&connect("ws-client", true, 0)).unwrap();
     ws.send(Message::Binary(frame.to_vec())).await.unwrap();
