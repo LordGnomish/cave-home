@@ -32,6 +32,7 @@
 
 pub mod auth;
 pub mod config;
+mod device;
 pub mod error;
 pub mod event;
 pub mod model;
