@@ -1,0 +1,17 @@
+[package]
+name              = "cave-home-coredns-rs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-coredns-rs — embedded cluster DNS decision core (the K3s in-process CoreDNS): RFC 1035 wire codec + a Caddy-style plugin chain (hosts/rewrite/cache/kubernetes/file/forward) + the Corefile config parser; upstream: coredns/coredns; port method: spec-based behavioural reimplementation of CoreDNS plugin semantics + the DNS protocol RFCs (not verbatim line-by-line) (Orchestration Phase 3, ADR-004)"
+
+[package.metadata.cave-home]
+upstream    = "coredns/coredns"
+port-method = "spec-based (behavioural reimplementation of CoreDNS plugin semantics + DNS RFCs; NOT verbatim line-by-line)"
+phase       = "orchestration-phase-3"
+
+[lints]
+workspace = true

@@ -20,6 +20,7 @@ members = [
     "crates/cave-home-scheduler-rs",
     "crates/cave-home-controller-manager-rs",
     "crates/cave-home-kine-rs",
+    "crates/cave-home-coredns-rs",
     "crates/cave-home-helm-controller-rs",
     "crates/cave-home-klipper-lb-rs",
     "crates/cave-home-traefik-rs",
