@@ -46,4 +46,6 @@
 #![allow(clippy::module_name_repetitions)]
 
 // Modules land test-first, one TDD cycle at a time (see git history and
-// `parity.manifest.toml`). This scaffold compiles on its own.
+// `parity.manifest.toml`).
+
+pub mod crypto;
