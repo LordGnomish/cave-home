@@ -32,7 +32,7 @@
 
 pub mod auth;
 pub mod config;
-mod device;
+pub mod device;
 pub mod error;
 pub mod event;
 pub mod model;
@@ -42,6 +42,7 @@ pub mod state;
 
 pub use auth::{AuthMethod, ClientCertConfig, Credentials};
 pub use config::ClientConfig;
+pub use device::{writable_pairings, Device, FreeAtHomeDevice};
 pub use error::{FreeAtHomeError, Result};
 pub use event::{parse_datapoint_address, parse_ws_frame, DatapointUpdate, FreeAtHomeEvent};
 pub use reconnect::Backoff;

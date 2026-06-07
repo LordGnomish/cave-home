@@ -1,6 +1,117 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //! Device abstraction over a SysAP channel.
+//!
+//! free@home exposes *channels* (one function on a physical device). cave-home
+//! treats each controllable channel as a [`Device`] and projects it onto a
+//! grandma-friendly [`DeviceKind`] so a free@home blind behaves like any other
+//! cover. The brain (function → kind, value codec, command validation) lives in
+//! [`cave_home_free_home`]; this layer adds identity (serial), a display name
+//! and a capability map of which write actions a function accepts.
+
+use cave_home_free_home::{
+    Channel, ChannelId, DeviceKind, DeviceSerial, Function, Pairing, SetDatapoint, Value,
+};
+
+use crate::error::{FreeAtHomeError, Result};
+
+/// The behaviour every free@home device exposes to the rest of the hub.
+pub trait FreeAtHomeDevice {
+    /// The owning device serial.
+    fn serial(&self) -> &DeviceSerial;
+    /// The channel this device maps to.
+    fn channel(&self) -> ChannelId;
+    /// The free@home function behind the device.
+    fn function(&self) -> Function;
+    /// The household-facing display name.
+    fn friendly_name(&self) -> &str;
+
+    /// The grandma-friendly device kind.
+    fn kind(&self) -> DeviceKind {
+        self.function().device_kind()
+    }
+
+    /// Whether the device can be controlled (vs. a read-only sensor).
+    fn is_controllable(&self) -> bool {
+        self.function().is_controllable()
+    }
+}
+
+/// A controllable (or observable) free@home channel.
+#[derive(Debug, Clone)]
+pub struct Device {
+    serial: DeviceSerial,
+    channel: Channel,
+    name: String,
+}
+
+impl Device {
+    /// Build a device from its serial, channel and display name.
+    pub fn new(serial: DeviceSerial, channel: Channel, name: impl Into<String>) -> Self {
+        Self {
+            serial,
+            channel,
+            name: name.into(),
+        }
+    }
+
+    /// The room the channel is assigned to, if known.
+    pub fn room(&self) -> Option<&str> {
+        self.channel.room()
+    }
+
+    /// Whether the device's function accepts writes to `pairing`.
+    pub fn supports(&self, pairing: Pairing) -> bool {
+        writable_pairings(self.channel.function()).contains(&pairing)
+    }
+
+    /// Build a validated write command for `pairing`/`value`.
+    ///
+    /// Fails if the device's function does not accept the pairing, or if
+    /// free@home rejects the value shape/range or role.
+    pub fn set_command(&self, pairing: Pairing, value: Value) -> Result<SetDatapoint> {
+        if !self.supports(pairing) {
+            return Err(FreeAtHomeError::Domain(format!(
+                "{:?} does not accept {pairing:?}",
+                self.channel.function()
+            )));
+        }
+        SetDatapoint::new(self.serial.as_str(), self.channel.id(), pairing, value)
+            .map_err(|e| FreeAtHomeError::Domain(e.to_string()))
+    }
+}
+
+impl FreeAtHomeDevice for Device {
+    fn serial(&self) -> &DeviceSerial {
+        &self.serial
+    }
+
+    fn channel(&self) -> ChannelId {
+        self.channel.id()
+    }
+
+    fn function(&self) -> Function {
+        self.channel.function()
+    }
+
+    fn friendly_name(&self) -> &str {
+        &self.name
+    }
+}
+
+/// The writable pairing roles a given function accepts.
+pub const fn writable_pairings(function: Function) -> &'static [Pairing] {
+    match function {
+        // A switch toggles on/off; a scene is "activated" via the same on write.
+        Function::SwitchActuator | Function::Scene => &[Pairing::SwitchOnOff],
+        Function::DimmingActuator => &[Pairing::SwitchOnOff, Pairing::SetBrightness],
+        Function::BlindActuator | Function::AtticBlindActuator => {
+            &[Pairing::MoveUpDown, Pairing::SetBlindPosition]
+        }
+        Function::RoomTemperatureController => &[Pairing::SetTargetTemperature],
+        Function::SwitchSensor => &[],
+    }
+}
 
 #[cfg(test)]
 mod tests {
