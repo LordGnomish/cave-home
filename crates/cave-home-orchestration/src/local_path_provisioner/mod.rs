@@ -38,14 +38,17 @@
 //!   scripts.
 //! - [`reclaim`] — the `Delete` decision: recover path + node from a PV's source
 //!   and affinity, then retain-vs-teardown by reclaim policy.
+//! - [`metrics`] — the observability descriptors (PV count by status,
+//!   provisioning latency, reconcile error rate).
 //!
-//! Further submodules (`metrics`, `report`) land in subsequent TDD cycles.
+//! Further submodules (`report`) land in subsequent TDD cycles.
 //!
 //! Like the rest of this crate it is **infrastructure**, hidden from end users
 //! (Charter §6.3, ADR-007): no user-facing strings, no i18n.
 
 pub mod config;
 pub mod helper;
+pub mod metrics;
 pub mod path;
 pub mod provision;
 pub mod reclaim;
