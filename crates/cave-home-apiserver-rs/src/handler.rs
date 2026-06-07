@@ -17,6 +17,7 @@ use crate::admission::{AdmissionChain, AdmissionRequest, Operation};
 use crate::audit::{AuditEvent, AuditSink};
 use crate::authn::{AnonymousAuthenticator, AuthenticatorChain};
 use crate::discovery::{self, ApiGroup, ApiResource, GroupVersionEntry};
+use crate::metrics::Metrics;
 use crate::gvk::{self, GroupVersionResource};
 use crate::http::{Method, Request, Response};
 use crate::json::{self, obj, Value};
@@ -54,6 +55,8 @@ pub struct ApiServer {
     pub admission: AdmissionChain,
     /// Optional audit sink; every handled request records one event when set.
     pub audit: Option<Arc<dyn AuditSink>>,
+    /// Prometheus request metrics (always on), exposed at `/metrics`.
+    pub metrics: Arc<Metrics>,
 }
 
 impl Default for ApiServer {
@@ -77,6 +80,7 @@ impl ApiServer {
             authz: Authorization::AlwaysAllow,
             admission: AdmissionChain::new(),
             audit: None,
+            metrics: Arc::new(Metrics::new()),
         }
     }
 
@@ -137,6 +141,7 @@ impl ApiServer {
             Err(s) => status_response(&s),
         };
         event.response_code = resp.status;
+        self.metrics.record_request(&event.verb, resp.status);
         if let Some(sink) = &self.audit {
             sink.record(&event);
         }
@@ -148,6 +153,13 @@ impl ApiServer {
         //    these without credentials).
         if let Some(resp) = health_endpoint(req.path()) {
             return Ok(resp);
+        }
+
+        // 0b. Metrics scrape endpoint (served before auth for node-local scraping).
+        if req.path() == "/metrics" {
+            event.verb = "get".to_string();
+            return Ok(Response::new(200)
+                .with_body("text/plain; version=0.0.4", self.metrics.to_prometheus().into_bytes()));
         }
 
         // 1. Authentication.
