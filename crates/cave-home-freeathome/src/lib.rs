@@ -35,6 +35,7 @@ pub mod config;
 pub mod core_bridge;
 pub mod device;
 pub mod error;
+mod metrics;
 pub mod mqtt_bridge;
 pub mod event;
 pub mod model;
