@@ -1,6 +1,105 @@
 //! MQTT topic names, topic filters and wildcard matching (§4.7) plus
 //! shared-subscription filter parsing (§4.8.2). Clean-room from spec.
 
+/// §4.7.3 — a Topic Name (used in PUBLISH) must be at least one
+/// character, must not contain the wildcards `+` or `#`, and must not
+/// contain the null character U+0000.
+pub fn valid_topic_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.contains('+')
+        && !name.contains('#')
+        && !name.contains('\0')
+}
+
+/// §4.7.1 — a Topic Filter (used in SUBSCRIBE) must be at least one
+/// character, contain no U+0000, and place any wildcards on their own
+/// level: `+` occupies a whole level, `#` is the final level only.
+pub fn valid_topic_filter(filter: &str) -> bool {
+    if filter.is_empty() || filter.contains('\0') {
+        return false;
+    }
+    let levels: Vec<&str> = filter.split('/').collect();
+    let last = levels.len() - 1;
+    for (i, level) in levels.iter().enumerate() {
+        if level.contains('#') {
+            // '#' must be the entire final level.
+            if *level != "#" || i != last {
+                return false;
+            }
+        }
+        if level.contains('+') && *level != "+" {
+            // '+' must occupy a whole level.
+            return false;
+        }
+    }
+    true
+}
+
+/// §4.7.1 — does `topic` (an exact Topic Name) match `filter` (which may
+/// contain wildcards)? `filter` is assumed valid. §4.7.2: a wildcard at
+/// the first level does not match a topic whose first level starts `$`.
+pub fn topic_matches(filter: &str, topic: &str) -> bool {
+    let f: Vec<&str> = filter.split('/').collect();
+    let t: Vec<&str> = topic.split('/').collect();
+
+    // §4.7.2 — leading wildcard must not match a $-topic.
+    if matches!(f.first(), Some(&"#" | &"+")) {
+        if let Some(first) = t.first() {
+            if first.starts_with('$') {
+                return false;
+            }
+        }
+    }
+
+    let mut fi = 0;
+    let mut ti = 0;
+    while fi < f.len() {
+        match f[fi] {
+            "#" => return true, // matches this level and all below, incl. none
+            "+" => {
+                if ti >= t.len() {
+                    return false;
+                }
+                fi += 1;
+                ti += 1;
+            }
+            literal => {
+                if ti >= t.len() || t[ti] != literal {
+                    return false;
+                }
+                fi += 1;
+                ti += 1;
+            }
+        }
+    }
+    ti == t.len()
+}
+
+/// A parsed shared-subscription filter (§4.8.2): `$share/{group}/{filter}`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SharedFilter {
+    pub group: String,
+    pub filter: String,
+}
+
+/// §4.8.2 — parse `$share/{ShareName}/{filter}`. Returns `None` for a
+/// non-shared filter or a malformed ShareName (empty, or containing
+/// `/`, `+` or `#`).
+pub fn parse_shared(filter: &str) -> Option<SharedFilter> {
+    let rest = filter.strip_prefix("$share/")?;
+    let slash = rest.find('/')?;
+    let group = &rest[..slash];
+    let inner = &rest[slash + 1..];
+    if group.is_empty()
+        || group.contains('+')
+        || group.contains('#')
+        || inner.is_empty()
+    {
+        return None;
+    }
+    Some(SharedFilter { group: group.to_owned(), filter: inner.to_owned() })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
