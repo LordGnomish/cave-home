@@ -11,7 +11,7 @@
 
 use crate::apis::{
     selector_matches, CronJob, DaemonSet, Deployment, Endpoints, Job, LabelSelector, Namespace,
-    Node, Pod, ReplicaSet, ServiceAccount, StatefulSet,
+    Node, Pod, ReplicaSet, Service, ServiceAccount, StatefulSet,
 };
 use crate::informer::Store;
 use crate::types::Object;
@@ -152,6 +152,8 @@ pub struct Cluster {
     pub nodes: Api<Node>,
     /// Endpoints (`core/v1`).
     pub endpoints: Api<Endpoints>,
+    /// Services (`core/v1`).
+    pub services: Api<Service>,
     /// `ServiceAccounts` (`core/v1`).
     pub service_accounts: Api<ServiceAccount>,
 }
@@ -177,6 +179,7 @@ impl Cluster {
             namespaces: Api::new("ns"),
             nodes: Api::new("node"),
             endpoints: Api::new("ep"),
+            services: Api::new("svc"),
             service_accounts: Api::new("sa"),
         }
     }

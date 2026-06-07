@@ -35,7 +35,7 @@ pub use apps::{
 pub use batch::{ConcurrencyPolicy, CronJob, CronJobSpec, Job, JobSpec, JobStatus};
 pub use client::{Api, Cluster};
 pub use core::{
-    Endpoints, Namespace, Node, NodeCondition, Pod, PodPhase, PodStatus, PodTemplateSpec,
+    Endpoints, Namespace, Node, NodeCondition, Pod, PodPhase, PodStatus, PodTemplateSpec, Service,
     ServiceAccount,
 };
 

@@ -193,6 +193,33 @@ impl Object for Endpoints {
     }
 }
 
+/// A `Service` (`core/v1` `Service` subset): a name + pod selector. The
+/// Endpoints controller turns its selector into a backing address set.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Service {
+    /// Object metadata.
+    pub meta: ObjectMeta,
+    /// Selector identifying the pods that back this service.
+    pub selector: BTreeMap<String, String>,
+}
+
+impl Service {
+    /// A service with the given metadata and selector.
+    #[must_use]
+    pub fn new(meta: ObjectMeta, selector: BTreeMap<String, String>) -> Self {
+        Self { meta, selector }
+    }
+}
+
+impl Object for Service {
+    fn meta(&self) -> &ObjectMeta {
+        &self.meta
+    }
+    fn meta_mut(&mut self) -> &mut ObjectMeta {
+        &mut self.meta
+    }
+}
+
 /// A `ServiceAccount` (`core/v1` `ServiceAccount` subset).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ServiceAccount {
