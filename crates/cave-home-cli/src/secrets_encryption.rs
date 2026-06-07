@@ -10,8 +10,54 @@
 //! rather than a stub. The live datastore/apiserver wiring that would feed it a
 //! running keyring is ADR-004 phase-1b.
 
-// ── RED (TDD) ────────────────────────────────────────────────────────────────
-// Failing tests first; implementation lands in the paired `feat` commit.
+use cave_home_orchestration::secrets_encryption::status::EncryptionStatus;
+
+/// The command path this surface lives under.
+#[must_use]
+pub const fn command_path() -> &'static str {
+    "orchestration secrets encryption"
+}
+
+/// The leaf subcommands under [`command_path`].
+#[must_use]
+pub fn subcommands() -> Vec<&'static str> {
+    vec!["status", "rotate-keys"]
+}
+
+/// Render the `status` output from the backend view-model.
+#[must_use]
+pub fn render_status(status: &EncryptionStatus) -> String {
+    let state = if status.enabled { "enabled" } else { "disabled" };
+    format!(
+        "Secrets encryption-at-rest\n  \
+         status:    {state}\n  \
+         algorithm: {}\n  \
+         write key: {}\n  \
+         keys:      {} ({} retained read-only)\n  \
+         rotation:  {:?}\n",
+        status.algorithm,
+        status.write_key_id,
+        status.key_count,
+        status.read_only_key_count,
+        status.rotation_phase,
+    )
+}
+
+/// Render the result of a `rotate-keys` action — the new write key + phase.
+///
+/// `status` is the post-rotation snapshot; the runtime still has to re-encrypt
+/// every secret and prune the old keys (this surface decides + reports; the
+/// datastore re-write is ADR-004 phase-1b).
+#[must_use]
+pub fn render_rotate_keys(status: &EncryptionStatus) -> String {
+    format!(
+        "Rotated secrets encryption keys.\n  \
+         new write key: {}\n  \
+         rotation:      {:?}\n  \
+         next:          re-encrypt secrets, then prune {} stale key(s)\n",
+        status.write_key_id, status.rotation_phase, status.read_only_key_count,
+    )
+}
 
 #[cfg(test)]
 mod tests {
