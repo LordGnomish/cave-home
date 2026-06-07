@@ -123,6 +123,18 @@ pub trait Plugin {
     fn serve_dns(&self, req: &Request<'_>, next: Next<'_>) -> Outcome;
 }
 
+/// `Rc<P>` is itself a plugin, delegating to the inner plugin. This lets a
+/// caller keep a handle to a plugin (e.g. a metrics counter) while also placing
+/// it in the chain.
+impl<P: Plugin> Plugin for std::rc::Rc<P> {
+    fn name(&self) -> &'static str {
+        (**self).name()
+    }
+    fn serve_dns(&self, req: &Request<'_>, next: Next<'_>) -> Outcome {
+        (**self).serve_dns(req, next)
+    }
+}
+
 /// An assembled, ordered chain of plugins for one server block.
 #[derive(Default)]
 pub struct Chain {

@@ -221,7 +221,7 @@ mod tests {
     use crate::message::Message;
     use crate::name::Name;
     use crate::rr::{Class, Rdata, RecordType, ResourceRecord};
-    use crate::plugin::{Chain, Plugin};
+    use crate::plugin::Chain;
     use crate::wire::Rcode;
     use std::net::Ipv4Addr;
 
