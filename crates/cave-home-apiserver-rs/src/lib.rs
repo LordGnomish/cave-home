@@ -30,16 +30,37 @@
 //! - [`status`]   — the `metav1.Status` error model (code / reason / message).
 //! - [`json`]     — a small std-only JSON value tree the above operate on.
 //!
+//! ## Transport layer
+//!
+//! On top of the decision core sits the **HTTP transport** (this layer was the
+//! audit's Crit blocker):
+//!
+//! - [`http`]    — std-only HTTP/1.1 message codec (parse, serialize, chunked).
+//! - [`json::parse`] — std-only JSON request-body decoder.
+//! - [`authn`]   — authentication chain (bearer-token + anonymous → identity).
+//! - [`handler`] — [`ApiServer`]: the request pipeline
+//!   authentication → authorization → admission → storage → audit, the REST
+//!   verb surface (`get`/`list`/`create`/`update`/`patch`/`delete`/`watch`,
+//!   `/status` subresource), the discovery surface (`/api`, `/apis`,
+//!   `/api/{v}`, `/apis/{g}/{v}`), `/version`, `/openapi/v2`, the health probes
+//!   (`/healthz`, `/livez`, `/readyz`) and `/metrics`.
+//! - [`audit`]   — `audit.k8s.io/v1` event records + pluggable sink.
+//! - [`metrics`] — Prometheus exposition (`apiserver_request_total`, …).
+//! - [`storage`] — the etcd/kine KV seam ([`Backend`] + [`KineBackend`]).
+//! - [`server`]  — the std `TcpListener` socket loop ([`Server`]).
+//!
 //! ## Honest port method
 //!
 //! This is a **behavioural reimplementation of the documented Kubernetes REST
 //! semantics** (the public API conventions, label/field selector docs, RFC
-//! 7396 / RFC 6902, the admission-controller phase contract). It is **not** a
-//! verbatim line-by-line transcription of any pinned `kubernetes/kubernetes`
-//! revision. The additive RBAC authorizer is implemented here; the HTTP/2
-//! server, etcd/kine storage backend, TLS + authentication, the Node authorizer
-//! / RBAC aggregation / SubjectAccessReview surfaces, admission webhooks, CRDs,
-//! and API aggregation are deferred and enumerated in `parity.manifest.toml`.
+//! 7396 / RFC 6902, the admission-controller phase contract, RFC 9112 HTTP/1.1).
+//! It is **not** a verbatim line-by-line transcription of any pinned
+//! `kubernetes/kubernetes` revision. Still deferred and enumerated in
+//! `parity.manifest.toml`: HTTP/2 + TLS (rustls) termination (the connection
+//! handler is generic over any `Read + Write`, so TLS wraps it without touching
+//! the chain), HTTP keep-alive, mTLS/OIDC authenticators, the Node authorizer /
+//! SubjectAccessReview, admission *webhooks*, CRDs, API aggregation, and wiring
+//! [`Backend`] in as the registry's persistence layer.
 //!
 //! ## Example
 //!
@@ -92,7 +113,14 @@ pub use admission::{
     AdmissionChain, AdmissionRequest, DefaultFields, MutatingPlugin, NamespaceExists, Operation,
     RequireName, ValidatingPlugin,
 };
+pub use audit::{AuditEvent, AuditSink, MemoryAuditSink, NoopAuditSink};
+pub use authn::{AnonymousAuthenticator, Authenticator, AuthenticatorChain, TokenAuthenticator};
 pub use discovery::{ApiGroup, ApiResource, GroupVersionEntry};
+pub use handler::{ApiServer, Authorization};
+pub use http::{Headers, Method, Request, Response};
+pub use metrics::Metrics;
+pub use server::{read_request, serve_stream, Server};
+pub use storage::{registry_key, Backend, KineBackend};
 pub use gvk::{GroupVersionKind, GroupVersionResource, RegisteredKind};
 pub use json::Value;
 pub use meta::{ObjectMeta, OwnerReference};
