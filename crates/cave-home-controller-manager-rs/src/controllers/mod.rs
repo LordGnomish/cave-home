@@ -13,6 +13,7 @@
 //! network transport deferred.
 
 pub mod cleanup;
+pub mod deployment;
 pub mod gc;
 pub mod node_lifecycle;
 pub mod replicaset;
