@@ -10,9 +10,11 @@
 //! PostBind are deferred — see `parity.manifest.toml`.
 
 pub mod cycle_state;
+pub mod events;
 pub mod registry;
 
 pub use cycle_state::CycleState;
+pub use events::{ActionType, ClusterEvent, Gvk, WILD_CARD_EVENT};
 pub use registry::{PluginRegistry, RegistryBuilder};
 
 use crate::cache::NodeInfo;
