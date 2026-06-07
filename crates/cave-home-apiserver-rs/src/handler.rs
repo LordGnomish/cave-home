@@ -479,6 +479,9 @@ fn discovery_endpoint(path: &str) -> Option<Response> {
     if path == "/version" {
         return Some(object_response(200, &version_object()));
     }
+    if path == "/openapi/v2" {
+        return Some(object_response(200, &openapi_v2_object()));
+    }
     let segs: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
     match segs.as_slice() {
         ["api"] => Some(object_response(200, &api_versions_object())),
@@ -563,6 +566,60 @@ fn resource_list_response(group: &str, version: &str) -> Response {
             ("resources", Value::Array(items)),
         ]),
     )
+}
+
+/// Build the minimal OpenAPI v2 (Swagger 2.0) document: one collection path and
+/// one item path per registered kind, each listing the verbs it serves. Full
+/// per-field schema `definitions` are deferred (see `parity.manifest.toml`); the
+/// served surface is honest about which paths + verbs exist.
+fn openapi_v2_object() -> Value {
+    use std::collections::BTreeMap;
+
+    let mut paths: BTreeMap<String, Value> = BTreeMap::new();
+    for k in gvk::registered() {
+        let base = if k.group.is_empty() {
+            format!("/api/{}", k.version)
+        } else {
+            format!("/apis/{}/{}", k.group, k.version)
+        };
+        let (collection, item) = if k.namespaced {
+            (
+                format!("{base}/namespaces/{{namespace}}/{}", k.resource),
+                format!("{base}/namespaces/{{namespace}}/{}/{{name}}", k.resource),
+            )
+        } else {
+            (format!("{base}/{}", k.resource), format!("{base}/{}/{{name}}", k.resource))
+        };
+        paths.insert(collection, openapi_path_item(&["get", "post"], k.kind));
+        paths.insert(item, openapi_path_item(&["get", "put", "patch", "delete"], k.kind));
+    }
+
+    obj([
+        ("swagger", Value::from("2.0")),
+        (
+            "info",
+            obj([
+                ("title", Value::from("cave-home apiserver")),
+                ("version", Value::from("v1.29.0-cavehome")),
+            ]),
+        ),
+        ("paths", Value::Object(paths)),
+    ])
+}
+
+fn openapi_path_item(verbs: &[&str], kind: &str) -> Value {
+    let mut item = Value::object();
+    for verb in verbs {
+        let op = obj([
+            ("operationId", Value::from(format!("{verb}{kind}"))),
+            (
+                "responses",
+                obj([("200", obj([("description", Value::from("OK"))]))]),
+            ),
+        ]);
+        item.insert((*verb).to_string(), op);
+    }
+    item
 }
 
 /// The `/version` payload (`version.Info`). The minor/gitVersion track the
