@@ -42,8 +42,30 @@ fn sq_euclidean(a: &[f32], b: &[f32]) -> f32 {
 /// of different durations are comparable. Returns [`f32::INFINITY`] if either
 /// sequence is empty.
 #[must_use]
-pub fn dtw_distance(_query: &[Vec<f32>], _template: &[Vec<f32>]) -> f32 {
-    f32::INFINITY // stub: DTW not yet implemented (RED)
+pub fn dtw_distance(query: &[Vec<f32>], template: &[Vec<f32>]) -> f32 {
+    if query.is_empty() || template.is_empty() {
+        return f32::INFINITY;
+    }
+    let q: Vec<Vec<f32>> = query.iter().map(|v| l2_normalise(v)).collect();
+    let t: Vec<Vec<f32>> = template.iter().map(|v| l2_normalise(v)).collect();
+    let n = q.len();
+    let m = t.len();
+    // Rolling two-row DP over the (n+1) x (m+1) accumulated-cost matrix.
+    let mut prev = vec![f32::INFINITY; m + 1];
+    let mut curr = vec![f32::INFINITY; m + 1];
+    prev[0] = 0.0;
+    for i in 1..=n {
+        curr[0] = f32::INFINITY;
+        for j in 1..=m {
+            let cost = sq_euclidean(&q[i - 1], &t[j - 1]).sqrt();
+            let best = prev[j].min(curr[j - 1]).min(prev[j - 1]);
+            curr[j] = cost + best;
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let norm = m as f32;
+    prev[m] / norm
 }
 
 /// An enrolled keyword: a label plus the log-mel feature sequence of one spoken
@@ -122,8 +144,27 @@ impl WakeWordDetector {
     /// Test a buffered audio window against every keyword, returning the best
     /// match under threshold (if any).
     #[must_use]
-    pub fn detect(&self, _window: &[f32]) -> Option<WakeDetection> {
-        None // stub: matcher not yet implemented (RED)
+    pub fn detect(&self, window: &[f32]) -> Option<WakeDetection> {
+        let frames = self.extractor.extract(window);
+        if frames.is_empty() {
+            return None;
+        }
+        let mut best: Option<WakeDetection> = None;
+        for tpl in &self.templates {
+            let distance = dtw_distance(&frames, &tpl.frames);
+            if distance <= self.threshold {
+                let confidence = (1.0 - distance / self.threshold).clamp(0.0, 1.0);
+                let candidate = WakeDetection {
+                    keyword: tpl.keyword.clone(),
+                    distance,
+                    confidence,
+                };
+                if best.as_ref().is_none_or(|b| distance < b.distance) {
+                    best = Some(candidate);
+                }
+            }
+        }
+        best
     }
 }
 
