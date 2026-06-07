@@ -59,6 +59,7 @@
 #![allow(clippy::cast_possible_truncation)]
 
 pub mod arpa;
+pub mod builtins;
 pub mod cache;
 pub mod corefile;
 pub mod error;
@@ -73,6 +74,7 @@ pub mod rewrite;
 pub mod rr;
 pub mod wire;
 
+pub use builtins::{format_log_line, Errors, Metrics, MetricsSnapshot, Ready};
 pub use cache::{Cache, CacheKey, CachePlugin};
 pub use corefile::{Corefile, Directive, ServerBlock};
 pub use error::{Result, WireError};
