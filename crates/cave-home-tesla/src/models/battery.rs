@@ -3,6 +3,52 @@
 //
 //! The home battery state.
 
+use crate::fleet_api::types::LiveStatus;
+
+/// The home battery's energy and power state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BatteryData {
+    /// State of charge, percent.
+    pub soc_percent: f64,
+    /// Usable energy remaining, watt-hours.
+    pub energy_remaining_wh: f64,
+    /// Total usable capacity, watt-hours.
+    pub total_capacity_wh: f64,
+    /// Battery power, watts (negative = charging).
+    pub power_watts: f64,
+}
+
+impl BatteryData {
+    /// Whether the battery is charging.
+    #[must_use]
+    pub fn is_charging(&self) -> bool {
+        self.power_watts < 0.0
+    }
+
+    /// Whether the battery is discharging.
+    #[must_use]
+    pub fn is_discharging(&self) -> bool {
+        self.power_watts > 0.0
+    }
+
+    /// State of charge as a 0.0..=1.0 fraction (clamped).
+    #[must_use]
+    pub fn fraction(&self) -> f64 {
+        (self.soc_percent / 100.0).clamp(0.0, 1.0)
+    }
+}
+
+impl From<&LiveStatus> for BatteryData {
+    fn from(s: &LiveStatus) -> Self {
+        Self {
+            soc_percent: s.percentage_charged,
+            energy_remaining_wh: s.energy_left,
+            total_capacity_wh: s.total_pack_energy,
+            power_watts: s.battery_power,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

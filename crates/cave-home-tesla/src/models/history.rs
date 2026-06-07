@@ -3,6 +3,99 @@
 //
 //! A time range and the historical power series over it.
 
+use crate::error::{Result, TeslaError};
+use crate::fleet_api::types::HistorySeries;
+
+/// A closed time range, in Unix seconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DateRange {
+    /// Inclusive start, Unix seconds.
+    pub start_unix: u64,
+    /// Inclusive end, Unix seconds.
+    pub end_unix: u64,
+}
+
+impl DateRange {
+    /// A range from `start_unix` to `end_unix`.
+    ///
+    /// # Errors
+    /// [`TeslaError::Validation`] if `end_unix < start_unix`.
+    pub fn new(start_unix: u64, end_unix: u64) -> Result<Self> {
+        if end_unix < start_unix {
+            return Err(TeslaError::Validation(
+                "history range end precedes start".into(),
+            ));
+        }
+        Ok(Self { start_unix, end_unix })
+    }
+
+    /// The last `hours` ending at `now_unix`.
+    #[must_use]
+    pub const fn last_hours(now_unix: u64, hours: u64) -> Self {
+        Self {
+            start_unix: now_unix.saturating_sub(hours.saturating_mul(3_600)),
+            end_unix: now_unix,
+        }
+    }
+
+    /// The span of the range in seconds.
+    #[must_use]
+    pub const fn duration_secs(&self) -> u64 {
+        self.end_unix.saturating_sub(self.start_unix)
+    }
+}
+
+/// One historical power sample.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HistorySample {
+    /// ISO-8601 timestamp.
+    pub timestamp: String,
+    /// Solar production at the sample, watts.
+    pub pv_watts: f64,
+    /// Battery power at the sample, watts (negative = charging).
+    pub battery_watts: f64,
+    /// Grid power at the sample, watts (negative = exporting).
+    pub grid_watts: f64,
+}
+
+/// A historical power series over a range.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HistoryData {
+    /// The aggregation period (`day`, `week`, …).
+    pub period: String,
+    /// The samples, oldest first.
+    pub samples: Vec<HistorySample>,
+}
+
+impl HistoryData {
+    /// The peak solar production across the series (0 if empty).
+    #[must_use]
+    pub fn peak_pv_watts(&self) -> f64 {
+        self.samples
+            .iter()
+            .map(|s| s.pv_watts)
+            .fold(0.0, f64::max)
+    }
+}
+
+impl From<&HistorySeries> for HistoryData {
+    fn from(s: &HistorySeries) -> Self {
+        Self {
+            period: s.period.clone(),
+            samples: s
+                .time_series
+                .iter()
+                .map(|p| HistorySample {
+                    timestamp: p.timestamp.clone(),
+                    pv_watts: p.solar_power,
+                    battery_watts: p.battery_power,
+                    grid_watts: p.grid_power,
+                })
+                .collect(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -18,9 +111,16 @@ mod tests {
 
     #[test]
     fn last_hours_spans_back_from_now() {
-        let r = DateRange::last_hours(10_000, 24);
-        assert_eq!(r.end_unix, 10_000);
-        assert_eq!(r.start_unix, 10_000 - 24 * 3600);
+        let now = 1_000_000;
+        let r = DateRange::last_hours(now, 24);
+        assert_eq!(r.end_unix, now);
+        assert_eq!(r.start_unix, now - 24 * 3600);
+    }
+
+    #[test]
+    fn last_hours_saturates_at_zero() {
+        let r = DateRange::last_hours(10, 24);
+        assert_eq!(r.start_unix, 0);
     }
 
     #[test]

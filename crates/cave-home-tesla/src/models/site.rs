@@ -3,6 +3,42 @@
 //
 //! The overall energy-site status.
 
+use super::OpMode;
+use crate::fleet_api::types::{LiveStatus, SiteInfo};
+
+/// The site's overall state — the merge of a live-status sample with the site's
+/// configuration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SiteStatus {
+    /// The household-chosen site name (from `site_info`).
+    pub name: Option<String>,
+    /// Whether the site is grid-connected (grid status `Active`).
+    pub grid_connected: bool,
+    /// The microgrid island status, if reported.
+    pub island_status: Option<String>,
+    /// Whether storm watch is currently active.
+    pub storm_mode_active: bool,
+    /// The configured operation mode (from `site_info`).
+    pub op_mode: Option<OpMode>,
+    /// The configured backup reserve percent (from `site_info`).
+    pub backup_reserve_percent: Option<u8>,
+}
+
+impl SiteStatus {
+    /// Build from a live-status sample and optional site configuration.
+    #[must_use]
+    pub fn from_parts(live: &LiveStatus, info: Option<&SiteInfo>) -> Self {
+        Self {
+            name: info.and_then(|i| i.site_name.clone()),
+            grid_connected: live.grid_status.eq_ignore_ascii_case("Active"),
+            island_status: live.island_status.clone(),
+            storm_mode_active: live.storm_mode_active.unwrap_or(false),
+            op_mode: info.and_then(|i| OpMode::from_wire(&i.default_real_mode)),
+            backup_reserve_percent: info.map(|i| i.backup_reserve_percent),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::OpMode;

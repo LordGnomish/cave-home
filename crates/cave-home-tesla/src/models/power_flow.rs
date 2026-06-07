@@ -3,6 +3,77 @@
 //
 //! The instantaneous home power flow.
 
+use crate::fleet_api::types::LiveStatus;
+
+/// A snapshot of where power is flowing right now.
+///
+/// All fields are watts except `soc_percent`. Sign conventions follow Tesla:
+/// `battery_watts` is negative while charging, `grid_watts` is negative while
+/// exporting.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PowerFlowData {
+    /// Solar production.
+    pub pv_watts: f64,
+    /// Battery power (negative = charging).
+    pub battery_watts: f64,
+    /// House load.
+    pub load_watts: f64,
+    /// Grid power (negative = exporting).
+    pub grid_watts: f64,
+    /// State of charge, percent.
+    pub soc_percent: f64,
+}
+
+impl PowerFlowData {
+    /// Whether the home is drawing from the grid.
+    #[must_use]
+    pub fn grid_importing(&self) -> bool {
+        self.grid_watts > 0.0
+    }
+
+    /// Whether the home is exporting to the grid.
+    #[must_use]
+    pub fn grid_exporting(&self) -> bool {
+        self.grid_watts < 0.0
+    }
+
+    /// Grid import, watts (0 when exporting).
+    #[must_use]
+    pub const fn grid_import_watts(&self) -> f64 {
+        self.grid_watts.max(0.0)
+    }
+
+    /// Grid export, watts (0 when importing).
+    #[must_use]
+    pub fn grid_export_watts(&self) -> f64 {
+        (-self.grid_watts).max(0.0)
+    }
+
+    /// Whether the battery is charging.
+    #[must_use]
+    pub fn battery_charging(&self) -> bool {
+        self.battery_watts < 0.0
+    }
+
+    /// Whether the battery is discharging.
+    #[must_use]
+    pub fn battery_discharging(&self) -> bool {
+        self.battery_watts > 0.0
+    }
+}
+
+impl From<&LiveStatus> for PowerFlowData {
+    fn from(s: &LiveStatus) -> Self {
+        Self {
+            pv_watts: s.solar_power,
+            battery_watts: s.battery_power,
+            load_watts: s.load_power,
+            grid_watts: s.grid_power,
+            soc_percent: s.percentage_charged,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
