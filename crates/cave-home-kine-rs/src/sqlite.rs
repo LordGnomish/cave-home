@@ -447,6 +447,8 @@ impl SqliteStore {
                     kind: if deleted { EventKind::Delete } else { EventKind::Put },
                     key: r.get::<_, String>(3)?.into_bytes(),
                     value: r.get(9)?,
+                    // projection index 10 is kv.old_value — the prev_kv value.
+                    prev_value: r.get(10)?,
                     revision: r.get(2)?,
                     create_revision: r.get(6)?,
                 })

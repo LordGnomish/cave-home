@@ -1285,6 +1285,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn watch_stream_attaches_prev_kv_on_update_but_not_on_create() {
+        use tokio_stream::StreamExt;
+        let s = server();
+        s.put(Request::new(put_req(b"/ns/k", b"v1"))).await.unwrap(); // rev 1 create
+        s.put(Request::new(put_req(b"/ns/k", b"v2"))).await.unwrap(); // rev 2 update (old v1)
+
+        let mut create = watch_create(b"/ns/", 1); // replay rev 1.. with prev_kv
+        create.prev_kv = true;
+        let mut stream = Box::pin(s.watch_stream(create));
+        let _created = stream.next().await.unwrap().unwrap();
+        let batch = stream.next().await.unwrap().unwrap();
+
+        let ev_create = batch.events.iter().find(|e| e.kv.as_ref().unwrap().mod_revision == 1).unwrap();
+        assert!(ev_create.prev_kv.is_none(), "a create has no previous kv");
+        let ev_update = batch.events.iter().find(|e| e.kv.as_ref().unwrap().mod_revision == 2).unwrap();
+        assert_eq!(ev_update.prev_kv.as_ref().unwrap().value, b"v1");
+    }
+
+    #[tokio::test]
+    async fn watch_stream_cancel_request_ends_with_a_canceled_response() {
+        use tokio_stream::StreamExt;
+        let s = server();
+        s.put(Request::new(put_req(b"/ns/k", b"v"))).await.unwrap();
+        let cancel = WatchRequest {
+            request_union: Some(watch_request::RequestUnion::CancelRequest(
+                super::etcdserverpb::WatchCancelRequest { watch_id: 7 },
+            )),
+        };
+        let inbound = tokio_stream::iter(vec![Ok::<_, Status>(cancel)]);
+        let mut stream = Box::pin(s.watch_stream_with(watch_create(b"/ns/", 1), inbound));
+
+        let created = stream.next().await.unwrap().unwrap();
+        assert!(created.created);
+        // Drain until the cancellation marker arrives, then the stream ends.
+        let canceled = loop {
+            let r = stream.next().await.unwrap().unwrap();
+            if r.canceled {
+                break r;
+            }
+        };
+        assert!(canceled.canceled);
+        assert_eq!(canceled.watch_id, 7);
+        assert!(stream.next().await.is_none(), "stream terminates after cancel");
+    }
+
+    #[tokio::test]
+    async fn watch_stream_progress_notify_emits_an_empty_progress_response_when_idle() {
+        use tokio_stream::StreamExt;
+        let s = server(); // empty store: no events will ever fire
+        let inbound = tokio_stream::iter(Vec::<Result<WatchRequest, Status>>::new());
+        let mut create = watch_create(b"/ns/", 0); // from now; nothing happens
+        create.progress_notify = true;
+        let mut stream = Box::pin(s.watch_stream_with(create, inbound));
+
+        let created = stream.next().await.unwrap().unwrap();
+        assert!(created.created);
+        // A progress notification: not created, not canceled, no events, carries
+        // the current revision so the watcher can advance its checkpoint.
+        let progress = stream.next().await.unwrap().unwrap();
+        assert!(!progress.created);
+        assert!(!progress.canceled);
+        assert!(progress.events.is_empty());
+        assert_eq!(progress.watch_id, 7);
+    }
+
+    #[tokio::test]
     async fn watch_stream_filters_to_its_prefix() {
         use tokio_stream::StreamExt;
         let s = server();
