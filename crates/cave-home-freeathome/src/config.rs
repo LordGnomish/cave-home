@@ -8,6 +8,12 @@
 //!
 //! The host is normalised: any `http(s)://` scheme prefix and trailing slash are
 //! stripped so callers may pass either a bare IP/hostname or a full URL.
+//!
+//! By default the API lives at `https://<host>` (the SysAP serves TLS). An
+//! explicit [`ClientConfig::with_origin`] override points the client at a full
+//! origin instead — `http://host:port` for a reverse-proxied SysAP, or a local
+//! mock server in tests. The WebSocket scheme follows the origin's: `http` →
+//! `ws`, `https` → `wss`.
 
 use crate::auth::AuthMethod;
 
@@ -17,6 +23,7 @@ pub struct ClientConfig {
     host: String,
     auth: AuthMethod,
     insecure_tls: bool,
+    origin: Option<String>,
 }
 
 impl ClientConfig {
@@ -26,7 +33,21 @@ impl ClientConfig {
             host: normalise_host(host.as_ref()),
             auth,
             insecure_tls: false,
+            origin: None,
         }
+    }
+
+    /// Override the API origin (scheme + host + optional port).
+    ///
+    /// Pass a full origin such as `http://127.0.0.1:8080` or
+    /// `https://sysap.lan:443`. The REST base and WebSocket URL are derived from
+    /// it (the WS scheme follows the origin's `http`/`https`), overriding the
+    /// default `https://<host>` derivation. Useful behind a reverse proxy and
+    /// for pointing the client at a local mock SysAP in tests.
+    #[must_use]
+    pub fn with_origin(mut self, origin: impl Into<String>) -> Self {
+        self.origin = Some(origin.into());
+        self
     }
 
     /// Accept a self-signed SysAP certificate (LAN deployments ship one).
@@ -55,12 +76,34 @@ impl ClientConfig {
 
     /// The REST API base URL, e.g. `https://<host>/fhapi/v1/api/rest`.
     pub fn rest_base_url(&self) -> String {
-        format!("https://{}/fhapi/v1/api/rest", self.host)
+        format!("{}/fhapi/v1/api/rest", self.http_origin())
     }
 
     /// The WebSocket URL, e.g. `wss://<host>/fhapi/v1/api/ws`.
     pub fn ws_url(&self) -> String {
-        format!("wss://{}/fhapi/v1/api/ws", self.host)
+        format!("{}/fhapi/v1/api/ws", self.ws_origin())
+    }
+
+    /// The HTTP(S) origin REST calls hang off — the override, or `https://<host>`.
+    fn http_origin(&self) -> String {
+        match &self.origin {
+            Some(o) => o.trim_end_matches('/').to_string(),
+            None => format!("https://{}", self.host),
+        }
+    }
+
+    /// The WS(S) origin the live socket hangs off, with the scheme mapped from
+    /// the HTTP origin (`http` → `ws`, `https` → `wss`).
+    fn ws_origin(&self) -> String {
+        let http = self.http_origin();
+        if let Some(rest) = http.strip_prefix("https://") {
+            format!("wss://{rest}")
+        } else if let Some(rest) = http.strip_prefix("http://") {
+            format!("ws://{rest}")
+        } else {
+            // No recognised scheme: default to secure WS on the bare origin.
+            format!("wss://{http}")
+        }
     }
 }
 
