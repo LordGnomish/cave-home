@@ -92,9 +92,7 @@ impl Device {
     /// [`Pairing::InfoCurrentTemperature`]. A scene reports no live state.
     const fn primary_info_pairing(&self) -> Option<Pairing> {
         match self.channel.function().device_kind() {
-            DeviceKind::Light | DeviceKind::Switch | DeviceKind::Sensor => {
-                Some(Pairing::InfoOnOff)
-            }
+            DeviceKind::Light | DeviceKind::Switch | DeviceKind::Sensor => Some(Pairing::InfoOnOff),
             DeviceKind::Cover => Some(Pairing::InfoBlindPosition),
             DeviceKind::Climate => Some(Pairing::InfoCurrentTemperature),
             DeviceKind::Scene => None,

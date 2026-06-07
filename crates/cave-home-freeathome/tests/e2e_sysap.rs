@@ -78,8 +78,8 @@ fn devicelist_json() -> String {
 }
 
 fn client_for(origin: &str) -> FreeAtHomeClient {
-    let config =
-        ClientConfig::new("unused.host", AuthMethod::basic("installer", "secret")).with_origin(origin);
+    let config = ClientConfig::new("unused.host", AuthMethod::basic("installer", "secret"))
+        .with_origin(origin);
     FreeAtHomeClient::new(config).expect("client builds")
 }
 
@@ -144,13 +144,17 @@ async fn rest_read_and_write_datapoint_e2e() {
 
     // Read odp0000 → "1".
     Mock::given(method("GET"))
-        .and(path("/fhapi/v1/api/rest/datapoint/ABB700C12345/ch0000/odp0000"))
+        .and(path(
+            "/fhapi/v1/api/rest/datapoint/ABB700C12345/ch0000/odp0000",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string("1"))
         .mount(&server)
         .await;
     // Write idp0000 = "0", asserting the PUT body.
     Mock::given(method("PUT"))
-        .and(path("/fhapi/v1/api/rest/datapoint/ABB700C12345/ch0000/idp0000"))
+        .and(path(
+            "/fhapi/v1/api/rest/datapoint/ABB700C12345/ch0000/idp0000",
+        ))
         .and(body_string("0"))
         .respond_with(ResponseTemplate::new(200).set_body_string("OK"))
         .mount(&server)
@@ -191,7 +195,10 @@ async fn rest_unauthorized_is_auth_error_and_counted() {
         .await;
 
     let client = client_for(&server.uri());
-    let err = client.device_list().await.expect_err("should be unauthorized");
+    let err = client
+        .device_list()
+        .await
+        .expect_err("should be unauthorized");
     assert!(
         matches!(err, cave_home_freeathome::FreeAtHomeError::Auth(_)),
         "expected auth error, got {err:?}"
