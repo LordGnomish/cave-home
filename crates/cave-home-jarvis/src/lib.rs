@@ -46,6 +46,8 @@ pub mod dispatch;
 pub mod error;
 pub mod features;
 pub mod llm;
+pub mod profile;
+pub mod room;
 pub mod stt;
 pub mod tools;
 pub mod tts;
