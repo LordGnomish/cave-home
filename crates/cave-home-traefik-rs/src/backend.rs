@@ -42,7 +42,28 @@ impl std::error::Error for BackendError {}
 /// Returns [`BackendError`] if the server URL has no authority or the assembled
 /// URI does not parse.
 pub fn upstream_uri(server_url: &str, path: &str, query: Option<&str>) -> Result<Uri, BackendError> {
-    unimplemented!()
+    let normalized = if server_url.contains("://") {
+        server_url.to_string()
+    } else {
+        format!("http://{server_url}")
+    };
+    let base: Uri = normalized
+        .parse()
+        .map_err(|_| BackendError::InvalidServer(server_url.to_string()))?;
+    let scheme = base.scheme_str().unwrap_or("http");
+    let authority = base
+        .authority()
+        .ok_or_else(|| BackendError::InvalidServer(server_url.to_string()))?
+        .as_str();
+
+    let path_and_query = match query {
+        Some(q) if !q.is_empty() => format!("{path}?{q}"),
+        _ => path.to_string(),
+    };
+    let target = format!("{scheme}://{authority}{path_and_query}");
+    target
+        .parse()
+        .map_err(|_| BackendError::InvalidTarget(target))
 }
 
 #[cfg(test)]

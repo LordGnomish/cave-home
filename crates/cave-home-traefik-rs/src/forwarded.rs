@@ -25,20 +25,42 @@ const HOP_BY_HOP: &[&str] = &[
 /// Whether `name` is one of the fixed hop-by-hop headers.
 #[must_use]
 pub fn is_hop_by_hop(name: &str) -> bool {
-    unimplemented!()
+    let lower = name.to_ascii_lowercase();
+    HOP_BY_HOP.contains(&lower.as_str())
 }
 
 /// Build the next `X-Forwarded-For` value: the existing chain (if any) with
 /// `client_ip` appended, comma-separated per RFC 7239 conventions.
 #[must_use]
 pub fn xff_chain(existing: Option<&str>, client_ip: &str) -> String {
-    unimplemented!()
+    existing
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map_or_else(|| client_ip.to_string(), |prev| format!("{prev}, {client_ip}"))
 }
 
 /// Remove every hop-by-hop header from `headers`, including the per-connection
 /// headers named as tokens in the `Connection` header itself (RFC 7230 §6.1).
 pub fn strip_hop_by_hop(headers: &mut HeaderMap) {
-    unimplemented!()
+    // Collect the per-connection header names listed in `Connection` before we
+    // remove anything, so `Connection: X-Custom` also drops `X-Custom`.
+    let mut extra: Vec<String> = Vec::new();
+    for v in headers.get_all(http::header::CONNECTION) {
+        if let Ok(s) = v.to_str() {
+            for tok in s.split(',') {
+                let tok = tok.trim();
+                if !tok.is_empty() {
+                    extra.push(tok.to_ascii_lowercase());
+                }
+            }
+        }
+    }
+    for name in HOP_BY_HOP {
+        headers.remove(*name);
+    }
+    for name in extra {
+        headers.remove(name.as_str());
+    }
 }
 
 /// A description of the inbound connection, used to set the `X-Forwarded-*`
@@ -58,7 +80,26 @@ pub struct Forwarded {
 impl Forwarded {
     /// Set / append the `X-Forwarded-*` and `X-Real-Ip` headers on `headers`.
     pub fn apply(&self, headers: &mut HeaderMap) {
-        unimplemented!()
+        let existing_xff = headers
+            .get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned);
+        let chain = xff_chain(existing_xff.as_deref(), &self.client_ip);
+        set_header(headers, "x-forwarded-for", &chain);
+        set_header(headers, "x-forwarded-proto", &self.proto);
+        set_header(headers, "x-forwarded-host", &self.host);
+        if let Some(port) = self.port {
+            set_header(headers, "x-forwarded-port", &port.to_string());
+        }
+        set_header(headers, "x-real-ip", &self.client_ip);
+    }
+}
+
+/// Insert (replacing) a header by lower-case name; silently skip values that
+/// are not valid header content rather than failing the whole proxy hop.
+fn set_header(headers: &mut HeaderMap, name: &'static str, value: &str) {
+    if let Ok(v) = HeaderValue::from_str(value) {
+        headers.insert(HeaderName::from_static(name), v);
     }
 }
 
