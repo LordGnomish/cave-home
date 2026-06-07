@@ -50,8 +50,14 @@ fn success_outcome_updates_counters_and_latency() {
 #[test]
 fn failure_outcome_counts_as_error_and_bumps_consecutive() {
     let mut s = Scraper::new(cfg(1_000));
-    s.record("hub-1", ScrapeOutcome::failure(0, 800, ScrapeFailure::Timeout));
-    s.record("hub-1", ScrapeOutcome::failure(1_000, 900, ScrapeFailure::Unreachable));
+    s.record(
+        "hub-1",
+        ScrapeOutcome::failure(0, 800, ScrapeFailure::Timeout),
+    );
+    s.record(
+        "hub-1",
+        ScrapeOutcome::failure(1_000, 900, ScrapeFailure::Unreachable),
+    );
     assert_eq!(s.total_scrapes(), 2);
     assert_eq!(s.total_errors(), 2);
     assert_eq!(s.error_rate(), 1.0);
@@ -62,7 +68,10 @@ fn failure_outcome_counts_as_error_and_bumps_consecutive() {
 #[test]
 fn success_resets_consecutive_errors() {
     let mut s = Scraper::new(cfg(1_000));
-    s.record("hub-1", ScrapeOutcome::failure(0, 10, ScrapeFailure::Decode));
+    s.record(
+        "hub-1",
+        ScrapeOutcome::failure(0, 10, ScrapeFailure::Decode),
+    );
     s.record("hub-1", ScrapeOutcome::success(1_000, 20));
     let st = s.node_state("hub-1").expect("known node");
     assert_eq!(st.consecutive_errors, 0);

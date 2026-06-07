@@ -23,6 +23,8 @@
 //! - [`store`] — the in-memory ring-buffer point storage and the cumulative-
 //!   counter → CPU-rate computation (`storage/point.go`), with counter-reset and
 //!   zero-window rejection.
+//! - [`scraper`] — the scrape scheduling decision (interval gating) and the
+//!   per-node latency / error accounting that the observability track exports.
 //!
 //! # Scope (honest)
 //!
@@ -34,9 +36,11 @@
 //! runtime-bound (ADR-004 phase-1b) and enumerated in `parity.manifest.toml`.
 
 pub mod quantity;
+pub mod scraper;
 pub mod store;
 pub mod summary;
 
 pub use quantity::{Quantity, ResourceList};
+pub use scraper::{ScrapeConfig, ScrapeFailure, ScrapeOutcome, ScrapeResult, Scraper};
 pub use store::{PointRing, RateError, Storage, Usage};
 pub use summary::{MetricsPoint, Summary};
