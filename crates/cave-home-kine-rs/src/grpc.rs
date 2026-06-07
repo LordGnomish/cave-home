@@ -1066,6 +1066,85 @@ mod tests {
         assert_eq!(ka.ttl, 0, "etcd keep-alive of a dead lease yields TTL 0");
     }
 
+    #[tokio::test]
+    async fn compact_retaining_drops_old_history_keeping_recent_revisions() {
+        let s = server();
+        for i in 0..6 {
+            s.put(Request::new(put_req(b"/k", format!("v{i}").as_bytes()))).await.unwrap();
+        } // revisions 1..=6, current value v5
+        // retain the last 2 revisions -> compact floor moves to 4.
+        let report = s.compact_retaining(2).await.unwrap().expect("compaction ran");
+        assert_eq!(report.compacted, 4);
+        // current state intact
+        assert_eq!(s.range(Request::new(point(b"/k"))).await.unwrap().into_inner().kvs[0].value, b"v5");
+        // a read below the new floor is now compacted-out
+        let mut at1 = point(b"/k");
+        at1.revision = 1;
+        let err = s.range(Request::new(at1)).await.unwrap_err();
+        assert_eq!(err.code(), Code::OutOfRange);
+    }
+
+    #[tokio::test]
+    async fn compact_retaining_is_a_noop_when_nothing_is_old_enough() {
+        let s = server();
+        s.put(Request::new(put_req(b"/k", b"v"))).await.unwrap(); // rev 1
+        // retaining 1000 revisions on a 1-revision store: target <= 0 -> skip.
+        assert!(s.compact_retaining(1000).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn reap_expired_leases_deletes_their_keys_and_forgets_them() {
+        let (s, now) = server_with_clock();
+        s.do_lease_grant(10, 5).await.unwrap(); // expires at 10
+        let mut p = put_req(b"/owned", b"v");
+        p.lease = 5;
+        s.put(Request::new(p)).await.unwrap();
+
+        now.store(10, std::sync::atomic::Ordering::Relaxed); // TTL elapsed
+        let deleted = s.reap_expired_leases().await.unwrap();
+        assert_eq!(deleted, 1, "the expired lease's one key is reaped");
+        assert!(s.range(Request::new(point(b"/owned"))).await.unwrap().into_inner().kvs.is_empty());
+        // the lease is gone from the registry
+        assert_eq!(s.do_lease_time_to_live(5, false).await.unwrap().ttl, -1);
+    }
+
+    #[tokio::test]
+    async fn reap_leaves_unexpired_leases_alone() {
+        let (s, now) = server_with_clock();
+        s.do_lease_grant(100, 5).await.unwrap();
+        let mut p = put_req(b"/owned", b"v");
+        p.lease = 5;
+        s.put(Request::new(p)).await.unwrap();
+        now.store(50, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(s.reap_expired_leases().await.unwrap(), 0);
+        assert_eq!(s.range(Request::new(point(b"/owned"))).await.unwrap().into_inner().kvs.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn maintenance_status_reports_a_real_db_size() {
+        let s = server();
+        s.put(Request::new(put_req(b"/k", b"v"))).await.unwrap();
+        let resp = s.status(Request::new(StatusRequest {})).await.unwrap().into_inner();
+        assert!(resp.db_size > 0, "status carries the real datastore size");
+    }
+
+    #[tokio::test]
+    async fn defragment_rpc_rebuilds_and_returns_a_header() {
+        let s = server();
+        for i in 0..50 {
+            s.put(Request::new(put_req(b"/k", format!("v{i}").as_bytes()))).await.unwrap();
+        }
+        s.compact(Request::new(CompactionRequest { revision: 40, physical: true })).await.unwrap();
+        let resp = s
+            .defragment(Request::new(super::etcdserverpb::DefragmentRequest {}))
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(resp.header.is_some());
+        // data still readable after the rebuild
+        assert_eq!(s.range(Request::new(point(b"/k"))).await.unwrap().into_inner().kvs[0].value, b"v49");
+    }
+
     fn watch_create(prefix_key: &[u8], start_revision: i64) -> WatchCreateRequest {
         WatchCreateRequest {
             key: prefix_key.to_vec(),
