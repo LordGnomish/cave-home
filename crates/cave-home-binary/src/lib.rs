@@ -48,6 +48,7 @@ pub mod lifecycle;
 pub mod node;
 pub mod server;
 pub mod shutdown;
+pub mod table;
 pub mod version;
 
 pub use bootstrap::{Plan, PlanError};

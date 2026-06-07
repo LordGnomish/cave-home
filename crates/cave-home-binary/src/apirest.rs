@@ -66,7 +66,7 @@ pub fn handle(reg: &mut Registry, req: &HttpRequest) -> HttpResponse {
     let gvr = rp.gvr();
 
     match req.method.as_str() {
-        "GET" => get_or_list(reg, &rp, &gvr),
+        "GET" => get_or_list(reg, &rp, &gvr, req.header("accept")),
         "POST" => create(reg, &rp, &gvr, req),
         "PUT" => replace(reg, &gvr, req),
         "PATCH" => patch(reg, &rp, &gvr, req),
@@ -79,12 +79,20 @@ pub fn handle(reg: &mut Registry, req: &HttpRequest) -> HttpResponse {
 }
 
 /// GET: a single named object, or a (optionally namespace-scoped) collection.
-fn get_or_list(reg: &Registry, rp: &path::ResourcePath, gvr: &gvk::GroupVersionResource) -> HttpResponse {
+///
+/// When the client's `Accept` header requests `as=Table` (what `kubectl get`
+/// sends), the result is rendered as a `meta.k8s.io/v1` Table so kubectl prints
+/// the kind's native columns; otherwise the raw object / `{Kind}List` is returned.
+fn get_or_list(reg: &Registry, rp: &path::ResourcePath, gvr: &gvk::GroupVersionResource, accept: Option<&str>) -> HttpResponse {
     if rp.is_named() && rp.subresource == "log" {
         return pod_log_response(reg, rp, gvr);
     }
+    let as_table = crate::table::wants_table(accept);
     if rp.is_named() {
         return match reg.get(gvr, &rp.namespace, &rp.name) {
+            Ok(obj) if as_table => {
+                HttpResponse::json(200, crate::table::to_table(gvr, &[obj], crate::table::now_epoch()).to_json_string())
+            }
             Ok(obj) => HttpResponse::json(200, obj.to_json_string()),
             Err(s) => status_response(&s),
         };
@@ -94,6 +102,9 @@ fn get_or_list(reg: &Registry, rp: &path::ResourcePath, gvr: &gvk::GroupVersionR
         ..ListOptions::default()
     };
     match reg.list(gvr, &opts) {
+        Ok(list) if as_table => {
+            HttpResponse::json(200, crate::table::to_table(gvr, &list.items, crate::table::now_epoch()).to_json_string())
+        }
         Ok(list) => HttpResponse::json(200, list_envelope(gvr, &list).to_json_string()),
         Err(s) => status_response(&s),
     }
@@ -129,6 +140,9 @@ fn create(reg: &mut Registry, rp: &path::ResourcePath, gvr: &gvk::GroupVersionRe
     if !rp.namespace.is_empty() {
         inject_namespace(&mut object, &rp.namespace);
     }
+    // Stamp a server-side creation time so the Age column is real (the registry,
+    // being clock-free, preserves but never sets this).
+    stamp_creation_timestamp(&mut object);
     match reg.create(gvr, object) {
         Ok(obj) => HttpResponse::json(201, obj.to_json_string()),
         Err(s) => status_response(&s),
@@ -236,6 +250,17 @@ fn inject_namespace(object: &mut Value, namespace: &str) {
         let meta = map.entry("metadata".to_string()).or_insert_with(Value::object);
         if let Value::Object(m) = meta {
             m.insert("namespace".to_string(), Value::from(namespace));
+        }
+    }
+}
+
+/// Set `metadata.creationTimestamp` to now if the body did not carry one.
+fn stamp_creation_timestamp(object: &mut Value) {
+    if let Value::Object(map) = object {
+        let meta = map.entry("metadata".to_string()).or_insert_with(Value::object);
+        if let Value::Object(m) = meta {
+            m.entry("creationTimestamp".to_string())
+                .or_insert_with(|| Value::from(crate::table::now_rfc3339()));
         }
     }
 }

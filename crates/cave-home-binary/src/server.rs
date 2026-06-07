@@ -79,7 +79,9 @@ pub fn seeded_registry(node: &LocalNode) -> SharedRegistry {
     let mut reg = Registry::new();
     let nodes = GroupVersionResource::new("", "v1", "nodes");
     // create() only fails on a duplicate; a fresh registry never has one.
-    let _ = reg.create(&nodes, node.to_object());
+    let mut node_obj = node.to_object();
+    stamp_creation(&mut node_obj);
+    let _ = reg.create(&nodes, node_obj);
     let namespaces = GroupVersionResource::new("", "v1", "namespaces");
     for ns in ["default", "kube-system", "kube-public", "kube-node-lease"] {
         let _ = reg.create(&namespaces, namespace_object(ns));
@@ -87,15 +89,30 @@ pub fn seeded_registry(node: &LocalNode) -> SharedRegistry {
     Arc::new(Mutex::new(reg))
 }
 
-/// A minimal `Namespace` object in the `Active` phase.
+/// A minimal `Namespace` object in the `Active` phase, stamped with a creation
+/// time so its Age renders.
 fn namespace_object(name: &str) -> cave_home_apiserver_rs::json::Value {
     use cave_home_apiserver_rs::json::{obj, Value};
-    obj([
+    let mut ns = obj([
         ("apiVersion", Value::from("v1")),
         ("kind", Value::from("Namespace")),
         ("metadata", obj([("name", Value::from(name))])),
         ("status", obj([("phase", Value::from("Active"))])),
-    ])
+    ]);
+    stamp_creation(&mut ns);
+    ns
+}
+
+/// Set `metadata.creationTimestamp` to now (so `kubectl get` shows a real Age).
+fn stamp_creation(object: &mut cave_home_apiserver_rs::json::Value) {
+    use cave_home_apiserver_rs::json::Value;
+    if let Value::Object(map) = object {
+        let meta = map.entry("metadata".to_string()).or_insert_with(Value::object);
+        if let Value::Object(m) = meta {
+            m.entry("creationTimestamp".to_string())
+                .or_insert_with(|| Value::from(crate::table::now_rfc3339()));
+        }
+    }
 }
 
 /// The dependency-ordered components this role brings up locally.

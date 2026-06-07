@@ -111,42 +111,25 @@ pub fn parse(path: &str) -> Result<ResourcePath, Status> {
         _ => return Err(Status::bad_request("path must start with /api or /apis")),
     };
 
-    // Optional namespaces/{ns}
-    let mut namespace = String::new();
-    let mut next = it.next();
-    if next == Some("namespaces") {
-        let ns = it
-            .next()
-            .ok_or_else(|| Status::bad_request("missing namespace name"))?;
-        // `/namespaces` alone (no resource after) addresses the namespaces
-        // collection itself; but `namespaces/{ns}` with nothing after is the
-        // single Namespace object — handle that below.
-        namespace = ns.to_string();
-        next = it.next();
-    }
-
-    let resource = match next {
-        Some(r) => r.to_string(),
-        None => {
-            // `/namespaces/{ns}` with no trailing resource: this is a GET of the
-            // single Namespace object named {ns} in the core group.
-            if !namespace.is_empty() {
-                return finish(
-                    String::new(),
-                    version,
-                    String::new(),
-                    "namespaces".to_string(),
-                    namespace,
-                    String::new(),
-                );
-            }
-            return Err(Status::bad_request("missing resource segment"));
-        }
+    // `namespaces/{ns}/{resource}...` is namespace-scoping ONLY when a resource
+    // follows the namespace name. `namespaces` (collection list) and
+    // `namespaces/{name}` (single object get) address the namespaces resource
+    // itself — `namespaces` is both the scoping keyword and a cluster-scoped
+    // resource, and the trailing segment count disambiguates them.
+    let rest: Vec<&str> = it.collect();
+    let (namespace, tail): (String, &[&str]) = if rest.first() == Some(&"namespaces") && rest.len() >= 3 {
+        (rest[1].to_string(), &rest[2..])
+    } else {
+        (String::new(), rest.as_slice())
     };
 
-    let name = it.next().unwrap_or_default().to_string();
-    let subresource = it.next().unwrap_or_default().to_string();
-    if it.next().is_some() {
+    let resource = match tail.first() {
+        Some(r) => (*r).to_string(),
+        None => return Err(Status::bad_request("missing resource segment")),
+    };
+    let name = tail.get(1).copied().unwrap_or_default().to_string();
+    let subresource = tail.get(2).copied().unwrap_or_default().to_string();
+    if tail.len() > 3 {
         return Err(Status::bad_request("path has trailing segments"));
     }
 
@@ -232,6 +215,26 @@ mod tests {
         assert_eq!(p.resource, "namespaces");
         assert_eq!(p.name, "kube-system");
         assert_eq!(p.namespace, "");
+    }
+
+    #[test]
+    fn parse_namespaces_collection() {
+        // `/api/v1/namespaces` lists the namespaces resource itself — it must not
+        // be mistaken for the `namespaces/{ns}` scoping prefix.
+        let p = parse("/api/v1/namespaces").expect("parse");
+        assert_eq!(p.resource, "namespaces");
+        assert_eq!(p.name, "");
+        assert_eq!(p.namespace, "");
+        assert!(!p.is_named());
+    }
+
+    #[test]
+    fn parse_namespaced_pods_collection_still_scopes() {
+        // The scoping form keeps working: a resource after the namespace name.
+        let p = parse("/api/v1/namespaces/default/pods").expect("parse");
+        assert_eq!(p.namespace, "default");
+        assert_eq!(p.resource, "pods");
+        assert_eq!(p.name, "");
     }
 
     #[test]
