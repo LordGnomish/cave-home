@@ -508,6 +508,22 @@ mod tests {
     }
 
     #[test]
+    fn json_patch_replaces_field() {
+        let mut s = ApiServer::new();
+        let with_spec = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default"},"spec":{"replicas":1}}"#;
+        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", with_spec));
+        let resp = s.handle(&req(
+            "PATCH",
+            "/api/v1/namespaces/default/pods/nginx",
+            "application/json-patch+json",
+            r#"[{"op":"replace","path":"/spec/replicas","value":7}]"#,
+        ));
+        assert_eq!(resp.status, 200);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert_eq!(v.pointer("spec.replicas"), Some(&Value::from(7_i64)));
+    }
+
+    #[test]
     fn delete_returns_200_and_removes() {
         let mut s = ApiServer::new();
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));

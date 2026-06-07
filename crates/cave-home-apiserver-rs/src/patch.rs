@@ -347,4 +347,49 @@ mod tests {
         let out = apply_json_patch(&target, &ops).expect("patch");
         assert_eq!(out, Value::from("whole"));
     }
+
+    // --- ops_from_json (decode an RFC 6902 op array from a request body) -----
+
+    #[test]
+    fn ops_from_json_decodes_all_op_kinds() {
+        let doc = crate::json::parse(
+            r#"[
+                {"op":"add","path":"/metadata/labels/x","value":"1"},
+                {"op":"replace","path":"/spec/replicas","value":3},
+                {"op":"remove","path":"/status"},
+                {"op":"test","path":"/kind","value":"Pod"}
+            ]"#,
+        )
+        .expect("json");
+        let ops = ops_from_json(&doc).expect("ops");
+        assert_eq!(ops.len(), 4);
+        assert_eq!(
+            ops[0],
+            PatchOp::Add { path: "/metadata/labels/x".into(), value: Value::from("1") }
+        );
+        assert_eq!(
+            ops[1],
+            PatchOp::Replace { path: "/spec/replicas".into(), value: Value::from(3_i64) }
+        );
+        assert_eq!(ops[2], PatchOp::Remove { path: "/status".into() });
+        assert_eq!(
+            ops[3],
+            PatchOp::Test { path: "/kind".into(), value: Value::from("Pod") }
+        );
+    }
+
+    #[test]
+    fn ops_from_json_rejects_non_array() {
+        assert!(ops_from_json(&obj([("op", Value::from("add"))])).is_err());
+    }
+
+    #[test]
+    fn ops_from_json_rejects_unknown_op_and_missing_path() {
+        assert!(ops_from_json(&Value::Array(vec![obj([
+            ("op", Value::from("frobnicate")),
+            ("path", Value::from("/x")),
+        ])]))
+        .is_err());
+        assert!(ops_from_json(&Value::Array(vec![obj([("op", Value::from("add"))])])).is_err());
+    }
 }
