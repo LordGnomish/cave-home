@@ -641,6 +641,96 @@ mod tests {
         assert_eq!(resp.status, 403);
     }
 
+    // --- non-resource endpoints: health, discovery, version ----------------
+
+    #[test]
+    fn health_probes_return_ok() {
+        let mut s = ApiServer::new();
+        for path in ["/healthz", "/livez", "/readyz"] {
+            let resp = s.handle(&req("GET", path, "text/plain", ""));
+            assert_eq!(resp.status, 200, "{path}");
+            assert_eq!(body_str(&resp), "ok", "{path}");
+        }
+    }
+
+    #[test]
+    fn health_probes_need_no_auth() {
+        // Even with anonymous disabled, health is reachable (probes are unauthenticated).
+        let authn = AuthenticatorChain::new()
+            .with(Box::new(TokenAuthenticator::new().with_token("t", UserInfo::new("u"))))
+            .allow_anonymous(false);
+        let mut s = ApiServer::new().with_authn(authn);
+        let resp = s.handle(&req("GET", "/healthz", "text/plain", ""));
+        assert_eq!(resp.status, 200);
+    }
+
+    #[test]
+    fn api_discovery_lists_core_version() {
+        let mut s = ApiServer::new();
+        let resp = s.handle(&req("GET", "/api", "application/json", ""));
+        assert_eq!(resp.status, 200);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert_eq!(v.pointer("kind"), Some(&Value::from("APIVersions")));
+        let versions = v.pointer("versions").and_then(Value::as_array).expect("versions");
+        assert!(versions.contains(&Value::from("v1")));
+    }
+
+    #[test]
+    fn apis_discovery_lists_groups() {
+        let mut s = ApiServer::new();
+        let resp = s.handle(&req("GET", "/apis", "application/json", ""));
+        assert_eq!(resp.status, 200);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert_eq!(v.pointer("kind"), Some(&Value::from("APIGroupList")));
+        let groups = v.pointer("groups").and_then(Value::as_array).expect("groups");
+        let names: Vec<&str> = groups.iter().filter_map(|g| g.pointer("name").and_then(Value::as_str)).collect();
+        assert!(names.contains(&"apps"));
+        assert!(names.contains(&"batch"));
+    }
+
+    #[test]
+    fn core_resource_list_includes_pods() {
+        let mut s = ApiServer::new();
+        let resp = s.handle(&req("GET", "/api/v1", "application/json", ""));
+        assert_eq!(resp.status, 200);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert_eq!(v.pointer("kind"), Some(&Value::from("APIResourceList")));
+        assert_eq!(v.pointer("groupVersion"), Some(&Value::from("v1")));
+        let resources = v.pointer("resources").and_then(Value::as_array).expect("resources");
+        let names: Vec<&str> = resources.iter().filter_map(|r| r.pointer("name").and_then(Value::as_str)).collect();
+        assert!(names.contains(&"pods"));
+    }
+
+    #[test]
+    fn grouped_resource_list_includes_deployments() {
+        let mut s = ApiServer::new();
+        let resp = s.handle(&req("GET", "/apis/apps/v1", "application/json", ""));
+        assert_eq!(resp.status, 200);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert_eq!(v.pointer("groupVersion"), Some(&Value::from("apps/v1")));
+        let resources = v.pointer("resources").and_then(Value::as_array).expect("resources");
+        let names: Vec<&str> = resources.iter().filter_map(|r| r.pointer("name").and_then(Value::as_str)).collect();
+        assert!(names.contains(&"deployments"));
+    }
+
+    #[test]
+    fn unknown_group_version_discovery_is_404() {
+        let mut s = ApiServer::new();
+        let resp = s.handle(&req("GET", "/apis/nope.example.com/v9", "application/json", ""));
+        assert_eq!(resp.status, 404);
+    }
+
+    #[test]
+    fn version_endpoint_reports_major_minor() {
+        let mut s = ApiServer::new();
+        let resp = s.handle(&req("GET", "/version", "application/json", ""));
+        assert_eq!(resp.status, 200);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert!(v.pointer("major").is_some());
+        assert!(v.pointer("minor").is_some());
+        assert!(v.pointer("gitVersion").and_then(Value::as_str).is_some());
+    }
+
     #[test]
     fn update_status_subresource_persists_only_status() {
         let mut s = ApiServer::new();
