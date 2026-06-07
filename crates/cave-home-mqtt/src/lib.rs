@@ -14,6 +14,7 @@
 
 #![doc(html_root_url = "https://docs.rs/cave-home-mqtt")]
 
+pub mod broker;
 pub mod codec;
 pub mod packet;
 pub mod v5;
