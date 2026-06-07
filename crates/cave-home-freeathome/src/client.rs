@@ -18,9 +18,10 @@ use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::http::header::AUTHORIZATION;
 use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest};
 
-use cave_home_free_home::{ChannelId, DatapointId, DeviceSerial};
+use cave_home_free_home::{ChannelId, DatapointId, DeviceSerial, SysAp};
 
 use crate::config::ClientConfig;
+use crate::device::Device;
 use crate::error::{FreeAtHomeError, Result};
 use crate::event::{FreeAtHomeEvent, parse_ws_frame};
 use crate::metrics::Metrics;
@@ -109,6 +110,18 @@ impl FreeAtHomeClient {
     /// Fetch the full SysAP configuration tree.
     pub async fn configuration(&self) -> Result<ConfigurationResponse> {
         ConfigurationResponse::parse(&self.send_rest(RestRequest::Configuration).await?)
+    }
+
+    /// Discover every device the SysAP exposes.
+    ///
+    /// Fetches the configuration tree and projects it (via the brain's topology
+    /// parser) into one typed [`Device`] per in-scope channel — actuators and
+    /// sensors alike — each carrying its function, room and last-reported state.
+    pub async fn discover(&self) -> Result<Vec<Device>> {
+        let raw = self.send_rest(RestRequest::Configuration).await?;
+        let sysap =
+            SysAp::parse_get_all(&raw).map_err(|e| FreeAtHomeError::Domain(e.to_string()))?;
+        Ok(crate::discovery::discover(&sysap))
     }
 
     /// Fetch the device list.
