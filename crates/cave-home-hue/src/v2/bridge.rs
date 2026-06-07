@@ -96,4 +96,55 @@ mod tests {
         assert_eq!(br.lights.len(), 1);
         assert_eq!(br.scenes.len(), 1);
     }
+
+    #[tokio::test]
+    async fn initialize_pulls_all_resource_controllers() {
+        let mk = |data| V2Envelope { errors: vec![], data };
+        // pop() yields the last element first; initialize() pulls in order
+        // lights, scenes, grouped_light, motion, button — so push in reverse.
+        let req = Arc::new(StubReq {
+            gets: Mutex::new(vec![
+                mk(vec![json!({
+                    "id": "btn-1",
+                    "owner": {"rid": "d1", "rtype": "device"},
+                    "metadata": {"control_id": 1},
+                    "button": {},
+                    "type": "button"
+                })]),
+                mk(vec![json!({
+                    "id": "motion-1",
+                    "owner": {"rid": "d1", "rtype": "device"},
+                    "enabled": true,
+                    "motion": {"motion_valid": false, "motion_report": null},
+                    "type": "motion"
+                })]),
+                mk(vec![json!({
+                    "id": "gl-1",
+                    "owner": {"rid": "r1", "rtype": "room"},
+                    "on": {"on": true},
+                    "type": "grouped_light"
+                })]),
+                mk(vec![json!({
+                    "id": "s1",
+                    "metadata": {"name": "Aksam"},
+                    "group": {"rid": "r1", "rtype": "room"},
+                    "actions": []
+                })]),
+                mk(vec![json!({
+                    "id": "l1",
+                    "owner": {"rid": "d1", "rtype": "device"},
+                    "on": {"on": true},
+                    "mode": "normal",
+                    "type": "light"
+                })]),
+            ]),
+        });
+        let mut br = HueBridgeV2::new("10.0.0.1".into(), "appkey".into(), req);
+        br.initialize().await.unwrap();
+        assert_eq!(br.lights.len(), 1);
+        assert_eq!(br.scenes.len(), 1);
+        assert_eq!(br.grouped_lights.len(), 1);
+        assert_eq!(br.motion.len(), 1);
+        assert_eq!(br.buttons.len(), 1);
+    }
 }

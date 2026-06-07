@@ -5,5 +5,8 @@
 //! resources + the PUT helpers that mutate the bridge.
 
 pub mod base;
+pub mod button;
+pub mod grouped_light;
 pub mod lights;
+pub mod motion;
 pub mod scenes;
