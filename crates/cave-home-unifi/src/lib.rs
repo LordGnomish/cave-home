@@ -61,6 +61,7 @@
 pub mod auth;
 pub mod console;
 pub mod error;
+pub mod metrics;
 pub mod transport;
 
 pub use auth::{Credentials, Session};
