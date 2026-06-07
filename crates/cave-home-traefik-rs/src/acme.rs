@@ -136,7 +136,10 @@ impl AcmeAccountKey {
     /// # Errors
     /// [`AcmeError::Crypto`] if key generation fails.
     pub fn generate() -> Result<Self, AcmeError> {
-        unimplemented!()
+        let rng = SystemRandom::new();
+        let pkcs8 = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, &rng)
+            .map_err(|e| AcmeError::Crypto(e.to_string()))?;
+        Self::from_pkcs8(pkcs8.as_ref())
     }
 
     /// Reconstruct an account key from its PKCS#8 bytes.
@@ -144,7 +147,11 @@ impl AcmeAccountKey {
     /// # Errors
     /// [`AcmeError::Crypto`] if the bytes are not a valid P-256 PKCS#8 key.
     pub fn from_pkcs8(pkcs8: &[u8]) -> Result<Self, AcmeError> {
-        unimplemented!()
+        let rng = SystemRandom::new();
+        let key_pair =
+            EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, pkcs8, &rng)
+                .map_err(|e| AcmeError::Crypto(e.to_string()))?;
+        Ok(Self { key_pair, pkcs8: pkcs8.to_vec(), rng })
     }
 
     /// The PKCS#8 serialization (for persistence).
@@ -153,16 +160,31 @@ impl AcmeAccountKey {
         &self.pkcs8
     }
 
+    /// The base64url EC coordinates `(x, y)` of the public key.
+    fn coordinates(&self) -> (String, String) {
+        use ring::signature::KeyPair as _;
+        // Uncompressed point: 0x04 ‖ X(32) ‖ Y(32).
+        let pk = self.key_pair.public_key().as_ref();
+        let x = URL_SAFE_NO_PAD.encode(&pk[1..33]);
+        let y = URL_SAFE_NO_PAD.encode(&pk[33..65]);
+        (x, y)
+    }
+
     /// The public JWK (`kty=EC, crv=P-256, x, y`) as a JSON value.
     #[must_use]
     pub fn jwk(&self) -> serde_json::Value {
-        unimplemented!()
+        let (x, y) = self.coordinates();
+        serde_json::json!({ "crv": "P-256", "kty": "EC", "x": x, "y": y })
     }
 
     /// The RFC 7638 JWK thumbprint: base64url(SHA-256(canonical JWK)).
     #[must_use]
     pub fn thumbprint(&self) -> String {
-        unimplemented!()
+        let (x, y) = self.coordinates();
+        // RFC 7638 canonical form: members sorted lexicographically, no space.
+        let canonical = format!(r#"{{"crv":"P-256","kty":"EC","x":"{x}","y":"{y}"}}"#);
+        let digest = Sha256::digest(canonical.as_bytes());
+        URL_SAFE_NO_PAD.encode(digest)
     }
 
     /// ES256-sign `message`, returning the raw 64-byte `r‖s` signature.
@@ -170,22 +192,25 @@ impl AcmeAccountKey {
     /// # Errors
     /// [`AcmeError::Crypto`] if signing fails.
     pub fn sign(&self, message: &[u8]) -> Result<Vec<u8>, AcmeError> {
-        unimplemented!()
+        self.key_pair
+            .sign(&self.rng, message)
+            .map(|s| s.as_ref().to_vec())
+            .map_err(|e| AcmeError::Crypto(e.to_string()))
     }
 }
 
 /// The HTTP-01 key authorization for `token`: `token.thumbprint`.
 #[must_use]
 pub fn key_authorization(token: &str, account_key: &AcmeAccountKey) -> String {
-    unimplemented!()
+    format!("{token}.{}", account_key.thumbprint())
 }
 
 /// Whether a certificate expiring at `not_after_unix` should be renewed now,
 /// given the current time and how long before expiry to renew (Traefik default:
 /// 30 days).
 #[must_use]
-pub fn needs_renewal(not_after_unix: u64, now_unix: u64, renew_before_secs: u64) -> bool {
-    unimplemented!()
+pub const fn needs_renewal(not_after_unix: u64, now_unix: u64, renew_before_secs: u64) -> bool {
+    now_unix.saturating_add(renew_before_secs) >= not_after_unix
 }
 
 /// An ACME client driving issuance over a transport.
@@ -200,7 +225,7 @@ pub struct AcmeClient<T: AcmeTransport> {
 impl<T: AcmeTransport> AcmeClient<T> {
     /// Create a client for a known directory and account key.
     #[must_use]
-    pub fn new(transport: T, directory: Directory, account_key: AcmeAccountKey) -> Self {
+    pub const fn new(transport: T, directory: Directory, account_key: AcmeAccountKey) -> Self {
         Self { transport, directory, account_key, account_url: None, nonce: None }
     }
 
@@ -218,8 +243,171 @@ impl<T: AcmeTransport> AcmeClient<T> {
         domains: &[String],
         csr_der: &[u8],
     ) -> Result<String, AcmeError> {
-        unimplemented!()
+        self.ensure_account()?;
+        let (order_url, order) = self.new_order(domains)?;
+        for authz_url in &order.authorizations {
+            self.process_authorization(authz_url)?;
+        }
+        self.finalize_and_download(&order_url, &order.finalize, csr_der)
     }
+
+    /// Fetch a fresh replay nonce, or reuse the one carried from the last POST.
+    fn take_nonce(&mut self) -> Result<String, AcmeError> {
+        if let Some(n) = self.nonce.take() {
+            return Ok(n);
+        }
+        let url = self.directory.new_nonce.clone();
+        let resp = self.transport.request("GET", &url, None)?;
+        resp.header("replay-nonce")
+            .map(str::to_owned)
+            .ok_or_else(|| AcmeError::Protocol("newNonce returned no Replay-Nonce".into()))
+    }
+
+    /// Build, sign and POST a JWS request; track the returned replay nonce.
+    fn post(&mut self, url: &str, payload: &str, use_jwk: bool) -> Result<HttpResponse, AcmeError> {
+        let nonce = self.take_nonce()?;
+        let protected = self.protected_header(url, &nonce, use_jwk)?;
+        let jws = self.build_jws(&protected, payload)?;
+        let resp = self.transport.request("POST", url, Some(&jws))?;
+        if let Some(n) = resp.header("replay-nonce") {
+            self.nonce = Some(n.to_string());
+        }
+        Ok(resp)
+    }
+
+    fn protected_header(
+        &self,
+        url: &str,
+        nonce: &str,
+        use_jwk: bool,
+    ) -> Result<String, AcmeError> {
+        let mut h = serde_json::Map::new();
+        h.insert("alg".into(), serde_json::json!("ES256"));
+        h.insert("nonce".into(), serde_json::json!(nonce));
+        h.insert("url".into(), serde_json::json!(url));
+        if use_jwk {
+            h.insert("jwk".into(), self.account_key.jwk());
+        } else {
+            let kid = self
+                .account_url
+                .clone()
+                .ok_or_else(|| AcmeError::Protocol("no registered account (kid)".into()))?;
+            h.insert("kid".into(), serde_json::json!(kid));
+        }
+        serde_json::to_string(&serde_json::Value::Object(h))
+            .map_err(|e| AcmeError::Json(e.to_string()))
+    }
+
+    fn build_jws(&self, protected_json: &str, payload: &str) -> Result<Vec<u8>, AcmeError> {
+        let b64_protected = URL_SAFE_NO_PAD.encode(protected_json.as_bytes());
+        let b64_payload = URL_SAFE_NO_PAD.encode(payload.as_bytes());
+        let signing_input = format!("{b64_protected}.{b64_payload}");
+        let signature = self.account_key.sign(signing_input.as_bytes())?;
+        let flat = serde_json::json!({
+            "protected": b64_protected,
+            "payload": b64_payload,
+            "signature": URL_SAFE_NO_PAD.encode(signature),
+        });
+        serde_json::to_vec(&flat).map_err(|e| AcmeError::Json(e.to_string()))
+    }
+
+    /// Register the account (idempotent) and capture its `kid` URL.
+    fn ensure_account(&mut self) -> Result<(), AcmeError> {
+        if self.account_url.is_some() {
+            return Ok(());
+        }
+        let url = self.directory.new_account.clone();
+        let payload = serde_json::json!({ "termsOfServiceAgreed": true }).to_string();
+        let resp = self.post(&url, &payload, true)?;
+        if resp.status >= 400 {
+            return Err(AcmeError::Protocol(format!("newAccount status {}", resp.status)));
+        }
+        let kid = resp
+            .header("location")
+            .ok_or_else(|| AcmeError::Protocol("newAccount missing Location".into()))?;
+        self.account_url = Some(kid.to_string());
+        Ok(())
+    }
+
+    fn new_order(&mut self, domains: &[String]) -> Result<(String, Order), AcmeError> {
+        let identifiers: Vec<_> = domains
+            .iter()
+            .map(|d| serde_json::json!({ "type": "dns", "value": d }))
+            .collect();
+        let url = self.directory.new_order.clone();
+        let payload = serde_json::json!({ "identifiers": identifiers }).to_string();
+        let resp = self.post(&url, &payload, false)?;
+        if resp.status >= 400 {
+            return Err(AcmeError::Protocol(format!("newOrder status {}", resp.status)));
+        }
+        let order_url = resp
+            .header("location")
+            .ok_or_else(|| AcmeError::Protocol("newOrder missing Location".into()))?
+            .to_string();
+        let order = parse_json::<Order>(&resp.body)?;
+        Ok((order_url, order))
+    }
+
+    /// Drive one authorization through its HTTP-01 challenge to `valid`.
+    fn process_authorization(&mut self, authz_url: &str) -> Result<(), AcmeError> {
+        let authz = parse_json::<Authorization>(&self.post(authz_url, "", false)?.body)?;
+        if authz.status == "valid" {
+            return Ok(());
+        }
+        let challenge = authz
+            .challenges
+            .iter()
+            .find(|c| c.kind == "http-01")
+            .ok_or_else(|| AcmeError::Protocol("no http-01 challenge offered".into()))?;
+        // The proxy serves `key_authorization` at the well-known path before we
+        // tell the server to validate; compute it to assert the token is usable.
+        let _key_auth = key_authorization(&challenge.token, &self.account_key);
+        let challenge_url = challenge.url.clone();
+        self.post(&challenge_url, "{}", false)?;
+
+        for _ in 0..16 {
+            let polled = parse_json::<Authorization>(&self.post(authz_url, "", false)?.body)?;
+            match polled.status.as_str() {
+                "valid" => return Ok(()),
+                "invalid" => return Err(AcmeError::Protocol("authorization invalid".into())),
+                _ => {}
+            }
+        }
+        Err(AcmeError::Protocol("authorization did not validate".into()))
+    }
+
+    fn finalize_and_download(
+        &mut self,
+        order_url: &str,
+        finalize_url: &str,
+        csr_der: &[u8],
+    ) -> Result<String, AcmeError> {
+        let payload =
+            serde_json::json!({ "csr": URL_SAFE_NO_PAD.encode(csr_der) }).to_string();
+        self.post(finalize_url, &payload, false)?;
+
+        for _ in 0..16 {
+            let order = parse_json::<Order>(&self.post(order_url, "", false)?.body)?;
+            match order.status.as_str() {
+                "valid" => {
+                    let cert_url = order.certificate.ok_or_else(|| {
+                        AcmeError::Protocol("valid order without certificate URL".into())
+                    })?;
+                    let cert = self.post(&cert_url, "", false)?;
+                    return String::from_utf8(cert.body)
+                        .map_err(|e| AcmeError::Protocol(e.to_string()));
+                }
+                "invalid" => return Err(AcmeError::Protocol("order invalid".into())),
+                _ => {}
+            }
+        }
+        Err(AcmeError::Protocol("order did not finalize".into()))
+    }
+}
+
+/// Parse a JSON body into `T`, mapping failures to [`AcmeError::Json`].
+fn parse_json<T: for<'de> Deserialize<'de>>(body: &[u8]) -> Result<T, AcmeError> {
+    serde_json::from_slice(body).map_err(|e| AcmeError::Json(e.to_string()))
 }
 
 #[cfg(test)]
