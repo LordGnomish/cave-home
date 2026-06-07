@@ -253,4 +253,74 @@ mod tests {
             r#""a\"b\nc""#
         );
     }
+
+    // --- parser (request-body decode) ---------------------------------------
+
+    #[test]
+    fn parse_literals() {
+        assert_eq!(parse("null").expect("null"), Value::Null);
+        assert_eq!(parse("true").expect("true"), Value::Bool(true));
+        assert_eq!(parse("false").expect("false"), Value::Bool(false));
+    }
+
+    #[test]
+    fn parse_numbers() {
+        assert_eq!(parse("42").expect("int"), Value::from(42_i64));
+        assert_eq!(parse("-7").expect("neg"), Value::from(-7_i64));
+        assert_eq!(parse("1.5").expect("float"), Value::from(1.5_f64));
+        assert_eq!(parse("1e3").expect("exp"), Value::from(1000.0_f64));
+        assert_eq!(parse("-2.5e-1").expect("exp2"), Value::from(-0.25_f64));
+    }
+
+    #[test]
+    fn parse_strings_with_escapes() {
+        assert_eq!(parse(r#""hi""#).expect("s"), Value::from("hi"));
+        assert_eq!(parse(r#""a\"b\nc""#).expect("esc"), Value::from("a\"b\nc"));
+        assert_eq!(parse(r#""A""#).expect("u"), Value::from("A"));
+        assert_eq!(parse(r#""tab\there""#).expect("t"), Value::from("tab\there"));
+    }
+
+    #[test]
+    fn parse_array_and_object_nested() {
+        let v = parse(r#"{"a":[1,2,{"b":true}],"c":null}"#).expect("nested");
+        assert_eq!(v.pointer("a").and_then(Value::as_array).map(<[_]>::len), Some(3));
+        assert_eq!(v.pointer("c"), Some(&Value::Null));
+        // index 2 of array is an object {b:true}
+        let third = &v.pointer("a").and_then(Value::as_array).unwrap()[2];
+        assert_eq!(third.pointer("b"), Some(&Value::Bool(true)));
+    }
+
+    #[test]
+    fn parse_ignores_surrounding_whitespace() {
+        assert_eq!(parse("  \n\t {\r\n }  ").expect("ws"), Value::object());
+    }
+
+    #[test]
+    fn parse_round_trips_to_json_string() {
+        for raw in [
+            r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default"},"spec":{"replicas":3}}"#,
+            r#"[1,2,3]"#,
+            r#"{"nested":{"deep":{"x":[true,false,null]}}}"#,
+        ] {
+            let v = parse(raw).expect("parse");
+            let s = v.to_json_string();
+            let v2 = parse(&s).expect("reparse");
+            assert_eq!(v, v2, "round-trip for {raw}");
+        }
+    }
+
+    #[test]
+    fn parse_rejects_trailing_garbage() {
+        assert!(parse("{} junk").is_err());
+        assert!(parse("123 456").is_err());
+    }
+
+    #[test]
+    fn parse_rejects_unterminated_and_malformed() {
+        assert!(parse(r#""no end"#).is_err());
+        assert!(parse("{\"a\":}").is_err());
+        assert!(parse("[1,]").is_err());
+        assert!(parse("").is_err());
+        assert!(parse("tru").is_err());
+    }
 }
