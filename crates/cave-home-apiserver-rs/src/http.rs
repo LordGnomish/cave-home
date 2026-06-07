@@ -96,6 +96,24 @@ impl Headers {
         self.entries.iter().find(|(k, _)| *k == want).map(|(_, v)| v.as_str())
     }
 
+    /// All values for `name`, in insertion order (case-insensitive). Used for
+    /// repeatable headers such as `X-Remote-Group`.
+    #[must_use]
+    pub fn get_all(&self, name: &str) -> Vec<&str> {
+        let want = name.to_ascii_lowercase();
+        self.entries.iter().filter(|(k, _)| *k == want).map(|(_, v)| v.as_str()).collect()
+    }
+
+    /// Remove every value for `name` (case-insensitive). Returns the number of
+    /// entries dropped. The TLS terminator uses this to strip client-supplied
+    /// front-proxy headers before injecting verified ones.
+    pub fn remove_all(&mut self, name: &str) -> usize {
+        let want = name.to_ascii_lowercase();
+        let before = self.entries.len();
+        self.entries.retain(|(k, _)| *k != want);
+        before - self.entries.len()
+    }
+
     /// Iterate all (name, value) pairs.
     pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
         self.entries.iter().map(|(k, v)| (k.as_str(), v.as_str()))
@@ -419,6 +437,18 @@ mod tests {
         assert_eq!(req.method, Method::Post);
         assert_eq!(req.headers.get("content-type"), Some("application/json"));
         assert_eq!(req.body, b"{\"kind\":\"x\"}\n");
+    }
+
+    #[test]
+    fn header_get_all_and_remove_all() {
+        let mut h = Headers::new();
+        h.insert("X-Remote-Group", "system:masters");
+        h.insert("x-remote-group", "dev");
+        h.insert("x-remote-user", "alice");
+        assert_eq!(h.get_all("X-Remote-Group"), vec!["system:masters", "dev"]);
+        assert_eq!(h.remove_all("x-remote-group"), 2);
+        assert!(h.get_all("x-remote-group").is_empty());
+        assert_eq!(h.get("x-remote-user"), Some("alice"));
     }
 
     #[test]

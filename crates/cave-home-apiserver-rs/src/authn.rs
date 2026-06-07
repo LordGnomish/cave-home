@@ -82,6 +82,44 @@ impl Authenticator for TokenAuthenticator {
     }
 }
 
+/// Authenticate from the front-proxy request headers (`X-Remote-User` +
+/// repeatable `X-Remote-Group`), the mechanism k8s calls
+/// `--requestheader-*` / the authenticating proxy.
+///
+/// **Security contract:** these headers are trusted *only* because the TLS
+/// terminator ([`crate::tls`]) strips any client-supplied `X-Remote-*` and then
+/// sets them from the verified client certificate's subject. Never place this
+/// authenticator in front of a transport that does not perform that
+/// strip-then-inject step, or a client could spoof any identity.
+#[derive(Debug, Default)]
+pub struct RequestHeaderAuthenticator;
+
+impl RequestHeaderAuthenticator {
+    /// A new authenticator.
+    #[must_use]
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Authenticator for RequestHeaderAuthenticator {
+    fn authenticate(&self, req: &Request) -> Result<Option<UserInfo>> {
+        match req.headers.get("x-remote-user") {
+            None => Ok(None),
+            Some(name) if name.is_empty() => Ok(None),
+            Some(name) => {
+                let groups = req
+                    .headers
+                    .get_all("x-remote-group")
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect();
+                Ok(Some(UserInfo { name: name.to_string(), groups }))
+            }
+        }
+    }
+}
+
 /// Always succeeds with the anonymous identity. Placed last in a chain to allow
 /// unauthenticated access; omit it to require credentials.
 #[derive(Debug, Default)]
@@ -204,6 +242,20 @@ mod tests {
         let auth = TokenAuthenticator::new().with_token("t", UserInfo::new("u"));
         // A Basic credential is simply not handled by the token authenticator.
         assert!(auth.authenticate(&req_with_auth("Basic abc")).expect("ok").is_none());
+    }
+
+    #[test]
+    fn request_header_authenticator_reads_user_and_groups() {
+        let raw = "GET /api/v1/pods HTTP/1.1\r\nX-Remote-User: alice\r\nX-Remote-Group: system:masters\r\nX-Remote-Group: dev\r\n\r\n";
+        let req = Request::parse(raw.as_bytes()).expect("parse");
+        let user = RequestHeaderAuthenticator.authenticate(&req).expect("ok").expect("some");
+        assert_eq!(user.name, "alice");
+        assert_eq!(user.groups, vec!["system:masters".to_string(), "dev".to_string()]);
+    }
+
+    #[test]
+    fn request_header_authenticator_no_header_is_no_opinion() {
+        assert!(RequestHeaderAuthenticator.authenticate(&req_no_auth()).expect("ok").is_none());
     }
 
     #[test]

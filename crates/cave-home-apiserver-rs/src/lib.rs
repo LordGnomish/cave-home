@@ -108,6 +108,8 @@ pub mod selector;
 pub mod server;
 pub mod status;
 pub mod storage;
+#[cfg(feature = "tls")]
+pub mod tls;
 pub mod webhook;
 pub mod x509;
 
@@ -116,7 +118,10 @@ pub use admission::{
     RequireName, ValidatingPlugin,
 };
 pub use audit::{AuditEvent, AuditSink, MemoryAuditSink, NoopAuditSink};
-pub use authn::{AnonymousAuthenticator, Authenticator, AuthenticatorChain, TokenAuthenticator};
+pub use authn::{
+    AnonymousAuthenticator, Authenticator, AuthenticatorChain, RequestHeaderAuthenticator,
+    TokenAuthenticator,
+};
 pub use discovery::{ApiGroup, ApiResource, GroupVersionEntry};
 pub use handler::{ApiServer, Authorization};
 pub use http::{Headers, Method, Request, Response};
