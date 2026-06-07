@@ -58,7 +58,9 @@
 // them and `usize`/`i64` indices are intentional and bounded by the protocol.
 #![allow(clippy::cast_possible_truncation)]
 
+pub mod arpa;
 pub mod error;
+pub mod hosts;
 pub mod message;
 pub mod name;
 pub mod plugin;
@@ -66,6 +68,7 @@ pub mod rr;
 pub mod wire;
 
 pub use error::{Result, WireError};
+pub use hosts::Hosts;
 pub use message::{Message, Question};
 pub use name::Name;
 pub use plugin::{Chain, Next, Outcome, Plugin, Request, ServerError};
