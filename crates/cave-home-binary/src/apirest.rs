@@ -80,6 +80,9 @@ pub fn handle(reg: &mut Registry, req: &HttpRequest) -> HttpResponse {
 
 /// GET: a single named object, or a (optionally namespace-scoped) collection.
 fn get_or_list(reg: &Registry, rp: &path::ResourcePath, gvr: &gvk::GroupVersionResource) -> HttpResponse {
+    if rp.is_named() && rp.subresource == "log" {
+        return pod_log_response(reg, rp, gvr);
+    }
     if rp.is_named() {
         return match reg.get(gvr, &rp.namespace, &rp.name) {
             Ok(obj) => HttpResponse::json(200, obj.to_json_string()),
@@ -177,6 +180,33 @@ fn remove(reg: &mut Registry, rp: &path::ResourcePath, gvr: &gvk::GroupVersionRe
         Ok((obj, _removed)) => HttpResponse::json(200, obj.to_json_string()),
         Err(s) => status_response(&s),
     }
+}
+
+/// `GET .../pods/{name}/log` → the container logs. The in-process mock CRI does
+/// not capture container stdout, so we emit honest, deterministic synthetic
+/// lines describing what the mock runtime ran (one block per container) rather
+/// than fabricating application output.
+fn pod_log_response(reg: &Registry, rp: &path::ResourcePath, gvr: &gvk::GroupVersionResource) -> HttpResponse {
+    use std::fmt::Write as _;
+    let pod = match reg.get(gvr, &rp.namespace, &rp.name) {
+        Ok(p) => p,
+        Err(s) => return status_response(&s),
+    };
+    let mut out = String::new();
+    let containers = pod.pointer("spec.containers").and_then(Value::as_array).unwrap_or(&[]);
+    if containers.is_empty() {
+        out.push_str("[cave-home mock-cri] pod has no containers\n");
+    }
+    for c in containers {
+        let name = c.get("name").and_then(Value::as_str).unwrap_or("?");
+        let image = c.get("image").and_then(Value::as_str).unwrap_or("?");
+        let _ = writeln!(out, "[cave-home mock-cri] container {name:?} (image {image}) started");
+        let _ = writeln!(
+            out,
+            "[cave-home mock-cri] the in-process mock runtime does not capture application stdout"
+        );
+    }
+    HttpResponse::text(200, out)
 }
 
 /// Parse a request body into a JSON object `Value`, mapping failures onto the
@@ -672,6 +702,25 @@ mod tests {
     fn openapi_v2_swagger_stays_absent() {
         let mut reg = Registry::new();
         assert_eq!(handle(&mut reg, &get("/openapi/v2")).status, 404);
+    }
+
+    #[test]
+    fn pod_log_returns_text_for_an_existing_pod() {
+        let mut reg = Registry::new();
+        let _ = handle(&mut reg, &req_body("POST", "/api/v1/namespaces/default/pods", "application/json", POD_JSON));
+        let resp = handle(&mut reg, &get("/api/v1/namespaces/default/pods/nginx/log"));
+        assert_eq!(resp.status, 200, "{}", String::from_utf8_lossy(&resp.body));
+        assert!(resp.headers.iter().any(|(k, v)| k == "Content-Type" && v.starts_with("text/plain")));
+        let body = String::from_utf8(resp.body).unwrap();
+        assert!(body.contains("web"), "{body}");
+        assert!(body.contains("mock-cri"), "{body}");
+    }
+
+    #[test]
+    fn pod_log_for_missing_pod_is_404() {
+        let mut reg = Registry::new();
+        let resp = handle(&mut reg, &get("/api/v1/namespaces/default/pods/ghost/log"));
+        assert_eq!(resp.status, 404);
     }
 
     #[test]

@@ -220,8 +220,9 @@ async fn serve(listener: TcpListener, registry: SharedRegistry, mut shutdown: wa
             accepted = listener.accept() => {
                 let (stream, _peer) = accepted?;
                 let reg = registry.clone();
+                let conn_shutdown = shutdown.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = handle_conn(stream, reg).await {
+                    if let Err(e) = handle_conn(stream, reg, conn_shutdown).await {
                         log_line(&format!("connection error: {e}"));
                     }
                 });
@@ -237,7 +238,15 @@ async fn serve(listener: TcpListener, registry: SharedRegistry, mut shutdown: wa
 }
 
 /// Read one HTTP request, serve it against the registry, write the response.
-async fn handle_conn(mut stream: TcpStream, registry: SharedRegistry) -> std::io::Result<()> {
+///
+/// A `?watch=true` GET is upgraded to a streaming watch ([`serve_watch`]) that
+/// holds the connection open and emits change events until the client leaves or
+/// the server shuts down; every other request is a one-shot response.
+async fn handle_conn(
+    mut stream: TcpStream,
+    registry: SharedRegistry,
+    shutdown: watch::Receiver<bool>,
+) -> std::io::Result<()> {
     let mut buf = Vec::new();
     let mut tmp = [0u8; 4096];
     loop {
@@ -258,14 +267,131 @@ async fn handle_conn(mut stream: TcpStream, registry: SharedRegistry) -> std::io
         buf.extend_from_slice(&tmp[..n]);
     }
 
-    let response = match http::HttpRequest::parse(&buf) {
-        Ok(req) => {
-            let mut reg = registry.lock().await;
-            apirest::handle(&mut reg, &req)
-        }
-        Err(_) => http::HttpResponse::text(400, "bad request"),
+    let Ok(req) = http::HttpRequest::parse(&buf) else {
+        stream.write_all(&http::HttpResponse::text(400, "bad request").to_bytes()).await?;
+        return stream.flush().await;
+    };
+
+    if is_watch_request(&req) {
+        return serve_watch(stream, &registry, &req, shutdown).await;
+    }
+
+    let response = {
+        let mut reg = registry.lock().await;
+        apirest::handle(&mut reg, &req)
     };
     stream.write_all(&response.to_bytes()).await?;
+    stream.flush().await
+}
+
+/// True for a `GET ...?watch=true` (or `watch=1`) request.
+fn is_watch_request(req: &http::HttpRequest) -> bool {
+    req.method == "GET" && matches!(query_param(&req.query, "watch"), Some("true" | "1"))
+}
+
+/// First value for `key` in a `&`-joined query string.
+fn query_param<'a>(query: &'a str, key: &str) -> Option<&'a str> {
+    query.split('&').find_map(|kv| {
+        let (k, v) = kv.split_once('=')?;
+        (k == key).then_some(v)
+    })
+}
+
+/// Stream a chunked watch response: an HTTP/1.1 `200` with `Transfer-Encoding:
+/// chunked`, then one newline-terminated `{"type":..,"object":..}` JSON frame
+/// per registry change, until the peer disconnects or the server shuts down.
+///
+/// Behavioural reference: the apiserver watch protocol (`?watch=true`, the
+/// `watch.Event` envelope). Events are sourced from the registry's own
+/// per-resource history via `watch_since`, starting at the client's
+/// `resourceVersion`, and filtered to the path's namespace/name scope.
+async fn serve_watch(
+    mut stream: TcpStream,
+    registry: &SharedRegistry,
+    req: &http::HttpRequest,
+    mut shutdown: watch::Receiver<bool>,
+) -> std::io::Result<()> {
+    use cave_home_apiserver_rs::path;
+
+    let rp = match path::parse(&req.path) {
+        Ok(rp) => rp,
+        Err(s) => {
+            let body = format!("watch rejected: {}", s.message);
+            stream.write_all(&http::HttpResponse::text(s.code, body).to_bytes()).await?;
+            return stream.flush().await;
+        }
+    };
+    let gvr = rp.gvr();
+    let mut last_rv = query_param(&req.query, "resourceVersion")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
+    let ns_filter = rp.is_namespaced().then(|| rp.namespace.clone());
+    let name_filter = rp.is_named().then(|| rp.name.clone());
+
+    // Streaming response head — no Content-Length; frames are chunk-encoded.
+    stream
+        .write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-cache\r\nTransfer-Encoding: chunked\r\n\r\n")
+        .await?;
+    stream.flush().await?;
+
+    loop {
+        let events = {
+            let reg = registry.lock().await;
+            reg.watch_since(&gvr, last_rv).unwrap_or_default()
+        };
+        for ev in events {
+            last_rv = last_rv.max(ev.resource_version);
+            if let Some(ns) = &ns_filter {
+                if ev.object.pointer("metadata.namespace").and_then(cave_home_apiserver_rs::json::Value::as_str) != Some(ns.as_str()) {
+                    continue;
+                }
+            }
+            if let Some(name) = &name_filter {
+                if ev.object.pointer("metadata.name").and_then(cave_home_apiserver_rs::json::Value::as_str) != Some(name.as_str()) {
+                    continue;
+                }
+            }
+            let frame = watch_event_frame(&ev);
+            // A write error means the client hung up — end the watch quietly.
+            if write_chunk(&mut stream, frame.as_bytes()).await.is_err() {
+                return Ok(());
+            }
+        }
+        tokio::select! {
+            () = tokio::time::sleep(Duration::from_millis(250)) => {}
+            res = shutdown.changed() => {
+                if res.is_err() || *shutdown.borrow() {
+                    break;
+                }
+            }
+        }
+    }
+
+    // Terminating zero-length chunk (best-effort; the peer may already be gone).
+    let _ = stream.write_all(b"0\r\n\r\n").await;
+    let _ = stream.flush().await;
+    Ok(())
+}
+
+/// Render one watch event as a newline-terminated `{"type":..,"object":..}` line.
+fn watch_event_frame(ev: &cave_home_apiserver_rs::registry::WatchEvent) -> String {
+    use cave_home_apiserver_rs::json::{obj, Value};
+    use cave_home_apiserver_rs::registry::WatchEventKind;
+    let kind = match ev.kind {
+        WatchEventKind::Added => "ADDED",
+        WatchEventKind::Modified => "MODIFIED",
+        WatchEventKind::Deleted => "DELETED",
+    };
+    let mut frame = obj([("type", Value::from(kind)), ("object", ev.object.clone())]).to_json_string();
+    frame.push('\n');
+    frame
+}
+
+/// Write one HTTP chunk (`<hex-len>\r\n<bytes>\r\n`) and flush it.
+async fn write_chunk(stream: &mut TcpStream, bytes: &[u8]) -> std::io::Result<()> {
+    stream.write_all(format!("{:x}\r\n", bytes.len()).as_bytes()).await?;
+    stream.write_all(bytes).await?;
+    stream.write_all(b"\r\n").await?;
     stream.flush().await
 }
 
@@ -517,6 +643,148 @@ mod tests {
         let result = tokio::time::timeout(Duration::from_secs(5), run_until(cfg, async {})).await;
         assert!(result.is_ok(), "run_until did not return within the timeout");
         assert!(result.expect("timed out").is_ok(), "run_until returned an error");
+    }
+
+    #[test]
+    fn query_param_parses_and_detects_watch() {
+        assert_eq!(query_param("watch=true&resourceVersion=8", "resourceVersion"), Some("8"));
+        assert_eq!(query_param("watch=true", "watch"), Some("true"));
+        assert_eq!(query_param("a=1&b=2", "c"), None);
+        let watch_req = http::HttpRequest::parse(b"GET /api/v1/pods?watch=true HTTP/1.1\r\n\r\n").unwrap();
+        assert!(is_watch_request(&watch_req));
+        let plain = http::HttpRequest::parse(b"GET /api/v1/pods HTTP/1.1\r\n\r\n").unwrap();
+        assert!(!is_watch_request(&plain));
+    }
+
+    #[tokio::test]
+    async fn watch_streams_a_created_pod_as_an_added_event() {
+        let registry = seeded_registry(&node());
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let (tx, rx) = watch::channel(false);
+        let server = tokio::spawn(serve(listener, registry.clone(), rx));
+
+        // Open a watch on pods starting from the current (empty) history.
+        let mut stream = TcpStream::connect(addr).await.expect("connect");
+        stream
+            .write_all(b"GET /api/v1/pods?watch=true&resourceVersion=0 HTTP/1.1\r\nHost: t\r\n\r\n")
+            .await
+            .expect("write");
+
+        // After the watch is open, create a pod through the same registry.
+        {
+            let mut reg = registry.lock().await;
+            let pods = GroupVersionResource::new("", "v1", "pods");
+            let pod = cave_home_apiserver_rs::json::obj([
+                ("apiVersion", cave_home_apiserver_rs::json::Value::from("v1")),
+                ("kind", cave_home_apiserver_rs::json::Value::from("Pod")),
+                (
+                    "metadata",
+                    cave_home_apiserver_rs::json::obj([
+                        ("name", cave_home_apiserver_rs::json::Value::from("watchpod")),
+                        ("namespace", cave_home_apiserver_rs::json::Value::from("default")),
+                    ]),
+                ),
+            ]);
+            reg.create(&pods, pod).expect("create");
+        }
+
+        // Accumulate the chunked stream until the ADDED frame arrives. The first
+        // read may return only the response head (the event is emitted on the
+        // next poll tick), so we read in a loop under one overall deadline.
+        let collected = tokio::time::timeout(Duration::from_secs(5), async {
+            let mut acc = String::new();
+            let mut buf = [0u8; 4096];
+            loop {
+                let n = stream.read(&mut buf).await.expect("read");
+                if n == 0 {
+                    break;
+                }
+                acc.push_str(&String::from_utf8_lossy(&buf[..n]));
+                if acc.contains("\"type\":\"ADDED\"") && acc.contains("watchpod") {
+                    break;
+                }
+            }
+            acc
+        })
+        .await
+        .expect("watch event within timeout");
+        assert!(collected.contains("\"type\":\"ADDED\""), "{collected}");
+        assert!(collected.contains("watchpod"), "{collected}");
+
+        let _ = tx.send(true);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn watch_keeps_streaming_subsequent_modifications() {
+        use cave_home_apiserver_rs::json::{obj, Value};
+        let registry = seeded_registry(&node());
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let (tx, rx) = watch::channel(false);
+        let server = tokio::spawn(serve(listener, registry.clone(), rx));
+        let pods = GroupVersionResource::new("", "v1", "pods");
+
+        let mut stream = TcpStream::connect(addr).await.expect("connect");
+        stream
+            .write_all(b"GET /api/v1/pods?watch=true&resourceVersion=0 HTTP/1.1\r\nHost: t\r\n\r\n")
+            .await
+            .expect("write");
+
+        // Create, then mutate the pod twice — exactly the create→bind→run shape.
+        {
+            let mut reg = registry.lock().await;
+            reg.create(
+                &pods,
+                obj([
+                    ("apiVersion", Value::from("v1")),
+                    ("kind", Value::from("Pod")),
+                    ("metadata", obj([("name", Value::from("p1")), ("namespace", Value::from("default"))])),
+                    ("spec", obj([])),
+                ]),
+            )
+            .expect("create");
+        }
+        // Mimic the live supervisor cadence: ADDED, then bind, then run, each
+        // separated by more than one watch poll interval, so each must be picked
+        // up by a *distinct* poll of the open connection.
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        {
+            let mut reg = registry.lock().await;
+            reg.patch_merge(&pods, "default", "p1", &obj([("spec", obj([("nodeName", Value::from("hub-01"))]))]))
+                .expect("bind");
+        }
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        {
+            let mut reg = registry.lock().await;
+            reg.patch_merge(&pods, "default", "p1", &obj([("status", obj([("phase", Value::from("Running"))]))]))
+                .expect("run");
+        }
+
+        let collected = tokio::time::timeout(Duration::from_secs(5), async {
+            let mut acc = String::new();
+            let mut buf = [0u8; 4096];
+            loop {
+                let n = stream.read(&mut buf).await.expect("read");
+                if n == 0 {
+                    break;
+                }
+                acc.push_str(&String::from_utf8_lossy(&buf[..n]));
+                if acc.matches("MODIFIED").count() >= 2 {
+                    break;
+                }
+            }
+            acc
+        })
+        .await
+        .expect("modifications within timeout");
+        assert!(collected.contains("\"type\":\"ADDED\""), "{collected}");
+        assert!(collected.matches("\"type\":\"MODIFIED\"").count() >= 2, "{collected}");
+        assert!(collected.contains("\"phase\":\"Running\""), "{collected}");
+
+        let _ = tx.send(true);
+        server.abort();
     }
 
     /// Minimal client: open, send a GET, read the whole response, return the body.
