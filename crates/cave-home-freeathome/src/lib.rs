@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 cave-home contributors
+//! `cave-home-freeathome` — Busch-Jaeger free@home System Access Point (SysAP)
+//! Local API client (ADR-011, Phase 1b transport layer).
+//!
+//! [`cave_home_free_home`] is the **brain**: it models the free@home topology,
+//! decodes datapoint values and projects channels onto grandma-friendly device
+//! kinds — but it is pure logic and deliberately speaks no network. This crate
+//! is the **nervous system**: it talks to a real SysAP over its documented
+//! local HTTPS API and feeds the brain.
+//!
+//! ```text
+//!   SysAP  ──HTTPS REST───▶  rest + model   ─┐
+//!     │                                       ├─▶  state cache  ─▶  core / mqtt bridge
+//!     └────WSS push────────▶  event parser  ──┘
+//! ```
+//!
+//! # Modules
+//! - [`error`] — the crate error type and `Result` alias.
+//! - [`auth`] — HTTP Basic credentials (and the seam for later client-cert / mTLS).
+//! - [`config`] — connection configuration and SysAP URL derivation.
+//!
+//! All domain types (ids, datapoint value codec, pairings, device kinds) are
+//! re-used from [`cave_home_free_home`] — this crate never re-implements them.
+
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::must_use_candidate)]
+
+mod auth;
+mod config;
+mod error;

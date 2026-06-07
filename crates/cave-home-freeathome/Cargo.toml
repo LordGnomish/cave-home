@@ -1,0 +1,28 @@
+[package]
+name              = "cave-home-freeathome"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-freeathome — Busch-Jaeger free@home System Access Point Local API client (REST + WebSocket transport, HTTP Basic auth, live state sync, cave-home-core + MQTT bridge). Realises the network layer deferred by cave-home-free-home (ADR-011, Phase 1b)."
+
+[package.metadata.cave-home]
+upstream    = "first-party (free@home System Access Point local API — https://<SysAP>/fhapi/v1)"
+port-method = "spec-based"
+adr         = "ADR-011"
+
+[dependencies]
+cave-home-free-home = { path = "../cave-home-free-home" }
+cave-home-core      = { path = "../cave-home-core" }
+thiserror = "2"
+serde     = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64    = "0.22"
+tracing   = "0.1"
+
+[dev-dependencies]
+
+[lints]
+workspace = true
