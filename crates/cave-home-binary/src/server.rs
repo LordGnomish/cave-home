@@ -29,7 +29,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{watch, Mutex};
 
 use cave_home_apiserver_rs::gvk::GroupVersionResource;
-use cave_home_apiserver_rs::registry::{ListOptions, Registry};
+use cave_home_apiserver_rs::registry::Registry;
 use cave_home_orchestration::bringup::BringUpPlan;
 use cave_home_orchestration::component::Component;
 use cave_home_orchestration::role::NodeIntent;
@@ -64,7 +64,7 @@ impl RuntimeConfig {
             node,
             bind_addr: "0.0.0.0".to_string(),
             bind_port: 6443,
-            reconcile_interval: Duration::from_secs(10),
+            reconcile_interval: Duration::from_secs(1),
         }
     }
 }
@@ -305,10 +305,10 @@ enum Reconcile {
     Passive,
     /// Re-asserts the local Node via the controller-manager reconcile loop.
     NodeHeartbeat(Box<NodeHeartbeatLoop>),
-    /// Observes pending pods through the apiserver (scheduler decision input).
-    SchedulerObserver,
-    /// Observes pods bound to this node (kubelet sync input).
-    KubeletObserver(String),
+    /// The single-node scheduler: binds unscheduled pods to this node.
+    Scheduler(String),
+    /// The node kubelet: drives bound pods through the (mock) CRI to Running.
+    Kubelet { node_name: String, runtime: crate::lifecycle::PodRuntime },
     /// Validates the ingress routing table via the real traefik core.
     Traefik,
     /// Reconciles `LoadBalancer` services via the real klipper/servicelb core.
@@ -325,8 +325,11 @@ impl Reconcile {
         match component {
             Component::Kine | Component::Apiserver => Self::Passive,
             Component::ControllerManager => Self::NodeHeartbeat(Box::new(NodeHeartbeatLoop::new(node))),
-            Component::Scheduler => Self::SchedulerObserver,
-            Component::Kubelet => Self::KubeletObserver(node.name),
+            Component::Scheduler => Self::Scheduler(node.name),
+            Component::Kubelet => Self::Kubelet {
+                node_name: node.name,
+                runtime: crate::lifecycle::PodRuntime::new(),
+            },
             Component::Traefik => Self::Traefik,
             Component::ServiceLb => Self::ServiceLb(node.internal_ip),
             Component::Cni => Self::Cni,
@@ -341,22 +344,19 @@ impl Reconcile {
                 let mut reg = registry.lock().await;
                 loop_.reconcile_once(&mut reg, now);
             }
-            Self::SchedulerObserver => {
-                let pending = {
-                    let reg = registry.lock().await;
-                    count_pods(&reg, |p| node_name_of(p).is_empty())
+            Self::Scheduler(node_name) => {
+                let bound = {
+                    let mut reg = registry.lock().await;
+                    crate::lifecycle::bind_pending_pods(&mut reg, node_name)
                 };
-                if pending > 0 {
-                    log_line(&format!("scheduler: {pending} pod(s) awaiting a node"));
+                if bound > 0 {
+                    log_line(&format!("scheduler: bound {bound} pod(s) to this node"));
                 }
             }
-            Self::KubeletObserver(node_name) => {
-                let mine = {
-                    let reg = registry.lock().await;
-                    count_pods(&reg, |p| node_name_of(p) == node_name.as_str())
-                };
-                if mine > 0 {
-                    log_line(&format!("kubelet: syncing {mine} pod(s) on this node"));
+            Self::Kubelet { node_name, runtime } => {
+                let ran = runtime.reconcile(registry, node_name).await;
+                if ran > 0 {
+                    log_line(&format!("kubelet: started {ran} pod(s) via the CRI"));
                 }
             }
             Self::Traefik => {
@@ -384,18 +384,6 @@ impl Reconcile {
             }
         }
     }
-}
-
-/// A pod's `spec.nodeName` (empty string if unset) — the assignment a scheduler
-/// fills in and a kubelet keys off.
-fn node_name_of(pod: &cave_home_apiserver_rs::json::Value) -> &str {
-    pod.pointer("spec.nodeName").and_then(cave_home_apiserver_rs::json::Value::as_str).unwrap_or("")
-}
-
-/// Count the pods in the registry matching `pred`.
-fn count_pods(reg: &Registry, pred: impl Fn(&cave_home_apiserver_rs::json::Value) -> bool) -> usize {
-    let pods = GroupVersionResource::new("", "v1", "pods");
-    reg.list(&pods, &ListOptions::default()).map_or(0, |l| l.items.iter().filter(|p| pred(p)).count())
 }
 
 /// The controller-manager-driven node heartbeat: a real [`Reconciler`] run
@@ -458,6 +446,7 @@ fn log_line(msg: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cave_home_apiserver_rs::registry::ListOptions;
 
     fn node() -> LocalNode {
         LocalNode::new("hub-01", "10.0.0.5")

@@ -44,6 +44,7 @@ pub mod cli;
 pub mod config;
 pub mod health;
 pub mod http;
+pub mod lifecycle;
 pub mod node;
 pub mod server;
 pub mod shutdown;
