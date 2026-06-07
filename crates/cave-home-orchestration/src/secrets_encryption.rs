@@ -60,3 +60,4 @@
 
 pub mod envelope;
 pub mod keyring;
+pub mod provider;
