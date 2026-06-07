@@ -26,6 +26,7 @@
 #![allow(clippy::result_large_err, clippy::significant_drop_tightening)]
 
 use std::pin::Pin;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -34,6 +35,7 @@ use tokio_stream::Stream;
 use tonic::{Code, Request, Response, Status, Streaming};
 
 use crate::error::KineError;
+use crate::lease::{LeaseTable, UnixSeconds};
 use crate::range::{prefix_successor, RangeEnd, RangeRequest as KineRange, RangeResponse as KineRangeResp};
 use crate::metrics::KineMetrics;
 use crate::sqlite::SqliteStore;
@@ -48,13 +50,28 @@ pub mod etcdserverpb {
 
 use etcdserverpb::{
     kv_server::{Kv, KvServer},
+    lease_server::{Lease, LeaseServer},
     maintenance_server::{Maintenance, MaintenanceServer},
     watch_request, watch_server::{Watch, WatchServer},
     request_op, response_op, CompactionRequest, CompactionResponse, Compare, DeleteRangeRequest,
-    DeleteRangeResponse, Event, KeyValue, PutRequest, PutResponse, RangeRequest, RangeResponse,
-    RequestOp, ResponseHeader, ResponseOp, StatusRequest, StatusResponse, TxnRequest, TxnResponse,
-    WatchCreateRequest, WatchRequest, WatchResponse,
+    DeleteRangeResponse, Event, KeyValue, LeaseGrantRequest, LeaseGrantResponse,
+    LeaseKeepAliveRequest, LeaseKeepAliveResponse, LeaseRevokeRequest, LeaseRevokeResponse,
+    LeaseTimeToLiveRequest, LeaseTimeToLiveResponse, PutRequest, PutResponse, RangeRequest,
+    RangeResponse, RequestOp, ResponseHeader, ResponseOp, StatusRequest, StatusResponse, TxnRequest,
+    TxnResponse, WatchCreateRequest, WatchRequest, WatchResponse,
 };
+
+/// A pluggable wall-clock source for lease TTLs, in whole Unix seconds. Injected
+/// (rather than reading the system clock inline) so lease expiry and keep-alive
+/// renewal are deterministically testable.
+pub type ClockFn = Arc<dyn Fn() -> UnixSeconds + Send + Sync>;
+
+/// The default lease clock: the system wall clock truncated to whole seconds.
+fn system_clock() -> UnixSeconds {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
+}
 
 /// How often a watch polls the backend for new revisions (kine's watch is a
 /// poll over the after-query, not a push — this is that interval).
@@ -71,19 +88,50 @@ pub const ETCD_VERSION: &str = "3.5.13";
 pub struct KineServer {
     store: Arc<Mutex<SqliteStore>>,
     metrics: Arc<KineMetrics>,
+    /// The in-memory lease registry (`id -> ttl/granted_at`). kine tracks lease
+    /// lifetime in the server, not in SQL; only the per-row `lease` column is
+    /// persisted, so the table is rebuilt on restart from outstanding
+    /// `KeepAlive`s.
+    leases: Arc<Mutex<LeaseTable>>,
+    /// Monotonic allocator for server-assigned lease ids (when a client grants
+    /// with id `0`). Starts high so it never collides with the small ids tests
+    /// and bootstrap code hand-pick.
+    next_lease_id: Arc<AtomicI64>,
+    /// The wall clock used for lease TTLs (injectable for tests).
+    clock: ClockFn,
 }
 
 impl KineServer {
-    /// Wrap an owned store.
+    /// Wrap an owned store with the default system clock.
     #[must_use]
     pub fn new(store: SqliteStore) -> Self {
-        Self { store: Arc::new(Mutex::new(store)), metrics: Arc::new(KineMetrics::new()) }
+        Self::with_clock(store, Arc::new(system_clock))
     }
 
     /// Wrap an already-shared store (so a watcher / metrics layer can share it).
     #[must_use]
     pub fn from_shared(store: Arc<Mutex<SqliteStore>>) -> Self {
-        Self { store, metrics: Arc::new(KineMetrics::new()) }
+        Self {
+            store,
+            metrics: Arc::new(KineMetrics::new()),
+            leases: Arc::new(Mutex::new(LeaseTable::new())),
+            next_lease_id: Arc::new(AtomicI64::new(1)),
+            clock: Arc::new(system_clock),
+        }
+    }
+
+    /// Wrap an owned store with an explicit lease clock. The clock returns the
+    /// current time in whole Unix seconds; tests pass a controllable cell to
+    /// drive lease expiry / keep-alive deterministically.
+    #[must_use]
+    pub fn with_clock(store: SqliteStore, clock: ClockFn) -> Self {
+        Self {
+            store: Arc::new(Mutex::new(store)),
+            metrics: Arc::new(KineMetrics::new()),
+            leases: Arc::new(Mutex::new(LeaseTable::new())),
+            next_lease_id: Arc::new(AtomicI64::new(1)),
+            clock,
+        }
     }
 
     /// The shared store handle.
@@ -115,6 +163,12 @@ impl KineServer {
     #[must_use]
     pub fn watch(&self) -> WatchServer<Self> {
         WatchServer::new(self.clone())
+    }
+
+    /// This server as a tonic `Lease` service.
+    #[must_use]
+    pub fn lease(&self) -> LeaseServer<Self> {
+        LeaseServer::new(self.clone())
     }
 
     /// The event stream for one watch: a `created` marker, then the ordered
@@ -357,6 +411,114 @@ impl Maintenance for KineServer {
             db_size_in_use: 0,
             is_learner: false,
         }))
+    }
+}
+
+impl KineServer {
+    /// Grant (or renew) a lease for `ttl` seconds. A request id of `0` makes the
+    /// server allocate one; a non-zero id is honoured verbatim (etcd's
+    /// `LeaseGrant`). Rejects a non-positive TTL.
+    async fn do_lease_grant(&self, ttl: i64, id: i64) -> Result<LeaseGrantResponse, Status> {
+        let lease_id = if id == 0 { self.next_lease_id.fetch_add(1, Ordering::Relaxed) } else { id };
+        let now = (self.clock)();
+        self.leases.lock().await.grant(lease_id, ttl, now).map_err(status)?;
+        Ok(LeaseGrantResponse {
+            header: Some(self.header().await?),
+            id: lease_id,
+            ttl,
+            error: String::new(),
+        })
+    }
+
+    /// Revoke a lease and delete every key attached to it (etcd `LeaseRevoke`).
+    /// Unknown lease ids are a `NotFound`, matching etcd.
+    async fn do_lease_revoke(&self, id: i64) -> Result<LeaseRevokeResponse, Status> {
+        let existed = self.leases.lock().await.revoke(id).is_some();
+        if !existed {
+            return Err(Status::new(Code::NotFound, "etcdserver: requested lease not found"));
+        }
+        self.store.lock().await.revoke_lease_keys(id).map_err(status)?;
+        Ok(LeaseRevokeResponse { header: Some(self.header().await?) })
+    }
+
+    /// Refresh one lease's TTL (etcd `LeaseKeepAlive`). A live lease is renewed
+    /// from "now" and its TTL echoed back; a missing lease yields TTL `0` (the
+    /// signal etcd sends a client to stop renewing) without erroring the stream.
+    async fn do_keep_alive(&self, id: i64) -> Result<LeaseKeepAliveResponse, Status> {
+        let now = (self.clock)();
+        let ttl = {
+            let mut leases = self.leases.lock().await;
+            match leases.get(id).map(|l| l.ttl_seconds) {
+                Some(ttl) => {
+                    leases.grant(id, ttl, now).map_err(status)?;
+                    ttl
+                }
+                None => 0,
+            }
+        };
+        Ok(LeaseKeepAliveResponse { header: Some(self.header().await?), id, ttl })
+    }
+
+    /// Report a lease's remaining and granted TTL, and (optionally) the keys it
+    /// owns (etcd `LeaseTimeToLive`). A missing lease reports TTL `-1`.
+    async fn do_lease_time_to_live(
+        &self,
+        id: i64,
+        want_keys: bool,
+    ) -> Result<LeaseTimeToLiveResponse, Status> {
+        let now = (self.clock)();
+        let found = self.leases.lock().await.get(id).copied();
+        let (ttl, granted_ttl) =
+            found.map_or((-1, 0), |l| ((l.expires_at() - now).max(0), l.ttl_seconds));
+        let keys = if want_keys && found.is_some() {
+            self.store.lock().await.keys_with_lease(id).map_err(status)?
+        } else {
+            Vec::new()
+        };
+        Ok(LeaseTimeToLiveResponse { header: Some(self.header().await?), id, ttl, granted_ttl, keys })
+    }
+}
+
+#[tonic::async_trait]
+impl Lease for KineServer {
+    async fn lease_grant(
+        &self,
+        request: Request<LeaseGrantRequest>,
+    ) -> Result<Response<LeaseGrantResponse>, Status> {
+        let req = request.into_inner();
+        self.do_lease_grant(req.ttl, req.id).await.map(Response::new)
+    }
+
+    async fn lease_revoke(
+        &self,
+        request: Request<LeaseRevokeRequest>,
+    ) -> Result<Response<LeaseRevokeResponse>, Status> {
+        self.do_lease_revoke(request.into_inner().id).await.map(Response::new)
+    }
+
+    type LeaseKeepAliveStream =
+        Pin<Box<dyn Stream<Item = Result<LeaseKeepAliveResponse, Status>> + Send>>;
+
+    async fn lease_keep_alive(
+        &self,
+        request: Request<Streaming<LeaseKeepAliveRequest>>,
+    ) -> Result<Response<Self::LeaseKeepAliveStream>, Status> {
+        let mut inbound = request.into_inner();
+        let server = self.clone();
+        let stream = async_stream::try_stream! {
+            while let Some(msg) = inbound.message().await? {
+                yield server.do_keep_alive(msg.id).await?;
+            }
+        };
+        Ok(Response::new(Box::pin(stream)))
+    }
+
+    async fn lease_time_to_live(
+        &self,
+        request: Request<LeaseTimeToLiveRequest>,
+    ) -> Result<Response<LeaseTimeToLiveResponse>, Status> {
+        let req = request.into_inner();
+        self.do_lease_time_to_live(req.id, req.keys).await.map(Response::new)
     }
 }
 
