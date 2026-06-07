@@ -3,13 +3,13 @@
 //! `cave-home-apiserver-rs` [`Registry`] verbs and renders the result.
 //!
 //! Behavioural reference: the Kubernetes apiserver REST surface
-//! (`/api/v1/...`, list/get/watch). This is the read path the unified binary
-//! actually serves today — `kubectl get nodes` / `cavehomectl get nodes` hit it.
-//! Write verbs (create/update/delete over the wire) need a JSON request-body
-//! parser the apiserver crate does not yet provide; until then non-GET methods
-//! on a resource path return `405 MethodNotAllowed`, and the binary seeds its
-//! own objects (e.g. the local Node) in-process. Health, version and Prometheus
-//! `/metrics` endpoints round out the surface.
+//! (`/api/v1/...`, get/list/create/update/patch/delete). This is the full read
+//! *and* write path the unified binary serves — real `kubectl get`, `kubectl
+//! apply`, `kubectl delete` hit it. Request bodies are decoded with
+//! [`Value::parse`](cave_home_apiserver_rs::json::Value::parse); the API
+//! discovery documents (`/api`, `/apis`, `/api/v1`, `/apis/{g}/{v}`) and an
+//! `OpenAPI` v3 surface (`/openapi/v3...`) let kubectl map nouns to paths and
+//! validate. Health, version and Prometheus `/metrics` round out the surface.
 //!
 //! [`handle`] is pure (`&mut Registry` in, [`HttpResponse`] out), so the whole
 //! routing/serialization contract is unit-testable without a socket.
@@ -293,7 +293,7 @@ fn openapi_v3_root_response() -> HttpResponse {
     HttpResponse::json(200, body.to_json_string())
 }
 
-/// `GET /openapi/v3/{api/v1|apis/group/version}` → an OpenAPI 3.0 document for
+/// `GET /openapi/v3/{api/v1|apis/group/version}` → an `OpenAPI` 3.0 document for
 /// that group/version. It carries, per kind:
 ///
 /// * a permissive object schema (we model no field rules, so any object is
@@ -302,7 +302,7 @@ fn openapi_v3_root_response() -> HttpResponse {
 ///   `fieldValidation` query parameter and the operation's GVK extension.
 ///
 /// The `paths` section is what kubectl's query-param verifier requires — without
-/// it the document is rejected as "Invalid OpenAPI V3 document" and `apply`
+/// it the document is rejected as "Invalid `OpenAPI` V3 document" and `apply`
 /// fails. With it, kubectl uses server-side field validation (which this surface
 /// accepts) and proceeds to create/patch the object.
 fn openapi_v3_gv_response(rest: &str) -> HttpResponse {
@@ -356,7 +356,7 @@ fn openapi_v3_gv_response(rest: &str) -> HttpResponse {
     HttpResponse::json(200, body.to_json_string())
 }
 
-/// One OpenAPI operation advertising the `fieldValidation` query parameter, a
+/// One `OpenAPI` operation advertising the `fieldValidation` query parameter, a
 /// JSON request body referencing the kind's schema, and the operation's GVK
 /// extension — the shape kubectl's query-param verifier matches against.
 fn openapi_operation(schema_key: &str, gvk_tag: &Value) -> Value {
