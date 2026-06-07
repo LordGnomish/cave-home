@@ -49,15 +49,19 @@
 // `parity.manifest.toml`).
 
 pub mod adapter;
+pub mod config;
 pub mod crypto;
 pub mod error;
 pub mod fleet_api;
 pub mod gateway_local;
 pub mod metrics;
 pub mod models;
+pub mod token_store;
 
 pub use adapter::{EnergyProvider, TeslaProvider};
+pub use config::TeslaConfig;
 pub use error::{Result, TeslaError};
+pub use token_store::{Credentials, Secret};
 pub use models::{
     BatteryData, DateRange, HistoryData, HistorySample, Lang, OpMode, PowerFlowData, SiteStatus,
 };
