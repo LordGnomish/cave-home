@@ -136,6 +136,13 @@ pub trait Object: Clone {
     /// Borrow this object's metadata.
     fn meta(&self) -> &ObjectMeta;
 
+    /// Mutably borrow this object's metadata.
+    ///
+    /// The in-memory apiserver uses this to stamp a freshly-`create`d object
+    /// with its server-assigned UID, and controllers use it to set
+    /// owner-references and finalizers on objects they author.
+    fn meta_mut(&mut self) -> &mut ObjectMeta;
+
     /// The namespace/name key used by the store (`"<ns>/<name>"`, or just
     /// `"<name>"` for cluster-scoped objects).
     fn key(&self) -> String {
@@ -150,6 +157,10 @@ pub trait Object: Clone {
 
 impl Object for ObjectMeta {
     fn meta(&self) -> &ObjectMeta {
+        self
+    }
+
+    fn meta_mut(&mut self) -> &mut ObjectMeta {
         self
     }
 }

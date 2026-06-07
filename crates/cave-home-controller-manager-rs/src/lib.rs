@@ -52,6 +52,7 @@
 //! assert_eq!(outcome, AddOutcome::Requeued { failures: 1, delay: 10 });
 //! ```
 
+pub mod apis;
 pub mod controllers;
 pub mod informer;
 pub mod reconcile;

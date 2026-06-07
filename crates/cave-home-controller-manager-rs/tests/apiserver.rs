@@ -20,12 +20,15 @@ fn selector(app: &str) -> std::collections::BTreeMap<String, String> {
 #[test]
 fn create_assigns_a_unique_uid_when_absent() {
     let mut api: Api<Pod> = Api::new("pod");
-    let p1 = api.create(Pod::new(ObjectMeta::new("web-a", "prod", "")));
-    let p2 = api.create(Pod::new(ObjectMeta::new("web-b", "prod", "")));
-    assert!(!p1.meta().uid.is_empty(), "uid assigned on create");
-    assert_ne!(p1.meta().uid, p2.meta().uid, "uids are unique");
+    let first = api.create(Pod::new(ObjectMeta::new("web-a", "prod", "")));
+    let second = api.create(Pod::new(ObjectMeta::new("web-b", "prod", "")));
+    assert!(!first.meta().uid.is_empty(), "uid assigned on create");
+    assert_ne!(first.meta().uid, second.meta().uid, "uids are unique");
     // The stored copy carries the assigned uid.
-    assert_eq!(api.get("prod/web-a").map(|p| p.meta().uid.clone()), Some(p1.meta().uid.clone()));
+    assert_eq!(
+        api.get("prod/web-a").map(|p| p.meta().uid.clone()),
+        Some(first.meta().uid.clone())
+    );
 }
 
 #[test]
@@ -40,7 +43,7 @@ fn update_replaces_and_delete_removes() {
     let mut api: Api<Pod> = Api::new("pod");
     let mut p = api.create(Pod::new(ObjectMeta::new("web", "prod", "")));
     p.status.phase = PodPhase::Running;
-    api.update(p.clone());
+    api.update(p);
     assert_eq!(api.get("prod/web").map(|p| p.status.phase), Some(PodPhase::Running));
     assert!(api.delete("prod/web").is_some());
     assert!(api.get("prod/web").is_none());
@@ -66,8 +69,8 @@ fn list_owned_by_returns_only_controller_owned_children() {
     let noncontroller = OwnerReference::to("ReplicaSet", "rs", "rs-uid");
     api.create(Pod::new(ObjectMeta::new("ref-only", "prod", "").with_owner(noncontroller)));
     api.create(Pod::new(ObjectMeta::new("orphan", "prod", "")));
-    let owned = api.list_owned_by("rs-uid");
-    let names: Vec<_> = owned.iter().map(|p| p.meta().name.clone()).collect();
+    let children = api.list_owned_by("rs-uid");
+    let names: Vec<_> = children.iter().map(|p| p.meta().name.clone()).collect();
     assert_eq!(names, vec!["owned"], "only the controller-owned child is returned");
 }
 
