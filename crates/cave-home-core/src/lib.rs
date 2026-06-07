@@ -11,6 +11,7 @@
 
 pub mod area_registry;
 pub mod automation;
+pub mod config;
 pub mod context;
 pub mod core_context;
 pub mod device_registry;
@@ -27,6 +28,7 @@ pub mod util;
 
 pub use area_registry::{AreaEntry, AreaRegistry};
 pub use automation::{Action, AutomationEngine, AutomationRule, Condition, Trigger};
+pub use config::{CoreConfig, Schema, UnitSystem};
 pub use context::Context;
 pub use core_context::CoreContext;
 pub use device_registry::{DeviceEntry, DeviceRegistry};
