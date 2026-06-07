@@ -9,10 +9,16 @@
 
 mod common;
 
+use std::io::Cursor;
+
 use cave_home_kubelet_rs::cri::remote::streaming::{AttachRequest, ExecRequest, PortForwardRequest};
+use cave_home_kubelet_rs::cri::remote::ws::conn::{WsConnection, V5_CHANNEL_PROTOCOL};
+use cave_home_kubelet_rs::cri::remote::ws::frame::Frame;
+use cave_home_kubelet_rs::cri::remote::ws::proxy::{channel, channel_frame};
 use cave_home_kubelet_rs::cri::remote::RemoteCriClient;
 use cave_home_kubelet_rs::cri::types as t;
 use cave_home_kubelet_rs::cri::CriClient;
+use tokio::net::{TcpListener, TcpStream};
 
 use common::start_mock_cri_server;
 
@@ -80,6 +86,56 @@ async fn attach_returns_streaming_url() {
         .unwrap();
     assert!(url.contains("attach"), "url = {url}");
     assert!(url.contains(&cid), "url = {url}");
+}
+
+/// Spawn a one-shot in-process WS streaming server that upper-cases the first
+/// stdin message onto stdout, then closes; returns the `http://` URL to dial.
+async fn spawn_ws_echo_upper() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let (sock, _) = listener.accept().await.unwrap();
+        let mut conn: WsConnection<TcpStream> =
+            WsConnection::accept(sock, V5_CHANNEL_PROTOCOL).await.unwrap();
+        let msg = conn.recv().await.unwrap().expect("stdin");
+        let upper = msg.payload[1..].to_ascii_uppercase();
+        conn.send(&channel_frame(channel::STDOUT, &upper)).await.unwrap();
+        conn.send(&channel_frame(channel::ERROR, b"")).await.unwrap();
+        conn.send(&Frame::close()).await.unwrap();
+    });
+    format!("http://{addr}/exec/streamed")
+}
+
+/// Headline streaming acceptance: negotiate the URL over gRPC, then dial it
+/// over WebSocket and bridge stdio — the full kubelet exec path.
+#[tokio::test]
+async fn exec_streamed_negotiates_then_bridges_stdio() {
+    let server = start_mock_cri_server().await;
+    server.runtime.set_stream_url(spawn_ws_echo_upper().await);
+    let client = RemoteCriClient::connect_uds(&server.socket_path).await.unwrap();
+    let (_sb, cid) = running_container(&client).await;
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let outcome = client
+        .exec_streamed(
+            ExecRequest {
+                container_id: cid,
+                cmd: vec!["echo".into(), "hi".into()],
+                stdout: true,
+                stderr: true,
+                ..Default::default()
+            },
+            Some(Cursor::new(b"streamed".to_vec())),
+            &mut stdout,
+            &mut stderr,
+            None,
+        )
+        .await
+        .expect("exec_streamed");
+
+    assert_eq!(stdout, b"STREAMED");
+    assert_eq!(outcome.error.as_deref(), Some(""));
 }
 
 #[tokio::test]

@@ -27,6 +27,9 @@ struct State {
     container_sandbox: HashMap<String, String>,
     images: HashMap<String, proto::Image>,
     seq: u64,
+    /// When set, `Exec`/`Attach`/`PortForward` hand back this URL verbatim so
+    /// the streaming-proxy tests can point the kubelet at a real WS server.
+    stream_url: Option<String>,
 }
 
 impl State {
@@ -53,6 +56,15 @@ impl MockCriRuntime {
     #[must_use]
     pub fn container_count(&self) -> usize {
         self.state.lock().containers.len()
+    }
+
+    /// Point the streaming RPCs (`Exec`/`Attach`/`PortForward`) at `url`.
+    pub fn set_stream_url(&self, url: impl Into<String>) {
+        self.state.lock().stream_url = Some(url.into());
+    }
+
+    fn stream_url(&self, fallback: String) -> String {
+        self.state.lock().stream_url.clone().unwrap_or(fallback)
     }
 }
 
@@ -276,13 +288,13 @@ impl RuntimeService for MockCriRuntime {
     async fn exec(&self, r: Request<proto::ExecRequest>) -> RpcResult<proto::ExecResponse> {
         let id = r.into_inner().container_id;
         Ok(Response::new(proto::ExecResponse {
-            url: format!("http://stream.local/exec/{id}"),
+            url: self.stream_url(format!("http://stream.local/exec/{id}")),
         }))
     }
     async fn attach(&self, r: Request<proto::AttachRequest>) -> RpcResult<proto::AttachResponse> {
         let id = r.into_inner().container_id;
         Ok(Response::new(proto::AttachResponse {
-            url: format!("http://stream.local/attach/{id}"),
+            url: self.stream_url(format!("http://stream.local/attach/{id}")),
         }))
     }
     async fn port_forward(
@@ -291,7 +303,7 @@ impl RuntimeService for MockCriRuntime {
     ) -> RpcResult<proto::PortForwardResponse> {
         let id = r.into_inner().pod_sandbox_id;
         Ok(Response::new(proto::PortForwardResponse {
-            url: format!("http://stream.local/portforward/{id}"),
+            url: self.stream_url(format!("http://stream.local/portforward/{id}")),
         }))
     }
     async fn container_stats(

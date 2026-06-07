@@ -21,7 +21,7 @@
 
 use std::io::{Error, ErrorKind, Result};
 
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use super::conn::WsConnection;
@@ -66,29 +66,73 @@ pub fn split_channel(payload: &[u8]) -> Option<(u8, &[u8])> {
     payload.split_first().map(|(ch, rest)| (*ch, rest))
 }
 
-// stub — replaced in the GREEN step
 /// Dial the negotiated streaming `url` over TCP and run the WebSocket
 /// handshake. Only `http://` / `ws://` URLs are supported; `https`/`wss` (TLS)
 /// is deferred (see the parity manifest).
 ///
 /// # Errors
 /// Fails on a malformed URL, TCP dial failure, or a rejected upgrade.
-pub async fn dial(_url: &str, _subprotocols: &[&str]) -> Result<WsConnection<TcpStream>> {
-    Err(Error::new(ErrorKind::Other, "unimplemented"))
+pub async fn dial(url: &str, subprotocols: &[&str]) -> Result<WsConnection<TcpStream>> {
+    let rest = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("ws://"))
+        .ok_or_else(|| {
+            Error::new(ErrorKind::InvalidInput, format!("unsupported streaming URL: {url}"))
+        })?;
+    let (authority, path) = match rest.split_once('/') {
+        Some((a, p)) => (a, format!("/{p}")),
+        None => (rest, "/".to_owned()),
+    };
+    let host = authority.rsplit_once(':').map_or(authority, |(h, _)| h);
+    let addr = if authority.contains(':') {
+        authority.to_owned()
+    } else {
+        format!("{authority}:80")
+    };
+
+    let stream = TcpStream::connect(&addr).await?;
+    WsConnection::connect(stream, host, &path, subprotocols).await
 }
 
-// stub — replaced in the GREEN step
-/// Drive an exec/attach session: pump `stdin` onto channel 0 and demux the
-/// runtime's channel 1/2/3 onto `stdout`/`stderr`/the returned outcome.
+/// Demux a received channel message into the output sinks / outcome.
+/// Returns `true` when the session should end.
+async fn dispatch_output<O, E>(
+    payload: &[u8],
+    stdout: &mut O,
+    stderr: &mut E,
+    error: &mut Option<String>,
+) -> Result<()>
+where
+    O: AsyncWrite + Unpin,
+    E: AsyncWrite + Unpin,
+{
+    if let Some((ch, data)) = split_channel(payload) {
+        match ch {
+            channel::STDOUT => stdout.write_all(data).await?,
+            channel::STDERR => stderr.write_all(data).await?,
+            channel::ERROR => {
+                *error = Some(String::from_utf8_lossy(data).into_owned());
+            }
+            _ => {} // resize/close/unknown from the runtime: ignored
+        }
+    }
+    Ok(())
+}
+
+/// Drive an exec/attach session.
+///
+/// Pumps `stdin` onto channel 0 and demultiplexes the runtime's channel 1/2/3
+/// onto `stdout` / `stderr` / the returned [`ExecOutcome`]. `term_size` sends an
+/// initial resize on channel 4.
 ///
 /// # Errors
 /// Propagates transport errors.
 pub async fn run_exec<S, I, O, E>(
-    _conn: WsConnection<S>,
-    _stdin: Option<I>,
-    _stdout: O,
-    _stderr: E,
-    _term_size: Option<(u16, u16)>,
+    mut conn: WsConnection<S>,
+    mut stdin: Option<I>,
+    mut stdout: O,
+    mut stderr: E,
+    term_size: Option<(u16, u16)>,
 ) -> Result<ExecOutcome>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
@@ -96,21 +140,112 @@ where
     O: AsyncWrite + Unpin + Send,
     E: AsyncWrite + Unpin + Send,
 {
-    Ok(ExecOutcome::default())
+    if let Some((w, h)) = term_size {
+        let json = format!("{{\"Width\":{w},\"Height\":{h}}}");
+        conn.send(&channel_frame(channel::RESIZE, json.as_bytes())).await?;
+    }
+
+    let mut error = None;
+    let mut buf = vec![0u8; 8192];
+
+    loop {
+        // `stdin` is taken to `None` on EOF, which also flips off the input arm.
+        if let Some(src) = stdin.as_mut() {
+            tokio::select! {
+                read = src.read(&mut buf) => {
+                    let n = read?;
+                    if n == 0 {
+                        // v5 half-close: tell the runtime stdin is done.
+                        conn.send(&channel_frame(channel::CLOSE, &[channel::STDIN])).await?;
+                        stdin = None;
+                    } else {
+                        conn.send(&channel_frame(channel::STDIN, &buf[..n])).await?;
+                    }
+                }
+                msg = conn.recv() => {
+                    match msg? {
+                        None => break,
+                        Some(f) => dispatch_output(&f.payload, &mut stdout, &mut stderr, &mut error).await?,
+                    }
+                }
+            }
+        } else {
+            match conn.recv().await? {
+                None => break,
+                Some(f) => {
+                    dispatch_output(&f.payload, &mut stdout, &mut stderr, &mut error).await?;
+                }
+            }
+        }
+    }
+
+    stdout.flush().await?;
+    stderr.flush().await?;
+    Ok(ExecOutcome { error })
 }
 
-// stub — replaced in the GREEN step
-/// Bridge a local stream `io` to a single forwarded `port` over channel 0
-/// (data) / channel 1 (error). The first data frame carries the 2-byte
-/// little-endian port number, per the websocket port-forward protocol.
+/// Bridge a local stream `io` to a single forwarded `port`.
+///
+/// Data rides channel 0 and errors channel 1; the first data frame carries the
+/// 2-byte little-endian port number, per the websocket port-forward protocol.
+/// Multi-port forwarding (channels `2*i` / `2*i+1`) is out of scope here; this
+/// drives one local connection to one container port.
 ///
 /// # Errors
 /// Propagates transport errors.
-pub async fn run_port_forward<S, IO>(_conn: WsConnection<S>, _port: u16, _io: IO) -> Result<()>
+pub async fn run_port_forward<S, IO>(mut conn: WsConnection<S>, port: u16, io: IO) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
     IO: AsyncRead + AsyncWrite + Unpin + Send,
 {
+    let (mut rd, mut wr) = tokio::io::split(io);
+    let mut buf = vec![0u8; 8192];
+    let mut first = true;
+    let mut rd_open = true;
+
+    loop {
+        if rd_open {
+            tokio::select! {
+                read = rd.read(&mut buf) => {
+                    let n = read?;
+                    if n == 0 {
+                        conn.send(&channel_frame(channel::CLOSE, &[channel::STDIN])).await?;
+                        rd_open = false;
+                    } else {
+                        let data = if first {
+                            first = false;
+                            let mut v = port.to_le_bytes().to_vec();
+                            v.extend_from_slice(&buf[..n]);
+                            v
+                        } else {
+                            buf[..n].to_vec()
+                        };
+                        conn.send(&channel_frame(channel::STDIN, &data)).await?;
+                    }
+                }
+                msg = conn.recv() => {
+                    match msg? {
+                        None => break,
+                        Some(f) => {
+                            if let Some((channel::STDIN, data)) = split_channel(&f.payload) {
+                                wr.write_all(data).await?;
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            match conn.recv().await? {
+                None => break,
+                Some(f) => {
+                    if let Some((channel::STDIN, data)) = split_channel(&f.payload) {
+                        wr.write_all(data).await?;
+                    }
+                }
+            }
+        }
+    }
+    wr.flush().await?;
     Ok(())
 }
 

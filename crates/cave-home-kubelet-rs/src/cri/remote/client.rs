@@ -12,9 +12,12 @@ use std::path::Path;
 use async_trait::async_trait;
 use tonic::transport::{Channel, Endpoint, Uri};
 
+use tokio::io::{AsyncRead, AsyncWrite};
+
 use super::error::{status_to_cri_error, transport_to_cri_error};
 use super::proto;
 use super::streaming;
+use super::ws;
 use crate::cri::client::{CriClient, CriError, CriResult};
 use crate::cri::types as t;
 
@@ -137,6 +140,87 @@ impl RemoteCriClient {
             .await
             .map_err(|s| status_to_cri_error(&s))?;
         Ok(resp.into_inner().url)
+    }
+
+    // ---------- streaming proxy (negotiate -> dial -> bridge) ------------------
+
+    /// Full `Exec`: negotiate the streaming URL over gRPC, dial it over the
+    /// WebSocket `v5.channel.k8s.io` transport, and bridge `stdin`/`stdout`/
+    /// `stderr` to the container process.
+    ///
+    /// # Errors
+    /// Returns [`CriError`] for a failed negotiation, a non-dialable URL, or a
+    /// transport error mid-stream.
+    pub async fn exec_streamed<I, O, E>(
+        &self,
+        req: streaming::ExecRequest,
+        stdin: Option<I>,
+        stdout: O,
+        stderr: E,
+        term_size: Option<(u16, u16)>,
+    ) -> CriResult<ws::proxy::ExecOutcome>
+    where
+        I: AsyncRead + Unpin + Send,
+        O: AsyncWrite + Unpin + Send,
+        E: AsyncWrite + Unpin + Send,
+    {
+        let url = self.exec(req).await?;
+        let conn = ws::proxy::dial(&url, &[ws::conn::V5_CHANNEL_PROTOCOL])
+            .await
+            .map_err(|e| CriError::Transport(e.to_string()))?;
+        ws::proxy::run_exec(conn, stdin, stdout, stderr, term_size)
+            .await
+            .map_err(|e| CriError::Transport(e.to_string()))
+    }
+
+    /// Full `Attach`: negotiate + dial + bridge to a running container's
+    /// stdio (no command launched).
+    ///
+    /// # Errors
+    /// As [`Self::exec_streamed`].
+    pub async fn attach_streamed<I, O, E>(
+        &self,
+        req: streaming::AttachRequest,
+        stdin: Option<I>,
+        stdout: O,
+        stderr: E,
+        term_size: Option<(u16, u16)>,
+    ) -> CriResult<ws::proxy::ExecOutcome>
+    where
+        I: AsyncRead + Unpin + Send,
+        O: AsyncWrite + Unpin + Send,
+        E: AsyncWrite + Unpin + Send,
+    {
+        let url = self.attach(req).await?;
+        let conn = ws::proxy::dial(&url, &[ws::conn::V5_CHANNEL_PROTOCOL])
+            .await
+            .map_err(|e| CriError::Transport(e.to_string()))?;
+        ws::proxy::run_exec(conn, stdin, stdout, stderr, term_size)
+            .await
+            .map_err(|e| CriError::Transport(e.to_string()))
+    }
+
+    /// Full single-port `PortForward`: negotiate + dial + bridge a local
+    /// stream `io` to `port` inside `req.pod_sandbox_id`.
+    ///
+    /// # Errors
+    /// As [`Self::exec_streamed`].
+    pub async fn port_forward_streamed<IO>(
+        &self,
+        req: streaming::PortForwardRequest,
+        port: u16,
+        io: IO,
+    ) -> CriResult<()>
+    where
+        IO: AsyncRead + AsyncWrite + Unpin + Send,
+    {
+        let url = self.port_forward(req).await?;
+        let conn = ws::proxy::dial(&url, &[ws::conn::V5_CHANNEL_PROTOCOL])
+            .await
+            .map_err(|e| CriError::Transport(e.to_string()))?;
+        ws::proxy::run_port_forward(conn, port, io)
+            .await
+            .map_err(|e| CriError::Transport(e.to_string()))
     }
 }
 
