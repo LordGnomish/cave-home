@@ -148,3 +148,7 @@ pub mod compress;
 /// TLS termination + SNI certificate resolution.
 #[cfg(feature = "runtime")]
 pub mod tls;
+
+/// ACME (RFC 8555) client for automatic certificates.
+#[cfg(feature = "runtime")]
+pub mod acme;
