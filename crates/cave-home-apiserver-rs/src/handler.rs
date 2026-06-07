@@ -11,11 +11,250 @@
 //! reimplementation over the in-crate decision core; the socket loop is in
 //! [`crate::server`].
 
+use crate::authn::{AnonymousAuthenticator, AuthenticatorChain};
 use crate::gvk::{self, GroupVersionResource};
-use crate::http::Response;
-use crate::json::{obj, Value};
-use crate::registry::ListResult;
-use crate::status::Status;
+use crate::http::{Method, Request, Response};
+use crate::json::{self, obj, Value};
+use crate::meta;
+use crate::path::{self, ResourcePath};
+use crate::rbac::{Attributes, Decision, RbacAuthorizer, UserInfo};
+use crate::registry::{ListOptions, ListResult, Registry};
+use crate::selector::{FieldSelector, LabelSelector};
+use crate::status::{Result, Status};
+
+/// The authorization mode applied after authentication. Mirrors the upstream
+/// `--authorization-mode` flag values used by k3s.
+pub enum Authorization {
+    /// Allow every authenticated request (k3s default for the embedded server in
+    /// some bootstrap modes).
+    AlwaysAllow,
+    /// Deny every request.
+    AlwaysDeny,
+    /// Consult an additive RBAC authorizer; deny when it returns no opinion.
+    Rbac(RbacAuthorizer),
+}
+
+/// The apiserver: the storage registry plus the authn/authz pipeline. A single
+/// [`ApiServer::handle`] call runs the full chain for one request and returns
+/// the encoded [`Response`]. Mutation requires `&mut self` because the in-memory
+/// registry is the storage backend.
+pub struct ApiServer {
+    /// The backing storage registry.
+    pub registry: Registry,
+    /// The authentication chain.
+    pub authn: AuthenticatorChain,
+    /// The authorization mode.
+    pub authz: Authorization,
+}
+
+impl Default for ApiServer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ApiServer {
+    /// A server with an empty registry, anonymous-allowed authentication, and
+    /// `AlwaysAllow` authorization — the most permissive default, suitable for a
+    /// single-node bootstrap. Harden via [`ApiServer::with_authn`] /
+    /// [`ApiServer::with_authz`].
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            registry: Registry::new(),
+            authn: AuthenticatorChain::new()
+                .with(Box::new(AnonymousAuthenticator))
+                .allow_anonymous(true),
+            authz: Authorization::AlwaysAllow,
+        }
+    }
+
+    /// Replace the authentication chain (builder style).
+    #[must_use]
+    pub fn with_authn(mut self, authn: AuthenticatorChain) -> Self {
+        self.authn = authn;
+        self
+    }
+
+    /// Replace the authorization mode (builder style).
+    #[must_use]
+    pub fn with_authz(mut self, authz: Authorization) -> Self {
+        self.authz = authz;
+        self
+    }
+
+    /// Run the full request pipeline and return the encoded response. Errors at
+    /// any stage are rendered as a `metav1.Status` body with the matching HTTP
+    /// code, so this method never fails.
+    pub fn handle(&mut self, req: &Request) -> Response {
+        match self.route(req) {
+            Ok(resp) => resp,
+            Err(s) => status_response(&s),
+        }
+    }
+
+    fn route(&mut self, req: &Request) -> Result<Response> {
+        // 1. Authentication.
+        let user = self.authn.authenticate(req)?;
+
+        // 2. Resolve the resource path + verb.
+        let rp = path::parse(req.path())?;
+        let gvr = rp.gvr();
+        let watch = matches!(req.query_get("watch").as_deref(), Some("true" | "1"));
+        let verb = resolve_verb(&req.method, &rp, watch)?;
+
+        // 3. Authorization.
+        self.authorize(&user, &rp, verb)?;
+
+        // 4. Dispatch to storage.
+        self.dispatch(verb, &gvr, &rp, req)
+    }
+
+    fn authorize(&self, user: &UserInfo, rp: &ResourcePath, verb: &str) -> Result<()> {
+        match &self.authz {
+            Authorization::AlwaysAllow => Ok(()),
+            Authorization::AlwaysDeny => {
+                Err(Status::forbidden(format!("{} is not allowed", user.name)))
+            }
+            Authorization::Rbac(authorizer) => {
+                let mut attrs = Attributes::resource(
+                    user.clone(),
+                    verb,
+                    rp.group.clone(),
+                    rp.resource.clone(),
+                    rp.namespace.clone(),
+                    rp.name.clone(),
+                );
+                if !rp.subresource.is_empty() {
+                    attrs = attrs.with_subresource(rp.subresource.clone());
+                }
+                if authorizer.authorize(&attrs) == Decision::Allow {
+                    Ok(())
+                } else {
+                    Err(Status::forbidden(format!(
+                        "{} cannot {verb} resource \"{}\" in API group \"{}\"",
+                        user.name, rp.resource, rp.group
+                    )))
+                }
+            }
+        }
+    }
+
+    fn dispatch(
+        &mut self,
+        verb: &str,
+        gvr: &GroupVersionResource,
+        rp: &ResourcePath,
+        req: &Request,
+    ) -> Result<Response> {
+        match verb {
+            "get" => {
+                let o = self.registry.get(gvr, &rp.namespace, &rp.name)?;
+                Ok(object_response(200, &o))
+            }
+            "list" => {
+                let opts = list_options(rp, req)?;
+                let result = self.registry.list(gvr, &opts)?;
+                Ok(object_response(200, &list_object(gvr, &result)))
+            }
+            "create" => {
+                let mut body = parse_body(req)?;
+                inject_namespace(&mut body, &rp.namespace);
+                let created = self.registry.create(gvr, body)?;
+                Ok(object_response(201, &created))
+            }
+            "update" => {
+                let mut body = parse_body(req)?;
+                inject_namespace(&mut body, &rp.namespace);
+                let updated = if rp.subresource == "status" {
+                    self.registry.update_status(gvr, body)?
+                } else {
+                    self.registry.update(gvr, body)?
+                };
+                Ok(object_response(200, &updated))
+            }
+            "patch" => {
+                let patch_doc = parse_body(req)?;
+                let patched = self
+                    .registry
+                    .patch_merge(gvr, &rp.namespace, &rp.name, &patch_doc)?;
+                Ok(object_response(200, &patched))
+            }
+            "delete" => {
+                let (object, _removed) = self.registry.delete(gvr, &rp.namespace, &rp.name)?;
+                Ok(object_response(200, &object))
+            }
+            other => Err(Status::new(
+                crate::status::StatusReason::MethodNotAllowed,
+                format!("verb {other} is not supported"),
+            )),
+        }
+    }
+}
+
+/// Resolve the REST verb from the HTTP method + path scope (named vs collection)
+/// + the `watch` flag. Returns `MethodNotAllowed` for unsupported combinations.
+fn resolve_verb(method: &Method, rp: &ResourcePath, watch: bool) -> Result<&'static str> {
+    let named = rp.is_named();
+    let verb = match (method, named) {
+        (Method::Get, false) if watch => "watch",
+        (Method::Get, false) => "list",
+        (Method::Get | Method::Head, true) => "get",
+        (Method::Post, false) => "create",
+        (Method::Put, true) => "update",
+        (Method::Patch, true) => "patch",
+        (Method::Delete, true) => "delete",
+        _ => {
+            return Err(Status::new(
+                crate::status::StatusReason::MethodNotAllowed,
+                format!("{} not allowed on this resource path", method.as_str()),
+            ))
+        }
+    };
+    Ok(verb)
+}
+
+/// Build [`ListOptions`] from the path namespace + query parameters.
+fn list_options(rp: &ResourcePath, req: &Request) -> Result<ListOptions> {
+    let mut opts = ListOptions::default();
+    if !rp.namespace.is_empty() {
+        opts.namespace = Some(rp.namespace.clone());
+    }
+    if let Some(ls) = req.query_get("labelSelector") {
+        opts.label_selector = LabelSelector::parse(&ls)?;
+    }
+    if let Some(fs) = req.query_get("fieldSelector") {
+        opts.field_selector = FieldSelector::parse(&fs)?;
+    }
+    if let Some(limit) = req.query_get("limit") {
+        opts.limit = limit
+            .parse()
+            .map_err(|_| Status::bad_request("invalid limit parameter"))?;
+    }
+    if let Some(token) = req.query_get("continue") {
+        opts.continue_token = Some(token);
+    }
+    Ok(opts)
+}
+
+/// Parse a request body as JSON, mapping a parse failure to `BadRequest`.
+fn parse_body(req: &Request) -> Result<Value> {
+    let text = std::str::from_utf8(&req.body)
+        .map_err(|_| Status::bad_request("request body is not valid UTF-8"))?;
+    json::parse(text).map_err(|e| Status::bad_request(format!("invalid JSON body: {e}")))
+}
+
+/// The URL namespace is authoritative: stamp it onto the object's metadata when
+/// the path is namespaced (matching upstream, where the URL namespace overrides
+/// any body value).
+fn inject_namespace(object: &mut Value, namespace: &str) {
+    if namespace.is_empty() {
+        return;
+    }
+    let mut m = meta::read_meta(object);
+    m.namespace = namespace.to_string();
+    meta::write_meta(object, &m);
+}
 
 /// Render a [`Status`] failure as a `metav1.Status` object (the body the
 /// apiserver returns for every error).
