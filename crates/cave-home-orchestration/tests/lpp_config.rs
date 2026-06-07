@@ -80,10 +80,11 @@ fn is_shared_filesystem_decision_table() {
     let shared = StorageClassConfig::canonicalize(&[], "/mnt/shared").unwrap();
     assert_eq!(shared.is_shared_filesystem(), Ok(true));
 
-    // both set → error.
+    // both set → canonicalization SUCCEEDS (upstream defers the conflict), but
+    // is_shared_filesystem reports the ambiguity (upstream isSharedFilesystem).
     let both = StorageClassConfig::canonicalize(&[("nodeA", &["/data1"][..])], "/mnt/shared")
-        .unwrap_err();
-    assert!(matches!(both, ConfigError::BothNodeMapAndSharedFs), "got {both:?}");
+        .expect("canonicalize does not reject the conflict");
+    assert_eq!(both.is_shared_filesystem(), Err(ConfigError::BothNodeMapAndSharedFs));
 
     // neither set → error.
     let neither = StorageClassConfig::canonicalize(&[], "").unwrap();
