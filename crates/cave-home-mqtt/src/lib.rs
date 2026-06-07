@@ -16,6 +16,7 @@
 
 pub mod codec;
 pub mod packet;
+pub mod v5;
 
 pub use codec::{CodecError, decode_packet, encode_packet};
 pub use packet::{
