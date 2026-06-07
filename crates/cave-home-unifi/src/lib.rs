@@ -58,8 +58,10 @@
 //! Per Charter §9 only the **local** console API is ever targeted — there is no
 //! Ubiquiti-cloud dependency in any path here.
 
+pub mod console;
 pub mod error;
 pub mod transport;
 
+pub use console::{Console, ConsoleKind};
 pub use error::{Result, UnifiError};
 pub use transport::{HttpMethod, HttpRequest, HttpResponse, HttpTransport, MockTransport};
