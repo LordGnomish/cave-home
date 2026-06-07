@@ -26,6 +26,7 @@ pub mod automation;
 pub mod scene;
 
 pub mod solar;
+pub mod energy;
 pub mod unifi;
 pub mod hue;
 pub mod knx;

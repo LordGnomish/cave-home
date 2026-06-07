@@ -11,9 +11,10 @@
 use clap::{Arg, ArgAction, Command};
 
 use cave_home_cli::commands::{
-    alarm, automation, calendar, camera, cover, destroy, device, display, doorbell, free_home,
-    garden, history, household, hue, hvac, init, join, knx, lights, lock, matter, mobile, music,
-    notify, pool, room, scene, solar, status, unifi, vacuum, voice, water, wellness, zigbee, zwave,
+    alarm, automation, calendar, camera, cover, destroy, device, display, doorbell, energy,
+    free_home, garden, history, household, hue, hvac, init, join, knx, lights, lock, matter, mobile,
+    music, notify, pool, room, scene, solar, status, unifi, vacuum, voice, water, wellness, zigbee,
+    zwave,
 };
 
 fn build_cli() -> Command {
@@ -39,6 +40,7 @@ fn build_cli() -> Command {
         .subcommand(scene::cmd())
         // Cross-agent stubs — F1-F4 fill these:
         .subcommand(solar::cmd())
+        .subcommand(energy::cmd())
         .subcommand(unifi::cmd())
         .subcommand(hue::cmd())
         .subcommand(knx::cmd())
@@ -94,6 +96,7 @@ where
         Some(("scene", sub)) => scene::run(sub, verbose),
         // Cross-agent stubs use the simpler signature.
         Some(("solar", _)) => solar::run(),
+        Some(("energy", _)) => energy::run(),
         Some(("unifi", _)) => unifi::run(),
         Some(("hue", _)) => hue::run(),
         Some(("knx", _)) => knx::run(),
@@ -139,7 +142,7 @@ mod tests {
         let names: Vec<_> = cli.get_subcommands().map(|s| s.get_name()).collect();
         for required in [
             "init", "join", "status", "destroy", "device", "room", "automation", "scene",
-            "solar", "unifi", "hue", "knx", "free-home",
+            "solar", "energy", "unifi", "hue", "knx", "free-home",
             // G8 stubs:
             "lights", "cover", "lock", "vacuum", "hvac", "camera", "doorbell", "alarm",
             "water", "garden", "pool", "voice", "music", "notify", "display", "history",
