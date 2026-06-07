@@ -1,0 +1,42 @@
+# Example: the SAME `cave-home-tracker` binary, pointed at a different project.
+#
+#   cave-home-tracker --config cave-runtime.tracker.yaml poll
+#   cave-home-tracker --config cave-runtime.tracker.yaml measure
+#   cave-home-tracker --config cave-runtime.tracker.yaml report
+#
+# Nothing in the binary is cave-home specific — the project name, source root,
+# upstreams and subsystem→crate mapping all come from this file. This is why a
+# separate `cave-runtime-tracker` is unnecessary: one generic tracker, two (or
+# N) configs.
+
+project: cave-runtime
+root: ~/Code/cave-runtime
+work_dir: ~/.cache/cave-runtime-tracker
+
+upstreams:
+  - name: tokio
+    repo: https://github.com/tokio-rs/tokio
+    languages: [rust]
+    note: "example upstream — replace with cave-runtime's real upstreams"
+  - name: wasmtime
+    repo: https://github.com/bytecodealliance/wasmtime
+    languages: [rust]
+
+subsystems:
+  - name: runtime-core
+    group: runtime
+    port_crates: [crates/runtime-core]
+    upstreams:
+      - name: tokio
+        subpaths: [tokio/src/runtime]
+  - name: wasm-host
+    group: runtime
+    port_crates: [crates/wasm-host]
+    upstreams:
+      - name: wasmtime
+        subpaths: [crates/wasmtime/src]
+  # A genuinely first-party crate: no `upstreams:` -> counts as done iff it has
+  # code and passing tests (never penalised for a missing upstream).
+  - name: cli
+    group: tooling
+    port_crates: [crates/cli]
