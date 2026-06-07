@@ -15,6 +15,7 @@ pub mod registry;
 
 pub use cycle_state::CycleState;
 pub use events::{ActionType, ClusterEvent, Gvk, WILD_CARD_EVENT};
+// `events` provides the cluster-event vocabulary (`ActionType`/`Gvk`/`ClusterEvent`).
 pub use registry::{PluginRegistry, RegistryBuilder};
 
 use crate::cache::NodeInfo;
