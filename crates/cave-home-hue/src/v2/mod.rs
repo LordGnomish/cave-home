@@ -20,3 +20,10 @@ pub mod color;
 pub mod controllers;
 pub mod events;
 pub mod models;
+
+/// Real HTTP(S) CLIP-v2 transport + SSE eventstream client (`runtime` feature).
+#[cfg(feature = "runtime")]
+pub mod transport;
+
+#[cfg(all(test, feature = "runtime"))]
+mod test_support;
