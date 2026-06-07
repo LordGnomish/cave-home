@@ -230,3 +230,92 @@ ours         = "src/service.rs::tests"
 # CPython-asyncio loop-internals compatibility are carried; the relevant item is
 # listed as `permanent` under [[unmapped]] above (Charter §6.2 Linux/runtime
 # mandate, §8 no-backcompat).
+
+# =============================================================================
+# FOUNDATION EXTENSION (ray: ha-core-port-scaffold, 2026-06-07)
+# =============================================================================
+# This ray expands scope BEYOND core.py to the architectural foundation the
+# multi-month HA Core port sits on: the helpers (entity, the three registries,
+# template), the integration loader, the config layer, the automation chain,
+# and the zone/person/scene helpers. These are tracked separately so the
+# core.py ratio accounting above stays untouched. All are behavioural
+# reimplementations against the documented HA contract (Apache-2.0 upstream).
+
+[foundation]
+ported_at  = "2026-06-07"
+spec_sources = [
+    "home-assistant/core homeassistant/helpers/entity.py — Entity property surface, DeviceInfo, EntityCategory, _async_write_ha_state folding",
+    "home-assistant/core homeassistant/helpers/{area,device,entity}_registry.py — registry entry shapes + get_or_create/update/remove semantics",
+    "home-assistant/core homeassistant/helpers/template.py — states/is_state/state_attr/is_state_attr globals",
+    "home-assistant/core homeassistant/components/automation + helpers/{trigger,condition,script}.py — trigger/condition/action evaluation",
+    "home-assistant/core homeassistant/loader.py + setup.py — Manifest, integration dependency ordering, setup cascade",
+    "home-assistant/core homeassistant/config.py + core_config.py — voluptuous schema validation + core config block",
+    "home-assistant/core homeassistant/components/{zone,person}/__init__.py + homeassistant/scene.py — helper registries",
+    "home-assistant/core homeassistant/util/__init__.py — slugify, ensure_unique_string",
+]
+# Honest stance: this is the FOUNDATION (decision-core) of each subsystem, not
+# parity. Per the handoff LOC report (~5.0 kLOC Rust vs ~26 kLOC upstream
+# subsystem surface) this is ~19% of the referenced subsystems; the deferred
+# remainder (per-domain platforms, service-execution scheduler, websocket/REST
+# API, full template filter set, recorder/history, config-flow) is enumerated
+# in HANDOFF-ha-core-foundation.md.
+
+[[foundation_mapped]]
+upstream = "homeassistant/helpers/entity.py::Entity + DeviceInfo + EntityCategory"
+ours     = "src/entity.rs"
+
+[[foundation_mapped]]
+upstream = "homeassistant/helpers/area_registry.py::AreaRegistry"
+ours     = "src/area_registry.rs"
+
+[[foundation_mapped]]
+upstream = "homeassistant/helpers/device_registry.py::DeviceRegistry"
+ours     = "src/device_registry.rs"
+
+[[foundation_mapped]]
+upstream = "homeassistant/helpers/entity_registry.py::EntityRegistry"
+ours     = "src/entity_registry.rs"
+
+[[foundation_mapped]]
+upstream = "homeassistant/helpers/template.py (state-access globals)"
+ours     = "src/template.rs"
+
+[[foundation_mapped]]
+upstream = "homeassistant/components/automation + helpers/{trigger,condition,script}.py"
+ours     = "src/automation.rs"
+
+[[foundation_mapped]]
+upstream = "homeassistant/core.py::HomeAssistant (hass handle bundle)"
+ours     = "src/core_context.rs"
+
+[[foundation_mapped]]
+upstream = "homeassistant/loader.py + setup.py (Integration + dependency ordering)"
+ours     = "src/loader.rs"
+
+[[foundation_mapped]]
+upstream = "homeassistant/config.py + core_config.py (Schema + CoreConfig)"
+ours     = "src/config.rs"
+
+[[foundation_mapped]]
+upstream = "homeassistant/components/zone/__init__.py"
+ours     = "src/helpers/zone.rs"
+
+[[foundation_mapped]]
+upstream = "homeassistant/components/person/__init__.py"
+ours     = "src/helpers/person.rs"
+
+[[foundation_mapped]]
+upstream = "homeassistant/components/homeassistant/scene.py"
+ours     = "src/helpers/scene.rs"
+
+[[foundation_deferred]]
+item = "Service-execution scheduler (ServiceRegistry.async_call: target/entity expansion, blocking, return_response). Automation emits ServiceCalls; execution deferred to the runtime layer."
+priority = "high"
+
+[[foundation_deferred]]
+item = "Per-domain entity platforms (light/switch/climate/sensor/media_player/...) — subsequent dispatches, each implementing the Entity trait."
+priority = "high"
+
+[[foundation_deferred]]
+item = "Full template filter/test set (~40 HA filters) + websocket/REST API surface + recorder/history + config-flow."
+priority = "medium"
