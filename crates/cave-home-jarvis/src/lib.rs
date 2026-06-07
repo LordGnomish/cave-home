@@ -42,10 +42,13 @@
 //! against.
 
 pub mod audio;
+pub mod config;
 pub mod dispatch;
 pub mod error;
 pub mod features;
 pub mod llm;
+pub mod metrics;
+pub mod pipeline;
 pub mod profile;
 pub mod room;
 pub mod stt;
@@ -53,4 +56,57 @@ pub mod tools;
 pub mod tts;
 pub mod wake;
 
+pub use config::{DevicePlacement, JarvisConfig};
+pub use dispatch::{DispatchContext, DispatchOutcome, DispatchPath, Dispatcher};
 pub use error::{JarvisError, Result};
+pub use metrics::Metrics;
+pub use pipeline::{JarvisPipeline, PipelineEvent, Turn};
+pub use profile::{SpeakerBook, SpeakerMatch};
+pub use room::RoomRegistry;
+pub use stt::{SpeechToText, Transcript};
+pub use tools::{ToolExecutor, ToolRegistry, ToolResult};
+pub use tts::{SpokenReply, TextToSpeech};
+pub use wake::{WakeConfig, WakeDetection, WakeWordDetector};
+
+/// Re-exported so callers configure one assistant in one language enum.
+pub use cave_home_voice::Lang;
+
+#[cfg(test)]
+mod doctest_like {
+    //! A compile-checked end-to-end example exercised as a normal test (kept out
+    //! of the public docs to avoid leaking the mock types).
+    use crate::audio::AudioFrame;
+    use crate::dispatch::{DispatchConfig, Dispatcher};
+    use crate::llm::MockLlm;
+    use crate::pipeline::JarvisPipeline;
+    use crate::profile::SpeakerBook;
+    use crate::room::RoomRegistry;
+    use crate::stt::MockStt;
+    use crate::tools::{MockToolExecutor, ToolRegistry};
+    use crate::tts::MockTts;
+    use crate::wake::{WakeConfig, WakeWordDetector};
+
+    #[tokio::test]
+    async fn end_to_end_command_controls_a_light() {
+        let stt = MockStt::new().say("turn the kitchen light on");
+        let dispatcher = Dispatcher::new(
+            cave_home_voice::intents::builtin_intents().unwrap(),
+            MockLlm::new(),
+            MockToolExecutor::new(),
+            ToolRegistry::default(),
+            DispatchConfig::default(),
+        );
+        let pipeline = JarvisPipeline::new(
+            WakeWordDetector::new(WakeConfig::default()),
+            SpeakerBook::with_defaults(),
+            RoomRegistry::new().with_device("mic-kitchen", "kitchen"),
+            stt,
+            dispatcher,
+            MockTts::new(),
+        );
+        let cmd = vec![AudioFrame::new("mic-kitchen", vec![0.2; 4096])];
+        let turn = pipeline.handle_command("mic-kitchen", &cmd).await.unwrap();
+        assert_eq!(turn.outcome.executed_tools(), vec!["set_light".to_string()]);
+        assert_eq!(turn.room.as_deref(), Some("kitchen"));
+    }
+}

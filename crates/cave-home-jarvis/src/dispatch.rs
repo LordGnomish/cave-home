@@ -130,6 +130,12 @@ impl<L: LlmClient, E: ToolExecutor> Dispatcher<L, E> {
         &self.llm
     }
 
+    /// The reply language (used by the pipeline to drive TTS).
+    #[must_use]
+    pub const fn lang(&self) -> Lang {
+        self.config.lang
+    }
+
     /// Dispatch one transcript to a spoken outcome.
     ///
     /// # Errors
