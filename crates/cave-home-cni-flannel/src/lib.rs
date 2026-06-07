@@ -74,6 +74,7 @@ pub mod hostgw;
 pub mod ipam;
 pub mod mac;
 pub mod netlink;
+pub mod netlink_socket;
 pub mod route_network;
 pub mod routes;
 pub mod subnet;

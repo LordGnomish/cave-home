@@ -33,6 +33,9 @@ use std::net::IpAddr;
 /// netlink message and attribute alignment (`NLMSG_ALIGNTO` / `RTA_ALIGNTO`).
 pub const NLMSG_ALIGNTO: usize = 4;
 
+/// `NLMSG_ERROR` — the kernel's error/ACK message type (errno 0 = success).
+pub const NLMSG_ERROR: u16 = 2;
+
 // Message types we emit / parse.
 /// `RTM_NEWLINK` — create / change a network link.
 pub const RTM_NEWLINK: u16 = 16;
