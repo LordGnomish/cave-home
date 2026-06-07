@@ -71,7 +71,7 @@ pub fn parse(args: &[String]) -> core::result::Result<FreeAtHomeCommand, CliErro
         .split_first()
         .ok_or_else(|| CliError::MissingArgs("expected a subcommand".to_string()))?;
     match head.as_str() {
-        "list" => Ok(FreeAtHomeCommand::List),
+        "list" | "list-devices" => Ok(FreeAtHomeCommand::List),
         "watch" => Ok(FreeAtHomeCommand::Watch),
         "get" => match rest {
             [serial, channel, datapoint] => Ok(FreeAtHomeCommand::Get {
@@ -102,8 +102,11 @@ pub fn parse(args: &[String]) -> core::result::Result<FreeAtHomeCommand, CliErro
 ///
 /// `list` and `watch` are not single REST calls, so they map to `None`. `get`
 /// and `set` parse their string ids into typed free@home ids (erroring on
-/// malformed input).
-pub fn to_rest_request(command: &FreeAtHomeCommand) -> Result<Option<RestRequest>> {
+/// malformed input) and address the datapoint under `sysap_uuid`.
+pub fn to_rest_request(
+    command: &FreeAtHomeCommand,
+    sysap_uuid: &str,
+) -> Result<Option<RestRequest>> {
     let parse_ids = |serial: &str, channel: &str, datapoint: &str| -> Result<_> {
         let serial =
             DeviceSerial::parse(serial).map_err(|e| FreeAtHomeError::Domain(e.to_string()))?;
@@ -121,7 +124,7 @@ pub fn to_rest_request(command: &FreeAtHomeCommand) -> Result<Option<RestRequest
             datapoint,
         } => {
             let (s, c, d) = parse_ids(serial, channel, datapoint)?;
-            Ok(Some(RestRequest::get_datapoint(s, c, d)))
+            Ok(Some(RestRequest::get_datapoint(sysap_uuid, s, c, d)))
         }
         FreeAtHomeCommand::Set {
             serial,
@@ -130,7 +133,13 @@ pub fn to_rest_request(command: &FreeAtHomeCommand) -> Result<Option<RestRequest
             value,
         } => {
             let (s, c, d) = parse_ids(serial, channel, datapoint)?;
-            Ok(Some(RestRequest::set_datapoint(s, c, d, value.clone())))
+            Ok(Some(RestRequest::set_datapoint(
+                sysap_uuid,
+                s,
+                c,
+                d,
+                value.clone(),
+            )))
         }
     }
 }
@@ -139,7 +148,7 @@ pub fn to_rest_request(command: &FreeAtHomeCommand) -> Result<Option<RestRequest
 pub fn usage() -> String {
     [
         "usage: cave-home-ctl freeathome <command>",
-        "  list                                  list devices and state",
+        "  list | list-devices                   list devices and state",
         "  get  <serial> <channel> <datapoint>   read a datapoint",
         "  set  <serial> <channel> <datapoint> <value>   write a datapoint",
         "  watch                                 stream live state changes",
@@ -159,6 +168,14 @@ mod tests {
     fn parse_list() {
         assert_eq!(
             parse(&args(&["list"])).expect("ok"),
+            FreeAtHomeCommand::List
+        );
+    }
+
+    #[test]
+    fn parse_list_devices_alias() {
+        assert_eq!(
+            parse(&args(&["list-devices"])).expect("ok"),
             FreeAtHomeCommand::List
         );
     }
@@ -227,17 +244,22 @@ mod tests {
         }
     }
 
+    const UUID: &str = "00000000-0000-0000-0000-000000000000";
+
     #[test]
     fn get_maps_to_rest_request() {
         let cmd = parse(&args(&["get", "ABB700C12345", "ch0000", "odp0000"])).expect("ok");
-        let req = to_rest_request(&cmd).expect("ok").expect("some");
-        assert_eq!(req.path(), "datapoint/ABB700C12345/ch0000/odp0000");
+        let req = to_rest_request(&cmd, UUID).expect("ok").expect("some");
+        assert_eq!(
+            req.path(),
+            "datapoint/00000000-0000-0000-0000-000000000000/ABB700C12345.ch0000.odp0000"
+        );
     }
 
     #[test]
     fn set_maps_to_rest_request_with_body() {
         let cmd = parse(&args(&["set", "ABB700C12345", "ch0000", "idp0000", "1"])).expect("ok");
-        let req = to_rest_request(&cmd).expect("ok").expect("some");
+        let req = to_rest_request(&cmd, UUID).expect("ok").expect("some");
         assert_eq!(req.method(), crate::rest::HttpMethod::Put);
         assert_eq!(req.body(), Some("1"));
     }
@@ -245,9 +267,9 @@ mod tests {
     #[test]
     fn list_and_watch_map_to_no_single_request() {
         let list = parse(&args(&["list"])).expect("ok");
-        assert!(to_rest_request(&list).expect("ok").is_none());
+        assert!(to_rest_request(&list, UUID).expect("ok").is_none());
         let watch = parse(&args(&["watch"])).expect("ok");
-        assert!(to_rest_request(&watch).expect("ok").is_none());
+        assert!(to_rest_request(&watch, UUID).expect("ok").is_none());
     }
 
     #[test]
@@ -257,6 +279,6 @@ mod tests {
             channel: "ch0000".into(),
             datapoint: "odp0000".into(),
         };
-        assert!(to_rest_request(&cmd).is_err());
+        assert!(to_rest_request(&cmd, UUID).is_err());
     }
 }
