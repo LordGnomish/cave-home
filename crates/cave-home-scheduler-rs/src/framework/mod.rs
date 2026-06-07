@@ -155,6 +155,37 @@ pub trait PostFilterPlugin: Send + Sync {
     ) -> (Option<String>, Status);
 }
 
+/// Upstream: `pkg/scheduler/framework/interface.go::ReservePlugin`.
+///
+/// Runs in the binding cycle after a node is chosen: `reserve` claims runtime
+/// resources for the pod on that node; `unreserve` rolls the claim back if any
+/// later stage (Permit, PreBind, Bind) fails. Every Reserve that ran must be
+/// Unreserved on failure, in reverse order.
+pub trait ReservePlugin: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn reserve(&self, state: &mut CycleState, pod: &Pod, node_name: &str) -> Status;
+    fn unreserve(&self, state: &mut CycleState, pod: &Pod, node_name: &str);
+}
+
+/// Upstream: `pkg/scheduler/framework/interface.go::PermitPlugin`.
+///
+/// Gates whether the reserved pod may proceed to bind. Phase 2 supports
+/// approve (`Success`) or deny (`Unschedulable`); the timed "wait" disposition
+/// is deferred (see `parity.manifest.toml`).
+pub trait PermitPlugin: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn permit(&self, state: &mut CycleState, pod: &Pod, node_name: &str) -> Status;
+}
+
+/// Upstream: `pkg/scheduler/framework/interface.go::PreBindPlugin`.
+///
+/// Last hook before the bind RPC — e.g. provisioning a volume. A failure here
+/// triggers Unreserve and a re-queue.
+pub trait PreBindPlugin: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn pre_bind(&self, state: &mut CycleState, pod: &Pod, node_name: &str) -> Status;
+}
+
 /// Per-pod, per-node filter result map.
 /// Upstream: `pkg/scheduler/framework/types.go::NodeToStatusMap`.
 pub type FilterFailureMap = std::collections::BTreeMap<String, Status>;

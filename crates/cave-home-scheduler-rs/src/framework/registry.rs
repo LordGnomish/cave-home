@@ -7,7 +7,10 @@
 
 use std::sync::Arc;
 
-use super::{FilterPlugin, PostFilterPlugin, PreFilterPlugin, PreScorePlugin, ScorePlugin};
+use super::{
+    FilterPlugin, PermitPlugin, PostFilterPlugin, PreBindPlugin, PreFilterPlugin, PreScorePlugin,
+    ReservePlugin, ScorePlugin,
+};
 
 /// Upstream: `pkg/scheduler/framework/runtime/framework.go::frameworkImpl`.
 ///
@@ -22,12 +25,30 @@ pub struct PluginRegistry {
     pre_scores: Vec<Arc<dyn PreScorePlugin>>,
     scores: Vec<Arc<dyn ScorePlugin>>,
     post_filters: Vec<Arc<dyn PostFilterPlugin>>,
+    reserves: Vec<Arc<dyn ReservePlugin>>,
+    permits: Vec<Arc<dyn PermitPlugin>>,
+    pre_binds: Vec<Arc<dyn PreBindPlugin>>,
 }
 
 impl PluginRegistry {
     #[must_use]
     pub fn builder() -> RegistryBuilder {
         RegistryBuilder::default()
+    }
+
+    #[must_use]
+    pub fn reserves(&self) -> &[Arc<dyn ReservePlugin>] {
+        &self.reserves
+    }
+
+    #[must_use]
+    pub fn permits(&self) -> &[Arc<dyn PermitPlugin>] {
+        &self.permits
+    }
+
+    #[must_use]
+    pub fn pre_binds(&self) -> &[Arc<dyn PreBindPlugin>] {
+        &self.pre_binds
     }
 
     #[must_use]
@@ -64,12 +85,33 @@ pub struct RegistryBuilder {
     pre_scores: Vec<Arc<dyn PreScorePlugin>>,
     scores: Vec<Arc<dyn ScorePlugin>>,
     post_filters: Vec<Arc<dyn PostFilterPlugin>>,
+    reserves: Vec<Arc<dyn ReservePlugin>>,
+    permits: Vec<Arc<dyn PermitPlugin>>,
+    pre_binds: Vec<Arc<dyn PreBindPlugin>>,
 }
 
 impl RegistryBuilder {
     #[must_use]
     pub fn with_pre_filter(mut self, p: Arc<dyn PreFilterPlugin>) -> Self {
         self.pre_filters.push(p);
+        self
+    }
+
+    #[must_use]
+    pub fn with_reserve(mut self, p: Arc<dyn ReservePlugin>) -> Self {
+        self.reserves.push(p);
+        self
+    }
+
+    #[must_use]
+    pub fn with_permit(mut self, p: Arc<dyn PermitPlugin>) -> Self {
+        self.permits.push(p);
+        self
+    }
+
+    #[must_use]
+    pub fn with_pre_bind(mut self, p: Arc<dyn PreBindPlugin>) -> Self {
+        self.pre_binds.push(p);
         self
     }
 
@@ -105,6 +147,9 @@ impl RegistryBuilder {
             pre_scores: self.pre_scores,
             scores: self.scores,
             post_filters: self.post_filters,
+            reserves: self.reserves,
+            permits: self.permits,
+            pre_binds: self.pre_binds,
         }
     }
 }

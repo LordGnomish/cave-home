@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::Notify;
 
 use crate::cache::SchedulerCache;
-use crate::framework::{ActionType, ClusterEvent, Gvk, PluginRegistry};
+use crate::framework::{ActionType, ClusterEvent, CycleState, Gvk, PluginRegistry};
 use crate::queue::{PriorityQueue, QueuedPodInfo, SchedulingQueue};
 use crate::schedule_one::{schedule_one, ScheduleResult};
 use crate::source_sink::{NodeEvent, PodEvent, Result, SchedulerSink, SchedulerSource};
@@ -144,7 +144,7 @@ impl Scheduler {
             let reasons: Vec<String> = result
                 .filter_failures
                 .values()
-                .map(|s| s.message())
+                .map(crate::framework::Status::message)
                 .collect();
             let _ = self
                 .sink
@@ -286,35 +286,24 @@ impl Scheduler {
         let result = schedule_one(&pod, &self.cache, &self.registry);
 
         if let Some(host) = result.suggested_host.clone() {
-            match self.cache.assume_pod(pod.clone(), &host) {
-                Ok(()) => match self.sink.bind(&pod, &host).await {
-                    Ok(()) => {
-                        let _ = self
-                            .sink
-                            .record_event(
-                                &pod,
-                                "Scheduled",
-                                &format!(
-                                    "Successfully assigned {full} to {host} (profile={})",
-                                    self.profile_name
-                                ),
-                            )
-                            .await;
-                    }
-                    Err(e) => {
-                        self.cache.forget_pod(&pod.metadata.uid);
-                        let _ = self
-                            .sink
-                            .record_event(&pod, "FailedScheduling", &format!("bind failed: {e}"))
-                            .await;
-                        self.queue
-                            .add_unschedulable_if_not_present(info, pod_cycle, now_ms);
-                    }
-                },
-                Err(e) => {
+            match self.run_binding_cycle(&pod, &host).await {
+                Ok(()) => {
                     let _ = self
                         .sink
-                        .record_event(&pod, "FailedScheduling", &format!("assume failed: {e}"))
+                        .record_event(
+                            &pod,
+                            "Scheduled",
+                            &format!(
+                                "Successfully assigned {full} to {host} (profile={})",
+                                self.profile_name
+                            ),
+                        )
+                        .await;
+                }
+                Err(reason) => {
+                    let _ = self
+                        .sink
+                        .record_event(&pod, "FailedScheduling", &reason)
                         .await;
                     self.queue
                         .add_unschedulable_if_not_present(info, pod_cycle, now_ms);
@@ -348,6 +337,82 @@ impl Scheduler {
             self.queue
                 .add_unschedulable_if_not_present(info, pod_cycle, now_ms);
         }
+    }
+
+    /// Upstream: the binding cycle — `Reserve -> Permit -> PreBind -> Bind`,
+    /// with `Unreserve` rollback if any stage rejects. The built-in
+    /// node-resource reservation is the cache `assume_pod`; the bind itself is
+    /// the `DefaultBinder` (the sink). On any failure the assumption and every
+    /// Reserve plugin that ran are unwound, and an `Err(reason)` is returned so
+    /// the caller re-queues the pod.
+    async fn run_binding_cycle(
+        &self,
+        pod: &crate::types::Pod,
+        host: &str,
+    ) -> std::result::Result<(), String> {
+        // Built-in Reserve: tentatively place the pod (claims its resources).
+        self.cache
+            .assume_pod(pod.clone(), host)
+            .map_err(|e| format!("assume failed: {e}"))?;
+
+        let mut state = CycleState::new();
+
+        // ---------- Reserve ----------
+        let mut reserved = 0_usize;
+        for plugin in self.registry.reserves() {
+            reserved += 1;
+            let status = plugin.reserve(&mut state, pod, host);
+            if !status.is_success() {
+                self.unwind(&mut state, pod, host, reserved);
+                return Err(format!(
+                    "reserve {} failed: {}",
+                    plugin.name(),
+                    status.message()
+                ));
+            }
+        }
+
+        // ---------- Permit ----------
+        for plugin in self.registry.permits() {
+            let status = plugin.permit(&mut state, pod, host);
+            if !status.is_success() {
+                self.unwind(&mut state, pod, host, reserved);
+                return Err(format!(
+                    "permit {} denied: {}",
+                    plugin.name(),
+                    status.message()
+                ));
+            }
+        }
+
+        // ---------- PreBind ----------
+        for plugin in self.registry.pre_binds() {
+            let status = plugin.pre_bind(&mut state, pod, host);
+            if !status.is_success() {
+                self.unwind(&mut state, pod, host, reserved);
+                return Err(format!(
+                    "prebind {} failed: {}",
+                    plugin.name(),
+                    status.message()
+                ));
+            }
+        }
+
+        // ---------- Bind (DefaultBinder -> sink) ----------
+        if let Err(e) = self.sink.bind(pod, host).await {
+            self.unwind(&mut state, pod, host, reserved);
+            return Err(format!("bind failed: {e}"));
+        }
+        Ok(())
+    }
+
+    /// Roll back a partial binding cycle: Unreserve the Reserve plugins that
+    /// ran (reverse order) and release the cache assumption.
+    fn unwind(&self, state: &mut CycleState, pod: &crate::types::Pod, host: &str, reserved: usize) {
+        for plugin in self.registry.reserves().iter().take(reserved).rev() {
+            plugin.unreserve(state, pod, host);
+        }
+        self.cache.forget_pod(&pod.metadata.uid);
     }
 }
 
