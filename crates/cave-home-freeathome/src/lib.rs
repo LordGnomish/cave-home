@@ -26,7 +26,14 @@
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::must_use_candidate)]
+// This crate's docs are dense with protocol acronyms (SysAP, HTTPS, WSS, mTLS,
+// fhapi); backticking every one hurts readability more than it helps.
+#![allow(clippy::doc_markdown)]
 
-mod auth;
-mod config;
-mod error;
+pub mod auth;
+pub mod config;
+pub mod error;
+
+pub use auth::{AuthMethod, ClientCertConfig, Credentials};
+pub use config::ClientConfig;
+pub use error::{FreeAtHomeError, Result};
