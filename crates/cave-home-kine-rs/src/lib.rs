@@ -74,6 +74,7 @@
 #![allow(clippy::cast_possible_wrap)]
 
 pub mod compact;
+pub mod dialect;
 pub mod error;
 pub mod lease;
 pub mod range;
