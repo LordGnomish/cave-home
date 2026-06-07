@@ -6,9 +6,11 @@
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use tokio::sync::Notify;
 
 use super::SchedulingQueue;
 use crate::framework::{ClusterEvent, WILD_CARD_EVENT};
@@ -109,6 +111,16 @@ impl Ord for HeapEntry {
 #[derive(Default, Clone)]
 pub struct PriorityQueue {
     inner: Arc<Mutex<PriorityQueueInner>>,
+    signal: Arc<QueueSignal>,
+}
+
+/// Wakeup channel for [`PriorityQueue::pop_wait`]. Upstream's `Pop` blocks on a
+/// `sync.Cond`; a tokio [`Notify`] plus a closed flag gives the same
+/// "block until a pod is active, or the queue shuts down" contract.
+#[derive(Default)]
+struct QueueSignal {
+    notify: Notify,
+    closed: AtomicBool,
 }
 
 struct PriorityQueueInner {
@@ -167,6 +179,47 @@ impl PriorityQueue {
     #[must_use]
     pub fn backoff_count(&self) -> usize {
         self.inner.lock().backoff.len()
+    }
+
+    /// Wake one task parked in [`pop_wait`](Self::pop_wait). Called whenever a
+    /// pod may have become available on the active heap.
+    fn wake(&self) {
+        self.signal.notify.notify_one();
+    }
+
+    /// Upstream: `PriorityQueue.Close` — stop the queue and wake every waiter
+    /// so blocked `pop_wait` calls can observe shutdown and return.
+    pub fn close(&self) {
+        self.signal.closed.store(true, AtomicOrdering::Release);
+        self.signal.notify.notify_waiters();
+    }
+
+    /// True once [`close`](Self::close) has been called.
+    #[must_use]
+    pub fn is_closed(&self) -> bool {
+        self.signal.closed.load(AtomicOrdering::Acquire)
+    }
+
+    /// Upstream: `PriorityQueue.Pop` (blocking). Awaits until a pod is on the
+    /// active heap and returns it, or returns `None` once the queue is closed
+    /// and drained. Already-active pods are always drained before shutdown.
+    pub async fn pop_wait(&self) -> Option<QueuedPodInfo> {
+        let notified = self.signal.notify.notified();
+        tokio::pin!(notified);
+        loop {
+            // Register interest *before* checking so a `notify_one` that races
+            // our check is not lost (standard tokio Notify pattern).
+            notified.as_mut().enable();
+            if let Some(info) = self.pop() {
+                return Some(info);
+            }
+            if self.is_closed() {
+                // Drain anything that arrived between the pop and the flag.
+                return self.pop();
+            }
+            notified.as_mut().await;
+            notified.set(self.signal.notify.notified());
+        }
     }
 
     /// Push a queued pod onto the active heap (caller holds the lock).
@@ -239,6 +292,8 @@ impl PriorityQueue {
             }
         }
         g.move_request_cycle = Some(g.scheduling_cycle);
+        drop(g);
+        self.wake();
     }
 
     /// Upstream: `PriorityQueue.flushUnschedulablePodsLeftover`.
@@ -256,14 +311,20 @@ impl PriorityQueue {
             })
             .map(|(k, _)| k.clone())
             .collect();
+        let mut activated = false;
         for key in stale {
             if let Some(info) = g.unschedulable.remove(&key) {
                 if info.is_backing_off(now_ms) {
                     g.backoff.push(info);
                 } else {
                     Self::push_active(&mut g, info);
+                    activated = true;
                 }
             }
+        }
+        drop(g);
+        if activated {
+            self.wake();
         }
     }
 }
@@ -271,14 +332,11 @@ impl PriorityQueue {
 impl SchedulingQueue for PriorityQueue {
     fn add(&self, pod: Pod) {
         let info = QueuedPodInfo::new(pod);
-        let mut g = self.inner.lock();
-        g.seq += 1;
-        let entry = HeapEntry {
-            priority: info.pod.spec.priority,
-            seq: g.seq,
-            info,
-        };
-        g.active.push(entry);
+        {
+            let mut g = self.inner.lock();
+            Self::push_active(&mut g, info);
+        }
+        self.wake();
     }
 
     fn pop(&self) -> Option<QueuedPodInfo> {
@@ -311,14 +369,13 @@ impl SchedulingQueue for PriorityQueue {
                 })
                 .collect();
         g.backoff = still;
+        let activated = !due.is_empty();
         for info in due {
-            g.seq += 1;
-            let entry = HeapEntry {
-                priority: info.pod.spec.priority,
-                seq: g.seq,
-                info,
-            };
-            g.active.push(entry);
+            Self::push_active(&mut g, info);
+        }
+        drop(g);
+        if activated {
+            self.wake();
         }
     }
 
