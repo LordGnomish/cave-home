@@ -32,16 +32,23 @@
 //! - [`provision`] — the `Provision` decision: PVC validation (selector / access
 //!   mode / node), the resulting [`provision::PvSpec`] (reclaim policy, capacity,
 //!   node-affinity term, `hostPath`/`local` source), and the provisioning state.
+//! - [`helper`] — the helper-pod *command*: action, command line, the
+//!   `VOL_DIR`/`VOL_MODE`/`VOL_SIZE_BYTES` env, the `-p/-s/-m/-a` args, the
+//!   `{base}-{action}-{name}` name truncation, and the default setup/teardown
+//!   scripts.
 //!
-//! Further submodules (`helper`, `reclaim`, `metrics`, `report`) land in
-//! subsequent TDD cycles.
+//! Further submodules (`reclaim`, `metrics`, `report`) land in subsequent TDD
+//! cycles.
 //!
 //! Like the rest of this crate it is **infrastructure**, hidden from end users
 //! (Charter §6.3, ADR-007): no user-facing strings, no i18n.
 
 pub mod config;
+pub mod helper;
 pub mod path;
 pub mod provision;
+
+pub use config::ProvisionerConfig;
 
 /// The node key under which an unlisted node falls back to a default path set
 /// (upstream `NodeDefaultNonListedNodes`).

@@ -129,7 +129,7 @@ pub fn is_local(path: &str) -> bool {
 
 /// Lexically clean an absolute path (collapse `//`, drop `.`, resolve `..`
 /// clamped at root, strip trailing slash). Pure-lexical; never touches the FS.
-fn clean_abs(path: &str) -> String {
+pub(crate) fn clean_abs(path: &str) -> String {
     let mut segments: Vec<&str> = Vec::new();
     for part in path.split('/') {
         match part {
