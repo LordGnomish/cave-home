@@ -78,6 +78,14 @@ impl<T: HttpTransport> ConsoleClient<T> {
         &self.console
     }
 
+    /// The underlying transport (chiefly for tests / introspection — e.g.
+    /// asserting which request a [`MockTransport`](crate::transport::MockTransport)
+    /// actually received).
+    #[must_use]
+    pub fn transport(&self) -> &T {
+        &self.transport
+    }
+
     /// The shared metrics registry.
     #[must_use]
     pub fn metrics(&self) -> &Arc<Metrics> {
@@ -375,7 +383,7 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, UnifiError::Unauthorized(_)));
         // exactly one request: no re-login attempt
-        assert_eq!(client.transport_request_count(), 1);
+        assert_eq!(client.transport().request_count(), 1);
     }
 
     #[tokio::test]
@@ -399,13 +407,6 @@ mod tests {
                 assert_eq!(message, "server boom");
             }
             other => panic!("expected Http, got {other:?}"),
-        }
-    }
-
-    // A tiny test-only accessor so the api-key test can assert request count.
-    impl ConsoleClient<MockTransport> {
-        fn transport_request_count(&self) -> usize {
-            self.transport.request_count()
         }
     }
 }
