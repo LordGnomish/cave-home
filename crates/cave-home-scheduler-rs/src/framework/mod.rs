@@ -91,6 +91,15 @@ impl Status {
 pub const MIN_NODE_SCORE: i64 = 0;
 pub const MAX_NODE_SCORE: i64 = 100;
 
+/// Upstream: `pkg/scheduler/framework/types.go::NodeScore` — a single node's
+/// score from one plugin, carried by name so `NormalizeScore` can rescale a
+/// plugin's whole result set together.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NodeScore {
+    pub name: String,
+    pub score: i64,
+}
+
 /// Upstream: `pkg/scheduler/framework/interface.go::FilterPlugin`.
 pub trait FilterPlugin: Send + Sync {
     fn name(&self) -> &'static str;
@@ -101,6 +110,28 @@ pub trait FilterPlugin: Send + Sync {
 pub trait ScorePlugin: Send + Sync {
     fn name(&self) -> &'static str;
     fn score(&self, state: &mut CycleState, pod: &Pod, node: &NodeInfo) -> (i64, Status);
+
+    /// Optional `NormalizeScore` extension point.
+    ///
+    /// Upstream: `pkg/scheduler/framework/interface.go::ScoreExtensions::
+    /// NormalizeScore`. Called once per plugin after [`ScorePlugin::score`] has
+    /// produced a raw value for every feasible node, with the full per-node
+    /// list so a plugin can rescale relative to the others (e.g. onto
+    /// `[MIN_NODE_SCORE, MAX_NODE_SCORE]`). The default is a no-op: a plugin
+    /// whose `score` is already normalised needs no extension.
+    ///
+    /// Implementations must mutate `scores` in place, preserving its length and
+    /// order — the scheduler maps results back to nodes positionally.
+    fn normalize_score(
+        &self,
+        state: &mut CycleState,
+        pod: &Pod,
+        scores: &mut [NodeScore],
+    ) -> Status {
+        let _ = (state, pod, scores);
+        Status::success()
+    }
+
     /// Default weight applied to the produced score.
     /// Upstream: `pkg/scheduler/apis/config/types.go::Plugin.Weight`.
     fn weight(&self) -> i64 {

@@ -191,11 +191,24 @@ impl NodeSelector {
     }
 }
 
-/// Upstream: `k8s.io/api/core/v1.NodeAffinity`. Phase 2 only honours
-/// `required_during_scheduling_ignored_during_execution`.
+/// Upstream: `k8s.io/api/core/v1.PreferredSchedulingTerm`. A weighted soft
+/// node-affinity preference: nodes matching `preference` gain `weight` score.
+#[derive(Debug, Clone, Default)]
+pub struct PreferredSchedulingTerm {
+    /// Weight in `1..=100` (validation is the apiserver's job; the scheduler
+    /// sums whatever it is given).
+    pub weight: i32,
+    /// The node selector term a node must match to earn `weight`.
+    pub preference: NodeSelectorTerm,
+}
+
+/// Upstream: `k8s.io/api/core/v1.NodeAffinity`. Phase 2 honours the hard
+/// `required_during_scheduling_ignored_during_execution` (Filter) and the soft
+/// `preferred_during_scheduling_ignored_during_execution` (Score).
 #[derive(Debug, Clone, Default)]
 pub struct NodeAffinity {
     pub required_during_scheduling: Option<NodeSelector>,
+    pub preferred_during_scheduling: Vec<PreferredSchedulingTerm>,
 }
 
 /// Upstream: `k8s.io/api/core/v1.Affinity`.

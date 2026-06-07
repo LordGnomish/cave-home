@@ -88,8 +88,14 @@ fn normalize_rescales_to_max_node_score() {
     let pod = Pod::default();
     let mut s = CycleState::new();
     let mut scores = vec![
-        NodeScore { name: "a".into(), score: 8 },
-        NodeScore { name: "b".into(), score: 0 },
+        NodeScore {
+            name: "a".into(),
+            score: 8,
+        },
+        NodeScore {
+            name: "b".into(),
+            score: 0,
+        },
     ];
     let status = NodeAffinityScore.normalize_score(&mut s, &pod, &mut scores);
     assert!(status.is_success());
@@ -102,8 +108,14 @@ fn normalize_is_proportional() {
     let pod = Pod::default();
     let mut s = CycleState::new();
     let mut scores = vec![
-        NodeScore { name: "a".into(), score: 2 },
-        NodeScore { name: "b".into(), score: 4 },
+        NodeScore {
+            name: "a".into(),
+            score: 2,
+        },
+        NodeScore {
+            name: "b".into(),
+            score: 4,
+        },
     ];
     NodeAffinityScore.normalize_score(&mut s, &pod, &mut scores);
     assert_eq!(scores[0].score, 50); // 2/4 * 100
@@ -115,8 +127,14 @@ fn normalize_all_zero_stays_zero() {
     let pod = Pod::default();
     let mut s = CycleState::new();
     let mut scores = vec![
-        NodeScore { name: "a".into(), score: 0 },
-        NodeScore { name: "b".into(), score: 0 },
+        NodeScore {
+            name: "a".into(),
+            score: 0,
+        },
+        NodeScore {
+            name: "b".into(),
+            score: 0,
+        },
     ];
     NodeAffinityScore.normalize_score(&mut s, &pod, &mut scores);
     assert_eq!(scores[0].score, 0);

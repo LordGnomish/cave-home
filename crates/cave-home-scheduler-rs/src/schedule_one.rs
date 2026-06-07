@@ -5,9 +5,7 @@
 //!         pkg/scheduler/schedule_one.go
 
 use crate::cache::{NodeInfo, SchedulerCache};
-use crate::framework::{
-    CycleState, FilterFailureMap, PluginRegistry, Status,
-};
+use crate::framework::{CycleState, FilterFailureMap, NodeScore, PluginRegistry, Status};
 use crate::types::Pod;
 
 /// Upstream: `pkg/scheduler/schedule_one.go::ScheduleResult`.
@@ -82,16 +80,15 @@ pub fn schedule_one(
     }
 
     // ---------- Score ----------
-    let mut best_score = i64::MIN;
-    let mut best_node: Option<String> = None;
-    for node in &feasible {
-        let mut total_score = 0_i64;
-        for plugin in registry.scores() {
+    // Upstream `prioritizeNodes`: for each plugin, score every feasible node,
+    // run the plugin's NormalizeScore over the full result set, then add the
+    // weighted result to each node's running total.
+    let mut totals = vec![0_i64; feasible.len()];
+    for plugin in registry.scores() {
+        let mut node_scores: Vec<NodeScore> = Vec::with_capacity(feasible.len());
+        for node in &feasible {
             let (score, status) = plugin.score(&mut state, pod, node);
             if !status.is_success() {
-                // Score errors degrade to "no contribution" (upstream uses
-                // an error code that aborts the scheduling cycle; here we
-                // surface a single error code via the `error` field instead).
                 return ScheduleResult {
                     suggested_host: None,
                     evaluated_nodes: total,
@@ -101,8 +98,33 @@ pub fn schedule_one(
                     error: Some(status),
                 };
             }
-            total_score = total_score.saturating_add(score.saturating_mul(plugin.weight()));
+            node_scores.push(NodeScore {
+                name: node.node().metadata.name.clone(),
+                score,
+            });
         }
+
+        let status = plugin.normalize_score(&mut state, pod, &mut node_scores);
+        if !status.is_success() {
+            return ScheduleResult {
+                suggested_host: None,
+                evaluated_nodes: total,
+                feasible_nodes: feasible.len(),
+                nominated_node: None,
+                filter_failures: failures,
+                error: Some(status),
+            };
+        }
+
+        let weight = plugin.weight();
+        for (acc, ns) in totals.iter_mut().zip(&node_scores) {
+            *acc = acc.saturating_add(ns.score.saturating_mul(weight));
+        }
+    }
+
+    let mut best_score = i64::MIN;
+    let mut best_node: Option<String> = None;
+    for (node, &total_score) in feasible.iter().zip(&totals) {
         if total_score > best_score {
             best_score = total_score;
             best_node = Some(node.node().metadata.name.clone());

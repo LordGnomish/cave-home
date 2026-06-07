@@ -111,6 +111,7 @@ async fn end_to_end_required_node_affinity_routes_pod() {
                     }],
                 }],
             }),
+            preferred_during_scheduling: Vec::new(),
         }),
     });
     src.add_pod(p);

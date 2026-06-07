@@ -6,6 +6,7 @@
 
 pub mod image_locality;
 pub mod least_requested;
+pub mod node_affinity_score;
 pub mod node_name;
 pub mod node_ports;
 pub mod node_resources_balanced;
@@ -16,6 +17,7 @@ pub mod volume_restrictions;
 
 pub use image_locality::ImageLocality;
 pub use least_requested::LeastRequested;
+pub use node_affinity_score::NodeAffinityScore;
 pub use node_name::NodeName;
 pub use node_ports::NodePorts;
 pub use node_resources_balanced::NodeResourcesBalancedAllocation;
@@ -46,6 +48,7 @@ pub fn default_registry() -> PluginRegistry {
         .with_score(Arc::new(NodeResourcesBalancedAllocation))
         .with_score(Arc::new(LeastRequested))
         .with_score(Arc::new(ImageLocality))
+        .with_score(Arc::new(NodeAffinityScore))
         // Preemption (post-filter)
         .with_post_filter(Arc::new(crate::preemption::DefaultPreemption::new()))
         .build()
@@ -128,7 +131,7 @@ mod tests {
     fn default_registry_lists_all_phase2_plugins() {
         let r = default_registry();
         assert_eq!(r.filters().len(), 7);
-        assert_eq!(r.scores().len(), 3);
+        assert_eq!(r.scores().len(), 4);
         assert_eq!(r.post_filters().len(), 1);
     }
 
@@ -148,6 +151,7 @@ mod tests {
                         }],
                     }],
                 }),
+                preferred_during_scheduling: Vec::new(),
             }),
         });
         let mut s = CycleState::new();
@@ -170,6 +174,7 @@ mod tests {
                         }],
                     }],
                 }),
+                preferred_during_scheduling: Vec::new(),
             }),
         });
         let mut s = CycleState::new();
