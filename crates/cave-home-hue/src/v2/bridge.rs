@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
-// Source: home-assistant-libs/aiohue@394aa9394838841bbd5358d78edc140766db127c aiohue/v2/__init__.py
+// Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v2/__init__.py
 //! High-level v2 bridge wrapper. Mirrors `aiohue.v2.HueBridgeV2`.
 
 use crate::errors::HueResult;

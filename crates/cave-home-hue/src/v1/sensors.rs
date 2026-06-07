@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
-// Source: home-assistant-libs/aiohue@394aa9394838841bbd5358d78edc140766db127c aiohue/v1/sensors.py
+// Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v1/sensors.py
 //! v1 sensors controller. Ports `aiohue.v1.sensors` line-by-line.
 //!
 //! Hue sensors come in many flavours: physical Zigbee dimmer switches (ZLL),

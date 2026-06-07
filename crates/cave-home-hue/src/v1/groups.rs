@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
-// Source: home-assistant-libs/aiohue@394aa9394838841bbd5358d78edc140766db127c aiohue/v1/groups.py
+// Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v1/groups.py
 //! v1 groups controller — Hue "Room" / "Zone" / "Luminaire" / "LightGroup".
 //!
 //! Reference: <https://developers.meethue.com/documentation/groups-api>.

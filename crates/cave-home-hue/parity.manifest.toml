@@ -3,13 +3,15 @@
 # Two Apache-2.0 upstreams are line-by-line-ported here:
 #
 #   - `home-assistant/core` v2026.5.2
-#     (SHA 456202325ac48549bd3c895dc3e69ecd3e2ba6a4)
 #     subpath `homeassistant/components/hue/` — the HA "hue" integration
 #     glue (bridge lifecycle, errors, migration).
 #
 #   - `home-assistant-libs/aiohue` v4.8.1
-#     (SHA 394aa9394838841bbd5358d78edc140766db127c)
 #     — the underlying Hue API client (v1 REST + v2 CLIP + SSE).
+#
+# Upstreams are pinned by release tag only — the previously recorded commit
+# SHAs were unverified (one hash had been reused across unrelated upstreams)
+# and have been removed.
 #
 # Honest scoping: upstream HA hue + aiohue together total ~12 kLOC of
 # production Python (excluding tests + JSON strings). Phase 1 MVP ports
@@ -30,14 +32,12 @@ adr              = "ADR-010"
 [[upstream]]
 repo    = "home-assistant/core"
 release = "2026.5.2"
-sha     = "456202325ac48549bd3c895dc3e69ecd3e2ba6a4"
 subpath = "homeassistant/components/hue"
 license = "Apache-2.0"
 
 [[upstream]]
 repo    = "home-assistant-libs/aiohue"
 release = "4.8.1"
-sha     = "394aa9394838841bbd5358d78edc140766db127c"
 subpath = "aiohue"
 license = "Apache-2.0"
 

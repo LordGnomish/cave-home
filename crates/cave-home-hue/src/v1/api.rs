@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
-// Source: home-assistant-libs/aiohue@394aa9394838841bbd5358d78edc140766db127c aiohue/v1/api.py
+// Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v1/api.py
 //! `APIItems` — the v1 client's map-of-resources base class.
 //!
 //! Upstream is a tiny dynamic Python class that holds a dict of items keyed

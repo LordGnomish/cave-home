@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
-// Source: home-assistant-libs/aiohue@394aa9394838841bbd5358d78edc140766db127c aiohue/errors.py
-// Source: home-assistant/core@456202325ac48549bd3c895dc3e69ecd3e2ba6a4 homeassistant/components/hue/errors.py
+// Source: home-assistant-libs/aiohue@v4.8.1 aiohue/errors.py
+// Source: home-assistant/core@2026.5.2 homeassistant/components/hue/errors.py
 //! Hue error taxonomy. Mirrors `aiohue.errors` line-by-line.
 //!
 //! Reference: <https://developers.meethue.com/documentation/error-messages>

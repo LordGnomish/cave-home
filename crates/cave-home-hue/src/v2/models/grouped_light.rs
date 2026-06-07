@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
-// Source: home-assistant-libs/aiohue@394aa9394838841bbd5358d78edc140766db127c aiohue/v2/models/grouped_light.py
+// Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v2/models/grouped_light.py
 //! v2 `grouped_light` — the resource that backs "control all lights in a
 //! room / zone" in the v2 API. Mirrors `aiohue.v2.models.grouped_light`.
 

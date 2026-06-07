@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
-// Source: home-assistant-libs/aiohue@394aa9394838841bbd5358d78edc140766db127c aiohue/v2/models/*
+// Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v2/models/*
 //! v2 CLIP resource models. One module per upstream `aiohue.v2.models.*` file.
 //!
 //! Phase 1 MVP includes the modules end-users touch (lights, scenes, motion,

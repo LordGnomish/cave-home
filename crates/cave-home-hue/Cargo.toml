@@ -13,16 +13,16 @@ upstream    = "home-assistant/core (hue) + home-assistant-libs/aiohue + Philips 
 port-method = "line-by-line"
 adr         = "ADR-010"
 
+# Reference upstreams — no commit is pinned. Prior pinned SHAs were unverified
+# (one hash had been reused across unrelated upstreams) and were removed.
 [package.metadata.upstream.home-assistant]
 repo    = "home-assistant/core"
 release = "2026.5.2"
-sha     = "456202325ac48549bd3c895dc3e69ecd3e2ba6a4"
 subpath = "homeassistant/components/hue"
 
 [package.metadata.upstream.aiohue]
 repo    = "home-assistant-libs/aiohue"
 release = "4.8.1"
-sha     = "394aa9394838841bbd5358d78edc140766db127c"
 subpath = "aiohue"
 
 [dependencies]
