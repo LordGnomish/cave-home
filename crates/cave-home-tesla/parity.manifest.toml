@@ -1,0 +1,161 @@
+# cave-home-tesla — parity manifest.
+#
+# This crate ships the Tesla home-energy *decision + protocol core*: the
+# OAuth2-PKCE auth flow (challenge derivation, authorize-URL and token-request
+# builders, token-set expiry), the per-endpoint rate-limit state machine (1 req
+# / 30 s) with exponential 429 back-off, the full `/api/1/energy_sites/*`
+# request-builder surface, the wire DTOs and their mapping into the
+# grandma-friendly domain model (SiteStatus / PowerFlowData / BatteryData /
+# OpMode), the Powerwall local-gateway surface, the last-known-state cache, the
+# Prometheus exposition and the redacting credential model. Everything is
+# clock-, randomness- and transport-injected so it is fully unit-testable; the
+# tests drive it through an in-crate `MockTransport`.
+#
+# Port method: spec-based, first-party clean-room. The semantics mirror Tesla's
+# *documented* Fleet API and the public Powerwall gateway surface; no upstream
+# source was copied. cave-home ships Apache-2.0 only (Charter §6.1, ADR-002).
+
+[crate]
+name             = "cave-home-tesla"
+upstream_repo    = "Tesla Fleet API public spec + Powerwall gateway community docs (semantics only — first-party clean-room)"
+port_method      = "spec-based"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "Tesla Fleet API — Energy endpoints (developer.tesla.com/docs/fleet-api/endpoints/energy): products, site_status, live_status, site_info, history, backup, operation, grid_import_export, off_grid_vehicle_charging_reserve",
+    "Tesla Fleet API — OAuth2 Authorization Code + PKCE (S256) flow, offline_access refresh, regional fleet-api base hosts",
+    "Tesla Owner API community documentation (teslaapi.io) — energy_sites response shapes (behaviour reference only, no code)",
+    "Powerwall local Gateway API (community reverse-engineered, public): /api/login/Basic, /api/meters/aggregates, /api/system_status/soe, /api/operation",
+    "RFC 7636 (PKCE), RFC 4648 (base64url), FIPS 180-4 (SHA-256), RFC 3986 (percent-encoding) — implemented first-party in src/crypto.rs",
+]
+ported_at        = "2026-06-07"
+linux_min_kernel = "7.1"
+
+[ratios]
+# fill_ratio is against the FULL crate scope (auth + client + endpoints + wire
+# types + domain model + gateway + adapter + cache + metrics + creds). The
+# decision/protocol core is implemented and tested in full; only the real
+# network transport is deferred, and it is ADR-justified Phase 1b.
+fill_ratio              = 0.85
+fill_ratio_basis        = "PKCE auth, rate-limit + back-off, full endpoint builders, wire DTOs + wire→domain mapping, gateway surface, EnergyProvider + cache, Prometheus metrics, redacting creds — all implemented & tested; only the reqwest/TLS transport impl deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # the one unfilled item (transport) carries a phase disposition
+honest_ratio            = 1.00  # 0.85 / (0.85 + unjustified_gap=0)
+
+# no-backcompat: Charter §8. cave-home targets the current Tesla Fleet API only;
+# the deprecated Owner API auth (owner-api token / MFA scraping) is referenced
+# for response shapes only and is NOT implemented (see [[unmapped]]).
+
+# ---- mapped (real implementation present in this crate) --------------------
+
+[[mapped]]
+spec = "OAuth2 PKCE: code_verifier→S256 code_challenge derivation (SHA-256 + base64url)"
+ours = "src/crypto.rs + src/fleet_api/auth.rs::PkcePair"
+
+[[mapped]]
+spec = "OAuth2 authorize-URL builder (response_type, client_id, redirect_uri, scope, state, code_challenge, S256)"
+ours = "src/fleet_api/auth.rs::authorize_url"
+
+[[mapped]]
+spec = "OAuth2 token request bodies (authorization_code + refresh_token grants) and token-response parse"
+ours = "src/fleet_api/auth.rs::{token_request, parse_token_response, TokenSet}"
+
+[[mapped]]
+spec = "Per-endpoint rate limit (1 req / 30 s) with caller-supplied clock"
+ours = "src/fleet_api/client.rs::RateLimiter"
+
+[[mapped]]
+spec = "Exponential back-off for HTTP 429 (base/cap, capped doubling)"
+ours = "src/fleet_api/client.rs::Backoff"
+
+[[mapped]]
+spec = "/api/1/energy_sites/* request builders (method + path + body)"
+ours = "src/fleet_api/endpoints.rs::EnergyEndpoint"
+
+[[mapped]]
+spec = "Fleet API wire DTOs (live_status, site_info, history) with serde"
+ours = "src/fleet_api/types.rs"
+
+[[mapped]]
+spec = "Powerwall local gateway surface (login, meter aggregates, state-of-energy)"
+ours = "src/gateway_local/{client.rs,types.rs}"
+
+[[mapped]]
+spec = "Domain model: SiteStatus / PowerFlowData / BatteryData / OpMode / DateRange / HistoryData + wire→domain mapping"
+ours = "src/models/*"
+
+[[mapped]]
+spec = "EnergyProvider trait + TeslaProvider over an injected transport, with last-known-state cache served on transport failure"
+ours = "src/adapter.rs"
+
+[[mapped]]
+spec = "Prometheus exposition: pv/soc/grid-import/grid-export gauges, request-duration + error counters"
+ours = "src/metrics.rs::Metrics"
+
+[[mapped]]
+spec = "Redacting credential model (tokens never logged), 0600 file + ~/.cave-home path"
+ours = "src/token_store.rs + src/config.rs"
+
+# ---- unmapped (NOT in this crate; Phase 1b/permanent disposition) ----------
+
+[[unmapped]]
+area     = "Real HTTP transport (reqwest + rustls) for cloud Fleet API and self-signed Powerwall gateway TLS"
+priority = "phase-1b"
+note     = "ADR-001: the actual socket/TLS I/O is the only network-bound piece. It implements fleet_api::client::HttpTransport and gateway_local's transport seam; the rate-limit, back-off, request building, parsing and caching logic it drives are all implemented and tested here against MockTransport. No new decision logic."
+
+[[unmapped]]
+area     = "OAuth redirect-capture / loopback browser flow + on-disk token rotation"
+priority = "phase-1b"
+note     = "ADR-001: capturing the authorization-code redirect needs a loopback HTTP listener and a browser launch (I/O). The PKCE pair, authorize-URL, token-exchange body and token-set expiry are all built and tested here; the operational layer wires the listener + fs write (0600) using token_store."
+
+[[unmapped]]
+area     = "cave-home-core entity/state + cave-home-history integration"
+priority = "phase-1b"
+note     = "ADR-001: surfacing the energy site as core State entities + logged history lands once those crate APIs stabilise. The EnergyProvider model is already core-agnostic and does no I/O."
+
+[[unmapped]]
+area     = "Deprecated Tesla Owner API authentication (owner-api token / MFA)"
+priority = "permanent"
+note     = "Charter §7 always-latest / §8 no-backcompat: cave-home authenticates via the current Fleet API OAuth2-PKCE flow only. The Owner API is referenced for energy_sites response *shapes* solely; its legacy auth is not implemented."
+
+[[unmapped]]
+area     = "Vehicle (car) command surface — charging, climate, location"
+priority = "permanent"
+note     = "Scope cut: this crate is the home-energy adapter (Powerwall / solar / energy site). Vehicle commands are a different product surface and out of scope for cave-home's energy pillar."
+
+# ---- spec_test (designed from spec / first principles) ---------------------
+
+[[spec_test]]
+designed_for = "SHA-256 (FIPS 180-4 vectors), base64url (RFC 4648), percent-encode (RFC 3986)"
+ours         = "src/crypto.rs::tests"
+
+[[spec_test]]
+designed_for = "PKCE challenge matches RFC 7636 S256 example; authorize-URL + token bodies well-formed"
+ours         = "src/fleet_api/auth.rs::tests + tests/auth_test.rs"
+
+[[spec_test]]
+designed_for = "Rate limiter throttles a burst to 1 req / 30 s; back-off doubles to a cap"
+ours         = "src/fleet_api/client.rs::tests"
+
+[[spec_test]]
+designed_for = "Endpoint builders emit the documented method/path/body"
+ours         = "src/fleet_api/endpoints.rs::tests"
+
+[[spec_test]]
+designed_for = "Real Tesla live_status / site_info / history JSON parses into wire DTOs and maps to domain"
+ours         = "src/fleet_api/types.rs::tests + src/models/*::tests + tests/fleet_api_integration.rs"
+
+[[spec_test]]
+designed_for = "Powerwall gateway aggregates + soe parse; login body well-formed"
+ours         = "src/gateway_local/*::tests + tests/gateway_local_test.rs"
+
+[[spec_test]]
+designed_for = "EnergyProvider end-to-end via MockTransport; cache served on transport failure; backup-reserve validation"
+ours         = "src/adapter.rs::tests + tests/fleet_api_integration.rs"
+
+[[spec_test]]
+designed_for = "Prometheus exposition carries the named gauges/counters with HELP/TYPE headers"
+ours         = "src/metrics.rs::tests"
+
+[[spec_test]]
+designed_for = "Credentials redact tokens in Debug/Display; 0600 mode + path resolution"
+ours         = "src/token_store.rs::tests"
