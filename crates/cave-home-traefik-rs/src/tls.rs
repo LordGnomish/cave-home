@@ -47,7 +47,14 @@ impl std::error::Error for TlsError {}
 /// # Errors
 /// [`TlsError::NoCerts`] if empty, [`TlsError::BadPem`] on a malformed block.
 pub fn load_certs(pem: &[u8]) -> Result<Vec<CertificateDer<'static>>, TlsError> {
-    unimplemented!()
+    let mut reader = std::io::BufReader::new(pem);
+    let certs = rustls_pemfile::certs(&mut reader)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| TlsError::BadPem(e.to_string()))?;
+    if certs.is_empty() {
+        return Err(TlsError::NoCerts);
+    }
+    Ok(certs)
 }
 
 /// Parse a single private key from PEM bytes (PKCS#8 / SEC1 / PKCS#1).
@@ -55,7 +62,10 @@ pub fn load_certs(pem: &[u8]) -> Result<Vec<CertificateDer<'static>>, TlsError> 
 /// # Errors
 /// [`TlsError::NoKey`] if none found, [`TlsError::BadPem`] on a malformed block.
 pub fn load_private_key(pem: &[u8]) -> Result<PrivateKeyDer<'static>, TlsError> {
-    unimplemented!()
+    let mut reader = std::io::BufReader::new(pem);
+    rustls_pemfile::private_key(&mut reader)
+        .map_err(|e| TlsError::BadPem(e.to_string()))?
+        .ok_or(TlsError::NoKey)
 }
 
 /// Build a rustls [`CertifiedKey`] (chain + signing key) from PEM material.
@@ -63,7 +73,11 @@ pub fn load_private_key(pem: &[u8]) -> Result<PrivateKeyDer<'static>, TlsError> 
 /// # Errors
 /// Propagates parse errors and [`TlsError::Sign`] for an unusable key.
 pub fn certified_key(cert_pem: &[u8], key_pem: &[u8]) -> Result<Arc<CertifiedKey>, TlsError> {
-    unimplemented!()
+    let certs = load_certs(cert_pem)?;
+    let key = load_private_key(key_pem)?;
+    let signing = rustls::crypto::ring::sign::any_supported_type(&key)
+        .map_err(|e| TlsError::Sign(e.to_string()))?;
+    Ok(Arc::new(CertifiedKey::new(certs, signing)))
 }
 
 /// Generate a self-signed certificate + key (PEM) for `hosts` — used for the
@@ -72,7 +86,9 @@ pub fn certified_key(cert_pem: &[u8], key_pem: &[u8]) -> Result<Arc<CertifiedKey
 /// # Errors
 /// [`TlsError::BadPem`] if generation fails.
 pub fn self_signed(hosts: &[String]) -> Result<(String, String), TlsError> {
-    unimplemented!()
+    let ck = rcgen::generate_simple_self_signed(hosts.to_vec())
+        .map_err(|e| TlsError::BadPem(e.to_string()))?;
+    Ok((ck.cert.pem(), ck.key_pair.serialize_pem()))
 }
 
 /// An SNI certificate resolver: exact + wildcard host match over a default.
@@ -85,7 +101,7 @@ pub struct SniResolver {
 impl SniResolver {
     /// A resolver with an optional default (fallback) certificate.
     #[must_use]
-    pub fn new(default: Option<Arc<CertifiedKey>>) -> Self {
+    pub const fn new(default: Option<Arc<CertifiedKey>>) -> Self {
         Self { default, by_host: Vec::new() }
     }
 
@@ -98,8 +114,35 @@ impl SniResolver {
     /// wildcard, then the default.
     #[must_use]
     pub fn select_cert(&self, sni: Option<&str>) -> Option<Arc<CertifiedKey>> {
-        unimplemented!()
+        if let Some(name) = sni {
+            let name = name.to_ascii_lowercase();
+            // Exact match first.
+            if let Some((_, key)) = self.by_host.iter().find(|(h, _)| *h == name) {
+                return Some(key.clone());
+            }
+            // Then a single-label wildcard (`*.suffix` matches `label.suffix`).
+            if let Some((_, key)) = self
+                .by_host
+                .iter()
+                .find(|(h, _)| wildcard_matches(h, &name))
+            {
+                return Some(key.clone());
+            }
+        }
+        self.default.clone()
     }
+}
+
+/// Whether `pattern` (e.g. `*.example.com`) matches `host`, covering exactly one
+/// left-most label (`a.example.com` yes, `example.com` and `a.b.example.com` no).
+fn wildcard_matches(pattern: &str, host: &str) -> bool {
+    let Some(suffix) = pattern.strip_prefix("*.") else {
+        return false;
+    };
+    let Some(label_rest) = host.split_once('.') else {
+        return false;
+    };
+    !label_rest.0.is_empty() && label_rest.1 == suffix
 }
 
 impl ResolvesServerCert for SniResolver {
@@ -114,7 +157,14 @@ impl ResolvesServerCert for SniResolver {
 /// # Errors
 /// [`TlsError::Sign`] if the protocol-version set is rejected by the provider.
 pub fn server_config(resolver: Arc<SniResolver>) -> Result<ServerConfig, TlsError> {
-    unimplemented!()
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let mut cfg = ServerConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .map_err(|e| TlsError::Sign(e.to_string()))?
+        .with_no_client_auth()
+        .with_cert_resolver(resolver);
+    cfg.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    Ok(cfg)
 }
 
 #[cfg(test)]
