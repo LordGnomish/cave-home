@@ -62,6 +62,13 @@ pub enum WireError {
         /// A short, non-user-facing reason tag.
         reason: &'static str,
     },
+    /// A `Corefile` parsed but could not be lowered into a live plugin chain:
+    /// an unknown/unsupported directive or a directive whose arguments the
+    /// builder could not make sense of. The tag is for logs (Charter §6.3).
+    Config {
+        /// A short, non-user-facing reason tag.
+        reason: &'static str,
+    },
 }
 
 impl fmt::Display for WireError {
@@ -85,6 +92,7 @@ impl fmt::Display for WireError {
             }
             Self::InvalidRdata { reason } => write!(f, "invalid rdata: {reason}"),
             Self::Corefile { reason } => write!(f, "corefile parse error: {reason}"),
+            Self::Config { reason } => write!(f, "corefile config error: {reason}"),
         }
     }
 }

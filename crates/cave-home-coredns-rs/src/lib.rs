@@ -81,6 +81,7 @@
 #![allow(clippy::cast_possible_truncation)]
 
 pub mod arpa;
+pub mod build;
 pub mod builtins;
 pub mod cache;
 pub mod corefile;
