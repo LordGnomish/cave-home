@@ -18,6 +18,8 @@
 //! - [`quantity`] — the `resource.Quantity` slice metrics-server needs: CPU in
 //!   canonical `DecimalSI`, memory in `BinarySI`, plus the kubectl-style
 //!   round-up display values.
+//! - [`summary`] — the kubelet `/stats/summary` data model + the
+//!   node/pod/container [`summary::MetricsPoint`] extraction (`decode.go`).
 //!
 //! # Scope (honest)
 //!
@@ -29,5 +31,7 @@
 //! runtime-bound (ADR-004 phase-1b) and enumerated in `parity.manifest.toml`.
 
 pub mod quantity;
+pub mod summary;
 
 pub use quantity::{Quantity, ResourceList};
+pub use summary::{MetricsPoint, Summary};
