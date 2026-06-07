@@ -8,6 +8,141 @@
 //! the Prometheus text exposition format directly (no client library), matching
 //! the convention used elsewhere in cave-home.
 
+use std::collections::BTreeMap;
+use std::fmt::Write as _;
+
+use parking_lot::Mutex;
+
+use crate::models::PowerFlowData;
+
+#[derive(Debug, Default)]
+struct Inner {
+    pv_watts: f64,
+    soc_percent: f64,
+    grid_import_watts: f64,
+    grid_export_watts: f64,
+    // endpoint -> (count, sum_secs)
+    requests: BTreeMap<String, (u64, f64)>,
+    // (endpoint, status) -> count
+    errors: BTreeMap<(String, u16), u64>,
+}
+
+/// The Tesla energy adapter's metric registry.
+#[derive(Debug, Default)]
+pub struct Metrics {
+    inner: Mutex<Inner>,
+}
+
+// The lock-guard lifetimes here are already minimal; the nursery's
+// drop-tightening lint just dislikes the idiomatic `let g = lock(); g.field`.
+#[allow(clippy::significant_drop_tightening)]
+impl Metrics {
+    /// An empty registry.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Update the live power gauges from a power-flow snapshot.
+    pub fn record_power_flow(&self, flow: &PowerFlowData) {
+        let mut i = self.inner.lock();
+        i.pv_watts = flow.pv_watts;
+        i.soc_percent = flow.soc_percent;
+        i.grid_import_watts = flow.grid_import_watts();
+        i.grid_export_watts = flow.grid_export_watts();
+    }
+
+    /// Record one completed API request and its wall-clock duration.
+    pub fn record_request(&self, endpoint: &str, duration_secs: f64) {
+        let mut i = self.inner.lock();
+        let entry = i.requests.entry(endpoint.to_string()).or_insert((0, 0.0));
+        entry.0 += 1;
+        entry.1 += duration_secs;
+    }
+
+    /// Record one API error for `endpoint` at HTTP `status`.
+    pub fn record_error(&self, endpoint: &str, status: u16) {
+        let mut i = self.inner.lock();
+        *i.errors.entry((endpoint.to_string(), status)).or_insert(0) += 1;
+    }
+
+    /// Render the registry as Prometheus text exposition.
+    #[must_use]
+    pub fn render(&self) -> String {
+        // Snapshot under the lock, then release it before formatting.
+        let (pv, soc, gi, ge, requests, errors) = {
+            let i = self.inner.lock();
+            (
+                i.pv_watts,
+                i.soc_percent,
+                i.grid_import_watts,
+                i.grid_export_watts,
+                i.requests.clone(),
+                i.errors.clone(),
+            )
+        };
+        let mut out = String::new();
+
+        for (name, help, value) in [
+            (
+                "tesla_pv_power_watts",
+                "Instantaneous solar production, watts",
+                pv,
+            ),
+            (
+                "tesla_battery_soc_percent",
+                "Home battery state of charge, percent",
+                soc,
+            ),
+            (
+                "tesla_grid_import_watts",
+                "Power drawn from the grid, watts",
+                gi,
+            ),
+            (
+                "tesla_grid_export_watts",
+                "Power exported to the grid, watts",
+                ge,
+            ),
+        ] {
+            let _ = writeln!(out, "# HELP {name} {help}");
+            let _ = writeln!(out, "# TYPE {name} gauge");
+            let _ = writeln!(out, "{name} {}", fmt_f64(value));
+        }
+
+        let dur = "tesla_api_request_duration_seconds";
+        let _ = writeln!(out, "# HELP {dur} Fleet API request wall-clock duration");
+        let _ = writeln!(out, "# TYPE {dur} summary");
+        for (endpoint, (count, sum)) in &requests {
+            let _ = writeln!(out, "{dur}_count{{endpoint=\"{endpoint}\"}} {count}");
+            let _ = writeln!(out, "{dur}_sum{{endpoint=\"{endpoint}\"}} {}", fmt_f64(*sum));
+        }
+
+        let errs = "tesla_api_errors_total";
+        let _ = writeln!(out, "# HELP {errs} Fleet API error responses by endpoint and status");
+        let _ = writeln!(out, "# TYPE {errs} counter");
+        for ((endpoint, status), count) in &errors {
+            let _ = writeln!(
+                out,
+                "{errs}{{endpoint=\"{endpoint}\",status=\"{status}\"}} {count}"
+            );
+        }
+
+        out
+    }
+}
+
+/// Format a float without a trailing `.0`, so integers render as `82` not
+/// `82.0` (Prometheus accepts both, but this matches the gauge convention).
+#[allow(clippy::cast_possible_truncation)] // guarded: integral and < 1e15
+fn fmt_f64(v: f64) -> String {
+    if v.fract() == 0.0 && v.abs() < 1e15 {
+        format!("{}", v as i64)
+    } else {
+        format!("{v}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
