@@ -260,8 +260,7 @@ impl ApiServer {
                 Ok(Response::chunked_json(body))
             }
             "create" => {
-                let mut body = parse_body(req)?;
-                inject_namespace(&mut body, &rp.namespace);
+                let body = decode_body(req, gvr, rp)?;
                 let admitted = self.admit(Operation::Create, gvr, &rp.namespace, Some(body), None)?;
                 let object = admitted
                     .object
@@ -270,8 +269,7 @@ impl ApiServer {
                 Ok(object_response(201, &created))
             }
             "update" => {
-                let mut body = parse_body(req)?;
-                inject_namespace(&mut body, &rp.namespace);
+                let body = decode_body(req, gvr, rp)?;
                 if rp.subresource == "status" {
                     let updated = self.registry.update_status(gvr, body)?;
                     return Ok(object_response(200, &updated));
@@ -370,6 +368,80 @@ fn parse_body(req: &Request) -> Result<Value> {
     let text = std::str::from_utf8(&req.body)
         .map_err(|_| Status::bad_request("request body is not valid UTF-8"))?;
     json::parse(text).map_err(|e| Status::bad_request(format!("invalid JSON body: {e}")))
+}
+
+/// Decode a write-verb request body into the typed object the endpoint serves.
+///
+/// Enforces the same body↔request consistency checks upstream applies before
+/// the object reaches storage:
+///
+/// 1. the body must be a JSON object (not an array/scalar);
+/// 2. if the body carries `apiVersion`/`kind`, they must match the endpoint's
+///    GVK — a `Pod` body cannot be sent to `/services`, nor a `v1` body to an
+///    `apps/v1` endpoint (`BadRequest`). An *absent* `apiVersion`/`kind` is
+///    tolerated: the endpoint supplies the GVK;
+/// 3. for a named request (`update`/`patch`/subresource), the body's
+///    `metadata.name`, when present, must equal the URL name (`BadRequest`);
+/// 4. the body's `metadata.namespace`, when present and non-empty, must equal
+///    the URL namespace (`BadRequest`). An absent/empty body namespace inherits
+///    the URL namespace.
+///
+/// On success the (validated) object is returned with the URL namespace stamped
+/// onto its metadata, so storage always sees the authoritative namespace.
+fn decode_body(req: &Request, gvr: &GroupVersionResource, rp: &ResourcePath) -> Result<Value> {
+    let mut body = parse_body(req)?;
+    if body.as_object().is_none() {
+        return Err(Status::bad_request("request body must be a JSON object"));
+    }
+
+    // GVK consistency: an explicit apiVersion/kind must name this endpoint's GVK.
+    let expected = gvk::kind_for(gvr);
+    if let Some(kind) = body.get("kind").and_then(Value::as_str) {
+        if !kind.is_empty() {
+            match &expected {
+                Some(gvk) if gvk.kind == kind => {}
+                Some(gvk) => {
+                    return Err(Status::bad_request(format!(
+                        "the kind of the provided object ({kind}) does not match the kind of the resource ({})",
+                        gvk.kind
+                    )))
+                }
+                None => {}
+            }
+        }
+    }
+    if let Some(api_version) = body.get("apiVersion").and_then(Value::as_str) {
+        if !api_version.is_empty() && api_version != gvr.group_version() {
+            return Err(Status::bad_request(format!(
+                "the apiVersion of the provided object ({api_version}) does not match the apiVersion of the resource ({})",
+                gvr.group_version()
+            )));
+        }
+    }
+
+    // metadata.name consistency (named requests only).
+    let body_meta = meta::read_meta(&body);
+    if rp.is_named() && !body_meta.name.is_empty() && body_meta.name != rp.name {
+        return Err(Status::bad_request(format!(
+            "the name of the object ({}) does not match the name on the URL ({})",
+            body_meta.name, rp.name
+        )));
+    }
+
+    // metadata.namespace consistency: a non-empty body namespace must equal the
+    // URL namespace; an empty one inherits it.
+    if !rp.namespace.is_empty()
+        && !body_meta.namespace.is_empty()
+        && body_meta.namespace != rp.namespace
+    {
+        return Err(Status::bad_request(format!(
+            "the namespace of the object ({}) does not match the namespace on the request ({})",
+            body_meta.namespace, rp.namespace
+        )));
+    }
+
+    inject_namespace(&mut body, &rp.namespace);
+    Ok(body)
 }
 
 /// The URL namespace is authoritative: stamp it onto the object's metadata when
@@ -860,6 +932,119 @@ mod tests {
         let mut s = ApiServer::new();
         let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods", "application/json", "{}"));
         assert_eq!(resp.status, 405);
+    }
+
+    // --- typed write-body decode + validation -------------------------------
+    // Upstream decodes a create/update body into the endpoint's GVK and rejects
+    // a body whose kind/apiVersion or metadata.name/namespace conflicts with the
+    // request, returning 400 BadRequest before the object reaches storage.
+
+    #[test]
+    fn create_rejects_kind_mismatch_400() {
+        let mut s = ApiServer::new();
+        // POST a Service body to the pods endpoint.
+        let svc = r#"{"apiVersion":"v1","kind":"Service","metadata":{"name":"x","namespace":"default"}}"#;
+        let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", svc));
+        assert_eq!(resp.status, 400);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert_eq!(v.pointer("reason"), Some(&Value::from("BadRequest")));
+    }
+
+    #[test]
+    fn create_rejects_api_version_mismatch_400() {
+        let mut s = ApiServer::new();
+        // Right kind, wrong apiVersion (apps/v1 on a core/v1 pods endpoint).
+        let body = r#"{"apiVersion":"apps/v1","kind":"Pod","metadata":{"name":"x","namespace":"default"}}"#;
+        let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", body));
+        assert_eq!(resp.status, 400);
+    }
+
+    #[test]
+    fn create_allows_empty_kind_and_api_version() {
+        // Upstream tolerates a body that omits apiVersion/kind on create (the
+        // endpoint supplies the GVK); only an explicit *wrong* value is rejected.
+        let mut s = ApiServer::new();
+        let body = r#"{"metadata":{"name":"x","namespace":"default"}}"#;
+        let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", body));
+        assert_eq!(resp.status, 201);
+    }
+
+    #[test]
+    fn create_rejects_namespace_conflict_400() {
+        let mut s = ApiServer::new();
+        // URL namespace is "default" but the body says "other".
+        let body = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"x","namespace":"other"}}"#;
+        let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", body));
+        assert_eq!(resp.status, 400);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert!(
+            v.pointer("message").and_then(Value::as_str).unwrap_or("").contains("namespace"),
+            "msg: {:?}",
+            v.pointer("message")
+        );
+    }
+
+    #[test]
+    fn create_allows_empty_namespace_in_body() {
+        // A body with no namespace inherits the URL namespace (no conflict).
+        let mut s = ApiServer::new();
+        let body = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"x"}}"#;
+        let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", body));
+        assert_eq!(resp.status, 201);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert_eq!(v.pointer("metadata.namespace"), Some(&Value::from("default")));
+    }
+
+    #[test]
+    fn update_rejects_name_mismatch_400() {
+        let mut s = ApiServer::new();
+        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        // PUT to /pods/nginx with a body naming a different object.
+        let body = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"other","namespace":"default"}}"#;
+        let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx", "application/json", body));
+        assert_eq!(resp.status, 400);
+        let v = crate::json::parse(&body_str(&resp)).expect("json");
+        assert!(
+            v.pointer("message").and_then(Value::as_str).unwrap_or("").contains("name"),
+            "msg: {:?}",
+            v.pointer("message")
+        );
+    }
+
+    #[test]
+    fn update_allows_matching_name() {
+        let mut s = ApiServer::new();
+        let created = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        let body = body_str(&created);
+        let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx", "application/json", &body));
+        assert_eq!(resp.status, 200);
+    }
+
+    #[test]
+    fn update_rejects_kind_mismatch_400() {
+        let mut s = ApiServer::new();
+        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        let body = r#"{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"nginx","namespace":"default"}}"#;
+        let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx", "application/json", body));
+        assert_eq!(resp.status, 400);
+    }
+
+    #[test]
+    fn create_rejects_non_object_body_400() {
+        // A create body must be a JSON object, not an array/scalar.
+        let mut s = ApiServer::new();
+        let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", "[1,2,3]"));
+        assert_eq!(resp.status, 400);
+    }
+
+    #[test]
+    fn status_subresource_update_rejects_name_mismatch_400() {
+        let mut s = ApiServer::new();
+        let with_spec = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default"},"spec":{"replicas":1}}"#;
+        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", with_spec));
+        let body = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"other","namespace":"default"},"status":{"phase":"Running"}}"#;
+        let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx/status", "application/json", body));
+        assert_eq!(resp.status, 400);
     }
 
     // --- authentication + authorization enforcement ------------------------
