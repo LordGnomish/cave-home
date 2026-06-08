@@ -88,12 +88,15 @@ pub fn try_acquire_or_renew(
         return ElectionResult::RenewedLeadership(renewed);
     }
 
-    if lease.is_valid(now) {
+    // A released lease (empty holder) is available regardless of its renew_time;
+    // a still-valid lease held by another locks us out.
+    if !lease.holder_identity.is_empty() && lease.is_valid(now) {
         // Someone else holds a valid lease.
         return ElectionResult::Lost { current_holder: lease.holder_identity.clone() };
     }
 
-    // Expired and held by another: take over, counting the transition.
+    // Expired, or cleanly released, and held by another: take over, counting the
+    // transition.
     ElectionResult::AcquiredLeadership(Lease {
         holder_identity: identity.to_owned(),
         lease_duration_secs,
@@ -145,6 +148,107 @@ impl LeaderElector {
         lease
             .as_ref()
             .is_some_and(|l| l.holder_identity == self.identity && l.is_valid(now))
+    }
+
+    /// Gracefully relinquish leadership (the `release` half of `RunOrDie`'s
+    /// deferred cleanup): if this participant currently holds the lease, clear
+    /// its `holder_identity` so a successor can acquire **immediately** rather
+    /// than waiting out the full lease duration. Returns `true` if a release
+    /// happened, `false` if this participant did not hold the lease.
+    pub fn release(&self, lease: &mut Option<Lease>, now: i64) -> bool {
+        let Some(l) = lease.as_mut() else { return false };
+        if l.holder_identity != self.identity {
+            return false;
+        }
+        l.holder_identity.clear();
+        l.renew_time = now;
+        true
+    }
+
+    /// Record an observation of the current lease record at `now`. The returned
+    /// [`ObservedRecord`] timestamps **when this participant first saw** the
+    /// present record — the basis for detecting a stalled leader independently
+    /// of the holder's own clock.
+    #[must_use]
+    pub fn observe(&self, lease: Option<&Lease>, now: i64) -> ObservedRecord {
+        ObservedRecord { record: lease.cloned(), observed_at: now }
+    }
+
+    /// Fold a fresh sighting into a prior [`ObservedRecord`]: if the lease record
+    /// is byte-for-byte unchanged, the original `observed_at` is preserved;
+    /// otherwise the clock resets to `now` (the record just changed).
+    #[must_use]
+    pub fn observe_again(
+        &self,
+        prior: ObservedRecord,
+        lease: Option<&Lease>,
+        now: i64,
+    ) -> ObservedRecord {
+        if prior.record.as_ref() == lease {
+            prior
+        } else {
+            ObservedRecord { record: lease.cloned(), observed_at: now }
+        }
+    }
+}
+
+/// A watcher's view of the lease: the last record it saw and the instant it
+/// first saw that record (`LeaderElectionRecord` + `observedTime`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObservedRecord {
+    /// The lease record as last observed (`None` if no lease existed).
+    pub record: Option<Lease>,
+    /// Epoch-seconds this participant first observed the current `record`.
+    pub observed_at: i64,
+}
+
+/// Timing configuration for the leader-election loop
+/// (`client-go` `LeaderElectionConfig`): the three durations that govern how a
+/// holder renews and how a challenger waits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LeaderElectionConfig {
+    /// How long a lease is honoured past its last renewal (`LeaseDuration`).
+    pub lease_duration: i64,
+    /// How long a holder keeps retrying to renew before giving up leadership
+    /// (`RenewDeadline`). Must be `< lease_duration`.
+    pub renew_deadline: i64,
+    /// The gap between a participant's election attempts (`RetryPeriod`). Must be
+    /// `< renew_deadline`.
+    pub retry_period: i64,
+}
+
+impl LeaderElectionConfig {
+    /// Build a config, enforcing the upstream ordering invariant
+    /// `lease_duration > renew_deadline > retry_period` and
+    /// `renew_deadline > 0`.
+    ///
+    /// # Errors
+    /// Returns a static message if the ordering invariant is violated.
+    pub const fn new(
+        lease_duration: i64,
+        renew_deadline: i64,
+        retry_period: i64,
+    ) -> Result<Self, &'static str> {
+        if renew_deadline <= 0 {
+            return Err("renew_deadline must be > 0");
+        }
+        if lease_duration <= renew_deadline {
+            return Err("lease_duration must be greater than renew_deadline");
+        }
+        if renew_deadline <= retry_period {
+            return Err("renew_deadline must be greater than retry_period");
+        }
+        Ok(Self { lease_duration, renew_deadline, retry_period })
+    }
+
+    /// `true` if a holder whose last **successful** renewal was at
+    /// `last_renew` has blown its renew deadline by `now` and must stop acting
+    /// as leader (`tryAcquireOrRenew`'s deadline guard). Stopping early — before
+    /// the lease formally expires from a challenger's view — is what keeps two
+    /// instances from both believing they lead.
+    #[must_use]
+    pub const fn renew_deadline_exceeded(&self, last_renew: i64, now: i64) -> bool {
+        now - last_renew > self.renew_deadline
     }
 }
 
