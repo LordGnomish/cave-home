@@ -71,5 +71,6 @@ pub mod informer;
 pub mod leaderelection;
 pub mod manager;
 pub mod reconcile;
+pub mod schedule;
 pub mod types;
 pub mod workqueue;
