@@ -138,6 +138,24 @@ pub async fn run_until<S>(cfg: RuntimeConfig, shutdown: S) -> std::io::Result<()
 where
     S: std::future::Future<Output = ()> + Send + 'static,
 {
+    let listener = TcpListener::bind((cfg.bind_addr.as_str(), cfg.bind_port)).await?;
+    run_until_on_listener(cfg, listener, shutdown).await
+}
+
+/// Run the full node on an already-bound listener until `shutdown` resolves.
+///
+/// Splitting the socket out of [`run_until`] lets a caller learn the bound
+/// address first (binding to port 0, then reading `local_addr`) before handing
+/// the listener to the runtime — what an end-to-end test or a socket-activated
+/// launcher needs. The bring-up plan, supervised components, graceful drain and
+/// ordered teardown are identical to [`run_until`].
+///
+/// # Errors
+/// I/O errors from accepting on the listen socket.
+pub async fn run_until_on_listener<S>(cfg: RuntimeConfig, listener: TcpListener, shutdown: S) -> std::io::Result<()>
+where
+    S: std::future::Future<Output = ()> + Send + 'static,
+{
     let registry = seeded_registry(&cfg.node);
 
     let order = planned_order(cfg.intent).map_err(|e| {
@@ -148,7 +166,6 @@ where
         order.iter().map(|c| c.id()).collect::<Vec<_>>().join(" → ")
     ));
 
-    let listener = TcpListener::bind((cfg.bind_addr.as_str(), cfg.bind_port)).await?;
     log_line(&format!("apiserver listening on {}", listener.local_addr()?));
 
     // The top-level shutdown flag the caller's future drives: it stops the accept
