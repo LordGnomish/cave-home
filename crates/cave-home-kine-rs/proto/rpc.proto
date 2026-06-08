@@ -184,11 +184,17 @@ message WatchRequest {
 }
 
 message WatchCreateRequest {
+  enum FilterType {
+    // filter out put event.
+    NOPUT = 0;
+    // filter out delete event.
+    NODELETE = 1;
+  }
   bytes key = 1;
   bytes range_end = 2;
   int64 start_revision = 3;
   bool progress_notify = 4;
-  repeated int32 filters = 5;
+  repeated FilterType filters = 5;
   bool prev_kv = 6;
   int64 watch_id = 7;
 }

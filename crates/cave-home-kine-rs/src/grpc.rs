@@ -203,10 +203,13 @@ impl KineServer {
 
     /// The event stream for one watch, honouring the client's control stream:
     /// a `created` marker, then ordered change events (carrying `prev_kv` when
-    /// requested), periodic progress notifications when `progress_notify` is set
-    /// and the range is idle, and a `canceled` marker (ending the stream) when
-    /// the client sends a [`WatchCancelRequest`]. kine's watch is a poll over the
-    /// after-query; this is that poll, made cancellable.
+    /// requested, and dropping the event types the create's `filters` exclude —
+    /// `NOPUT` / `NODELETE`), periodic progress notifications when
+    /// `progress_notify` is set and the range is idle, and a `canceled` marker
+    /// (ending the stream) when the client sends a [`WatchCancelRequest`]. A
+    /// `start_revision` below the compacted floor ends the stream immediately
+    /// with a `canceled` response carrying the `compact_revision` floor. kine's
+    /// watch is a poll over the after-query; this is that poll, made cancellable.
     pub fn watch_stream_with<I>(
         &self,
         create: WatchCreateRequest,
@@ -219,6 +222,7 @@ impl KineServer {
         let store = self.store();
         let want_prev = create.prev_kv;
         let progress_notify = create.progress_notify;
+        let event_filter = EventFilter::from_proto(&create.filters);
         async_stream::try_stream! {
             let filter = to_kine_range_bytes(&create.key, &create.range_end)?;
             let watch_id = create.watch_id;
@@ -229,6 +233,22 @@ impl KineServer {
                 s.current_revision().map_err(status)?
             };
             yield watch_response(watch_id, revision, true, Vec::new());
+
+            // A watch whose start_revision is below the compacted floor cannot be
+            // served — the events it asks for are gone. etcd does NOT error the
+            // stream here; it sends a `canceled` response carrying the
+            // `compact_revision` floor, so the client knows the revision to
+            // restart above. Detect that up front and end the stream cleanly.
+            if create.start_revision > 0 {
+                let compacted = {
+                    let s = store.lock().await;
+                    s.compacted_revision().map_err(status)?
+                };
+                if create.start_revision < compacted {
+                    yield watch_compacted(watch_id, revision, compacted);
+                    return;
+                }
+            }
 
             // watch_after is exclusive (mod_revision > last); translate etcd's
             // inclusive start_revision, and "0 = from now" to the current head.
@@ -245,8 +265,13 @@ impl KineServer {
                     let evs = s.watch_after(&filter, last).map_err(status)?;
                     (evs, s.current_revision().map_err(status)?)
                 };
+                // Advance the checkpoint past every change in the batch BEFORE
+                // event-type filtering, so a change the watch's `filters` exclude
+                // is not re-polled forever; then drop the filtered-out events.
+                last = events.last().map_or(last, |e| e.revision);
+                let events: Vec<_> =
+                    events.into_iter().filter(|e| event_filter.admits(e)).collect();
                 if !events.is_empty() {
-                    last = events.last().map_or(last, |e| e.revision);
                     let proto = events.iter().map(|e| to_event(e, want_prev)).collect();
                     yield watch_response(watch_id, header_rev, false, proto);
                     idle_ticks = 0;
@@ -817,6 +842,44 @@ fn to_event(e: &WatchEvent, want_prev: bool) -> Event {
     Event { r#type: kind as i32, kv: Some(kv), prev_kv }
 }
 
+/// The set of event types a watch's `filters` admit. etcd's `WatchCreateRequest`
+/// carries a `filters` list of `FilterType`s: `NOPUT` suppresses every PUT event
+/// and `NODELETE` suppresses every DELETE event. Both together suppress all
+/// events (a degenerate but legal watch). The default (empty list) admits both.
+#[derive(Debug, Clone, Copy)]
+struct EventFilter {
+    /// `false` once a `NOPUT` filter is present — PUT events are dropped.
+    allow_put: bool,
+    /// `false` once a `NODELETE` filter is present — DELETE events are dropped.
+    allow_delete: bool,
+}
+
+impl EventFilter {
+    /// Build the filter from the raw proto `filters` list (the `FilterType`
+    /// enum values). Unknown filter codes are ignored, matching etcd's tolerant
+    /// decode.
+    fn from_proto(filters: &[i32]) -> Self {
+        use etcdserverpb::watch_create_request::FilterType;
+        let mut f = Self { allow_put: true, allow_delete: true };
+        for code in filters {
+            match FilterType::try_from(*code) {
+                Ok(FilterType::Noput) => f.allow_put = false,
+                Ok(FilterType::Nodelete) => f.allow_delete = false,
+                Err(_) => {}
+            }
+        }
+        f
+    }
+
+    /// Whether this filter lets `event` through to the client.
+    const fn admits(self, event: &WatchEvent) -> bool {
+        match event.kind {
+            EventKind::Put => self.allow_put,
+            EventKind::Delete => self.allow_delete,
+        }
+    }
+}
+
 /// A `WatchResponse` marking the watch as canceled (the final message etcd
 /// sends in response to a `WatchCancelRequest`).
 fn watch_canceled(watch_id: i64, revision: i64) -> WatchResponse {
@@ -827,6 +890,23 @@ fn watch_canceled(watch_id: i64, revision: i64) -> WatchResponse {
         canceled: true,
         compact_revision: 0,
         cancel_reason: "watch canceled".to_string(),
+        fragment: false,
+        events: Vec::new(),
+    }
+}
+
+/// A `WatchResponse` canceling a watch whose `start_revision` fell below the
+/// compacted floor: `canceled` with the `compact_revision` the client must
+/// restart above, and etcd's well-known "required revision has been compacted"
+/// reason. etcd ends such a watch this way rather than erroring the stream.
+fn watch_compacted(watch_id: i64, revision: i64, compact_revision: i64) -> WatchResponse {
+    WatchResponse {
+        header: Some(ResponseHeader { cluster_id: 0, member_id: 0, revision, raft_term: 0 }),
+        watch_id,
+        created: false,
+        canceled: true,
+        compact_revision,
+        cancel_reason: "mvcc: required revision has been compacted".to_string(),
         fragment: false,
         events: Vec::new(),
     }
@@ -1467,5 +1547,88 @@ mod tests {
         let batch = stream.next().await.unwrap().unwrap();
         let keys: Vec<_> = batch.events.iter().map(|e| e.kv.as_ref().unwrap().key.clone()).collect();
         assert_eq!(keys, vec![b"/ns/x".to_vec()]);
+    }
+
+    #[tokio::test]
+    async fn watch_noput_filter_drops_put_events_keeps_deletes() {
+        use super::etcdserverpb::watch_create_request::FilterType;
+        use tokio_stream::StreamExt;
+        let s = server();
+        s.put(Request::new(put_req(b"/ns/a", b"1"))).await.unwrap(); // rev 1 PUT
+        let del = DeleteRangeRequest { key: b"/ns/a".to_vec(), range_end: Vec::new(), prev_kv: false };
+        s.delete_range(Request::new(del)).await.unwrap(); //            rev 2 DELETE
+
+        let mut create = watch_create(b"/ns/", 1);
+        create.filters = vec![FilterType::Noput as i32];
+        let mut stream = Box::pin(s.watch_stream(create));
+        let _created = stream.next().await.unwrap().unwrap();
+        let batch = stream.next().await.unwrap().unwrap();
+        // NOPUT filters out the PUT (rev 1); only the DELETE (rev 2) survives.
+        assert_eq!(batch.events.len(), 1);
+        assert_eq!(batch.events[0].r#type, EventType::Delete as i32);
+        assert_eq!(batch.events[0].kv.as_ref().unwrap().mod_revision, 2);
+    }
+
+    #[tokio::test]
+    async fn watch_nodelete_filter_drops_delete_events_keeps_puts() {
+        use super::etcdserverpb::watch_create_request::FilterType;
+        use tokio_stream::StreamExt;
+        let s = server();
+        s.put(Request::new(put_req(b"/ns/a", b"1"))).await.unwrap(); // rev 1 PUT
+        let del = DeleteRangeRequest { key: b"/ns/a".to_vec(), range_end: Vec::new(), prev_kv: false };
+        s.delete_range(Request::new(del)).await.unwrap(); //            rev 2 DELETE
+
+        let mut create = watch_create(b"/ns/", 1);
+        create.filters = vec![FilterType::Nodelete as i32];
+        let mut stream = Box::pin(s.watch_stream(create));
+        let _created = stream.next().await.unwrap().unwrap();
+        let batch = stream.next().await.unwrap().unwrap();
+        // NODELETE filters out the DELETE (rev 2); only the PUT (rev 1) survives.
+        assert_eq!(batch.events.len(), 1);
+        assert_eq!(batch.events[0].r#type, EventType::Put as i32);
+        assert_eq!(batch.events[0].kv.as_ref().unwrap().mod_revision, 1);
+    }
+
+    #[tokio::test]
+    async fn watch_both_filters_drop_every_event() {
+        use super::etcdserverpb::watch_create_request::FilterType;
+        use tokio_stream::StreamExt;
+        let s = server();
+        s.put(Request::new(put_req(b"/ns/a", b"1"))).await.unwrap();
+        let del = DeleteRangeRequest { key: b"/ns/a".to_vec(), range_end: Vec::new(), prev_kv: false };
+        s.delete_range(Request::new(del)).await.unwrap();
+
+        let mut create = watch_create(b"/ns/", 1);
+        create.filters = vec![FilterType::Noput as i32, FilterType::Nodelete as i32];
+        let mut stream = Box::pin(s.watch_stream(create));
+        let _created = stream.next().await.unwrap().unwrap();
+        // No event response is ever produced because every change is filtered out;
+        // assert the next message (if any within a short window) is never a batch.
+        let next = tokio::time::timeout(Duration::from_millis(250), stream.next()).await;
+        assert!(next.is_err(), "no event batch is emitted when both filters are set");
+    }
+
+    #[tokio::test]
+    async fn watch_below_compacted_floor_is_canceled_with_compact_revision() {
+        use tokio_stream::StreamExt;
+        let s = server();
+        s.put(Request::new(put_req(b"/ns/k", b"v1"))).await.unwrap(); // 1
+        s.put(Request::new(put_req(b"/ns/k", b"v2"))).await.unwrap(); // 2
+        s.put(Request::new(put_req(b"/ns/k", b"v3"))).await.unwrap(); // 3
+        s.compact(Request::new(CompactionRequest { revision: 2, physical: true }))
+            .await
+            .unwrap();
+
+        // A watch from rev 1 (below the compacted floor 2) cannot be served:
+        // etcd answers with a canceled response carrying compact_revision, not a
+        // stream error.
+        let mut stream = Box::pin(s.watch_stream(watch_create(b"/ns/", 1)));
+        let created = stream.next().await.unwrap().unwrap();
+        assert!(created.created);
+        let canceled = stream.next().await.unwrap().unwrap();
+        assert!(canceled.canceled);
+        assert_eq!(canceled.compact_revision, 2, "the floor the client must restart above");
+        assert!(canceled.cancel_reason.contains("compacted"));
+        assert!(stream.next().await.is_none(), "stream terminates after a compacted cancel");
     }
 }
