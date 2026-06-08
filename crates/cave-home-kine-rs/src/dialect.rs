@@ -603,4 +603,192 @@ mod tests {
             assert!(sql.contains("$1"));
         }
     }
+
+    // --- Multi-backend bind-count and rebind parity matrix ------------------
+    //
+    // Every dialect query has a documented bind-parameter contract (count and
+    // order). The SQLite / MySQL forms keep `?` placeholders verbatim; the
+    // Postgres form numbers them `$1..$N` left to right with no gaps and no bare
+    // `?` left over. These tests pin both invariants across all three drivers so
+    // a future edit cannot silently desync a backend's parameter binding from
+    // the SQL it issues.
+
+    /// The `?`-placeholder count for a SQLite query is the bind-parameter count.
+    fn sqlite_binds(sql: &str) -> usize {
+        sql.matches('?').count()
+    }
+
+    #[test]
+    fn fill_sql_binds_nine_columns_including_explicit_id() {
+        // fill_sql seeds a row at an explicit id (the compact_rev_key sentinel):
+        // id + the eight value columns.
+        for d in [Dialect::new(Driver::Sqlite), Dialect::new(Driver::Mysql)] {
+            assert_eq!(sqlite_binds(&d.fill_sql()), 9, "fill binds id + 8 columns");
+        }
+        let pg = Dialect::new(Driver::Postgres).fill_sql();
+        assert!(pg.contains("$1") && pg.contains("$9"));
+        assert!(!pg.contains('?'));
+    }
+
+    #[test]
+    fn list_current_sql_binds_name_like_and_include_deleted() {
+        // Bind order: name_like, include_deleted (no revision bound).
+        for d in [Dialect::new(Driver::Sqlite), Dialect::new(Driver::Mysql)] {
+            assert_eq!(sqlite_binds(&d.list_current_sql()), 2);
+        }
+    }
+
+    #[test]
+    fn list_revision_sql_binds_name_like_revision_and_include_deleted() {
+        // Bind order: name_like, read_revision, include_deleted.
+        for d in [Dialect::new(Driver::Sqlite), Dialect::new(Driver::Mysql)] {
+            assert_eq!(sqlite_binds(&d.list_revision_sql()), 3);
+        }
+    }
+
+    #[test]
+    fn after_sql_binds_name_like_and_id_floor() {
+        // Bind order: name_like, last_id.
+        for d in [Dialect::new(Driver::Sqlite), Dialect::new(Driver::Mysql)] {
+            assert_eq!(sqlite_binds(&d.after_sql()), 2);
+        }
+    }
+
+    #[test]
+    fn count_current_sql_binds_name_like_and_include_deleted() {
+        for d in [Dialect::new(Driver::Sqlite), Dialect::new(Driver::Mysql)] {
+            assert_eq!(sqlite_binds(&d.count_current_sql()), 2);
+        }
+    }
+
+    #[test]
+    fn compact_delete_sql_binds_sentinel_then_target() {
+        // Bind order: compact_rev_key (name <> ?), target (id <= ?).
+        for d in [Dialect::new(Driver::Sqlite), Dialect::new(Driver::Mysql)] {
+            assert_eq!(sqlite_binds(&d.compact_delete_sql()), 2);
+        }
+    }
+
+    #[test]
+    fn with_limit_appends_one_more_bind_in_each_dialect() {
+        // SQLite / MySQL append a `LIMIT ?`; Postgres must continue the $N
+        // numbering past the list query's own placeholders, with no gap.
+        let sqlite = Dialect::new(Driver::Sqlite);
+        let base = sqlite.list_revision_sql(); // 3 `?`
+        let limited = sqlite.with_limit(&base);
+        assert_eq!(sqlite_binds(&limited), 4, "limit adds one bind");
+        assert!(limited.trim_end().ends_with("LIMIT ?"));
+
+        let pg = Dialect::new(Driver::Postgres);
+        let pg_base = pg.list_revision_sql(); // $1..$3
+        let pg_limited = pg.with_limit(&pg_base);
+        // The limit param must be exactly $4 — one past the three list params.
+        assert!(pg_limited.trim_end().ends_with("LIMIT $4"), "got: {pg_limited}");
+        assert!(!pg_limited.contains('?'));
+        // No duplicated or skipped numbers: $1..$4 each appear.
+        for n in 1..=4 {
+            assert!(pg_limited.contains(&format!("${n}")), "missing ${n}");
+        }
+    }
+
+    #[test]
+    fn every_dialect_query_is_fully_rebound_for_postgres() {
+        // Exhaustively: no parameterised Postgres query may leave a bare `?`, and
+        // each must start its numbering at $1.
+        let d = Dialect::new(Driver::Postgres);
+        let queries = [
+            d.insert_sql(),
+            d.fill_sql(),
+            d.delete_sql(),
+            d.update_compact_sql(),
+            d.list_current_sql(),
+            d.list_revision_sql(),
+            d.count_current_sql(),
+            d.after_sql(),
+            d.latest_row_sql(),
+            d.header_revision_sql(),
+            d.compacted_floor_sql(),
+            d.set_create_revision_sql(),
+            d.keys_with_lease_sql(),
+            d.count_rows_sql(),
+            d.compact_delete_sql(),
+        ];
+        for sql in &queries {
+            assert!(!sql.contains('?'), "postgres query left a bare ?: {sql}");
+            assert!(sql.contains("$1"), "postgres query did not number from $1: {sql}");
+        }
+    }
+
+    #[test]
+    fn postgres_placeholder_numbering_has_no_gaps() {
+        // For every Postgres query, the $N set is exactly {1..=max} — contiguous,
+        // which is what the driver's positional bind relies on.
+        let d = Dialect::new(Driver::Postgres);
+        for sql in [d.insert_sql(), d.fill_sql(), d.list_revision_sql(), d.compact_delete_sql()] {
+            let mut nums: Vec<u32> = sql
+                .split('$')
+                .skip(1)
+                .filter_map(|s| {
+                    let digits: String = s.chars().take_while(char::is_ascii_digit).collect();
+                    digits.parse().ok()
+                })
+                .collect();
+            nums.sort_unstable();
+            nums.dedup();
+            let max = *nums.last().unwrap();
+            assert_eq!(nums, (1..=max).collect::<Vec<_>>(), "non-contiguous $N in: {sql}");
+        }
+    }
+
+    #[test]
+    fn mysql_index_sqls_omit_if_not_exists() {
+        // MySQL has no `CREATE INDEX IF NOT EXISTS`; the generated DDL must not
+        // contain that clause, while SQLite/Postgres must.
+        let mysql = Dialect::new(Driver::Mysql).index_sqls();
+        assert!(mysql.iter().all(|s| !s.contains("IF NOT EXISTS")), "MySQL omits IF NOT EXISTS");
+        for d in [Dialect::new(Driver::Sqlite), Dialect::new(Driver::Postgres)] {
+            assert!(d.index_sqls().iter().all(|s| s.contains("IF NOT EXISTS")));
+        }
+    }
+
+    #[test]
+    fn every_driver_creates_the_same_three_indexes() {
+        // The index *set* (name, unique name+prev_revision, id+deleted) is
+        // identical across drivers — only the IF-NOT-EXISTS guard varies.
+        for d in [Driver::Sqlite, Driver::Postgres, Driver::Mysql] {
+            let ix = Dialect::new(d).index_sqls();
+            assert_eq!(ix.len(), 3, "{d:?} must create three indexes");
+            assert!(ix.iter().any(|s| s.contains("kine_name_index")));
+            assert!(ix.iter().any(|s| s.contains("kine_name_prev_revision_uindex")));
+            assert!(ix.iter().any(|s| s.contains("kine_id_deleted_index")));
+            assert!(
+                ix.iter().any(|s| s.to_uppercase().contains("UNIQUE")),
+                "{d:?} needs the unique optimistic-concurrency guard index"
+            );
+        }
+    }
+
+    #[test]
+    fn mysql_ddl_uses_blob_and_ascii_name_charset() {
+        // MySQL needs a bounded, ASCII-collated name column (for the index key
+        // length) and MEDIUMBLOB value columns.
+        let ddl = Dialect::new(Driver::Mysql).create_table_sql();
+        assert!(ddl.contains("MEDIUMBLOB"), "MySQL stores values as MEDIUMBLOB");
+        assert!(ddl.to_uppercase().contains("CHARACTER SET ASCII"));
+        assert!(ddl.contains("VARCHAR(630)"), "bounded name for the index key length");
+    }
+
+    #[test]
+    fn sqlite_and_mysql_share_identical_portable_statement_text() {
+        // The portable per-row statements carry no driver-specific syntax beyond
+        // placeholder rebinding, and SQLite/MySQL both use `?` — so their text
+        // must be byte-for-byte identical, keeping the drivers in lock-step.
+        let sq = Dialect::new(Driver::Sqlite);
+        let my = Dialect::new(Driver::Mysql);
+        assert_eq!(sq.insert_sql(), my.insert_sql());
+        assert_eq!(sq.list_revision_sql(), my.list_revision_sql());
+        assert_eq!(sq.after_sql(), my.after_sql());
+        assert_eq!(sq.compact_delete_sql(), my.compact_delete_sql());
+        assert_eq!(sq.keys_with_lease_sql(), my.keys_with_lease_sql());
+    }
 }
