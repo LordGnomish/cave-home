@@ -143,26 +143,49 @@ fn resource_axis_matches(rule: &str, resource: &str) -> bool {
     }
 }
 
-/// The ordered set of [`RuleWithOperations`] attached to a webhook. A request is
-/// selected iff **any** rule matches (the union, as upstream). An empty set
-/// selects nothing.
+/// The set of [`RuleWithOperations`] attached to a webhook, plus an optional
+/// `objectSelector`.
+///
+/// A request is selected iff **any** rule matches (the union, as upstream)
+/// **and** — when an `objectSelector` is configured — the object's own labels
+/// satisfy it. An empty rule set selects nothing.
 #[derive(Clone, Debug, Default)]
 pub struct WebhookRules {
     /// The rules; a request matches if any one matches.
     pub rules: Vec<RuleWithOperations>,
+    /// Optional `objectSelector`: a label selector matched against the
+    /// admitted object's own `metadata.labels`. `None` means "no object filter".
+    pub object_selector: Option<crate::selector::LabelSelector>,
 }
 
 impl WebhookRules {
-    /// Build a rule set.
+    /// Build a rule set (no object selector).
     #[must_use]
     pub const fn new(rules: Vec<RuleWithOperations>) -> Self {
-        Self { rules }
+        Self { rules, object_selector: None }
     }
 
-    /// Whether any rule selects `request`.
+    /// Attach an `objectSelector` matched against the object's labels (builder
+    /// style).
+    #[must_use]
+    pub fn with_object_selector(mut self, selector: crate::selector::LabelSelector) -> Self {
+        self.object_selector = Some(selector);
+        self
+    }
+
+    /// Whether the rules (and any `objectSelector`) select `request`.
     #[must_use]
     pub fn matches(&self, request: &AdmissionRequest) -> bool {
-        self.rules.iter().any(|r| r.matches(request))
+        if !self.rules.iter().any(|r| r.matches(request)) {
+            return false;
+        }
+        self.object_selector.as_ref().is_none_or(|sel| {
+            // Match against the labels of the object under admission (the new
+            // object, or the old object on delete).
+            let source = request.object.as_ref().or(request.old_object.as_ref());
+            let labels = source.map(crate::meta::read_meta).map(|m| m.labels).unwrap_or_default();
+            sel.matches(&labels)
+        })
     }
 }
 
@@ -1062,6 +1085,47 @@ mod tests {
             deploy.object.as_ref().and_then(|o| o.pointer("metadata.labels.injected")).and_then(Value::as_str),
             Some("true")
         );
+    }
+
+    #[test]
+    fn object_selector_gates_on_object_labels() {
+        use crate::selector::LabelSelector;
+        // The webhook only wants objects labelled app=web.
+        let sel = LabelSelector::parse("app=web").expect("selector");
+        let rules = WebhookRules::new(vec![RuleWithOperations::new(&["*"], &["*"], &["*"], &["*"])])
+            .with_object_selector(sel);
+
+        // A pod with the matching label is selected.
+        let mut labelled = create_request("web");
+        labelled.object.as_mut().unwrap().insert(
+            "metadata",
+            obj([
+                ("name", Value::from("web")),
+                ("labels", obj([("app", Value::from("web"))])),
+            ]),
+        );
+        assert!(rules.matches(&labelled));
+
+        // A pod without the label is not selected, even though the rule's
+        // operation/group/resource axes all match.
+        assert!(!rules.matches(&create_request("db")));
+    }
+
+    #[test]
+    fn validating_plugin_object_selector_skips_unselected_object() {
+        use crate::selector::LabelSelector;
+        let client = Arc::new(MockWebhookClient::new(|body| {
+            let review = json::parse(std::str::from_utf8(body).unwrap()).unwrap();
+            let uid = review.pointer("request.uid").and_then(Value::as_str).unwrap();
+            Ok(review_response(uid, false, vec![]))
+        }));
+        let rules = WebhookRules::new(vec![RuleWithOperations::new(&["*"], &["*"], &["*"], &["*"])])
+            .with_object_selector(LabelSelector::parse("app=web").expect("sel"));
+        let plugin =
+            WebhookValidatingPlugin::new("deny-web", "http://unused", client.clone()).with_rules(rules);
+        // No matching label -> not selected -> allowed without a call.
+        plugin.validate(&create_request("db")).expect("allowed");
+        assert!(client.requests().is_empty());
     }
 
     #[test]
