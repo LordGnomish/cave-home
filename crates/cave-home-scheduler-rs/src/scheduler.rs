@@ -27,6 +27,11 @@ pub struct Scheduler {
     pub profile_name: String,
     /// Scheduler configuration (percentage-of-nodes-to-score, profile).
     pub config: SchedulerConfig,
+    /// Pods currently parked in the [`Code::Wait`] Permit disposition, keyed by
+    /// pod uid. Upstream: `framework.waitingPodsMap`. An external caller (e.g. a
+    /// sibling plugin reacting to a cluster event) resolves a waiting pod via
+    /// [`get_waiting_pod`](Self::get_waiting_pod).
+    waiting_pods: Arc<parking_lot::Mutex<std::collections::HashMap<String, crate::framework::WaitingPod>>>,
 }
 
 /// Outcome of a single `run_once` cycle (the pod that was processed +
@@ -52,7 +57,18 @@ impl Scheduler {
             registry: crate::plugins::default_registry(),
             profile_name: config.profile_name.clone(),
             config,
+            waiting_pods: Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new())),
         }
+    }
+
+    /// Look up the [`WaitingPod`](crate::framework::WaitingPod) gate for a pod
+    /// currently held in the [`Code::Wait`] Permit disposition, if any. Callers
+    /// use it to [`allow`](crate::framework::WaitingPod::allow) /
+    /// [`reject`](crate::framework::WaitingPod::reject) the pod, releasing it
+    /// from the binding cycle. Upstream: `framework.GetWaitingPod`.
+    #[must_use]
+    pub fn get_waiting_pod(&self, pod_uid: &str) -> Option<crate::framework::WaitingPod> {
+        self.waiting_pods.lock().get(pod_uid).cloned()
     }
 
     /// Replace the scheduler configuration.
@@ -391,8 +407,19 @@ impl Scheduler {
         }
 
         // ---------- Permit ----------
+        // Each Permit plugin approves (Success), rejects (other non-success), or
+        // asks to hold the pod (Wait). Wait dispositions accumulate: the pod is
+        // parked on the shortest requested timeout until allowed/rejected
+        // externally, or the timeout fires (treated as a rejection). Upstream:
+        // `RunPermitPlugins` + `WaitOnPermit`.
+        let mut wait_timeout: Option<Duration> = None;
         for plugin in self.registry.permits() {
             let status = plugin.permit(&mut state, pod, host);
+            if status.is_wait() {
+                let t = plugin.permit_timeout();
+                wait_timeout = Some(wait_timeout.map_or(t, |cur| cur.min(t)));
+                continue;
+            }
             if !status.is_success() {
                 self.unwind(&mut state, pod, host, reserved);
                 return Err(format!(
@@ -400,6 +427,12 @@ impl Scheduler {
                     plugin.name(),
                     status.message()
                 ));
+            }
+        }
+        if let Some(timeout) = wait_timeout {
+            if let Err(reason) = self.wait_on_permit(pod, timeout).await {
+                self.unwind(&mut state, pod, host, reserved);
+                return Err(reason);
             }
         }
 
@@ -447,6 +480,43 @@ impl Scheduler {
             plugin.post_bind(&mut state, pod, host);
         }
         Ok(())
+    }
+
+    /// Upstream: `framework.WaitOnPermit`. Park the pod on a [`WaitingPod`] gate
+    /// for at most `timeout`, blocking the binding cycle until it is
+    /// [`allow`](crate::framework::WaitingPod::allow)ed (proceed to bind),
+    /// [`reject`](crate::framework::WaitingPod::reject)ed, or the timeout fires
+    /// (treated as a rejection). The gate is registered under the pod uid so an
+    /// external caller can resolve it via [`get_waiting_pod`](Self::get_waiting_pod),
+    /// and is always deregistered before returning.
+    async fn wait_on_permit(
+        &self,
+        pod: &crate::types::Pod,
+        timeout: Duration,
+    ) -> std::result::Result<(), String> {
+        use crate::framework::PermitDecision;
+
+        let uid = pod.metadata.uid.clone();
+        let (wp, rx) = crate::framework::WaitingPod::new(uid.clone());
+        self.waiting_pods.lock().insert(uid.clone(), wp);
+
+        let outcome = tokio::time::timeout(timeout, rx).await;
+        // Resolve and deregister regardless of outcome.
+        self.waiting_pods.lock().remove(&uid);
+
+        match outcome {
+            Ok(Ok(PermitDecision::Allow)) => Ok(()),
+            Ok(Ok(PermitDecision::Reject(reason))) => {
+                Err(format!("permit rejected while waiting: {reason}"))
+            }
+            // Sender dropped without deciding — treat as a rejection so the pod
+            // is unwound and re-queued rather than stranded.
+            Ok(Err(_)) => Err("permit wait aborted".to_string()),
+            Err(_) => Err(format!(
+                "permit wait timed out after {}ms",
+                timeout.as_millis()
+            )),
+        }
     }
 
     /// Roll back a partial binding cycle: Unreserve the Reserve plugins that
@@ -833,6 +903,114 @@ mod tests {
         // The assumed placement is released from the cache.
         assert!(!sched.cache.is_assumed("beta"));
         // The pod is re-queued for a later attempt.
+        assert!(sched.queue.unschedulable_count() + sched.queue.backoff_count() >= 1);
+    }
+
+    // ---------- Permit Wait disposition ----------
+
+    /// Holds every pod with a generous timeout; only an external allow/reject
+    /// (or that timeout) releases it.
+    struct HoldPermit(Duration);
+    impl PermitPlugin for HoldPermit {
+        fn name(&self) -> &'static str {
+            "HoldPermit"
+        }
+        fn permit(&self, _: &mut CycleState, _: &Pod, _: &str) -> Status {
+            Status::wait(self.name())
+        }
+        fn permit_timeout(&self) -> Duration {
+            self.0
+        }
+    }
+
+    #[tokio::test]
+    async fn permit_wait_then_allow_proceeds_to_bind() {
+        let src = Arc::new(InMemorySource::new());
+        let sink = Arc::new(InMemorySink::new());
+        let calls = Arc::new(Calls::default());
+        let reg = PluginRegistry::builder()
+            .with_reserve(Arc::new(RecordingReserve(calls.clone())))
+            .with_permit(Arc::new(HoldPermit(Duration::from_secs(30))))
+            .build();
+        let sched = Arc::new(Scheduler::new(src.clone(), sink.clone()).with_registry(reg));
+        sched.cache.add_node(node("n1", 1000, 1024));
+
+        let info = QueuedPodInfo::new(pod("waiter", 100, 256));
+        let s2 = sched.clone();
+        let handle = tokio::spawn(async move { s2.schedule_and_bind(info, 0).await });
+
+        // Let the binding cycle reach the Permit wait and register the gate.
+        let wp = loop {
+            if let Some(wp) = sched.get_waiting_pod("waiter") {
+                break wp;
+            }
+            tokio::task::yield_now().await;
+        };
+        assert_eq!(wp.pod_uid(), "waiter");
+        assert!(wp.allow());
+
+        handle.await.unwrap();
+        assert_eq!(sink.binds(), vec![("default/waiter".into(), "n1".into())]);
+        // Reserve held, never rolled back.
+        assert!(!calls.snapshot().iter().any(|s| s.starts_with("unreserve")));
+        // The gate is deregistered once resolved.
+        assert!(sched.get_waiting_pod("waiter").is_none());
+    }
+
+    #[tokio::test]
+    async fn permit_wait_then_reject_unreserves_and_requeues() {
+        let src = Arc::new(InMemorySource::new());
+        let sink = Arc::new(InMemorySink::new());
+        let calls = Arc::new(Calls::default());
+        let reg = PluginRegistry::builder()
+            .with_reserve(Arc::new(RecordingReserve(calls.clone())))
+            .with_permit(Arc::new(HoldPermit(Duration::from_secs(30))))
+            .build();
+        let sched = Arc::new(Scheduler::new(src.clone(), sink.clone()).with_registry(reg));
+        sched.cache.add_node(node("n1", 1000, 1024));
+
+        let info = QueuedPodInfo::new(pod("rejectee", 100, 256));
+        let s2 = sched.clone();
+        let handle = tokio::spawn(async move { s2.schedule_and_bind(info, 0).await });
+
+        let wp = loop {
+            if let Some(wp) = sched.get_waiting_pod("rejectee") {
+                break wp;
+            }
+            tokio::task::yield_now().await;
+        };
+        assert!(wp.reject("no longer wanted"));
+
+        handle.await.unwrap();
+        assert!(sink.binds().is_empty());
+        let log = calls.snapshot();
+        assert!(log.contains(&"reserve:rejectee:n1".to_string()));
+        assert!(log.contains(&"unreserve:rejectee:n1".to_string()));
+        assert!(!sched.cache.is_assumed("rejectee"));
+        assert!(sched.queue.unschedulable_count() + sched.queue.backoff_count() >= 1);
+    }
+
+    #[tokio::test]
+    async fn permit_wait_timeout_unreserves_and_requeues() {
+        let src = Arc::new(InMemorySource::new());
+        let sink = Arc::new(InMemorySink::new());
+        let calls = Arc::new(Calls::default());
+        // Tiny timeout, never allowed -> the timeout fires and rejects.
+        let reg = PluginRegistry::builder()
+            .with_reserve(Arc::new(RecordingReserve(calls.clone())))
+            .with_permit(Arc::new(HoldPermit(Duration::from_millis(20))))
+            .build();
+        let sched = Scheduler::new(src.clone(), sink.clone()).with_registry(reg);
+        sched.cache.add_node(node("n1", 1000, 1024));
+
+        let info = QueuedPodInfo::new(pod("timeouter", 100, 256));
+        sched.schedule_and_bind(info, 0).await;
+
+        assert!(sink.binds().is_empty());
+        let log = calls.snapshot();
+        assert!(log.contains(&"reserve:timeouter:n1".to_string()));
+        assert!(log.contains(&"unreserve:timeouter:n1".to_string()));
+        assert!(!sched.cache.is_assumed("timeouter"));
         assert!(sched.queue.unschedulable_count() + sched.queue.backoff_count() >= 1);
     }
 }

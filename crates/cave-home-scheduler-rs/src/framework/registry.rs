@@ -125,8 +125,8 @@ impl RegistryBuilder {
         self
     }
 
-    /// Set the (single) QueueSort plugin. Upstream allows exactly one enabled
-    /// QueueSort plugin per profile; a second call replaces the first.
+    /// Set the (single) `QueueSort` plugin. Upstream allows exactly one enabled
+    /// `QueueSort` plugin per profile; a second call replaces the first.
     #[must_use]
     pub fn with_queue_sort(mut self, p: Arc<dyn QueueSortPlugin>) -> Self {
         self.queue_sort = Some(p);

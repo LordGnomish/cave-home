@@ -396,12 +396,14 @@ impl WaitingPod {
 
     /// Let the waiting pod proceed to bind. Returns `false` if the pod was
     /// already resolved (allowed, rejected, or timed out).
+    #[must_use = "the return value reports whether the pod was still waiting"]
     pub fn allow(&self) -> bool {
         self.signal(PermitDecision::Allow)
     }
 
     /// Fail the waiting pod with `reason`; the framework Unreserves and
     /// re-queues it. Returns `false` if already resolved.
+    #[must_use = "the return value reports whether the pod was still waiting"]
     pub fn reject(&self, reason: impl Into<String>) -> bool {
         self.signal(PermitDecision::Reject(reason.into()))
     }
