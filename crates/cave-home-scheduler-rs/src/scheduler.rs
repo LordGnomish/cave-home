@@ -82,9 +82,30 @@ impl Scheduler {
             if self.cache.is_assumed(&p.metadata.uid) {
                 continue;
             }
-            self.queue.add(p);
+            self.admit_pod(p, 0);
         }
         Ok(())
+    }
+
+    /// Upstream: `pkg/scheduler/eventhandlers.go::addPodToSchedulingQueue` →
+    /// `PriorityQueue.Add`, which first runs the profile's PreEnqueue plugins.
+    ///
+    /// Every registered [`PreEnqueuePlugin`](crate::framework::PreEnqueuePlugin)
+    /// must return success for the pod to enter the active queue. If any gates
+    /// it out, the pod is parked in the unschedulable set (it is *not* dropped)
+    /// so a later cluster event re-evaluates it — exactly the
+    /// `unschedulablePods` path a failed scheduling attempt takes.
+    fn admit_pod(&self, pod: crate::types::Pod, now_ms: u64) {
+        for plugin in self.registry.pre_enqueues() {
+            let status = plugin.pre_enqueue(&pod);
+            if !status.is_success() {
+                let info = QueuedPodInfo::new(pod);
+                let cycle = self.queue.scheduling_cycle();
+                self.queue.add_unschedulable_if_not_present(info, cycle, now_ms);
+                return;
+            }
+        }
+        self.queue.add(pod);
     }
 
     /// Drain a single pod from the queue and attempt to schedule it.
@@ -211,8 +232,8 @@ impl Scheduler {
             match ev {
                 PodEvent::Add(p) | PodEvent::Update { new: p, .. } => {
                     if p.spec.node_name.is_empty() {
-                        // Still pending → (re)enqueue for scheduling.
-                        self.queue.add(p);
+                        // Still pending → run the PreEnqueue gate, then (re)enqueue.
+                        self.admit_pod(p, now_ms());
                     } else {
                         // Already bound elsewhere → reflect in the cache.
                         let _ = self.cache.add_pod(p);
@@ -730,6 +751,62 @@ mod tests {
 
         assert!(sink.binds().is_empty());
         assert!(!calls.snapshot().iter().any(|s| s.starts_with("postbind")));
+    }
+
+    // ---------- PreEnqueue (queue-admission gate) ----------
+
+    use crate::framework::PreEnqueuePlugin;
+
+    /// Gates out any pod whose label `gate=open` is absent.
+    struct LabelGate;
+    impl PreEnqueuePlugin for LabelGate {
+        fn name(&self) -> &'static str {
+            "LabelGate"
+        }
+        fn pre_enqueue(&self, pod: &Pod) -> Status {
+            if pod.metadata.labels.get("gate").map(String::as_str) == Some("open") {
+                Status::success()
+            } else {
+                Status::unschedulable("LabelGate", "gate not open")
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn pre_enqueue_gate_holds_pod_out_of_active_queue() {
+        let src = Arc::new(InMemorySource::new());
+        let sink = Arc::new(InMemorySink::new());
+        let reg = PluginRegistry::builder()
+            .with_pre_enqueue(Arc::new(LabelGate))
+            .build();
+        let sched = Scheduler::new(src.clone(), sink.clone()).with_registry(reg);
+        sched.cache.add_node(node("n1", 1000, 1024));
+
+        // Gated pod (no label) is parked, not scheduled.
+        src.add_pod(pod("gated", 100, 256));
+        sched.sync().await.unwrap();
+        assert!(sched.run_once().await.unwrap().is_none());
+        assert!(sink.binds().is_empty());
+        // It lives in the unschedulable set, not the active queue.
+        assert_eq!(sched.queue.unschedulable_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn pre_enqueue_admits_pod_when_gate_open() {
+        let src = Arc::new(InMemorySource::new());
+        let sink = Arc::new(InMemorySink::new());
+        let reg = PluginRegistry::builder()
+            .with_pre_enqueue(Arc::new(LabelGate))
+            .build();
+        let sched = Scheduler::new(src.clone(), sink.clone()).with_registry(reg);
+        sched.cache.add_node(node("n1", 1000, 1024));
+
+        let mut p = pod("open", 100, 256);
+        p.metadata.labels.insert("gate".into(), "open".into());
+        src.add_pod(p);
+        sched.sync().await.unwrap();
+        sched.run_once().await.unwrap();
+        assert_eq!(sink.binds(), vec![("default/open".into(), "n1".into())]);
     }
 
     #[tokio::test]
