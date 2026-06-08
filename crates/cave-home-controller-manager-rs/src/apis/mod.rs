@@ -29,7 +29,8 @@ pub mod client;
 pub mod core;
 
 pub use apps::{
-    DaemonSet, DaemonSetSpec, Deployment, DeploymentSpec, DeploymentStatus, DeploymentStrategy,
+    DaemonSet, DaemonSetSpec, DaemonSetStatus, Deployment, DeploymentSpec, DeploymentStatus,
+    DeploymentStrategy,
     PodManagementPolicy, ReplicaSet, ReplicaSetSpec, ReplicaSetStatus, StatefulSet,
     StatefulSetSpec, StatefulSetStatus,
 };

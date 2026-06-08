@@ -201,13 +201,30 @@ impl Object for StatefulSet {
     }
 }
 
-/// `apps/v1` `DaemonSetSpec` subset: one pod per matching node.
+/// `apps/v1` `DaemonSetSpec` subset: one pod per *eligible* node.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DaemonSetSpec {
     /// Selector for owned pods.
     pub selector: LabelSelector,
     /// Pod template.
     pub template: PodTemplateSpec,
+    /// Node labels a node must carry to be eligible (`template.spec.nodeSelector`,
+    /// AND semantics). Empty means every node is eligible.
+    pub node_selector: LabelSelector,
+}
+
+/// Observed state of a `DaemonSet` (`apps/v1` `DaemonSetStatus` subset).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DaemonSetStatus {
+    /// Eligible nodes that should be running a daemon pod.
+    pub desired_number_scheduled: i32,
+    /// Eligible nodes actually running a daemon pod.
+    pub current_number_scheduled: i32,
+    /// Daemon pods that are ready.
+    pub number_ready: i32,
+    /// Daemon pods running on nodes that are **not** supposed to run them
+    /// (e.g. a node that no longer matches the selector).
+    pub number_misscheduled: i32,
 }
 
 /// `apps/v1` `DaemonSet` subset.
@@ -217,13 +234,15 @@ pub struct DaemonSet {
     pub meta: ObjectMeta,
     /// Desired state.
     pub spec: DaemonSetSpec,
+    /// Observed state.
+    pub status: DaemonSetStatus,
 }
 
 impl DaemonSet {
-    /// A `DaemonSet` with the given metadata and spec.
+    /// A `DaemonSet` with the given metadata and spec, empty status.
     #[must_use]
-    pub const fn new(meta: ObjectMeta, spec: DaemonSetSpec) -> Self {
-        Self { meta, spec }
+    pub fn new(meta: ObjectMeta, spec: DaemonSetSpec) -> Self {
+        Self { meta, spec, status: DaemonSetStatus::default() }
     }
 }
 
