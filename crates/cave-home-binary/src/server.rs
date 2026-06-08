@@ -151,27 +151,35 @@ where
     let listener = TcpListener::bind((cfg.bind_addr.as_str(), cfg.bind_port)).await?;
     log_line(&format!("apiserver listening on {}", listener.local_addr()?));
 
-    // One shutdown signal fanned out to the accept loop and every supervisor.
-    // The caller's `shutdown` future drives it: when that future resolves, the
-    // flag flips and serve()/supervisors all unwind.
+    // The top-level shutdown flag the caller's future drives: it stops the accept
+    // loop (drains the listener) first. Each component additionally gets its own
+    // shutdown channel so teardown can be sequenced in dependency order rather
+    // than every component stopping at once.
     let (tx, rx) = watch::channel(false);
     let shutdown_task = tokio::spawn(async move {
         shutdown.await;
         let _ = tx.send(true);
     });
 
-    // Spawn supervisors in bring-up order.
+    // Spawn supervisors in bring-up order, each with its own stop signal.
     let mut supervisors = Vec::new();
     for component in &order {
-        let handle = spawn_supervisor(*component, registry.clone(), cfg.node.clone(), cfg.reconcile_interval, rx.clone());
-        supervisors.push((*component, handle));
+        let (stop_tx, stop_rx) = watch::channel(false);
+        let handle = spawn_supervisor(*component, registry.clone(), cfg.node.clone(), cfg.reconcile_interval, stop_rx);
+        supervisors.push((*component, stop_tx, handle));
     }
 
-    // Serve until the shutdown flag flips.
+    // Serve until the top-level shutdown flag flips — the listener drains first,
+    // so no new requests are accepted while components wind down.
     serve(listener, registry.clone(), rx.clone()).await?;
+    log_line("apiserver drained; stopping components in reverse dependency order");
 
-    // Join supervisors in reverse bring-up order.
-    for (component, handle) in supervisors.into_iter().rev() {
+    // Ordered graceful teardown: stop each component in reverse bring-up order,
+    // one at a time, awaiting it before signalling the next. A dependency is thus
+    // never stopped before its dependents (e.g. the kubelet drains before the
+    // apiserver/storage it writes pod status to).
+    for (component, stop_tx, handle) in supervisors.into_iter().rev() {
+        let _ = stop_tx.send(true);
         let _ = handle.await;
         log_line(&format!("stopped {}", component.id()));
     }
@@ -412,15 +420,44 @@ async fn write_chunk(stream: &mut TcpStream, bytes: &[u8]) -> std::io::Result<()
     stream.flush().await
 }
 
-/// Spawn the concurrent supervisor for one component.
+/// Spawn the concurrent **supervised** task for one component.
+///
+/// The reconcile loop runs under [`supervisor::run`]: if a reconcile tick
+/// panics, the loop's spawned task ends with a `JoinError`, which the body maps
+/// to an `Err` so the supervisor restarts the component (with backoff, up to its
+/// crash-loop budget) instead of letting it vanish. The component is rebuilt
+/// from scratch on each restart — the shared registry it reconciles against is
+/// untouched, so a restart never loses cluster state.
 fn spawn_supervisor(
     component: Component,
     registry: SharedRegistry,
     node: LocalNode,
     interval: Duration,
-    mut shutdown: watch::Receiver<bool>,
-) -> tokio::task::JoinHandle<()> {
+    shutdown: watch::Receiver<bool>,
+) -> tokio::task::JoinHandle<crate::supervisor::SupervisedExit> {
+    let policy = crate::supervisor::RestartPolicy::default();
     tokio::spawn(async move {
+        crate::supervisor::run(component.id(), policy, shutdown, move |loop_shutdown| {
+            let registry = registry.clone();
+            let node = node.clone();
+            reconcile_loop(component, registry, node, interval, loop_shutdown)
+        })
+        .await
+    })
+}
+
+/// One supervised run of a component's reconcile loop. Driven on its own spawned
+/// task so a panic inside [`Reconcile::tick`] is caught as a [`RunError`] (which
+/// the supervisor treats as a restartable failure) rather than tearing the whole
+/// process down.
+async fn reconcile_loop(
+    component: Component,
+    registry: SharedRegistry,
+    node: LocalNode,
+    interval: Duration,
+    mut shutdown: watch::Receiver<bool>,
+) -> Result<(), RunError> {
+    let task = tokio::spawn(async move {
         let mut reconciler = Reconcile::for_component(component, node);
         let mut ticker = tokio::time::interval(interval);
         let mut now: u64 = 0;
@@ -438,7 +475,28 @@ fn spawn_supervisor(
                 }
             }
         }
-    })
+    });
+    // A panic in a reconcile tick is a restartable failure; a clean break
+    // (shutdown) and a deliberate cancellation are both treated as a clean stop.
+    match task.await {
+        Err(join) if join.is_panic() => Err(RunError::Panicked(component.id())),
+        Ok(()) | Err(_) => Ok(()),
+    }
+}
+
+/// A recoverable failure of a supervised component run.
+#[derive(Debug)]
+enum RunError {
+    /// A reconcile tick panicked; the named component will be restarted.
+    Panicked(&'static str),
+}
+
+impl std::fmt::Display for RunError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Panicked(id) => write!(f, "{id} reconcile loop panicked"),
+        }
+    }
 }
 
 /// Per-component reconcile behaviour, each driving the component's real core.
@@ -660,6 +718,153 @@ mod tests {
         let result = tokio::time::timeout(Duration::from_secs(5), run_until(cfg, async {})).await;
         assert!(result.is_ok(), "run_until did not return within the timeout");
         assert!(result.expect("timed out").is_ok(), "run_until returned an error");
+    }
+
+    #[tokio::test]
+    async fn supervised_component_restarts_after_panics_without_losing_the_store() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Arc as StdArc;
+
+        // A registry seeded with the local node — the shared cluster state that
+        // must survive a component crash-looping and being restarted.
+        let registry = seeded_registry(&node());
+        let nodes = GroupVersionResource::new("", "v1", "nodes");
+
+        // A reconcile body that panics its first 2 runs, then runs steady until
+        // shutdown — exactly the spawn/await-JoinError panic-isolation shape that
+        // `reconcile_loop` uses in production. It also writes a marker object into
+        // the shared registry on its steady run so we can prove the store is the
+        // same one across restarts.
+        let runs = StdArc::new(AtomicU32::new(0));
+        let runs2 = runs.clone();
+        let reg_for_body = registry.clone();
+        let (tx, rx) = watch::channel(false);
+
+        let sup = tokio::spawn(async move {
+            crate::supervisor::run(
+                "test-component",
+                crate::supervisor::RestartPolicy::default()
+                    .with_base_backoff(Duration::from_millis(5)),
+                rx,
+                move |mut loop_shutdown| {
+                    let runs = runs2.clone();
+                    let registry = reg_for_body.clone();
+                    async move {
+                        let task = tokio::spawn(async move {
+                            let n = runs.fetch_add(1, Ordering::SeqCst);
+                            if n < 2 {
+                                panic!("simulated reconcile panic");
+                            }
+                            // Steady run: record a marker, then idle until shutdown.
+                            {
+                                let mut reg = registry.lock().await;
+                                let pods = GroupVersionResource::new("", "v1", "pods");
+                                let _ = reg.create(
+                                    &pods,
+                                    cave_home_apiserver_rs::json::obj([
+                                        ("apiVersion", cave_home_apiserver_rs::json::Value::from("v1")),
+                                        ("kind", cave_home_apiserver_rs::json::Value::from("Pod")),
+                                        (
+                                            "metadata",
+                                            cave_home_apiserver_rs::json::obj([
+                                                ("name", cave_home_apiserver_rs::json::Value::from("marker")),
+                                                ("namespace", cave_home_apiserver_rs::json::Value::from("default")),
+                                            ]),
+                                        ),
+                                    ]),
+                                );
+                            }
+                            while !*loop_shutdown.borrow() {
+                                if loop_shutdown.changed().await.is_err() {
+                                    break;
+                                }
+                            }
+                        });
+                        match task.await {
+                            Ok(()) => Ok(()),
+                            Err(j) if j.is_panic() => Err("panicked"),
+                            Err(_) => Ok(()),
+                        }
+                    }
+                },
+            )
+            .await
+        });
+
+        // Give the supervisor time to absorb both panics and reach the steady run.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            if runs.load(Ordering::SeqCst) >= 3 {
+                break;
+            }
+            assert!(tokio::time::Instant::now() < deadline, "component never reached steady run");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        // The store survived every restart: the seeded node is still present, and
+        // the steady run's marker landed in the *same* registry.
+        {
+            let reg = registry.lock().await;
+            assert!(reg.get(&nodes, "", "hub-01").is_ok(), "seeded node lost across restarts");
+            let pods = GroupVersionResource::new("", "v1", "pods");
+            assert!(reg.get(&pods, "default", "marker").is_ok(), "steady run did not see the shared store");
+        }
+        assert!(!sup.is_finished(), "supervisor stays up after recovering");
+
+        let _ = tx.send(true);
+        let exit = tokio::time::timeout(Duration::from_secs(2), sup)
+            .await
+            .expect("supervisor stops on shutdown")
+            .expect("join");
+        assert_eq!(exit, crate::supervisor::SupervisedExit::ShutdownRequested);
+    }
+
+    #[tokio::test]
+    async fn ordered_teardown_stops_components_in_reverse_one_at_a_time() {
+        use std::sync::Arc as StdArc;
+        use tokio::sync::Mutex as TokioMutex;
+
+        // Three supervised tasks named in bring-up order. Each records its own id
+        // into a shared log only once it has actually stopped, so the log proves
+        // both the reverse order *and* that teardown is sequential (each fully
+        // stops before the next is signalled).
+        let order = ["a", "b", "c"];
+        let stop_log: StdArc<TokioMutex<Vec<&'static str>>> = StdArc::new(TokioMutex::new(Vec::new()));
+
+        let mut supervisors = Vec::new();
+        for id in order {
+            let (stop_tx, stop_rx) = watch::channel(false);
+            let log = stop_log.clone();
+            let handle = tokio::spawn(async move {
+                crate::supervisor::run(id, crate::supervisor::RestartPolicy::default(), stop_rx, move |mut sd| {
+                    let log = log.clone();
+                    async move {
+                        while !*sd.borrow() {
+                            if sd.changed().await.is_err() {
+                                break;
+                            }
+                        }
+                        // Record this component as stopped.
+                        log.lock().await.push(id);
+                        Ok::<(), &str>(())
+                    }
+                })
+                .await
+            });
+            supervisors.push((id, stop_tx, handle));
+        }
+
+        // Let every task reach its steady (running) state.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Teardown exactly as `run_until` does: reverse order, signal then await.
+        for (_id, stop_tx, handle) in supervisors.into_iter().rev() {
+            let _ = stop_tx.send(true);
+            let _ = tokio::time::timeout(Duration::from_secs(1), handle).await.expect("stops");
+        }
+
+        let log = stop_log.lock().await;
+        assert_eq!(*log, vec!["c", "b", "a"], "components must stop in reverse bring-up order");
     }
 
     #[test]
