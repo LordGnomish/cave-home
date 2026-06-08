@@ -131,6 +131,18 @@ impl Object for Deployment {
     }
 }
 
+/// How a `StatefulSet` creates and deletes pods (`apps/v1`
+/// `PodManagementPolicyType`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PodManagementPolicy {
+    /// Launch/terminate one pod at a time in strict ordinal order, gating each
+    /// on its predecessor's readiness (the default).
+    #[default]
+    OrderedReady,
+    /// Launch/terminate all pods in parallel, without ordinal gating.
+    Parallel,
+}
+
 /// `apps/v1` `StatefulSetSpec` subset: ordered, stably-named replicas.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StatefulSetSpec {
@@ -140,6 +152,25 @@ pub struct StatefulSetSpec {
     pub selector: LabelSelector,
     /// Pod template.
     pub template: PodTemplateSpec,
+    /// Pod creation/deletion ordering policy.
+    pub pod_management_policy: PodManagementPolicy,
+    /// Names of the volume-claim templates. The controller instantiates one PVC
+    /// per template per ordinal, named `<template>-<sts>-<ordinal>`.
+    pub volume_claim_templates: Vec<String>,
+}
+
+/// Observed state of a `StatefulSet` (`apps/v1` `StatefulSetStatus` subset).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StatefulSetStatus {
+    /// Number of pods created by this `StatefulSet`.
+    pub replicas: i32,
+    /// Number of ready pods.
+    pub ready_replicas: i32,
+    /// Pods created from the current revision.
+    pub current_replicas: i32,
+    /// Pods created from the updated revision (here equal to `current`, since
+    /// rolling updates are deferred).
+    pub updated_replicas: i32,
 }
 
 /// `apps/v1` `StatefulSet` subset.
@@ -149,13 +180,15 @@ pub struct StatefulSet {
     pub meta: ObjectMeta,
     /// Desired state.
     pub spec: StatefulSetSpec,
+    /// Observed state.
+    pub status: StatefulSetStatus,
 }
 
 impl StatefulSet {
-    /// A `StatefulSet` with the given metadata and spec.
+    /// A `StatefulSet` with the given metadata and spec, empty status.
     #[must_use]
-    pub const fn new(meta: ObjectMeta, spec: StatefulSetSpec) -> Self {
-        Self { meta, spec }
+    pub fn new(meta: ObjectMeta, spec: StatefulSetSpec) -> Self {
+        Self { meta, spec, status: StatefulSetStatus::default() }
     }
 }
 

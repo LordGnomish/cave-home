@@ -30,13 +30,14 @@ pub mod core;
 
 pub use apps::{
     DaemonSet, DaemonSetSpec, Deployment, DeploymentSpec, DeploymentStatus, DeploymentStrategy,
-    ReplicaSet, ReplicaSetSpec, ReplicaSetStatus, StatefulSet, StatefulSetSpec,
+    PodManagementPolicy, ReplicaSet, ReplicaSetSpec, ReplicaSetStatus, StatefulSet,
+    StatefulSetSpec, StatefulSetStatus,
 };
 pub use batch::{ConcurrencyPolicy, CronJob, CronJobSpec, Job, JobSpec, JobStatus};
 pub use client::{Api, Cluster};
 pub use core::{
-    Endpoints, Namespace, Node, NodeCondition, Pod, PodPhase, PodStatus, PodTemplateSpec, Service,
-    ServiceAccount,
+    Endpoints, Namespace, Node, NodeCondition, PersistentVolumeClaim, Pod, PodPhase, PodStatus,
+    PodTemplateSpec, Service, ServiceAccount,
 };
 
 /// A label selector: a key/value map with AND semantics (apimachinery

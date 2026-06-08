@@ -220,6 +220,34 @@ impl Object for Service {
     }
 }
 
+/// A `PersistentVolumeClaim` (`core/v1` `PersistentVolumeClaim` subset).
+///
+/// A `StatefulSet` instantiates one PVC per `volumeClaimTemplate` per ordinal,
+/// named `<template>-<sts>-<ordinal>`. The claim outlives the pod and survives
+/// scale-down — only its name + ownership matter to the controller logic here.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PersistentVolumeClaim {
+    /// Object metadata; the name encodes template + owning set + ordinal.
+    pub meta: ObjectMeta,
+}
+
+impl PersistentVolumeClaim {
+    /// A claim with the given metadata.
+    #[must_use]
+    pub const fn new(meta: ObjectMeta) -> Self {
+        Self { meta }
+    }
+}
+
+impl Object for PersistentVolumeClaim {
+    fn meta(&self) -> &ObjectMeta {
+        &self.meta
+    }
+    fn meta_mut(&mut self) -> &mut ObjectMeta {
+        &mut self.meta
+    }
+}
+
 /// A `ServiceAccount` (`core/v1` `ServiceAccount` subset).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ServiceAccount {
