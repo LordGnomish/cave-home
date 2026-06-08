@@ -139,7 +139,7 @@ pub fn schedule_one_limited(
     if feasible.is_empty() {
         // ---------- PostFilter (preemption) ----------
         for plugin in registry.post_filters() {
-            let (nominee, status) = plugin.post_filter(&mut state, pod, &nodes, &failures);
+            let (nominee, status) = plugin.post_filter(&mut state, pod, &nodes, &failures, registry);
             if status.is_success() && nominee.is_some() {
                 return ScheduleResult {
                     suggested_host: None,

@@ -282,6 +282,12 @@ pub trait ScorePlugin: Send + Sync {
 
 /// Upstream: `pkg/scheduler/framework/interface.go::PostFilterPlugin`.
 /// Used by Phase 2 only for preemption.
+///
+/// The plugin receives the active [`PluginRegistry`] — upstream a PostFilter
+/// plugin holds a `framework.Handle` it uses to re-run PreFilter/Filter while
+/// evaluating hypothetical evictions. Here that handle is the registry, so the
+/// preemptor can drive the real PreFilter (+ `PreFilterExtensions`) and Filter
+/// plugins of the profile rather than a hardcoded list.
 pub trait PostFilterPlugin: Send + Sync {
     fn name(&self) -> &'static str;
     /// Return the nominated node name (`Some(node)` on success) or `None`
@@ -292,6 +298,7 @@ pub trait PostFilterPlugin: Send + Sync {
         pod: &Pod,
         nodes: &[NodeInfo],
         filter_failures: &FilterFailureMap,
+        registry: &PluginRegistry,
     ) -> (Option<String>, Status);
 }
 
