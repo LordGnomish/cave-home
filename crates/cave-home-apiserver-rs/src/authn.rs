@@ -178,7 +178,7 @@ impl AuthenticatorChain {
     pub fn authenticate(&self, req: &Request) -> Result<UserInfo> {
         for d in &self.delegates {
             if let Some(user) = d.authenticate(req)? {
-                return Ok(user);
+                return Ok(add_authenticated_group(user));
             }
         }
         if self.allow_anonymous {
@@ -187,6 +187,27 @@ impl AuthenticatorChain {
             Err(Status::unauthorized("no credentials provided"))
         }
     }
+}
+
+/// The built-in group every authenticated identity carries.
+pub const SYSTEM_AUTHENTICATED: &str = "system:authenticated";
+/// The built-in group the anonymous identity carries.
+pub const SYSTEM_UNAUTHENTICATED: &str = "system:unauthenticated";
+
+/// Append `system:authenticated` to a successfully-authenticated identity's
+/// groups (mirroring upstream's `AuthenticatedGroupAdder`), unless it is the
+/// anonymous identity or already carries the group. The anonymous identity
+/// (`system:anonymous` / member of `system:unauthenticated`) is never tagged.
+fn add_authenticated_group(mut user: UserInfo) -> UserInfo {
+    let is_anonymous = user.name == "system:anonymous"
+        || user.groups.iter().any(|g| g == SYSTEM_UNAUTHENTICATED);
+    if is_anonymous {
+        return user;
+    }
+    if !user.groups.iter().any(|g| g == SYSTEM_AUTHENTICATED) {
+        user.groups.push(SYSTEM_AUTHENTICATED.to_string());
+    }
+    user
 }
 
 #[cfg(test)]
@@ -302,5 +323,71 @@ mod tests {
         // Even with anonymous enabled, a *presented* bad token is a hard 401.
         let err = chain.authenticate(&req_with_auth("Bearer wrong")).expect_err("401");
         assert_eq!(err.code, 401);
+    }
+
+    // --- implicit system:authenticated group --------------------------------
+    // Upstream's AuthenticatedGroupAdder appends `system:authenticated` to the
+    // groups of every successfully-authenticated identity, so bindings to that
+    // built-in group grant all logged-in users.
+
+    #[test]
+    fn chain_adds_system_authenticated_group_to_authenticated_user() {
+        let chain = AuthenticatorChain::new()
+            .with(Box::new(TokenAuthenticator::new().with_token("k", UserInfo::new("alice"))));
+        let user = chain.authenticate(&req_with_auth("Bearer k")).expect("authn");
+        assert_eq!(user.name, "alice");
+        assert!(
+            user.groups.contains(&"system:authenticated".to_string()),
+            "groups: {:?}",
+            user.groups
+        );
+    }
+
+    #[test]
+    fn chain_preserves_authenticator_groups_and_appends_authenticated() {
+        let chain = AuthenticatorChain::new().with(Box::new(
+            TokenAuthenticator::new()
+                .with_token("k", UserInfo::new("alice").with_groups(&["dev"])),
+        ));
+        let user = chain.authenticate(&req_with_auth("Bearer k")).expect("authn");
+        assert!(user.groups.contains(&"dev".to_string()));
+        assert!(user.groups.contains(&"system:authenticated".to_string()));
+    }
+
+    #[test]
+    fn chain_does_not_duplicate_system_authenticated() {
+        // An authenticator that already lists the group must not get a duplicate.
+        let chain = AuthenticatorChain::new().with(Box::new(
+            TokenAuthenticator::new().with_token(
+                "k",
+                UserInfo::new("alice").with_groups(&["system:authenticated"]),
+            ),
+        ));
+        let user = chain.authenticate(&req_with_auth("Bearer k")).expect("authn");
+        let count = user.groups.iter().filter(|g| *g == "system:authenticated").count();
+        assert_eq!(count, 1, "groups: {:?}", user.groups);
+    }
+
+    #[test]
+    fn chain_does_not_add_authenticated_to_anonymous() {
+        // The anonymous fallthrough stays `system:unauthenticated` only.
+        let chain = AuthenticatorChain::new()
+            .with(Box::new(TokenAuthenticator::new().with_token("k", UserInfo::new("node"))))
+            .allow_anonymous(true);
+        let user = chain.authenticate(&req_no_auth()).expect("anon");
+        assert_eq!(user.name, "system:anonymous");
+        assert!(!user.groups.contains(&"system:authenticated".to_string()));
+        assert!(user.groups.contains(&"system:unauthenticated".to_string()));
+    }
+
+    #[test]
+    fn anonymous_authenticator_delegate_is_not_marked_authenticated() {
+        // If AnonymousAuthenticator is wired as a delegate (it always returns an
+        // identity), the system:anonymous user it yields must NOT be tagged
+        // system:authenticated — it is recognised as the anonymous identity.
+        let chain = AuthenticatorChain::new().with(Box::new(AnonymousAuthenticator));
+        let user = chain.authenticate(&req_no_auth()).expect("anon");
+        assert_eq!(user.name, "system:anonymous");
+        assert!(!user.groups.contains(&"system:authenticated".to_string()));
     }
 }

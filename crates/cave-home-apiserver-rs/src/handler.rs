@@ -1135,6 +1135,35 @@ mod tests {
         assert_eq!(resp.status, 403);
     }
 
+    #[test]
+    fn rbac_binding_to_system_authenticated_grants_any_logged_in_user() {
+        // A ClusterRoleBinding to the built-in `system:authenticated` group must
+        // authorize an authenticated user who has no explicit user/group binding,
+        // because the authn chain stamps that group onto every logged-in identity.
+        let reader = ClusterRole {
+            name: "pod-reader".to_string(),
+            rules: vec![PolicyRule::resource_rule(&[""], &["pods"], &["get", "list"])],
+        };
+        let binding = ClusterRoleBinding {
+            name: "authenticated-readers".to_string(),
+            subjects: vec![Subject::group("system:authenticated")],
+            role_ref: RoleRef::cluster_role("pod-reader"),
+        };
+        let authz = RbacAuthorizer::new()
+            .with_cluster_role(reader)
+            .with_cluster_role_binding(binding);
+        let authn = AuthenticatorChain::new()
+            .with(Box::new(
+                TokenAuthenticator::new().with_token("bob-token", UserInfo::new("bob")),
+            ))
+            .allow_anonymous(false);
+        let mut s = ApiServer::new()
+            .with_authn(authn)
+            .with_authz(Authorization::Rbac(authz));
+        let resp = s.handle(&req_auth("GET", "/api/v1/namespaces/default/pods", "bob-token", ""));
+        assert_eq!(resp.status, 200);
+    }
+
     // --- observability / metrics -------------------------------------------
 
     #[test]
