@@ -49,6 +49,8 @@ pub mod node;
 pub mod server;
 pub mod shutdown;
 pub mod supervisor;
+#[cfg(feature = "tls")]
+pub mod tls;
 pub mod table;
 pub mod version;
 

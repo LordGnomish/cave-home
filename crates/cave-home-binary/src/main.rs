@@ -129,6 +129,10 @@ fn boot(role: ServeRole, cfg: &Config) -> ExitCode {
         // A snappy reconcile cadence so a freshly-applied pod is scheduled and
         // run within a second or two rather than up to a tick later.
         reconcile_interval: Duration::from_secs(1),
+        // TLS is opt-in via config (a follow-up CLI flag will populate this); the
+        // default boot serves plain HTTP exactly as before.
+        #[cfg(feature = "tls")]
+        tls: None,
     };
 
     let runtime = match tokio::runtime::Runtime::new() {

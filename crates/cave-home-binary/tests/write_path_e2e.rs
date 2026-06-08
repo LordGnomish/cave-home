@@ -50,6 +50,8 @@ async fn pod_created_over_the_wire_is_persisted_and_reconciled_to_running() {
         bind_port: addr.port(),
         // Fast reconcile so schedule→run happens within the test deadline.
         reconcile_interval: Duration::from_millis(25),
+        #[cfg(feature = "tls")]
+        tls: None,
     };
 
     let (stop_tx, stop_rx) = watch::channel(false);

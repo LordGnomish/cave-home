@@ -13,18 +13,23 @@
 //! 3. binds a real TCP listener (`:6443`) and serves the apiserver read path
 //!    ([`crate::apirest`]) over [`crate::http`];
 //! 4. spawns one concurrent supervised task per control-plane component, each
-//!    driving its real decision core on an interval;
-//! 5. on a shutdown signal, winds the components down in reverse order.
+//!    driving its real decision core on an interval, restarting it on failure
+//!    (with backoff + a crash-loop budget) via [`crate::supervisor`];
+//! 5. serves the full read **and** write path ([`crate::apirest`]) — including
+//!    over TLS / mutual TLS when the `tls` feature is built and a
+//!    [`crate::tls::TlsConfig`] is supplied;
+//! 6. on a shutdown signal, drains the listener and winds the components down in
+//!    reverse dependency order, one at a time, without losing the store.
 //!
-//! Honesty boundaries (see the handoff doc): write verbs over the wire, TLS on
-//! `:6443`, and the live-state reconcile wiring of every core are incremental
-//! follow-ups. What runs here is real: a real socket, the real registry, the
-//! real planner, and real per-tick core invocations.
+//! Honesty boundary: the per-core *live-state* reconcile wiring of every
+//! decision core is still being filled in incrementally. What runs here is real:
+//! a real socket (plain or TLS-terminated), the real registry, the real planner,
+//! real supervised per-tick core invocations, and real ordered teardown.
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{watch, Mutex};
 
@@ -53,6 +58,11 @@ pub struct RuntimeConfig {
     pub bind_port: u16,
     /// How often each supervised component reconciles.
     pub reconcile_interval: Duration,
+    /// TLS material for the apiserver listener (`tls` feature). `Some` serves
+    /// over HTTPS — and mutual TLS when a client CA is configured; `None` (the
+    /// default) serves plain HTTP, exactly as before.
+    #[cfg(feature = "tls")]
+    pub tls: Option<crate::tls::TlsConfig>,
 }
 
 impl RuntimeConfig {
@@ -65,6 +75,8 @@ impl RuntimeConfig {
             bind_addr: "0.0.0.0".to_string(),
             bind_port: 6443,
             reconcile_interval: Duration::from_secs(1),
+            #[cfg(feature = "tls")]
+            tls: None,
         }
     }
 }
@@ -166,7 +178,15 @@ where
         order.iter().map(|c| c.id()).collect::<Vec<_>>().join(" → ")
     ));
 
-    log_line(&format!("apiserver listening on {}", listener.local_addr()?));
+    // Build the TLS terminator up front (when configured) so a bad cert/key is a
+    // boot failure, not a per-connection surprise. With TLS the listener serves
+    // HTTPS (and mTLS when a client CA is set); without it, plain HTTP as before.
+    let tls_listener = build_tls_listener(&cfg)?;
+    log_line(&format!(
+        "apiserver listening on {} ({})",
+        listener.local_addr()?,
+        if tls_listener.is_some() { "https" } else { "http" }
+    ));
 
     // The top-level shutdown flag the caller's future drives: it stops the accept
     // loop (drains the listener) first. Each component additionally gets its own
@@ -188,7 +208,7 @@ where
 
     // Serve until the top-level shutdown flag flips — the listener drains first,
     // so no new requests are accepted while components wind down.
-    serve(listener, registry.clone(), rx.clone()).await?;
+    serve(listener, registry.clone(), rx.clone(), tls_listener).await?;
     log_line("apiserver drained; stopping components in reverse dependency order");
 
     // Ordered graceful teardown: stop each component in reverse bring-up order,
@@ -256,15 +276,32 @@ async fn wait_for_shutdown_signal() {
 
 /// The apiserver accept loop. Serves each connection then closes it
 /// (`Connection: close`); exits when the shutdown flag flips.
-async fn serve(listener: TcpListener, registry: SharedRegistry, mut shutdown: watch::Receiver<bool>) -> std::io::Result<()> {
+///
+/// When `tls` is `Some`, each accepted TCP connection is completed through the
+/// rustls handshake (terminating TLS, and enforcing the client certificate when
+/// the acceptor was built for mutual TLS) before the HTTP handler sees any
+/// bytes; when `None`, the connection is served as plain HTTP. The handshake
+/// runs on the per-connection task so a slow or hostile client never blocks the
+/// accept loop.
+// The per-connection `tls.clone()` is a real clone of a `TlsAcceptor` under the
+// `tls` feature; with the feature off the placeholder type is `Copy`, which
+// would otherwise trip `clone_on_copy`.
+#[cfg_attr(not(feature = "tls"), allow(clippy::clone_on_copy))]
+async fn serve(
+    listener: TcpListener,
+    registry: SharedRegistry,
+    mut shutdown: watch::Receiver<bool>,
+    tls: Option<TlsListener>,
+) -> std::io::Result<()> {
     loop {
         tokio::select! {
             accepted = listener.accept() => {
                 let (stream, _peer) = accepted?;
                 let reg = registry.clone();
                 let conn_shutdown = shutdown.clone();
+                let tls = tls.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = handle_conn(stream, reg, conn_shutdown).await {
+                    if let Err(e) = serve_conn(stream, reg, conn_shutdown, tls).await {
                         log_line(&format!("connection error: {e}"));
                     }
                 });
@@ -279,16 +316,69 @@ async fn serve(listener: TcpListener, registry: SharedRegistry, mut shutdown: wa
     Ok(())
 }
 
+/// The TLS terminator for the listener: a cloneable `tokio-rustls` acceptor.
+/// Only present (and only compiled) under the `tls` feature.
+#[cfg(feature = "tls")]
+type TlsListener = tokio_rustls::TlsAcceptor;
+/// With the `tls` feature off there is no TLS path; the type is an uninhabited
+/// placeholder so the plain-HTTP code compiles unchanged.
+#[cfg(not(feature = "tls"))]
+type TlsListener = std::convert::Infallible;
+
+/// Build the listener's TLS terminator from the runtime config: `Some` when a
+/// [`crate::tls::TlsConfig`] is present (and valid), `None` for plain HTTP.
+///
+/// # Errors
+/// With the `tls` feature, surfaces a bad/missing cert/key bundle as a boot
+/// error so the process fails fast rather than serving broken TLS.
+#[cfg(feature = "tls")]
+fn build_tls_listener(cfg: &RuntimeConfig) -> std::io::Result<Option<TlsListener>> {
+    match &cfg.tls {
+        Some(tls_cfg) => Ok(Some(crate::tls::acceptor(tls_cfg)?)),
+        None => Ok(None),
+    }
+}
+
+/// Without the `tls` feature there is never a TLS terminator.
+#[cfg(not(feature = "tls"))]
+#[allow(clippy::unnecessary_wraps)] // mirrors the tls-feature signature
+const fn build_tls_listener(_cfg: &RuntimeConfig) -> std::io::Result<Option<TlsListener>> {
+    Ok(None)
+}
+
+/// Serve one accepted TCP connection, terminating TLS first when configured.
+async fn serve_conn(
+    stream: TcpStream,
+    registry: SharedRegistry,
+    shutdown: watch::Receiver<bool>,
+    tls: Option<TlsListener>,
+) -> std::io::Result<()> {
+    match tls {
+        #[cfg(feature = "tls")]
+        Some(acceptor) => {
+            // Complete the TLS handshake (and client-cert check under mTLS); a
+            // failed handshake is a connection-level error, not a fatal one.
+            let tls_stream = acceptor.accept(stream).await?;
+            handle_conn(tls_stream, registry, shutdown).await
+        }
+        // No TLS configured: serve the raw TCP stream as plain HTTP.
+        _ => handle_conn(stream, registry, shutdown).await,
+    }
+}
+
 /// Read one HTTP request, serve it against the registry, write the response.
 ///
 /// A `?watch=true` GET is upgraded to a streaming watch ([`serve_watch`]) that
 /// holds the connection open and emits change events until the client leaves or
 /// the server shuts down; every other request is a one-shot response.
-async fn handle_conn(
-    mut stream: TcpStream,
+async fn handle_conn<S>(
+    mut stream: S,
     registry: SharedRegistry,
     shutdown: watch::Receiver<bool>,
-) -> std::io::Result<()> {
+) -> std::io::Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let mut buf = Vec::new();
     let mut tmp = [0u8; 4096];
     loop {
@@ -347,12 +437,15 @@ fn query_param<'a>(query: &'a str, key: &str) -> Option<&'a str> {
 /// `watch.Event` envelope). Events are sourced from the registry's own
 /// per-resource history via `watch_since`, starting at the client's
 /// `resourceVersion`, and filtered to the path's namespace/name scope.
-async fn serve_watch(
-    mut stream: TcpStream,
+async fn serve_watch<S>(
+    mut stream: S,
     registry: &SharedRegistry,
     req: &http::HttpRequest,
     mut shutdown: watch::Receiver<bool>,
-) -> std::io::Result<()> {
+) -> std::io::Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     use cave_home_apiserver_rs::path;
 
     let rp = match path::parse(&req.path) {
@@ -430,7 +523,7 @@ fn watch_event_frame(ev: &cave_home_apiserver_rs::registry::WatchEvent) -> Strin
 }
 
 /// Write one HTTP chunk (`<hex-len>\r\n<bytes>\r\n`) and flush it.
-async fn write_chunk(stream: &mut TcpStream, bytes: &[u8]) -> std::io::Result<()> {
+async fn write_chunk<S: AsyncWrite + Unpin>(stream: &mut S, bytes: &[u8]) -> std::io::Result<()> {
     stream.write_all(format!("{:x}\r\n", bytes.len()).as_bytes()).await?;
     stream.write_all(bytes).await?;
     stream.write_all(b"\r\n").await?;
@@ -708,7 +801,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("addr");
         let (_tx, rx) = watch::channel(false);
-        let server = tokio::spawn(serve(listener, registry, rx));
+        let server = tokio::spawn(serve(listener, registry, rx, None));
 
         let nodes_body = http_get(addr, "/api/v1/nodes").await;
         assert!(nodes_body.contains("\"kind\":\"NodeList\""), "{nodes_body}");
@@ -731,6 +824,8 @@ mod tests {
             bind_addr: "127.0.0.1".to_string(),
             bind_port: 0,
             reconcile_interval: Duration::from_millis(20),
+            #[cfg(feature = "tls")]
+            tls: None,
         };
         let result = tokio::time::timeout(Duration::from_secs(5), run_until(cfg, async {})).await;
         assert!(result.is_ok(), "run_until did not return within the timeout");
@@ -901,7 +996,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("addr");
         let (tx, rx) = watch::channel(false);
-        let server = tokio::spawn(serve(listener, registry.clone(), rx));
+        let server = tokio::spawn(serve(listener, registry.clone(), rx, None));
 
         // Open a watch on pods starting from the current (empty) history.
         let mut stream = TcpStream::connect(addr).await.expect("connect");
@@ -962,7 +1057,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("addr");
         let (tx, rx) = watch::channel(false);
-        let server = tokio::spawn(serve(listener, registry.clone(), rx));
+        let server = tokio::spawn(serve(listener, registry.clone(), rx, None));
         let pods = GroupVersionResource::new("", "v1", "pods");
 
         let mut stream = TcpStream::connect(addr).await.expect("connect");

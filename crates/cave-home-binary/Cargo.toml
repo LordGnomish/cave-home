@@ -47,8 +47,22 @@ cave-home-klipper-lb-rs       = { path = "../cave-home-klipper-lb-rs" }
 # The household-facing Portal view-model, mounted alongside the control plane.
 cave-home-portal              = { path = "../cave-home-portal" }
 
+# TLS for the apiserver listener (off by default; the plain-HTTP path is the
+# baseline). `ring` is the offline crypto provider — matching cave-home-unifi —
+# so no aws-lc-sys C/network build is pulled in.
+tokio-rustls   = { version = "0.26", default-features = false, features = ["ring", "tls12"], optional = true }
+rustls         = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+rustls-pemfile = { version = "2", optional = true }
+
+[features]
+# Serve the apiserver over HTTPS (and, with a client CA configured, mTLS).
+tls = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile"]
+
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "macros", "time", "test-util"] }
+# Self-signed certs generated in-test so the TLS serving path is exercised for
+# real without checked-in key material.
+rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
 
 [lints]
 workspace = true
