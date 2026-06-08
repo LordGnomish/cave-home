@@ -991,15 +991,20 @@ fn to_kine_range_bytes(key: &[u8], range_end: &[u8]) -> Result<KineRange, Status
 #[allow(clippy::needless_pass_by_value)]
 fn status(err: KineError) -> Status {
     let code = match err {
-        KineError::Compacted { .. } | KineError::FutureRevision { .. } => Code::OutOfRange,
+        // etcd's ErrCompacted / ErrFutureRev family surface as OutOfRange. A
+        // re-compaction at/below the floor IS ErrCompacted, and a compaction
+        // above the current revision IS ErrFutureRev — both map here, matching
+        // etcd's `rpctypes.ErrGRPCCompacted` / `ErrGRPCFutureRev`.
+        KineError::Compacted { .. }
+        | KineError::FutureRevision { .. }
+        | KineError::CompactionNotForward { .. }
+        | KineError::CompactFutureRevision { .. } => Code::OutOfRange,
         KineError::EmptyKey
         | KineError::InvalidRange
         | KineError::NegativeLimit { .. }
         | KineError::NegativeRevision { .. }
         | KineError::InvalidLeaseId
-        | KineError::InvalidTtl { .. }
-        | KineError::CompactionNotForward { .. }
-        | KineError::CompactFutureRevision { .. } => Code::InvalidArgument,
+        | KineError::InvalidTtl { .. } => Code::InvalidArgument,
         KineError::Backend { .. } => Code::Internal,
     };
     Status::new(code, err.to_string())
@@ -1606,6 +1611,61 @@ mod tests {
         // assert the next message (if any within a short window) is never a batch.
         let next = tokio::time::timeout(Duration::from_millis(250), stream.next()).await;
         assert!(next.is_err(), "no event batch is emitted when both filters are set");
+    }
+
+    #[tokio::test]
+    async fn compact_at_or_below_floor_is_out_of_range_compacted() {
+        let s = server();
+        s.put(Request::new(put_req(b"/k", b"v1"))).await.unwrap(); // 1
+        s.put(Request::new(put_req(b"/k", b"v2"))).await.unwrap(); // 2
+        s.put(Request::new(put_req(b"/k", b"v3"))).await.unwrap(); // 3
+        s.compact(Request::new(CompactionRequest { revision: 2, physical: true }))
+            .await
+            .unwrap();
+        // Re-compacting at the floor (or below it) is etcd's ErrCompacted, which
+        // surfaces as gRPC OutOfRange — NOT InvalidArgument.
+        let err = s
+            .compact(Request::new(CompactionRequest { revision: 2, physical: true }))
+            .await
+            .unwrap_err();
+        assert_eq!(err.code(), Code::OutOfRange, "re-compact is ErrCompacted");
+        assert!(err.message().contains("compacted"));
+
+        let err_below = s
+            .compact(Request::new(CompactionRequest { revision: 1, physical: true }))
+            .await
+            .unwrap_err();
+        assert_eq!(err_below.code(), Code::OutOfRange);
+    }
+
+    #[tokio::test]
+    async fn compact_above_current_revision_is_future_rev_out_of_range() {
+        let s = server();
+        s.put(Request::new(put_req(b"/k", b"v"))).await.unwrap(); // current rev 1
+        // etcd's ErrFutureRev when compacting a revision the store hasn't reached;
+        // it surfaces as gRPC OutOfRange.
+        let err = s
+            .compact(Request::new(CompactionRequest { revision: 99, physical: true }))
+            .await
+            .unwrap_err();
+        assert_eq!(err.code(), Code::OutOfRange, "future-rev compact is OutOfRange");
+        assert!(err.message().contains("future"));
+    }
+
+    #[tokio::test]
+    async fn compact_response_header_carries_the_current_revision() {
+        let s = server();
+        s.put(Request::new(put_req(b"/k", b"v1"))).await.unwrap(); // 1
+        s.put(Request::new(put_req(b"/k", b"v2"))).await.unwrap(); // 2
+        s.put(Request::new(put_req(b"/k", b"v3"))).await.unwrap(); // 3
+        let resp = s
+            .compact(Request::new(CompactionRequest { revision: 2, physical: true }))
+            .await
+            .unwrap()
+            .into_inner();
+        // etcd stamps the compaction response header with the store's *current*
+        // revision (3), not the compacted floor (2): compaction never rewinds.
+        assert_eq!(resp.header.unwrap().revision, 3);
     }
 
     #[tokio::test]
