@@ -4,12 +4,14 @@
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
 //!         pkg/scheduler/framework/interface.go
 //!
-//! All nine framework extension points are present: `PreFilterPlugin`,
-//! `FilterPlugin`, `PostFilterPlugin`, `PreScorePlugin`, `ScorePlugin`
-//! (with the optional `NormalizeScore` rescale), `ReservePlugin`,
-//! `PermitPlugin`, `PreBindPlugin`, `BindPlugin`, and `PostBindPlugin`.
-//! The timed `Permit` "wait" disposition and `QueueingHints` remain
-//! deferred — see `parity.manifest.toml`.
+//! Every framework extension point is present: `PreEnqueuePlugin`,
+//! `QueueSortPlugin`, `PreFilterPlugin` (with the optional
+//! `PreFilterExtensions` `AddPod`/`RemovePod` hook), `FilterPlugin`,
+//! `PostFilterPlugin`, `PreScorePlugin`, `ScorePlugin` (with the optional
+//! `NormalizeScore` rescale), `ReservePlugin`, `PermitPlugin` (including the
+//! timed `Code::Wait` disposition and its `WaitingPod` allow/reject/timeout
+//! gate), `PreBindPlugin`, `BindPlugin`, and `PostBindPlugin`. `QueueingHints`
+//! remain deferred — see `parity.manifest.toml`.
 
 pub mod cycle_state;
 pub mod events;

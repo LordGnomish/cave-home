@@ -30,10 +30,15 @@
 //! * `SchedulerConfig` — `percentageOfNodesToScore` + adaptive
 //!   `numFeasibleNodesToFind`.
 //!
+//! The framework chain is complete across both cycles, including the queue's
+//! `PreEnqueue` admission gate, the single-profile `QueueSort` (`Less`)
+//! ordering plugin, `PreFilterExtensions` (`AddPod`/`RemovePod`) driven by
+//! preemption, and the timed `Permit` `Wait` disposition with its
+//! allow/reject/timeout `WaitingPod` gate.
+//!
 //! Phase 2b deferred (see `parity.manifest.toml`): `PodTopologySpread`,
-//! inter-pod affinity, preferred node affinity, custom plugin registry,
-//! multiple profiles, the timed `Permit` "wait" disposition, `QueueingHints`,
-//! image-size weighted `ImageLocality`, lower-priority victim
+//! inter-pod affinity, preferred node affinity, multiple profiles,
+//! `QueueingHints`, image-size weighted `ImageLocality`, lower-priority victim
 //! minimisation in `DefaultPreemption`.
 
 pub mod cache;
@@ -54,7 +59,7 @@ pub use framework::{
     PreEnqueuePlugin, PreFilterExtensions, PreFilterPlugin, PreFilterResult, PreScorePlugin,
     QueueSortPlugin, RegistryBuilder, ReservePlugin, ScorePlugin, Status, WaitingPod,
 };
-pub use plugins::default_registry;
+pub use plugins::{default_registry, PrioritySort};
 pub use preemption::DefaultPreemption;
 pub use queue::{PriorityQueue, QueuedPodInfo, SchedulingQueue};
 pub use config::SchedulerConfig;

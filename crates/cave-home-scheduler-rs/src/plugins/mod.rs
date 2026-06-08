@@ -32,6 +32,8 @@ use crate::framework::{PluginRegistry, RegistryBuilder};
 #[must_use]
 pub fn default_registry() -> PluginRegistry {
     RegistryBuilder::default()
+        // QueueSort — the single ordering plugin (descending Pod priority).
+        .with_queue_sort(Arc::new(PrioritySort))
         // PreFilter — NodeResourcesFit precomputes the pod's summed requests
         // once so the per-node Filter loop reuses them (upstream default).
         .with_pre_filter(Arc::new(NodeResourcesFit))
@@ -57,6 +59,25 @@ pub fn default_registry() -> PluginRegistry {
 /// Synthetic helper: NodeAffinity required-during-scheduling filter.
 fn node_affinity_required_filter() -> impl crate::framework::FilterPlugin {
     NodeAffinityFilter
+}
+
+/// Upstream: `pkg/scheduler/framework/plugins/queuesort/priority_sort.go`.
+///
+/// The default-profile `QueueSort` plugin: a pod with the higher
+/// `Pod.Spec.Priority` sorts first. Pods of equal priority compare equal here —
+/// admission order (the queue's monotonic sequence) is the queue's tiebreaker,
+/// not the plugin's, matching upstream where `Less` only compares priority and
+/// the heap preserves insertion order for ties.
+#[derive(Default)]
+pub struct PrioritySort;
+
+impl crate::framework::QueueSortPlugin for PrioritySort {
+    fn name(&self) -> &'static str {
+        "PrioritySort"
+    }
+    fn less(&self, a: &crate::types::Pod, b: &crate::types::Pod) -> bool {
+        a.spec.priority > b.spec.priority
+    }
 }
 
 /// Upstream: `pkg/scheduler/framework/plugins/nodeaffinity/node_affinity.go::Filter`.
@@ -133,6 +154,21 @@ mod tests {
         assert_eq!(r.filters().len(), 7);
         assert_eq!(r.scores().len(), 3);
         assert_eq!(r.post_filters().len(), 1);
+        // The default profile enables exactly one QueueSort plugin.
+        assert_eq!(r.queue_sort().map(|p| p.name()), Some("PrioritySort"));
+    }
+
+    #[test]
+    fn priority_sort_orders_higher_priority_first() {
+        use crate::framework::QueueSortPlugin;
+        let mut hi = Pod::default();
+        hi.spec.priority = 100;
+        let mut lo = Pod::default();
+        lo.spec.priority = 1;
+        assert!(PrioritySort.less(&hi, &lo));
+        assert!(!PrioritySort.less(&lo, &hi));
+        // Equal priority: neither sorts before the other (queue breaks the tie).
+        assert!(!PrioritySort.less(&hi, &hi.clone()));
     }
 
     #[test]

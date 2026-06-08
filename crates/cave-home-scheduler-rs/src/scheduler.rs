@@ -80,8 +80,16 @@ impl Scheduler {
     }
 
     /// Replace the registry — useful for tests that exercise a subset.
+    ///
+    /// If the registry declares a `QueueSort` plugin, the scheduling queue is
+    /// rebuilt to order through it (upstream: the queue is constructed from the
+    /// profile's QueueSort plugin). A registry without one keeps the default
+    /// [`PrioritySort`](crate::plugins::PrioritySort)-ordered queue.
     #[must_use]
     pub fn with_registry(mut self, reg: PluginRegistry) -> Self {
+        if let Some(sort) = reg.queue_sort() {
+            self.queue = PriorityQueue::with_queue_sort(sort.clone());
+        }
         self.registry = reg;
         self
     }

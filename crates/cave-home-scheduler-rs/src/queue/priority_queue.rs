@@ -13,7 +13,7 @@ use parking_lot::Mutex;
 use tokio::sync::Notify;
 
 use super::SchedulingQueue;
-use crate::framework::{ClusterEvent, WILD_CARD_EVENT};
+use crate::framework::{ClusterEvent, QueueSortPlugin, WILD_CARD_EVENT};
 use crate::types::Pod;
 
 /// Upstream: `pkg/scheduler/backend/queue/scheduling_queue.go::QueuedPodInfo`.
@@ -78,11 +78,14 @@ impl QueuedPodInfo {
     }
 }
 
-#[derive(Debug)]
 struct HeapEntry {
-    priority: i32, // negated for max-heap semantics via BinaryHeap (which is max)
     seq: u64,
     info: QueuedPodInfo,
+    /// The active profile's `QueueSort` comparator, shared by every entry on the
+    /// heap. `BinaryHeap` invokes [`Ord::cmp`] with no external context, so each
+    /// entry carries an [`Arc`] to the comparator (cheap to clone) to route the
+    /// ordering through [`QueueSortPlugin::less`].
+    sort: Arc<dyn QueueSortPlugin>,
 }
 
 impl PartialEq for HeapEntry {
@@ -97,21 +100,42 @@ impl PartialOrd for HeapEntry {
     }
 }
 impl Ord for HeapEntry {
-    /// Upstream: higher Pod.Spec.Priority pops first; ties broken by
-    /// earlier admission timestamp (here a monotonic seq).
+    /// `BinaryHeap` is a max-heap and pops its `Ordering::Greater` element
+    /// first. The `QueueSort` plugin's `less(a, b)` says "a should be scheduled
+    /// before b", so a pod that the plugin sorts *first* must compare as
+    /// *greater* here. Ties (neither `less` direction holds) are broken by
+    /// earlier admission — the smaller monotonic `seq` — preserving FIFO order
+    /// among equal-priority pods exactly as upstream's heap does.
     fn cmp(&self, other: &Self) -> Ordering {
-        // BinaryHeap is max-heap. Sort by (priority desc, seq asc).
-        self.priority
-            .cmp(&other.priority)
-            .then_with(|| other.seq.cmp(&self.seq))
+        if self.sort.less(&self.info.pod, &other.info.pod) {
+            Ordering::Greater
+        } else if self.sort.less(&other.info.pod, &self.info.pod) {
+            Ordering::Less
+        } else {
+            // Equal under the plugin: earlier seq pops first → it is "greater".
+            other.seq.cmp(&self.seq)
+        }
     }
 }
 
 /// Upstream: `pkg/scheduler/backend/queue/scheduling_queue.go::PriorityQueue`.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct PriorityQueue {
     inner: Arc<Mutex<PriorityQueueInner>>,
     signal: Arc<QueueSignal>,
+    /// The active profile's `QueueSort` comparator. Defaults to
+    /// [`PrioritySort`](crate::plugins::PrioritySort) (descending pod priority).
+    sort: Arc<dyn QueueSortPlugin>,
+}
+
+impl Default for PriorityQueue {
+    fn default() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(PriorityQueueInner::default())),
+            signal: Arc::new(QueueSignal::default()),
+            sort: Arc::new(crate::plugins::PrioritySort),
+        }
+    }
 }
 
 /// Wakeup channel for [`PriorityQueue::pop_wait`]. Upstream's `Pop` blocks on a
@@ -161,6 +185,16 @@ impl PriorityQueue {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Construct a queue ordered by a custom `QueueSort` plugin instead of the
+    /// default [`PrioritySort`](crate::plugins::PrioritySort).
+    #[must_use]
+    pub fn with_queue_sort(sort: Arc<dyn QueueSortPlugin>) -> Self {
+        Self {
+            sort,
+            ..Self::default()
+        }
     }
 
     /// Upstream: `PriorityQueue.SchedulingCycle`.
@@ -222,13 +256,19 @@ impl PriorityQueue {
         }
     }
 
-    /// Push a queued pod onto the active heap (caller holds the lock).
-    fn push_active(g: &mut PriorityQueueInner, info: QueuedPodInfo) {
+    /// Push a queued pod onto the active heap (caller holds the lock). The
+    /// queue's `QueueSort` comparator is attached to the entry so the heap
+    /// orders through [`QueueSortPlugin::less`].
+    fn push_active(
+        g: &mut PriorityQueueInner,
+        info: QueuedPodInfo,
+        sort: &Arc<dyn QueueSortPlugin>,
+    ) {
         g.seq += 1;
         let entry = HeapEntry {
-            priority: info.pod.spec.priority,
             seq: g.seq,
             info,
+            sort: sort.clone(),
         };
         g.active.push(entry);
     }
@@ -287,7 +327,7 @@ impl PriorityQueue {
                 if info.is_backing_off(now_ms) {
                     g.backoff.push(info);
                 } else {
-                    Self::push_active(&mut g, info);
+                    Self::push_active(&mut g, info, &self.sort);
                 }
             }
         }
@@ -317,7 +357,7 @@ impl PriorityQueue {
                 if info.is_backing_off(now_ms) {
                     g.backoff.push(info);
                 } else {
-                    Self::push_active(&mut g, info);
+                    Self::push_active(&mut g, info, &self.sort);
                     activated = true;
                 }
             }
@@ -334,7 +374,7 @@ impl SchedulingQueue for PriorityQueue {
         let info = QueuedPodInfo::new(pod);
         {
             let mut g = self.inner.lock();
-            Self::push_active(&mut g, info);
+            Self::push_active(&mut g, info, &self.sort);
         }
         self.wake();
     }
@@ -371,7 +411,7 @@ impl SchedulingQueue for PriorityQueue {
         g.backoff = still;
         let activated = !due.is_empty();
         for info in due {
-            Self::push_active(&mut g, info);
+            Self::push_active(&mut g, info, &self.sort);
         }
         drop(g);
         if activated {
@@ -587,5 +627,43 @@ mod tests {
             ..info
         };
         assert_eq!(info3.ready_at_ms(), 10_000); // capped at 10s
+    }
+
+    /// A QueueSort plugin that ignores priority and orders by pod name
+    /// (lexicographically ascending → the earliest name pops first). Used to
+    /// prove the heap ordering really routes through the plugin, not the old
+    /// hardcoded priority field.
+    struct ByName;
+    impl QueueSortPlugin for ByName {
+        fn name(&self) -> &'static str {
+            "ByName"
+        }
+        fn less(&self, a: &Pod, b: &Pod) -> bool {
+            a.metadata.name < b.metadata.name
+        }
+    }
+
+    #[test]
+    fn custom_queue_sort_overrides_priority_ordering() {
+        let q = PriorityQueue::with_queue_sort(Arc::new(ByName));
+        // Highest priority is "zeta", but ByName pops alphabetically.
+        q.add(pod("zeta", 100));
+        q.add(pod("alpha", 1));
+        q.add(pod("mu", 50));
+        assert_eq!(q.pop().unwrap().pod.metadata.name, "alpha");
+        assert_eq!(q.pop().unwrap().pod.metadata.name, "mu");
+        assert_eq!(q.pop().unwrap().pod.metadata.name, "zeta");
+    }
+
+    #[test]
+    fn default_queue_sort_is_priority_then_admission_order() {
+        // Default PrioritySort: priority desc, then FIFO among equals.
+        let q = PriorityQueue::new();
+        q.add(pod("first5", 5));
+        q.add(pod("high", 9));
+        q.add(pod("second5", 5));
+        assert_eq!(q.pop().unwrap().pod.metadata.name, "high");
+        assert_eq!(q.pop().unwrap().pod.metadata.name, "first5");
+        assert_eq!(q.pop().unwrap().pod.metadata.name, "second5");
     }
 }
