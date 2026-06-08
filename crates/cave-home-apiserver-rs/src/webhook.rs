@@ -75,6 +75,98 @@ pub enum FailurePolicy {
 }
 
 // ---------------------------------------------------------------------------
+// Webhook rule matching (which requests a webhook is invoked for).
+// ---------------------------------------------------------------------------
+
+/// One `RuleWithOperations` entry from a `*WebhookConfiguration`.
+///
+/// The set of `(operations, apiGroups, apiVersions, resources)` a webhook is
+/// interested in. Each axis matches `"*"` (any) or an exact value; `operations`
+/// additionally understands the wire tokens `CREATE`/`UPDATE`/`DELETE`.
+/// Resource entries support the `resource/subresource` and `*/subresource`
+/// forms, matching the documented webhook rule semantics (subresource matching
+/// is folded into the `resources` axis as it is upstream).
+#[derive(Clone, Debug)]
+pub struct RuleWithOperations {
+    /// Operations matched (`CREATE`/`UPDATE`/`DELETE`, or `*`).
+    pub operations: Vec<String>,
+    /// API groups matched (`*`, or e.g. `""`/`apps`).
+    pub api_groups: Vec<String>,
+    /// API versions matched (`*`, or e.g. `v1`).
+    pub api_versions: Vec<String>,
+    /// Resources matched (`*`, `pods`, `pods/status`, `*/status`).
+    pub resources: Vec<String>,
+}
+
+impl RuleWithOperations {
+    /// Build a rule from its four axes.
+    #[must_use]
+    pub fn new(operations: &[&str], api_groups: &[&str], api_versions: &[&str], resources: &[&str]) -> Self {
+        let to_vec = |s: &[&str]| s.iter().map(|x| (*x).to_string()).collect();
+        Self {
+            operations: to_vec(operations),
+            api_groups: to_vec(api_groups),
+            api_versions: to_vec(api_versions),
+            resources: to_vec(resources),
+        }
+    }
+
+    /// Whether this rule selects `request`.
+    #[must_use]
+    pub fn matches(&self, request: &AdmissionRequest) -> bool {
+        let op = operation_token(request.operation);
+        let op_ok = self.operations.iter().any(|o| o == "*" || o == op);
+        let group_ok = self.api_groups.iter().any(|g| g == "*" || g == &request.gvr.group);
+        let version_ok = self.api_versions.iter().any(|v| v == "*" || v == &request.gvr.version);
+        let resource_ok = self
+            .resources
+            .iter()
+            .any(|r| resource_axis_matches(r, &request.gvr.resource));
+        op_ok && group_ok && version_ok && resource_ok
+    }
+}
+
+/// Match one `resources`-axis entry against a request's bare resource. Handles
+/// `*`, an exact resource, and the `resource/subresource` / `*/subresource`
+/// forms. The decision core models the bare resource only, so a `*/sub` or
+/// `res/sub` entry matches the resource part (the subresource gate is applied
+/// when subresource attributes are present; absent them, the resource part is
+/// authoritative).
+fn resource_axis_matches(rule: &str, resource: &str) -> bool {
+    if rule == "*" || rule == resource {
+        return true;
+    }
+    match rule.split_once('/') {
+        Some(("*", _sub)) => true,
+        Some((res, _sub)) => res == resource,
+        None => false,
+    }
+}
+
+/// The ordered set of [`RuleWithOperations`] attached to a webhook. A request is
+/// selected iff **any** rule matches (the union, as upstream). An empty set
+/// selects nothing.
+#[derive(Clone, Debug, Default)]
+pub struct WebhookRules {
+    /// The rules; a request matches if any one matches.
+    pub rules: Vec<RuleWithOperations>,
+}
+
+impl WebhookRules {
+    /// Build a rule set.
+    #[must_use]
+    pub const fn new(rules: Vec<RuleWithOperations>) -> Self {
+        Self { rules }
+    }
+
+    /// Whether any rule selects `request`.
+    #[must_use]
+    pub fn matches(&self, request: &AdmissionRequest) -> bool {
+        self.rules.iter().any(|r| r.matches(request))
+    }
+}
+
+// ---------------------------------------------------------------------------
 // AdmissionReview codec.
 // ---------------------------------------------------------------------------
 
@@ -266,6 +358,9 @@ struct WebhookConfig {
     url: String,
     client: Arc<dyn WebhookClient>,
     failure_policy: FailurePolicy,
+    /// Which requests the webhook is invoked for. `None` means "every request"
+    /// (the unconfigured default); `Some(rules)` gates invocation on a match.
+    rules: Option<WebhookRules>,
     counter: AtomicU64,
 }
 
@@ -276,12 +371,19 @@ impl WebhookConfig {
             url: url.into(),
             client,
             failure_policy: FailurePolicy::Fail,
+            rules: None,
             counter: AtomicU64::new(0),
         }
     }
 
     fn next_uid(&self) -> String {
         format!("{}-{}", self.name, self.counter.fetch_add(1, Ordering::Relaxed))
+    }
+
+    /// Whether the webhook's rules select `request` (always true when no rules
+    /// are configured).
+    fn selects(&self, request: &AdmissionRequest) -> bool {
+        self.rules.as_ref().is_none_or(|r| r.matches(request))
     }
 
     /// POST the review and parse the response, applying the failure policy to a
@@ -321,6 +423,14 @@ impl WebhookValidatingPlugin {
         self.config.failure_policy = policy;
         self
     }
+
+    /// Restrict the webhook to the requests its [`WebhookRules`] select
+    /// (builder style). Without this, the webhook fires on every request.
+    #[must_use]
+    pub fn with_rules(mut self, rules: WebhookRules) -> Self {
+        self.config.rules = Some(rules);
+        self
+    }
 }
 
 impl ValidatingPlugin for WebhookValidatingPlugin {
@@ -329,6 +439,10 @@ impl ValidatingPlugin for WebhookValidatingPlugin {
     }
 
     fn validate(&self, request: &AdmissionRequest) -> Result<()> {
+        // A request the webhook's rules do not select is allowed without a call.
+        if !self.config.selects(request) {
+            return Ok(());
+        }
         let response = self.config.invoke(request)?;
         if response.allowed {
             Ok(())
@@ -358,6 +472,14 @@ impl WebhookMutatingPlugin {
         self.config.failure_policy = policy;
         self
     }
+
+    /// Restrict the webhook to the requests its [`WebhookRules`] select
+    /// (builder style). Without this, the webhook fires on every request.
+    #[must_use]
+    pub fn with_rules(mut self, rules: WebhookRules) -> Self {
+        self.config.rules = Some(rules);
+        self
+    }
 }
 
 impl MutatingPlugin for WebhookMutatingPlugin {
@@ -366,6 +488,10 @@ impl MutatingPlugin for WebhookMutatingPlugin {
     }
 
     fn admit(&self, request: &mut AdmissionRequest) -> Result<()> {
+        // A request the webhook's rules do not select is left untouched.
+        if !self.config.selects(request) {
+            return Ok(());
+        }
         let response = self.config.invoke(request)?;
         if !response.allowed {
             return Err(response.into_status());
@@ -812,5 +938,144 @@ mod tests {
         assert_eq!(parse_http_url("http://h/x").unwrap(), ("h".into(), 80, "/x".into()));
         assert_eq!(parse_http_url("http://h").unwrap(), ("h".into(), 80, "/".into()));
         assert!(parse_http_url("https://h/x").is_err());
+    }
+
+    // --- RuleWithOperations matching ---------------------------------------
+
+    fn update_request() -> AdmissionRequest {
+        let mut r = create_request("nginx");
+        r.operation = Operation::Update;
+        r.old_object = r.object.clone();
+        r
+    }
+
+    fn deploy_create() -> AdmissionRequest {
+        AdmissionRequest {
+            gvr: GroupVersionResource::new("apps", "v1", "deployments"),
+            operation: Operation::Create,
+            namespace: "default".to_string(),
+            object: Some(obj([
+                ("apiVersion", Value::from("apps/v1")),
+                ("kind", Value::from("Deployment")),
+                ("metadata", obj([("name", Value::from("web"))])),
+            ])),
+            old_object: None,
+        }
+    }
+
+    #[test]
+    fn rule_matches_operation_group_and_resource() {
+        // CREATE pods (core group) on a rule scoped to CREATE × ""/pods.
+        let rule = RuleWithOperations::new(&["CREATE"], &[""], &["v1"], &["pods"]);
+        assert!(rule.matches(&create_request("x")));
+        // An UPDATE is excluded by the operations list.
+        assert!(!rule.matches(&update_request()));
+        // A different group/resource is excluded.
+        assert!(!rule.matches(&deploy_create()));
+    }
+
+    #[test]
+    fn rule_wildcards_match_everything() {
+        let rule = RuleWithOperations::new(&["*"], &["*"], &["*"], &["*"]);
+        assert!(rule.matches(&create_request("x")));
+        assert!(rule.matches(&update_request()));
+        assert!(rule.matches(&deploy_create()));
+    }
+
+    #[test]
+    fn rule_set_matches_if_any_rule_matches() {
+        let rules = WebhookRules::new(vec![
+            RuleWithOperations::new(&["CREATE"], &["apps"], &["v1"], &["deployments"]),
+            RuleWithOperations::new(&["DELETE"], &[""], &["v1"], &["pods"]),
+        ]);
+        assert!(rules.matches(&deploy_create()));
+        // A CREATE pods request matches neither rule.
+        assert!(!rules.matches(&create_request("x")));
+    }
+
+    #[test]
+    fn empty_rule_set_matches_nothing() {
+        // An explicitly-empty rule set selects no request (upstream: no Rules
+        // means the webhook is never called).
+        let rules = WebhookRules::new(vec![]);
+        assert!(!rules.matches(&create_request("x")));
+    }
+
+    #[test]
+    fn validating_plugin_skips_call_when_no_rule_matches() {
+        // The webhook would DENY everything, but the request does not match its
+        // rules (UPDATE-only), so the plugin must not call it and must allow.
+        let client = Arc::new(MockWebhookClient::new(|body| {
+            let review = json::parse(std::str::from_utf8(body).unwrap()).unwrap();
+            let uid = review.pointer("request.uid").and_then(Value::as_str).unwrap();
+            Ok(review_response(uid, false, vec![]))
+        }));
+        let plugin = WebhookValidatingPlugin::new("deny-updates", "http://unused", client.clone())
+            .with_rules(WebhookRules::new(vec![RuleWithOperations::new(
+                &["UPDATE"],
+                &[""],
+                &["v1"],
+                &["pods"],
+            )]));
+        // A CREATE is not selected -> allowed without calling the webhook.
+        plugin.validate(&create_request("x")).expect("allowed (skipped)");
+        assert!(client.requests().is_empty(), "webhook must not be called");
+        // An UPDATE *is* selected -> the webhook is called and denies.
+        let err = plugin.validate(&update_request()).expect_err("denied");
+        assert_eq!(err.reason, StatusReason::Forbidden);
+        assert_eq!(client.requests().len(), 1);
+    }
+
+    #[test]
+    fn mutating_plugin_skips_call_when_no_rule_matches() {
+        let client = Arc::new(MockWebhookClient::new(|body| {
+            let review = json::parse(std::str::from_utf8(body).unwrap()).unwrap();
+            let uid = review.pointer("request.uid").and_then(Value::as_str).unwrap();
+            let ops = Value::Array(vec![obj([
+                ("op", Value::from("add")),
+                ("path", Value::from("/metadata/labels")),
+                ("value", obj([("injected", Value::from("true"))])),
+            ])]);
+            let encoded = b64_encode(ops.to_json_string().as_bytes());
+            Ok(review_response(
+                uid,
+                true,
+                vec![("patchType", Value::from("JSONPatch")), ("patch", Value::from(encoded))],
+            ))
+        }));
+        let plugin = WebhookMutatingPlugin::new("label-deployments", "http://unused", client.clone())
+            .with_rules(WebhookRules::new(vec![RuleWithOperations::new(
+                &["CREATE"],
+                &["apps"],
+                &["v1"],
+                &["deployments"],
+            )]));
+        // A core/v1 pod create is not selected -> object is left untouched.
+        let mut pod = create_request("x");
+        plugin.admit(&mut pod).expect("admit");
+        assert!(pod.object.as_ref().and_then(|o| o.pointer("metadata.labels.injected")).is_none());
+        assert!(client.requests().is_empty());
+        // A deployment create IS selected -> label injected.
+        let mut deploy = deploy_create();
+        plugin.admit(&mut deploy).expect("admit");
+        assert_eq!(
+            deploy.object.as_ref().and_then(|o| o.pointer("metadata.labels.injected")).and_then(Value::as_str),
+            Some("true")
+        );
+    }
+
+    #[test]
+    fn plugin_without_rules_matches_all_requests() {
+        // Backwards-compatible default: a plugin with no configured rules fires
+        // on every request (the existing behaviour the chain relied on).
+        let client = Arc::new(MockWebhookClient::new(|body| {
+            let review = json::parse(std::str::from_utf8(body).unwrap()).unwrap();
+            let uid = review.pointer("request.uid").and_then(Value::as_str).unwrap();
+            Ok(review_response(uid, true, vec![]))
+        }));
+        let plugin = WebhookValidatingPlugin::new("all", "http://unused", client.clone());
+        plugin.validate(&create_request("x")).expect("allowed");
+        plugin.validate(&deploy_create()).expect("allowed");
+        assert_eq!(client.requests().len(), 2);
     }
 }

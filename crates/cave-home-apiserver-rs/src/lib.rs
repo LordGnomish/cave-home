@@ -149,8 +149,8 @@ pub use rbac::{
 pub use registry::{ListOptions, ListResult, Registry, WatchEvent, WatchEventKind};
 pub use selector::{FieldSelector, LabelSelector, Requirement};
 pub use webhook::{
-    AdmissionResponse, FailurePolicy, HttpWebhookClient, MockWebhookClient, WebhookClient,
-    WebhookError, WebhookMutatingPlugin, WebhookValidatingPlugin,
+    AdmissionResponse, FailurePolicy, HttpWebhookClient, MockWebhookClient, RuleWithOperations,
+    WebhookClient, WebhookError, WebhookMutatingPlugin, WebhookRules, WebhookValidatingPlugin,
 };
 pub use x509::subject_identity;
 #[cfg(feature = "tls")]
