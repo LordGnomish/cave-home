@@ -93,13 +93,14 @@ pub enum ConcurrencyPolicy {
 
 /// Desired state of a `CronJob` (`batch/v1` `CronJobSpec` subset).
 ///
-/// The cron *expression* parsing is the scheduler crate's job; here the spec
-/// carries the already-computed schedule period and the controller decides
-/// *whether* to start a run given the last-scheduled time and `now`.
+/// `schedule` is a real 5-field cron expression
+/// ([`crate::schedule::CronSchedule`]); the controller parses it and computes
+/// the most-recent due time from `last_scheduled` and the caller-supplied
+/// `now`, exactly as `pkg/controller/cronjob`'s `getNextScheduleTime` does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CronJobSpec {
-    /// Schedule period in seconds (the gap between scheduled starts).
-    pub period: i64,
+    /// The cron expression (`spec.schedule`), e.g. `"0 3 * * *"`.
+    pub schedule: String,
     /// How overlapping runs are handled.
     pub concurrency: ConcurrencyPolicy,
     /// Whether the schedule is suspended.
@@ -107,6 +108,10 @@ pub struct CronJobSpec {
     /// Deadline (seconds) to start a missed run before giving up
     /// (`startingDeadlineSeconds`). `None` means no deadline.
     pub starting_deadline: Option<i64>,
+    /// How many completed Jobs to retain (`successfulJobsHistoryLimit`).
+    pub successful_jobs_history_limit: usize,
+    /// How many failed Jobs to retain (`failedJobsHistoryLimit`).
+    pub failed_jobs_history_limit: usize,
     /// Template for the Job each run creates.
     pub job_template: JobSpec,
 }
@@ -114,10 +119,13 @@ pub struct CronJobSpec {
 impl Default for CronJobSpec {
     fn default() -> Self {
         Self {
-            period: 60,
+            schedule: "* * * * *".to_owned(),
             concurrency: ConcurrencyPolicy::Allow,
             suspend: false,
             starting_deadline: None,
+            // Upstream defaults: keep 3 successful, 1 failed.
+            successful_jobs_history_limit: 3,
+            failed_jobs_history_limit: 1,
             job_template: JobSpec::default(),
         }
     }
@@ -130,15 +138,26 @@ pub struct CronJob {
     pub meta: ObjectMeta,
     /// Desired state.
     pub spec: CronJobSpec,
+    /// Epoch-seconds the `CronJob` was created (`metadata.creationTimestamp`),
+    /// the base from which the first scheduled time is computed before any run.
+    pub created_at: i64,
     /// Epoch-seconds of the last scheduled run (`status.lastScheduleTime`).
     pub last_scheduled: Option<i64>,
 }
 
 impl CronJob {
-    /// A `CronJob` with the given metadata and spec, never run.
+    /// A `CronJob` with the given metadata and spec, created at epoch second 0
+    /// and never run. Use [`CronJob::created_at`] for a non-zero base time.
     #[must_use]
     pub const fn new(meta: ObjectMeta, spec: CronJobSpec) -> Self {
-        Self { meta, spec, last_scheduled: None }
+        Self { meta, spec, created_at: 0, last_scheduled: None }
+    }
+
+    /// Set the creation timestamp (the schedule base before the first run).
+    #[must_use]
+    pub const fn created_at(mut self, epoch: i64) -> Self {
+        self.created_at = epoch;
+        self
     }
 }
 
