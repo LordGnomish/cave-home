@@ -6,11 +6,11 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-water — irrigation + leak detection + smart water-meter; upstream: HA OpenSprinkler integration + HA M-Bus/Modbus water-meter integrations; port method: line-by-line (ADR-013)"
+description = "cave-home-water — irrigation + leak detection + smart water-meter; upstream: HA OpenSprinkler integration + HA M-Bus/Modbus water-meter integrations; port method: spec-based (decision engine) + first-party (leak/flow detection) (ADR-013)"
 
 [package.metadata.cave-home]
 upstream    = "home-assistant/core (opensprinkler, mbus, modbus integrations)"
-port-method = "line-by-line"
+port-method = "spec-based (decision engine) + first-party (leak/flow detection)"
 adr         = "ADR-013"
 
 [lints]

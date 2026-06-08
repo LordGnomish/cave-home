@@ -1,24 +1,170 @@
-# cave-home-unifi-access — parity manifest scaffold.
+# cave-home-unifi-access — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-unifi-access — UniFi Access port (door locks, hub status, access events); upstream: home-assistant/core UniFi Access integration + Ubiquiti Access REST API; port method: line-by-line (ADR-009)
+# Phase 1 ships the door-access *decision & control engine*: the door + hub
+# domain model, the pure control operations (lock / unlock / timed temporary
+# unlock with auto-relock / house-wide evacuation + lockdown / held-open
+# alarm), the access-credential value object (PIN / NFC card / mobile /
+# wave-to-unlock) with a non-leaking Debug and a constant-time digest compare,
+# the minute-of-week schedule engine, the access-policy decision engine, the
+# access-event log + anti-passback hint, and the grandma-friendly EN/DE/TR
+# messages. This is the safety brain every door automation, Portal tile and
+# voice reply consumes. The UniFi Access REST + WebSocket transport, the
+# hub/reader hardware protocol, real cryptographic credential hashing, the
+# camera/doorbell pillar tie-in and cave-home-core integration are
+# network/hardware/crypto-bound and deferred to Phase 1b — each is enumerated
+# below with an ADR-009 disposition.
+#
+# Port method: the door/lock/credential/schedule semantics are modelled from
+# the *public* HA `unifi_access` integration semantics and the public Ubiquiti
+# Access API shape (both Apache-2.0-compatible); the policy/schedule/anti-
+# passback logic is clean-room door-access domain modelling. No GPL source was
+# read. cave-home stays cloud-free: only the local Access API is targeted
+# (Charter §9) — see the `permanent` entry below.
 
 [crate]
 name             = "cave-home-unifi-access"
-upstream_repo    = "home-assistant/core (UniFi Access) + Ubiquiti Access REST"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "home-assistant/core (unifi_access) + Ubiquiti Access local API"
+upstream_subpath = "homeassistant/components/unifi_access"
+port_method      = "spec-based (door/credential engine) + line-by-line (Access API shape)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "home-assistant/core unifi_access integration — door / lock-rule / DPS / emergency semantics (Apache-2.0)",
+    "Ubiquiti UniFi Access local Developer API — door-control + access-event shape",
+    "ADR-009 — UniFi ecosystem port (cave-home-unifi-access pillar)",
+    "Charter §6.3 / ADR-007 — grandma-friendly localized (EN/DE/TR) UX",
+    "Charter §9 — local-only, no Ubiquiti cloud",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (engine + REST/WS transport +
+# hub/reader hardware protocol + real crypto hashing + camera/doorbell tie-in +
+# core integration). The engine is implemented and tested in full; everything
+# remaining is ADR-009-justified and network/hardware/crypto-bound.
+fill_ratio              = 0.30
+fill_ratio_basis        = "door+hub model + lock/unlock/temp-unlock-auto-relock + evacuation/lockdown + held-open alarm + credential model + constant-time PIN compare + schedule + policy decision engine + access-log + anti-passback + EN/DE/TR UX, fully implemented & tested; transport/hardware/crypto/camera/core deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-009 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Door + hub model: lock state / door-position sensor / tamper / relay"
+ours = "src/door.rs::{AccessDoor,AccessHub,LockState,DoorPosition,RelayState}"
+
+[[mapped]]
+spec = "Lock / unlock door control operations validated against capability"
+ours = "src/control.rs::AccessController::{lock,unlock}"
+
+[[mapped]]
+spec = "Temporary timed unlock with auto-relock after a caller-supplied duration"
+ours = "src/control.rs::AccessController::{temporary_unlock,tick}"
+
+[[mapped]]
+spec = "Evacuation / lockdown house-wide emergency modes"
+ours = "src/control.rs::AccessController::{evacuate,lockdown,clear_emergency}"
+
+[[mapped]]
+spec = "Held-open / door-ajar alarm decision at a closed-should-be threshold"
+ours = "src/control.rs::AccessController::is_held_open"
+
+[[mapped]]
+spec = "Credential model (PIN / NFC card / mobile / wave-to-unlock) with validation"
+ours = "src/credential.rs::Credential::{pin,nfc_card,mobile,wave_to_unlock}"
+
+[[mapped]]
+spec = "Credential secret never leaks via Debug; constant-time digest compare"
+ours = "src/credential.rs::{Credential(Debug),CredentialDigest::ct_eq}"
+
+[[mapped]]
+spec = "Brute-force lock-out accounting on enrolled credentials"
+ours = "src/credential.rs::EnrolledCredential::verify"
+
+[[mapped]]
+spec = "Schedule of allowed minute-of-week windows incl. week-wrap"
+ours = "src/schedule.rs::{Schedule,Window}"
+
+[[mapped]]
+spec = "Access-policy decision engine -> AccessDecision { granted, reason }"
+ours = "src/policy.rs::Policy::decide"
+
+[[mapped]]
+spec = "Access-event / log model (who, door, granted/denied, tick) + anti-passback hint"
+ours = "src/event.rs::{AccessEvent,AccessLog,AccessLog::is_passback_suspicious}"
+
+[[mapped]]
+spec = "Grandma-friendly localized EN/DE/TR access messages (ADR-007, Charter §6.3)"
+ours = "src/label.rs::AccessMessage::text"
+
+# ---- unmapped (NOT in this crate; ADR-009 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "UniFi Access REST API transport (doors crawl, lock-rule, control)"
+priority = "phase-1b"
+note     = "ADR-009: the Ubiquiti Access local Developer REST API (api/v2/developer/doors, set-lock-rule, unlock-now). Network-bound; maps wire JSON onto door::AccessDoor + drives control::AccessController. No new decision logic, just an HTTP client."
+
+[[unmapped]]
+area     = "UniFi Access WebSocket live-event subscription"
+priority = "phase-1b"
+note     = "ADR-009: the live device-notifications WebSocket that pushes DPS / lock / access-event changes. Network-bound; deserialises into event::AccessEvent + updates door state. The engine is already wire-agnostic."
+
+[[unmapped]]
+area     = "Hub / reader hardware protocol (OSDP reader, relay, DPS wiring)"
+priority = "phase-1b"
+note     = "ADR-009: the physical reader/relay/door-position-sensor protocol behind a UniFi Access hub. Hardware-bound; surfaces as door::{LockState,DoorPosition,RelayState} readings the engine already consumes."
+
+[[unmapped]]
+area     = "Real cryptographic credential hashing (Argon2id/scrypt + per-reader salt)"
+priority = "phase-1b"
+note     = "ADR-009: the Phase-1 CredentialDigest is a dependency-free non-crypto fold owning the contract (validate, digest, constant-time compare, lock-out). The real password-grade KDF is a crypto-bound adapter that swaps in behind the same CredentialDigest shape."
+
+[[unmapped]]
+area     = "Camera / doorbell pillar tie-in (UniFi Protect doorbell / G4 doorbell)"
+priority = "phase-1b"
+note     = "ADR-009: tying a doorbell press + snapshot to a door event renders through the shared camera pillar (cave-home-unifi-protect). Cross-crate + network-bound; the access-event model already carries the door + actor it needs."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration + automation triggers"
+priority = "phase-1b"
+note     = "ADR-009: surfacing doors as core State entities and access grants/denials as automation triggers lands once cave-home-core's entity API stabilises. The engine is already core-agnostic and depends on no other cave-home crate."
+
+[[unmapped]]
+area     = "Ubiquiti cloud / remote-access path"
+priority = "permanent"
+note     = "Charter §9 local-first sovereignty: cave-home talks only to the on-prem UniFi Access local API; no Ubiquiti-cloud account or remote-proxy path is ever ported. Permanent scope cut, not a deferral."
+
+# ---- spec_test (designed from spec / door-access safety reference cases) ---
+
+[[spec_test]]
+designed_for = "Lock/unlock + temporary-unlock auto-relock at the expiry boundary"
+ours         = "src/control.rs::tests::{lock_and_unlock_a_door,auto_relock_fires_at_boundary,temporary_unlock_then_auto_relock}"
+
+[[spec_test]]
+designed_for = "Evacuation unlocks all + suppresses relock; lockdown locks all + refuses unlock"
+ours         = "src/control.rs::tests::{evacuation_unlocks_all_doors,evacuation_suppresses_auto_relock,lockdown_locks_all_and_refuses_unlock}"
+
+[[spec_test]]
+designed_for = "Held-open / door-ajar alarm boundary (below / at / above threshold; closed never alarms)"
+ours         = "src/control.rs::tests::{held_open_below_threshold_no_alarm,held_open_at_threshold_alarms,closed_door_never_alarms}"
+
+[[spec_test]]
+designed_for = "Credential validation + constant-time compare + brute-force lock-out"
+ours         = "src/credential.rs::tests"
+
+[[spec_test]]
+designed_for = "Schedule window membership incl. half-open boundaries and week-wrap"
+ours         = "src/schedule.rs::tests::{simple_window_contains,window_start_boundary_inclusive_end_exclusive,wrapping_window_across_week_boundary}"
+
+[[spec_test]]
+designed_for = "Policy decision for each reason (Granted / OutsideSchedule / NoPermission / DoorLockedDown / UnknownCredential)"
+ours         = "src/policy.rs::tests"
+
+[[spec_test]]
+designed_for = "Access-log history + anti-passback hint (double-entry suspicious, post-exit fine)"
+ours         = "src/event.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

@@ -1,24 +1,158 @@
-# cave-home-unifi-network — parity manifest scaffold.
+# cave-home-unifi-network — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-unifi-network — UniFi Network port (switches, APs, port telemetry, client tracking); upstream: home-assistant/core unifi integration + Ubiquiti public REST/WebSocket API; port method: line-by-line (ADR-009)
+# Phase 1 ships the UniFi Network *decision engine* as pure, std-only logic:
+# the device + client domain model, the validated control operations (block /
+# unblock / reconnect a client, set a switch port's PoE mode, enable / disable
+# a Wi-Fi network, toggle a port-forward rule, set a device LED), the
+# presence / device-tracker home-away derivation, the firewall / WLAN / guest /
+# bandwidth / VLAN config model, the connectivity summary (per-AP client
+# counts, throughput aggregation, internet-up derivation), and the EN/DE/TR
+# grandma-friendly phrasing. This is the brain every automation, Portal tile
+# and voice reply consumes. The UniFi controller REST + WebSocket transport is
+# network-bound and deferred to Phase 1b — each piece is enumerated below with
+# an ADR-009 disposition.
+#
+# Port method: spec-based. The control semantics are ported from the public
+# Home Assistant `unifi` integration (Apache-2.0) and the *shape* of the public
+# UniFi Network local API; no GPL/AGPL source was read. The transport that
+# actually speaks to a controller is the Phase-1b slice and is not in this
+# crate yet.
 
 [crate]
 name             = "cave-home-unifi-network"
-upstream_repo    = "home-assistant/core (unifi integration) + Ubiquiti public REST/WebSocket"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "home-assistant/core (unifi integration) + Ubiquiti public local Network API"
+port_method      = "spec-based (HA semantics + public API shape)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "home-assistant/core `unifi` integration — switch/device_tracker/sensor platform semantics (Apache-2.0, behaviour observed from public docs/issues, not GPL source)",
+    "Ubiquiti UniFi Network public local API shape — devices, clients, WLANs, port-forwards, PoE port modes",
+    "Charter §6.3 / ADR-007 grandma-friendly UX vocabulary (EN/DE/TR)",
+    "Charter §9 — privacy-first / local-only (no Ubiquiti cloud in the critical path)",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (decision engine + controller
+# REST/WebSocket transport + version negotiation + core-state integration). The
+# engine — model, control validation, presence, network config, summary, i18n —
+# is implemented and tested in full; the network-bound transport + core glue
+# remain and are all ADR-009-justified Phase 1b.
+fill_ratio              = 0.35
+fill_ratio_basis        = "device+client model, validated control ops, presence home/away, WLAN/port-forward/guest/bandwidth/VLAN config, connectivity summary (per-AP + throughput + internet-up), EN/DE/TR UX — all implemented & tested; controller REST/WS transport deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-009 phase disposition
+honest_ratio            = 1.00  # 0.35 / (0.35 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Network device model (switch / AP / gateway, online state, uplink, switch ports)"
+ours = "src/device.rs::NetworkDevice"
+
+[[mapped]]
+spec = "Network client model (wired/wireless, IP via std::net, SSID, guest/blocked, last-seen tick)"
+ours = "src/client.rs::NetworkClient"
+
+[[mapped]]
+spec = "HA unifi block-client switch semantics (block / unblock, already-in-state rejection)"
+ours = "src/control.rs::{block_client,unblock_client}"
+
+[[mapped]]
+spec = "Reconnect/kick a wireless client (wired-client rejection)"
+ours = "src/control.rs::reconnect_client"
+
+[[mapped]]
+spec = "HA unifi PoE port-power switch (on/off/auto) with port-range + capability + not-a-switch validation"
+ours = "src/control.rs::set_poe"
+
+[[mapped]]
+spec = "WLAN enable/disable, port-forward toggle, device LED — typed commands"
+ours = "src/control.rs::{set_wlan_enabled,set_port_forward_enabled,set_device_led}"
+
+[[mapped]]
+spec = "HA unifi device_tracker home/away derivation from last-seen + consider-home timeout"
+ours = "src/presence.rs::presence_of"
+
+[[mapped]]
+spec = "Firewall port-forward + WLAN + guest-network + bandwidth-profile config model"
+ours = "src/network.rs::{PortForward,Wlan,GuestNetwork,BandwidthProfile}"
+
+[[mapped]]
+spec = "VLAN / network-segment model (id, name, subnet via std::net, purpose corporate/guest/iot)"
+ours = "src/network.rs::Vlan"
+
+[[mapped]]
+spec = "Connectivity summary: per-AP client counts + throughput aggregation over samples + internet-up derivation"
+ours = "src/summary.rs::{summarize,internet_state}"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR phrasing (Charter §6.3, ADR-007 / ADR-009)"
+ours = "src/label.rs"
+
+# ---- unmapped (NOT in this crate; ADR-009 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "UniFi controller REST login + session/auth"
+priority = "phase-1b"
+note     = "ADR-009: authenticating to the local controller (UDM-Pro / Cloud Gateway) and holding the session is network-bound. It feeds devices/clients onto this crate's model and reuses the engine unchanged. I/O adapter only — no new decision logic."
+
+[[unmapped]]
+area     = "UniFi controller WebSocket event transport"
+priority = "phase-1b"
+note     = "ADR-009: the live event stream (client connect/disconnect, device state change) is network-bound. It maps controller events onto this model and re-runs presence/summary. Transport, not logic."
+
+[[unmapped]]
+area     = "Actual control API calls (issue Command over the wire)"
+priority = "phase-1b"
+note     = "ADR-009: this crate produces a typed control::Command (block, set PoE, toggle WLAN, etc.); the phase-1b transport turns each Command into the matching local Network API request. The decision is done here; only the send is deferred."
+
+[[unmapped]]
+area     = "Controller-version negotiation (Network v7 vs v8 API surface)"
+priority = "phase-1b"
+note     = "ADR-009 / Charter §7 always-latest: detecting the controller version and selecting the right endpoint set is a transport concern that lands with the REST client."
+
+[[unmapped]]
+area     = "cave-home-core entity/state + automation-trigger integration"
+priority = "phase-1b"
+note     = "ADR-009: surfacing devices/clients/presence as core State entities + automation triggers lands once cave-home-core's entity API stabilises. The engine is already core-agnostic (no cave-home crate deps)."
+
+[[unmapped]]
+area     = "Ubiquiti cloud (Site Manager / remote access) API"
+priority = "permanent"
+note     = "Charter §9 privacy-first / local-first: cave-home talks ONLY to the local controller API and never routes through Ubiquiti's cloud in the critical path. Cloud remote-access is permanently out of scope for this crate."
+
+[[unmapped]]
+area     = "Pre-v7 / legacy UniFi controller compatibility shims"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home tracks the current UniFi Network controller only; no historical-controller compatibility mode."
+
+# ---- spec_test (designed from spec / HA semantics + API shape) -------------
+
+[[spec_test]]
+designed_for = "Device + client model defaults, builders, port lookup, std::net IP"
+ours         = "src/device.rs::tests + src/client.rs::tests"
+
+[[spec_test]]
+designed_for = "Block/unblock already-in-state rejection + reconnect wired-client rejection"
+ours         = "src/control.rs::tests::{block_then_double_block_is_rejected,unblock_requires_blocked_client,reconnect_only_for_wireless}"
+
+[[spec_test]]
+designed_for = "PoE port control: valid port, unknown-port rejection, non-PoE-port rejection, not-a-switch rejection"
+ours         = "src/control.rs::tests::{set_poe_on_valid_port,set_poe_rejects_unknown_port,set_poe_rejects_non_poe_port,set_poe_rejects_non_switch}"
+
+[[spec_test]]
+designed_for = "Presence home/away timeout boundary (inclusive), future-clock, blocked-is-away"
+ours         = "src/presence.rs::tests"
+
+[[spec_test]]
+designed_for = "VLAN id + subnet-prefix validation, port-forward zero-port rejection, bandwidth profile"
+ours         = "src/network.rs::tests"
+
+[[spec_test]]
+designed_for = "Connectivity summary: per-AP counts, blocked excluded, throughput aggregation + saturation, internet-up/no-uplink/gateway-down"
+ours         = "src/summary.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

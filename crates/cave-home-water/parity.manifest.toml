@@ -1,24 +1,152 @@
-# cave-home-water — parity manifest scaffold.
+# cave-home-water — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-water — irrigation + leak detection + smart water-meter; upstream: HA OpenSprinkler integration + HA M-Bus/Modbus water-meter integrations; port method: line-by-line (ADR-013)
+# Phase 1 ships the irrigation *decision engine*: the per-zone watering
+# decision (seasonal/weather runtime adjustment, soil-moisture gating,
+# rain-delay / disabled / window handling) with an explainable SkipReason, the
+# flow-fault detector (no-flow = stuck valve / cut supply; over-flow = burst
+# pipe / leak) against a tolerance band, sequential multi-zone run planning with
+# total cycle duration, and the EN/DE/TR grandma-friendly UX. This is the brain
+# every automation, Portal tile and voice reply consumes. The vendor I/O
+# adapters, the live weather/ET0 feeds, the core-state integration and the
+# real timezone-aware scheduling triggers are network / hardware / clock-bound
+# and deferred to Phase 1b — each is enumerated below with an ADR-013
+# disposition.
+#
+# Port method: the decision rules are implemented from the *public* Home
+# Assistant irrigation/valve domain semantics and OpenSprinkler-class
+# weather-adjustment + sensor-gating behaviour (all Apache-2.0-compatible) plus
+# first-party leak-detection logic (ADR-013). No GPL source — notably no
+# OpenSprinkler firmware — was read or ported.
 
 [crate]
 name             = "cave-home-water"
 upstream_repo    = "home-assistant/core (opensprinkler, mbus, modbus integrations)"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+port_method      = "spec-based (decision engine) + first-party (leak/flow detection)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "Home Assistant irrigation/valve domain semantics (valve lifecycle, sensor-gated watering) — Apache-2.0",
+    "OpenSprinkler open API + web-app watering model: per-zone runtime, seasonal/weather % adjustment, sequential (non-concurrent) zone runs",
+    "First-party leak/flow-fault model (ADR-013): no-flow vs over-flow against a symmetric tolerance band",
+    "Charter §6.3 / ADR-007 grandma-friendly EN/DE/TR UX",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (engine + vendor valve adapters +
+# live weather/ET0 feeds + water-meter/leak-sensor I/O + core-state integration
+# + real scheduling triggers). The decision/flow/sequence engine + EN/DE/TR UX
+# is implemented and tested in full; the I/O-, weather- and clock-bound layers
+# remain and are all ADR-justified Phase 1b/2.
+fill_ratio              = 0.30
+fill_ratio_basis        = "watering decision engine (seasonal adjust, soil gating, rain-delay/disabled/window, SkipReason) + flow-fault detection + sequential run planning + zone model + EN/DE/TR UX, fully implemented & tested; vendor/weather/clock I/O deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-013 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Vendor-neutral watering-circuit model with validated runtime/threshold/flow"
+ours = "src/zone.rs::Zone"
+
+[[mapped]]
+spec = "Zone lifecycle states (Idle/Watering/Paused/RainDelayed/Disabled)"
+ours = "src/zone.rs::ZoneState"
+
+[[mapped]]
+spec = "Watering decision engine — water now & for how long, with priority-ordered skips"
+ours = "src/decision.rs::decide"
+
+[[mapped]]
+spec = "Seasonal/weather % runtime adjustment (0%..=200%+, round-to-nearest, saturating)"
+ours = "src/decision.rs::apply_seasonal_adjust"
+
+[[mapped]]
+spec = "Explainable skip reasons (soil moist / rain delay / disabled / window / seasonal-zero)"
+ours = "src/decision.rs::{SkipReason,WaterDecision}"
+
+[[mapped]]
+spec = "Flow-fault detection: no-flow (stuck valve / cut supply) vs over-flow (burst pipe / leak) on a tolerance band"
+ours = "src/flow.rs::{detect,FlowFault}"
+
+[[mapped]]
+spec = "Sequential (non-concurrent) multi-zone run plan + total cycle duration"
+ours = "src/schedule.rs::{plan_run,RunPlan}"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR labels & advice (Charter §6.3, ADR-007)"
+ours = "src/label.rs::Lang + per-module explain/alert/summary"
+
+# ---- unmapped (NOT in this crate; ADR-013 Phase 1b/2 disposition) ----------
+
+[[unmapped]]
+area     = "OpenSprinkler API-client adapter"
+priority = "phase-1b"
+note     = "ADR-013: port the OpenSprinkler open-API client (old + new generation surfaces) — NOT the GPLv3 firmware. Network-bound; maps station runtimes + rain-delay onto zone::Zone then reuses this engine."
+
+[[unmapped]]
+area     = "Rachio / B-hyve / cloud-irrigation adapters"
+priority = "phase-1b"
+note     = "ADR-013: cloud-account-bound irrigation controllers. cave-home prefers local control; these route schedule + flow telemetry into the engine. I/O adapter only, no new decision logic."
+
+[[unmapped]]
+area     = "Zigbee / Z-Wave valve adapters"
+priority = "phase-1b"
+note     = "ADR-013: drip/hose valves driven over cave-home-zigbee / Z-Wave. Hardware-bound; surfaces a ZoneState and a measured flow reading into the engine."
+
+[[unmapped]]
+area     = "Smart water-meter + leak-sensor I/O (S0 pulse / Modbus-RTU / M-Bus, Zigbee leak sensors)"
+priority = "phase-1b"
+note     = "ADR-013: water-meter protocols reach cave-home via the HA mbus/modbus integrations; Zigbee leak sensors via cave-home-zigbee. Bus/network-bound; the flow-fault model already consumes the readings these produce."
+
+[[unmapped]]
+area     = "Live weather / ET0 evapotranspiration feed for the seasonal adjustment"
+priority = "phase-1b"
+note     = "ADR-013: the engine takes seasonal_percent + rain_delayed as inputs; deriving them from a live forecast / ET0 model is a network-bound feed that feeds this engine unchanged. The math here is correct for any supplied percentage."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration"
+priority = "phase-1b"
+note     = "ADR-013: surfacing zones, decisions and leak alerts as core State entities + automation triggers (notification, valve shutoff) lands once cave-home-core's entity API stabilises. The engine is already core-agnostic."
+
+[[unmapped]]
+area     = "Real timezone-aware scheduling triggers"
+priority = "phase-1b"
+note     = "ADR-013: deciding *when* the watering window opens is clock/timezone-bound. The engine takes within_window as an input (caller supplies the clock) so it stays a pure function; the trigger scheduler is the deferred I/O layer."
+
+[[unmapped]]
+area     = "Concurrent multi-zone watering (pressure-managed parallel groups)"
+priority = "phase-2"
+note     = "ADR-013: Phase 1 runs zones strictly sequentially to preserve supply pressure (OpenSprinkler default). Pressure-aware parallel groups are a Phase 2 refinement over the same run-plan model."
+
+[[unmapped]]
+area     = "Legacy controller backward-compatibility mode"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home ships the current decision model only; no historical controller-behaviour snapshot mode."
+
+# ---- spec_test (designed from spec / reference behaviour) ------------------
+
+[[spec_test]]
+designed_for = "Each skip reason fires (soil moist / rain delay / disabled / window / seasonal-zero) + priority order"
+ours         = "src/decision.rs::tests"
+
+[[spec_test]]
+designed_for = "Seasonal-adjust math incl. 0% and 200%, rounding and saturation"
+ours         = "src/decision.rs::tests::{seasonal_adjust_math,seasonal_adjust_scales_runtime,seasonal_adjust_saturates_not_overflows}"
+
+[[spec_test]]
+designed_for = "Soil-moisture threshold boundary (inclusive skip at threshold, water just below)"
+ours         = "src/decision.rs::tests::soil_threshold_boundary_is_inclusive_skip"
+
+[[spec_test]]
+designed_for = "Flow-fault detection: no-flow + over-flow + within-tolerance + band edges + unusable inputs"
+ours         = "src/flow.rs::tests"
+
+[[spec_test]]
+designed_for = "Sequential run order preserved + total duration summed (with seasonal adjust + skips)"
+ours         = "src/schedule.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/lib.rs::tests::ui_strings_carry_no_implementation_jargon"

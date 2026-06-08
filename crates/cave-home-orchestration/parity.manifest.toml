@@ -1,24 +1,248 @@
-# cave-home-orchestration — parity manifest scaffold.
+# cave-home-orchestration — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-orchestration — umbrella for the in-binary K3s line-by-line Rust port (ADR-004 Accepted 2026-05-14); re-exports Phase 1–4 sub-crates (containerd, kubelet, kube-proxy, cni, apiserver, scheduler, controller-manager, kine, helm-controller, klipper-lb, traefik)
+# ADR-004 settled cave-home's orchestration layer: a behavioural
+# reimplementation of K3s that compiles into the ONE cave-home binary (the
+# Charter §5 single-binary carve-out was explicitly NOT taken). This crate is
+# the in-process K3s-orchestration bootstrap + component-coordination DECISION
+# CORE — the wiring decisions that bring the K3s control plane and node-side
+# components up in process, not the process launches themselves. It is
+# INFRASTRUCTURE, hidden from end users (Charter §6.3, ADR-007): it surfaces no
+# user-facing strings and carries no i18n.
+#
+# Phase 1 ships, std-only and fully tested:
+#   * node-role config (server vs agent), datastore (embedded kine/SQLite vs
+#     external), the cluster/node token model (shape-validated; NO crypto),
+#     cluster-init vs join, and the flannel/servicelb/traefik flags + disable
+#     list, all with Result-returning validation (no panics);
+#   * the fixed in-process component set + its documented start-up dependency
+#     graph, a deterministic topological bring-up order with cycle / missing-
+#     dependency detection and readiness gating, plus support for externally-
+#     satisfied prerequisites (an agent's remote apiserver);
+#   * the bootstrap state machine (Initializing -> DatastoreReady ->
+#     ApiserverReady -> ControlPlaneReady -> NodeReady -> Running) with
+#     transient-vs-fatal failure classification and a per-step retry budget;
+#   * the single-binary invariant (every component is in-process — no sidecar /
+#     sub-process), modelled as a property of the component set (Charter §5);
+#   * multi-node role assignment (homeowner intent -> server/agent + cluster-
+#     start), consistent with cave-home-cluster's server=control-plane /
+#     agent=worker convention but WITHOUT depending on that crate;
+#   * graceful shutdown ordering (the bring-up order, reversed) + a safety
+#     predicate.
+#
+# Port method (HONEST): this is a BEHAVIOURAL REIMPLEMENTATION of the documented
+# K3s server/agent bootstrap — the component bring-up dependency contract, the
+# server/agent role split, the datastore/token/add-on configuration model, and
+# the boot milestone sequence — reproduced from the PUBLIC K3s architecture
+# documentation, NOT transcribed verbatim line-by-line from unread Go source.
+# The earlier scaffold claimed "line-by-line port of k3s-io/k3s" with an empty
+# lib.rs; that false provenance is CORRECTED here (see note below). No GPL/AGPL
+# source was read; no other cave-home crate is depended on. K3s is Apache-2.0
+# (ADR-002 / ADR-004), so the reference is licence-clean.
+#
+# FALSE-PROVENANCE CORRECTION: the prior Cargo.toml metadata declared
+# `port-method = "line-by-line"` and `role = "umbrella"` over an empty lib.rs —
+# a placeholder asserting a verbatim port that did not exist. Corrected to
+# `port-method = "behavioural reimplementation (spec/contract-based; not verbatim
+# line-by-line)"` and `role = "decision-core"`, matching how the sibling k3s
+# crates (cave-home-scheduler-rs, cave-home-cluster) were corrected. No
+# `upstream_sha` is pinned because no Go source was read line-by-line; provenance
+# rests on the public-architecture `spec_sources` below.
 
 [crate]
 name             = "cave-home-orchestration"
 upstream_repo    = "k3s-io/k3s"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_license = "Apache-2.0"
+port_method      = "behavioural reimplementation (spec/contract-based; not verbatim line-by-line)"
+spec_sources     = [
+    "K3s architecture docs — How K3s Works / single-binary server+agent process model (docs.k3s.io/architecture)",
+    "K3s server vs agent roles + `--cluster-init`, `--server`, `--token` semantics (docs.k3s.io/cli/server, docs.k3s.io/cli/agent)",
+    "K3s datastore options — embedded kine/SQLite default vs external datastore-endpoint (docs.k3s.io/datastore)",
+    "K3s bundled components + `--disable` (flannel/servicelb/traefik/helm-controller) (docs.k3s.io/installation/packaged-components, docs.k3s.io/networking)",
+    "kine — the etcd-shim datastore that fronts SQLite/Postgres/MySQL and is the apiserver's storage backend (github.com/k3s-io/kine README)",
+    "Kubernetes control-plane bring-up contract — apiserver depends on datastore; scheduler/controller-manager/kubelet depend on apiserver; kube-proxy on the node agent (kubernetes.io component overview)",
+    "cave-home Charter §5 — single unified Rust binary, server-class multi-node; ADR-004 — orchestration sits INSIDE the one binary (carve-out not taken)",
+    "cave-home ADR-005 — deployment topology / multi-node bootstrap (primary hub + backup hub + worker); ADR-007 / Charter §6.3 — orchestration hidden from users",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is measured against the FULL orchestration-bootstrap scope, NOT a
+# Go-LOC ratio. The scope is the in-process control-plane bring-up: the
+# DECISION half (config model + validation, component dependency graph + topo
+# bring-up order + readiness gating, the bootstrap state machine + failure
+# classification, the single-binary invariant, multi-node role assignment,
+# shutdown ordering) is implemented and tested in full. The RUNTIME half (actual
+# in-process component supervision, the kine/etcd datastore runtime, TLS
+# bootstrap + cert rotation, the node-join handshake transport, the
+# containerd/CNI runtime, the embedded registry) is network/runtime-bound and is
+# ADR-004 phase-1b — every item enumerated under [[unmapped]] with a priority +
+# note. Weighing the fully-implemented decision spine against the full bootstrap
+# scope lands at ~0.30; this is deliberately conservative (a raw LOC ratio
+# against ~80 kLOC of K3s Go would read far lower) and defensible: a supervisor
+# could drive a correct, dependency-respecting, role-aware bring-up and
+# graceful tear-down today using only this crate's decisions.
+fill_ratio          = 0.30
+fill_ratio_basis    = "config model + Result validation, component dependency graph + deterministic topo bring-up order + cycle/missing detection + readiness gating + external-prereq support, bootstrap state machine + transient/fatal retry classification, single-binary invariant, multi-node role assignment, graceful shutdown order + safety predicate — all implemented & tested (61 unit tests + doctest); actual component supervision + datastore/TLS/join/container/CNI runtime deferred (ADR-004 phase-1b), all enumerated below"
+test_port_ratio     = 0.0   # tests designed from the documented K3s bootstrap contract, not ported from upstream _test.go
+adr_justified_ratio = 1.00  # every [[unmapped]] gap below carries a justified priority + a note
+honest_ratio        = 1.00  # 0.30 / (0.30 + (1-0.30)*(1-1.00)) = 0.30/0.30 = 1.00
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) ---------------------
 
+[[mapped]]
+spec = "K3s server-vs-agent node role + config (datastore, token, cluster-init/join, add-on flags)"
+ours = "src/config.rs::{NodeConfig,ServerConfig,AgentConfig,Datastore,ClusterStart,Addons}"
+
+[[mapped]]
+spec = "Cluster/node token model — shape validation only (non-empty, no whitespace, min length); NO crypto"
+ours = "src/config.rs::Token::new"
+
+[[mapped]]
+spec = "Config validation: bad datastore / bad token / conflicting add-on flags / bad server URL -> Result, no panic"
+ours = "src/config.rs::{NodeConfig::validate,ConfigError}"
+
+[[mapped]]
+spec = "Embedded kine/SQLite (single-binary default) vs external datastore endpoint (shape-validated)"
+ours = "src/config.rs::Datastore"
+
+[[mapped]]
+spec = "Bundled add-on enable flags (flannel/servicelb/traefik) + disable list, with disable-list-wins resolution"
+ours = "src/config.rs::Addons::is_enabled"
+
+[[mapped]]
+spec = "Fixed in-process component set (kine/apiserver/scheduler/controller-manager/cni/kubelet/kube-proxy/helm-controller/servicelb/traefik)"
+ours = "src/component.rs::Component"
+
+[[mapped]]
+spec = "Documented K3s bring-up dependency contract: kine -> apiserver -> {scheduler,controller-manager,kubelet}; cni -> kubelet -> kube-proxy; add-ons -> apiserver"
+ours = "src/component.rs::Component::dependencies"
+
+[[mapped]]
+spec = "Control-plane vs node-side component classification (server runs all; agent runs node-side only)"
+ours = "src/component.rs::Component::is_control_plane"
+
+[[mapped]]
+spec = "Single-binary invariant (Charter §5, ADR-004): every component is in-process — no sidecar/sub-process"
+ours = "src/component.rs::{all_in_process,is_in_process}"
+
+[[mapped]]
+spec = "Deterministic topological bring-up order + cycle detection + missing-dependency detection"
+ours = "src/bringup.rs::BringUpPlan::compute"
+
+[[mapped]]
+spec = "Externally-satisfied prerequisites (an agent's kubelet depends on the REMOTE apiserver) so an agent set is plannable"
+ours = "src/bringup.rs::BringUpPlan::compute_with_external"
+
+[[mapped]]
+spec = "Readiness gating: which still-unstarted components may start given the set already ready"
+ours = "src/bringup.rs::BringUpPlan::startable_now"
+
+[[mapped]]
+spec = "Bootstrap state machine: Initializing -> DatastoreReady -> ApiserverReady -> ControlPlaneReady -> NodeReady -> Running"
+ours = "src/bootstrap.rs::{Phase,Bootstrap}"
+
+[[mapped]]
+spec = "Failure/retry classification: transient (retry with per-step budget) vs fatal (abort), no panic"
+ours = "src/bootstrap.rs::{FailureKind,Bootstrap::fail,Transition}"
+
+[[mapped]]
+spec = "Multi-node role assignment: homeowner intent (primary/backup hub, worker) -> server/agent role + cluster-init/join (ADR-005)"
+ours = "src/role.rs::{NodeIntent,OrchestrationRole,validate_cluster}"
+
+[[mapped]]
+spec = "Per-role component selection + external prerequisites (server self-contained; agent needs remote apiserver)"
+ours = "src/role.rs::{NodeIntent::components,NodeIntent::external_prerequisites}"
+
+[[mapped]]
+spec = "Graceful shutdown ordering = reverse of bring-up, with a tear-down safety predicate"
+ours = "src/shutdown.rs::{shutdown_order,shutdown_order_with_external,is_safe_shutdown}"
+
+# ---- unmapped (NOT in this crate; ADR-004 phase-1b disposition) -------------
+
+[[unmapped]]
+area     = "Actual in-process component supervision (run loops + restart/backoff for apiserver/scheduler/controller-manager/kubelet/proxy)"
+priority = "phase-1b"
+note     = "ADR-004: this crate decides the ORDER, the readiness gates and the retry CLASSIFICATION; the supervisor that actually spawns and restarts the in-process run loops is runtime-bound and lands with the per-component crates (cave-home-apiserver-rs etc.). The decision boundary is deliberately on this side; the run loops on that side."
+
+[[unmapped]]
+area     = "kine / datastore runtime (embedded SQLite engine + external etcd/Postgres/MySQL transport)"
+priority = "phase-1b"
+note     = "ADR-004 Phase 3: kine is the etcd-shim that fronts SQLite/SQL. This crate models the datastore CHOICE and validates the endpoint shape; the actual storage engine + watch/transaction transport ports under cave-home-kine-rs. No new decision logic — it consumes Datastore."
+
+[[unmapped]]
+area     = "TLS bootstrap + certificate generation/rotation (cluster CA, apiserver/kubelet serving + client certs)"
+priority = "phase-1b"
+note     = "ADR-004: cave-home models the token SHAPE only (no crypto, by mandate). The real cluster-CA issuance, the join-token -> bootstrap-credential exchange, and cert rotation are crypto/security-bound and are deferred; they consume the validated Token + ServerConfig this crate produces."
+
+[[unmapped]]
+area     = "Node-join handshake transport (agent -> server registration over the wire)"
+priority = "phase-1b"
+note     = "ADR-005 multi-node bootstrap. This crate decides cluster-init-vs-join and the server URL / role; the actual HTTPS handshake that registers an agent with a server is network-bound and lands with the apiserver bootstrap path + cave-home-node-discovery."
+
+[[unmapped]]
+area     = "containerd + CNI (flannel) runtime"
+priority = "phase-1b"
+note     = "ADR-004 Phase 1 / ADR-008: the container runtime and the flannel CNI data path are runtime/kernel-bound (cgroup v2, netlink). This crate models the CNI as a bring-up dependency of the kubelet; the actual runtime ports under cave-home-containerd-rs / cave-home-cni-flannel."
+
+[[unmapped]]
+area     = "Embedded image registry / mirror (K3s embedded distributed registry mirror, Spegel-class)"
+priority = "phase-1b"
+note     = "ADR-004: the optional embedded distributed registry mirror is a runtime/network component; it is not part of the bootstrap DECISION core and is deferred."
+
+[[unmapped]]
+area     = "Multi-server (HA) embedded-etcd quorum + leader election among 3+ control-plane nodes"
+priority = "phase-1b"
+note     = "ADR-005: this crate models the role assignment (one cluster-init primary + joining backup servers); the embedded-etcd quorum / leader-election that HA control-plane members run is consensus-bound and is owned jointly by the datastore runtime and cave-home-cluster. cave-home targets a 1–3 node household cluster (Charter §5)."
+
+[[unmapped]]
+area     = "Verbatim line-by-line transcription of k3s-io/k3s Go source"
+priority = "permanent"
+note     = "Charter §6: the HONEST port method here is a behavioural reimplementation from the public K3s architecture docs, not a byte-for-byte Go transcription. A verbatim port of the K3s server/agent boot is not a goal of this decision-core crate; the per-component crates carry their own (also behavioural) provenance."
+
+[[unmapped]]
+area     = "Windows / non-Linux-7.1 bootstrap paths"
+priority = "permanent"
+note     = "Charter §3 / ADR-003: Linux 7.1+ with cgroup v2 only; no legacy-cgroup or Windows bring-up path is modelled (no-backcompat, Charter §8)."
+
+# ---- spec_test (designed from the documented K3s bootstrap contract) --------
+# These are NOT ported from upstream _test.go (port_method is spec/contract-
+# based). Each `designed_for` names the behaviour under test.
+
+[[spec_test]]
+designed_for = "Token shape validation (empty/short/whitespace rejected, plausible accepted) — NO crypto"
+ours         = "src/config.rs::tests::{token_rejects_empty_short_and_whitespace,token_accepts_plausible_value}"
+
+[[spec_test]]
+designed_for = "Config validation: server init/agent validate; external datastore needs scheme; conflicting add-on flag+disable rejected; joining server / agent need valid URL; bad/empty/whitespace node name rejected"
+ours         = "src/config.rs::tests"
+
+[[spec_test]]
+designed_for = "Component model: ALL is complete & unique, ids unique, dependency edges closed over the enum, control-plane classification, single-binary invariant holds"
+ours         = "src/component.rs::tests"
+
+[[spec_test]]
+designed_for = "Bring-up topo order respects every documented edge (kine first), is deterministic, collapses duplicates; missing-dependency detected; readiness gating releases components as deps become ready; cycle detected via a cyclic edge function"
+ours         = "src/bringup.rs::tests"
+
+[[spec_test]]
+designed_for = "External prerequisite (remote apiserver) makes an agent set plannable and is not itself placed in the local plan"
+ours         = "src/bringup.rs::tests::{agent_only_set_orders_cni_kubelet_proxy_with_external_apiserver,external_prerequisite_satisfies_otherwise_missing_dependency}"
+
+[[spec_test]]
+designed_for = "Bootstrap state machine: happy-path Initializing->Running, transient retry without advancing, retry-budget exhaustion -> abort, fatal -> immediate abort, per-phase budget reset, retryability classification"
+ours         = "src/bootstrap.rs::tests"
+
+[[spec_test]]
+designed_for = "Role assignment: intent->role mapping, only primary inits the cluster, server full set vs agent node-side set, single/empty/no-primary/multi-primary cluster validation, server has no external prereqs"
+ours         = "src/role.rs::tests"
+
+[[spec_test]]
+designed_for = "Shutdown = exact reverse of bring-up (kine torn down last; proxy before kubelet; apiserver before kine), safety predicate accepts the computed order and rejects a bad/wrong-membership order, agent shutdown with external apiserver"
+ours         = "src/shutdown.rs::tests"
+
+# ---- no-backcompat (Charter §8) ---------------------------------------------
+# Recorded explicitly so the stance is auditable: this crate models the current
+# K3s bootstrap contract only. No pre-Linux-5.0 / Windows bring-up path and no
+# historical (pre-kine / etcd-only) datastore-default mode are carried; the
+# relevant items are listed as `permanent` [[unmapped]] above.

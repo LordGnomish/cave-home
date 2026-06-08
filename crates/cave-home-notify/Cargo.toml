@@ -6,11 +6,11 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-notify — notification stack (ntfy embedded server + gotify + Apprise multi-destination router); upstreams: binwiederhier/ntfy (Apache-2.0) + gotify/server (MIT) + caronc/apprise (MIT); port method: line-by-line (ADR-021)"
+description = "cave-home-notify — notification routing brain (priority scale, validated pub/sub topics, subscription/channel routing, dedup window + per-topic token-bucket rate limit, EN/DE/TR grandma-friendly rendering); first-party ntfy-class domain model, std-only, no transports (ADR-021)"
 
 [package.metadata.cave-home]
-upstream    = "binwiederhier/ntfy + gotify/server + caronc/apprise"
-port-method = "line-by-line"
+upstream    = "none (first-party ntfy-class semantics)"
+port-method = "spec-based (self-hosted notification semantics) + first-party (routing/throttle/i18n logic)"
 adr         = "ADR-021"
 
 [lints]

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `ServiceCache` — line-by-line port of upstream `pkg/proxy/serviceconfig.go`
-//! + `pkg/proxy/servicechangetracker.go`.
+//! `ServiceCache` — behavioural reimplementation of the documented
+//! `pkg/proxy/serviceconfig.go` + `pkg/proxy/servicechangetracker.go` semantics.
 //!
 //! The upstream design splits add/update/delete tracking from the snapshot
 //! generation; here we collapse the two because Phase 1 has no resync delta

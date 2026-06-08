@@ -1,290 +1,304 @@
 // SPDX-License-Identifier: Apache-2.0
-// Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
-//         staging/src/k8s.io/client-go/util/workqueue/{queue.go,rate_limiting_queue.go,default_rate_limiters.go}
-//
-//! Rate-limited workqueue.
+//! A rate-limited, delaying work queue — the heart of every controller loop.
 //!
-//! Mirrors `client-go/util/workqueue` — every controller in `pkg/controller/`
-//! reaches for this type. Three layers (queue / delayed / rate-limited) are
-//! collapsed into one struct because the consumer interface in Phase 2 only
-//! needs `add`, `add_after`, `add_rate_limited`, `get`, `done`, and `forget`.
+//! Behavioural reimplementation of the documented contract of
+//! `k8s.io/client-go/util/workqueue` (the `Type`, `DelayingInterface` and
+//! `RateLimitingInterface` shapes), built on `std` only. There is **no**
+//! background goroutine and **no** clock dependency: time is a monotonic
+//! `now` (epoch-millis-ish, any consistent unit) **supplied by the caller** on
+//! every operation. A controller's run loop is expected to pass its own clock.
+//!
+//! Implemented behaviours (each tested):
+//! * **dedup** — a key already queued (or in-flight and re-added) is collapsed
+//!   into a single entry; it is never processed concurrently with itself.
+//! * **delaying add (`add_after`)** — a key can be scheduled to become ready at
+//!   `now + delay`; [`WorkQueue::ready`] promotes due items.
+//! * **per-key exponential backoff** — [`WorkQueue::add_rate_limited`] schedules
+//!   a key after `base * 2^(failures-1)`, capped at `max`, where `failures` is
+//!   the per-key retry count.
+//! * **max-retries → drop** — once a key exceeds the retry budget it is dropped
+//!   instead of requeued, and the caller is told so it can stop tracking it.
+//!
+//! The queue is single-threaded and owns no locks; concurrency is the caller's
+//! concern (a real controller wraps it in a mutex). This keeps the *decision*
+//! logic — what gets processed when — pure and exhaustively testable.
 
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::hash::Hash;
-use std::sync::Arc;
-use std::time::Duration;
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
-use tokio::time::Instant;
-
-use parking_lot::Mutex;
-use tokio::sync::Notify;
-
-/// Rate-limit policy applied by [`RateLimitingQueue::add_rate_limited`].
-///
-/// Mirrors `workqueue.ItemExponentialFailureRateLimiter`: per-key counter
-/// doubles on each `add_rate_limited`, capped by `max_delay`. The counter
-/// resets to zero on [`RateLimitingQueue::forget`].
-#[derive(Clone, Debug)]
-pub struct ExponentialBackoff {
-    pub base_delay: Duration,
-    pub max_delay: Duration,
+/// Knobs for the per-key exponential-backoff rate limiter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RateLimitConfig {
+    /// Delay applied on the first failure (same unit as the caller's clock).
+    pub base_delay: u64,
+    /// Upper bound on the computed backoff delay.
+    pub max_delay: u64,
+    /// Retries permitted before a key is dropped. `add_rate_limited` returns
+    /// [`AddOutcome::Dropped`] once the per-key failure count exceeds this.
+    pub max_retries: u32,
 }
 
-impl Default for ExponentialBackoff {
+impl Default for RateLimitConfig {
+    /// Mirrors client-go's `DefaultControllerRateLimiter` ordering of magnitude:
+    /// 5 ms base, 1000 s cap, doubling each failure. `max_retries` defaults to
+    /// 15, a common controller budget.
     fn default() -> Self {
-        // Same defaults as `workqueue.DefaultControllerRateLimiter`:
-        // 5 ms initial -> capped at 1000 s.
         Self {
-            base_delay: Duration::from_millis(5),
-            max_delay: Duration::from_secs(1000),
+            base_delay: 5,
+            max_delay: 1_000_000,
+            max_retries: 15,
         }
     }
 }
 
-impl ExponentialBackoff {
-    #[must_use]
-    pub fn when(&self, failures: u32) -> Duration {
-        // 2^failures * base, with overflow saturation matching upstream.
-        let factor = 1u64.checked_shl(failures).unwrap_or(u64::MAX);
-        let base_ms = self.base_delay.as_millis() as u64;
-        let delay_ms = base_ms.saturating_mul(factor);
-        let capped = std::cmp::min(delay_ms, self.max_delay.as_millis() as u64);
-        Duration::from_millis(capped)
-    }
-}
-
-/// Generic rate-limited workqueue.
-///
-/// `T` is the item type — for every Phase 2 controller this is a string key
-/// of the form `"namespace/name"`. We keep the type parameter so the
-/// node-controller (which keys on bare node name) doesn't have to fabricate
-/// a fake namespace.
-pub struct RateLimitingQueue<T: Clone + Eq + Hash + Send + Sync + 'static> {
-    inner: Arc<Mutex<Inner<T>>>,
-    notify: Arc<Notify>,
-    rate_limiter: ExponentialBackoff,
-}
-
-struct Inner<T: Clone + Eq + Hash> {
-    /// FIFO of items currently ready to be processed.
-    queue: VecDeque<T>,
-    /// Items in `queue` OR currently being processed (between `get` and `done`).
-    dirty: HashSet<T>,
-    /// Items currently being processed.
-    processing: HashSet<T>,
-    /// Per-key failure counter, used by `add_rate_limited`.
-    failures: HashMap<T, u32>,
-    /// Items scheduled to be enqueued at `(when, item)`. Sorted ascending by
-    /// `when` for cheap drain.
-    delayed: Vec<(Instant, T)>,
-    shutdown: bool,
-}
-
-impl<T: Clone + Eq + Hash + Send + Sync + 'static> Default for RateLimitingQueue<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T: Clone + Eq + Hash + Send + Sync + 'static> Clone for RateLimitingQueue<T> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: Arc::clone(&self.inner),
-            notify: Arc::clone(&self.notify),
-            rate_limiter: self.rate_limiter.clone(),
-        }
-    }
-}
-
-impl<T: Clone + Eq + Hash + Send + Sync + 'static> RateLimitingQueue<T> {
-    #[must_use]
-    pub fn new() -> Self {
-        Self::with_rate_limiter(ExponentialBackoff::default())
-    }
-
-    #[must_use]
-    pub fn with_rate_limiter(rate_limiter: ExponentialBackoff) -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(Inner {
-                queue: VecDeque::new(),
-                dirty: HashSet::new(),
-                processing: HashSet::new(),
-                failures: HashMap::new(),
-                delayed: Vec::new(),
-                shutdown: false,
-            })),
-            notify: Arc::new(Notify::new()),
-            rate_limiter,
-        }
-    }
-
-    /// `Add(item)` — enqueue exactly once, deduplicated.
-    pub fn add(&self, item: T) {
-        let mut inner = self.inner.lock();
-        if inner.shutdown {
-            return;
-        }
-        if inner.dirty.contains(&item) {
-            // Already queued or in flight — coalesce.
-            return;
-        }
-        inner.dirty.insert(item.clone());
-        if inner.processing.contains(&item) {
-            // It's currently being processed; mark dirty so `done` requeues.
-            return;
-        }
-        inner.queue.push_back(item);
-        self.notify.notify_one();
-    }
-
-    /// `AddAfter(item, duration)` — enqueue after `duration` elapses.
-    pub fn add_after(&self, item: T, duration: Duration) {
-        if duration.is_zero() {
-            self.add(item);
-            return;
-        }
-        let mut inner = self.inner.lock();
-        if inner.shutdown {
-            return;
-        }
-        let when = Instant::now() + duration;
-        inner.delayed.push((when, item));
-        // Keep `delayed` weakly sorted (insertion sort over the tail). The
-        // pop path scans linearly so this is purely a fairness optimisation.
-        inner.delayed.sort_by_key(|(t, _)| *t);
-    }
-
-    /// `AddRateLimited(item)` — enqueue with backoff based on per-key failures.
-    pub fn add_rate_limited(&self, item: T) {
-        let delay = {
-            let mut inner = self.inner.lock();
-            let failures = inner.failures.entry(item.clone()).or_insert(0);
-            *failures += 1;
-            self.rate_limiter.when(*failures - 1)
-        };
-        self.add_after(item, delay);
-    }
-
-    /// Drain any delayed items whose deadline is in the past. Internal helper
-    /// used by both `get` and `len`.
-    fn drain_ready(&self, now: Instant) {
-        let mut inner = self.inner.lock();
-        let mut still_delayed = Vec::with_capacity(inner.delayed.len());
-        let drained: Vec<T> = std::mem::take(&mut inner.delayed)
-            .into_iter()
-            .filter_map(|(when, item)| {
-                if when <= now {
-                    Some(item)
-                } else {
-                    still_delayed.push((when, item));
-                    None
-                }
-            })
-            .collect();
-        inner.delayed = still_delayed;
-        for item in drained {
-            if inner.dirty.contains(&item) {
-                continue;
-            }
-            inner.dirty.insert(item.clone());
-            if inner.processing.contains(&item) {
-                continue;
-            }
-            inner.queue.push_back(item);
-            self.notify.notify_one();
-        }
-    }
-
-    /// `Get()` — pop the next ready item. Returns `None` if shutdown.
+impl RateLimitConfig {
+    /// Backoff delay for the `failures`-th consecutive failure (1-based).
     ///
-    /// Blocks asynchronously when the queue is empty.
-    pub async fn get(&self) -> Option<T> {
-        loop {
-            self.drain_ready(Instant::now());
-            // Drop the lock before awaiting. parking_lot::MutexGuard is !Send,
-            // so we narrow the critical section.
-            let sleep_target;
-            {
-                let mut inner = self.inner.lock();
-                if inner.shutdown && inner.queue.is_empty() && inner.delayed.is_empty() {
-                    return None;
-                }
-                if let Some(item) = inner.queue.pop_front() {
-                    inner.processing.insert(item.clone());
-                    inner.dirty.remove(&item);
-                    return Some(item);
-                }
-                sleep_target = inner.delayed.iter().map(|(t, _)| *t).min();
-            }
-            // Wait either for a notify (new item) or until the next delayed
-            // item is due.
-            let notify = Arc::clone(&self.notify);
-            if let Some(t) = sleep_target {
-                let now = Instant::now();
-                if t > now {
-                    let _ = tokio::time::timeout(t - now, notify.notified()).await;
-                }
-            } else {
-                notify.notified().await;
-            }
+    /// `base * 2^(failures-1)`, saturating and clamped to `max_delay`. Returns
+    /// `base_delay` for `failures == 0` (treated as the first attempt).
+    #[must_use]
+    pub fn backoff_for(&self, failures: u32) -> u64 {
+        if failures <= 1 {
+            return self.base_delay.min(self.max_delay);
+        }
+        // base << (failures - 1), guarding the shift and the multiply.
+        let shift = failures - 1;
+        if shift >= 64 {
+            return self.max_delay;
+        }
+        let factor = 1u64.checked_shl(shift).unwrap_or(u64::MAX);
+        self.base_delay.saturating_mul(factor).min(self.max_delay)
+    }
+}
+
+/// Result of a rate-limited add: requeued after a delay, or dropped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AddOutcome {
+    /// The key was scheduled to become ready after the given delay.
+    Requeued {
+        /// Number of accumulated failures for this key.
+        failures: u32,
+        /// Delay applied before the key becomes ready again.
+        delay: u64,
+    },
+    /// The key exceeded the retry budget and was dropped; the caller should
+    /// forget it.
+    Dropped {
+        /// Failure count at the point of dropping.
+        failures: u32,
+    },
+}
+
+/// A rate-limited, delaying work queue keyed by `String`.
+#[derive(Debug)]
+pub struct WorkQueue {
+    cfg: RateLimitConfig,
+    /// Keys ready to be processed, in FIFO order.
+    ready: VecDeque<String>,
+    /// Set membership of `ready` + `delayed`, for O(1) dedup.
+    queued: HashSet<String>,
+    /// Keys currently handed out via `get`, not yet `done`.
+    processing: HashSet<String>,
+    /// Keys re-added while processing; re-enqueued on `done` (dirty set).
+    dirty_while_processing: HashSet<String>,
+    /// Keys waiting for their ready-time: `ready_at` -> keys.
+    delayed: BTreeMap<u64, Vec<String>>,
+    /// Per-key accumulated failure count, for backoff and the retry budget.
+    failures: HashMap<String, u32>,
+}
+
+impl WorkQueue {
+    /// A queue with the given rate-limit configuration.
+    #[must_use]
+    pub fn new(cfg: RateLimitConfig) -> Self {
+        Self {
+            cfg,
+            ready: VecDeque::new(),
+            queued: HashSet::new(),
+            processing: HashSet::new(),
+            dirty_while_processing: HashSet::new(),
+            delayed: BTreeMap::new(),
+            failures: HashMap::new(),
         }
     }
 
-    /// Try to pop an item without awaiting. Returns `None` when the queue is
-    /// momentarily empty.
-    pub fn try_get(&self) -> Option<T> {
-        self.drain_ready(Instant::now());
-        let mut inner = self.inner.lock();
-        if let Some(item) = inner.queue.pop_front() {
-            inner.processing.insert(item.clone());
-            inner.dirty.remove(&item);
-            return Some(item);
-        }
-        None
+    /// A queue with the default rate-limit configuration.
+    #[must_use]
+    pub fn with_defaults() -> Self {
+        Self::new(RateLimitConfig::default())
     }
 
-    /// `Done(item)` — caller is finished with the item.
+    /// Add `key` to the ready queue immediately, deduplicating.
     ///
-    /// If it was re-marked dirty while processing (via a second `add`), it is
-    /// re-enqueued now.
-    pub fn done(&self, item: &T) {
-        let mut inner = self.inner.lock();
-        inner.processing.remove(item);
-        if inner.dirty.contains(item) {
-            // Was marked dirty during processing? Re-queue. (Dirty is kept
-            // until Get drains again.)
-            inner.queue.push_back(item.clone());
-            self.notify.notify_one();
+    /// If the key is already ready or delayed, this is a no-op. If the key is
+    /// currently being processed, it is marked dirty and will be re-enqueued
+    /// when [`WorkQueue::done`] is called — never processed twice at once.
+    pub fn add(&mut self, key: &str) {
+        if self.processing.contains(key) {
+            self.dirty_while_processing.insert(key.to_owned());
+            return;
+        }
+        if self.ready_contains(key) {
+            return; // already ready
+        }
+        // An immediate add supersedes any pending delayed schedule for the key.
+        if self.delayed_ready_at(key).is_some() {
+            self.remove_delayed(key);
+        }
+        self.queued.insert(key.to_owned());
+        self.ready.push_back(key.to_owned());
+    }
+
+    /// Schedule `key` to become ready at `now + delay` (delaying-queue add).
+    ///
+    /// A `delay` of 0 is equivalent to [`WorkQueue::add`]. If the key is already
+    /// ready, the earlier (immediate) placement wins and this is a no-op. If the
+    /// key is already delayed, the **earlier** ready-time wins.
+    pub fn add_after(&mut self, key: &str, delay: u64, now: u64) {
+        if delay == 0 {
+            self.add(key);
+            return;
+        }
+        if self.processing.contains(key) {
+            // Will be reconsidered on done(); record the intent as dirty.
+            self.dirty_while_processing.insert(key.to_owned());
+            return;
+        }
+        if self.ready_contains(key) {
+            return; // already ready sooner than any delay.
+        }
+        let ready_at = now.saturating_add(delay);
+        // Earliest ready-time wins: drop any later existing schedule.
+        if let Some(existing) = self.delayed_ready_at(key) {
+            if existing <= ready_at {
+                return;
+            }
+            self.remove_delayed(key);
+        }
+        self.queued.insert(key.to_owned());
+        self.delayed.entry(ready_at).or_default().push(key.to_owned());
+    }
+
+    /// Add `key` with exponential backoff derived from its failure history.
+    ///
+    /// Increments the key's failure count, then either schedules it after the
+    /// computed backoff or, if the retry budget is exhausted, drops it (and
+    /// forgets its history). Returns the [`AddOutcome`] so the caller can react.
+    pub fn add_rate_limited(&mut self, key: &str, now: u64) -> AddOutcome {
+        let failures = self.failures.entry(key.to_owned()).or_insert(0);
+        *failures += 1;
+        let n = *failures;
+        if n > self.cfg.max_retries {
+            self.failures.remove(key);
+            return AddOutcome::Dropped { failures: n };
+        }
+        let delay = self.cfg.backoff_for(n);
+        self.add_after(key, delay, now);
+        AddOutcome::Requeued { failures: n, delay }
+    }
+
+    /// Promote every delayed key whose ready-time is `<= now` into the ready
+    /// queue, then return the next ready key for processing (FIFO), if any.
+    ///
+    /// The returned key is marked in-flight; the caller must call
+    /// [`WorkQueue::done`] when finished so a concurrent re-add can be honoured.
+    pub fn get(&mut self, now: u64) -> Option<String> {
+        self.flush_due(now);
+        let key = self.ready.pop_front()?;
+        self.queued.remove(&key);
+        self.processing.insert(key.clone());
+        Some(key)
+    }
+
+    /// Mark a previously-`get`-returned key as finished.
+    ///
+    /// If it was re-added while in flight (dirty), it is re-enqueued now.
+    pub fn done(&mut self, key: &str) {
+        self.processing.remove(key);
+        if self.dirty_while_processing.remove(key) {
+            self.add(key);
         }
     }
 
-    /// `Forget(item)` — clear failure counter (call after a successful sync).
-    pub fn forget(&self, item: &T) {
-        let mut inner = self.inner.lock();
-        inner.failures.remove(item);
+    /// Clear a key's failure history (client-go `Forget`). Call after a
+    /// successful reconcile so the next failure starts backoff from the base.
+    pub fn forget(&mut self, key: &str) {
+        self.failures.remove(key);
     }
 
-    /// `Len()` — best-effort visible queue length (ready + processing).
+    /// Current per-key failure count (0 if unknown).
+    #[must_use]
+    pub fn retries(&self, key: &str) -> u32 {
+        self.failures.get(key).copied().unwrap_or(0)
+    }
+
+    /// Number of keys ready to process right now (excludes delayed/in-flight).
+    #[must_use]
+    pub fn ready_len(&self) -> usize {
+        self.ready.len()
+    }
+
+    /// Number of keys waiting on a delay.
+    #[must_use]
+    pub fn delayed_len(&self) -> usize {
+        self.delayed.values().map(Vec::len).sum()
+    }
+
+    /// Total tracked keys (ready + delayed), excluding in-flight.
+    #[must_use]
     pub fn len(&self) -> usize {
-        self.drain_ready(Instant::now());
-        let inner = self.inner.lock();
-        inner.queue.len() + inner.processing.len()
+        self.ready_len() + self.delayed_len()
     }
 
-    /// `Empty()` convenience.
+    /// `true` if nothing is ready or delayed.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// `ShutDown()` — refuse further adds and let pending `get`s drain.
-    pub fn shutdown(&self) {
-        self.inner.lock().shutdown = true;
-        self.notify.notify_waiters();
+    // ---- internals --------------------------------------------------------
+
+    fn flush_due(&mut self, now: u64) {
+        // BTreeMap is ordered: pop every bucket with ready_at <= now.
+        let due: Vec<u64> = self
+            .delayed
+            .range(..=now)
+            .map(|(k, _)| *k)
+            .collect();
+        for at in due {
+            if let Some(keys) = self.delayed.remove(&at) {
+                for key in keys {
+                    // queued flag already set; just move into ready FIFO.
+                    if self.queued.contains(&key) && !self.ready_contains(&key) {
+                        self.ready.push_back(key);
+                    }
+                }
+            }
+        }
     }
 
-    /// Snapshot of the failure counter for `item` — observability only.
-    pub fn failures(&self, item: &T) -> u32 {
-        self.inner.lock().failures.get(item).copied().unwrap_or(0)
+    fn ready_contains(&self, key: &str) -> bool {
+        self.ready.iter().any(|k| k == key)
+    }
+
+    fn delayed_ready_at(&self, key: &str) -> Option<u64> {
+        self.delayed
+            .iter()
+            .find(|(_, ks)| ks.iter().any(|k| k == key))
+            .map(|(at, _)| *at)
+    }
+
+    fn remove_delayed(&mut self, key: &str) {
+        let mut empty = Vec::new();
+        for (at, ks) in &mut self.delayed {
+            ks.retain(|k| k != key);
+            if ks.is_empty() {
+                empty.push(*at);
+            }
+        }
+        for at in empty {
+            self.delayed.remove(&at);
+        }
+        self.queued.remove(key);
     }
 }
 
@@ -292,86 +306,194 @@ impl<T: Clone + Eq + Hash + Send + Sync + 'static> RateLimitingQueue<T> {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn add_get_done_round_trip() {
-        let q: RateLimitingQueue<String> = RateLimitingQueue::new();
-        q.add("a".into());
-        let got = q.get().await.unwrap();
-        assert_eq!(got, "a");
-        q.done(&got);
-        q.shutdown();
-        assert!(q.get().await.is_none());
-    }
-
-    #[tokio::test]
-    async fn add_is_deduplicated() {
-        let q: RateLimitingQueue<String> = RateLimitingQueue::new();
-        q.add("a".into());
-        q.add("a".into());
-        q.add("a".into());
-        assert_eq!(q.try_get(), Some("a".into()));
-        assert_eq!(q.try_get(), None);
-    }
-
-    #[tokio::test]
-    async fn add_during_processing_requeues_on_done() {
-        let q: RateLimitingQueue<String> = RateLimitingQueue::new();
-        q.add("a".into());
-        let item = q.get().await.unwrap();
-        // Second add lands while item is in-flight.
-        q.add("a".into());
-        // Until done, get blocks (and the second add did not produce a ready
-        // item).
-        assert_eq!(q.try_get(), None);
-        q.done(&item);
-        let again = q.get().await.unwrap();
-        assert_eq!(again, "a");
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn add_after_delays_visibility() {
-        let q: RateLimitingQueue<String> = RateLimitingQueue::new();
-        q.add_after("a".into(), Duration::from_millis(50));
-        assert_eq!(q.try_get(), None);
-        tokio::time::advance(Duration::from_millis(60)).await;
-        // After advancing past the deadline a `try_get` makes the item visible.
-        assert_eq!(q.try_get(), Some("a".into()));
+    fn cfg() -> RateLimitConfig {
+        RateLimitConfig {
+            base_delay: 10,
+            max_delay: 1000,
+            max_retries: 3,
+        }
     }
 
     #[test]
-    fn exponential_backoff_doubles_until_cap() {
-        let r = ExponentialBackoff {
-            base_delay: Duration::from_millis(10),
-            max_delay: Duration::from_millis(160),
-        };
-        assert_eq!(r.when(0), Duration::from_millis(10));
-        assert_eq!(r.when(1), Duration::from_millis(20));
-        assert_eq!(r.when(2), Duration::from_millis(40));
-        assert_eq!(r.when(3), Duration::from_millis(80));
-        assert_eq!(r.when(4), Duration::from_millis(160));
-        // Capped beyond.
-        assert_eq!(r.when(50), Duration::from_millis(160));
+    fn add_then_get_is_fifo() {
+        let mut q = WorkQueue::new(cfg());
+        q.add("a");
+        q.add("b");
+        q.add("c");
+        assert_eq!(q.get(0).as_deref(), Some("a"));
+        assert_eq!(q.get(0).as_deref(), Some("b"));
+        assert_eq!(q.get(0).as_deref(), Some("c"));
+        assert_eq!(q.get(0), None);
     }
 
     #[test]
-    fn forget_clears_failures() {
-        let q: RateLimitingQueue<String> = RateLimitingQueue::new();
-        q.add_rate_limited("a".into());
-        q.add_rate_limited("a".into());
-        assert_eq!(q.failures(&"a".to_string()), 2);
-        q.forget(&"a".to_string());
-        assert_eq!(q.failures(&"a".to_string()), 0);
+    fn add_dedups_same_key() {
+        let mut q = WorkQueue::new(cfg());
+        q.add("a");
+        q.add("a");
+        q.add("a");
+        assert_eq!(q.ready_len(), 1);
+        assert_eq!(q.get(0).as_deref(), Some("a"));
+        assert_eq!(q.get(0), None);
     }
 
-    #[tokio::test]
-    async fn shutdown_unblocks_get() {
-        let q: RateLimitingQueue<String> = RateLimitingQueue::new();
-        let q2 = q.clone();
-        let handle = tokio::spawn(async move { q2.get().await });
-        // Give the spawned task a chance to park.
-        tokio::task::yield_now().await;
-        q.shutdown();
-        let got = handle.await.unwrap();
-        assert!(got.is_none());
+    #[test]
+    fn readd_while_processing_requeues_once_on_done() {
+        let mut q = WorkQueue::new(cfg());
+        q.add("a");
+        let item = q.get(0).expect("ready item");
+        assert_eq!(item, "a");
+        // Re-added (twice) while in flight: must not be visible yet.
+        q.add("a");
+        q.add("a");
+        assert_eq!(q.get(0), None, "in-flight key must not be handed out again");
+        q.done("a");
+        // Now exactly one re-enqueue is visible.
+        assert_eq!(q.get(0).as_deref(), Some("a"));
+        q.done("a");
+        assert_eq!(q.get(0), None);
+    }
+
+    #[test]
+    fn done_without_readd_does_not_requeue() {
+        let mut q = WorkQueue::new(cfg());
+        q.add("a");
+        let _ = q.get(0);
+        q.done("a");
+        assert!(q.is_empty());
+    }
+
+    #[test]
+    fn add_after_is_not_ready_until_due() {
+        let mut q = WorkQueue::new(cfg());
+        q.add_after("a", 100, 0);
+        assert_eq!(q.delayed_len(), 1);
+        assert_eq!(q.get(50), None, "not yet due");
+        assert_eq!(q.get(99), None, "still not due");
+        assert_eq!(q.get(100).as_deref(), Some("a"), "due at exactly ready_at");
+    }
+
+    #[test]
+    fn add_after_zero_delay_is_immediate() {
+        let mut q = WorkQueue::new(cfg());
+        q.add_after("a", 0, 5);
+        assert_eq!(q.ready_len(), 1);
+    }
+
+    #[test]
+    fn add_after_keeps_earliest_ready_time() {
+        let mut q = WorkQueue::new(cfg());
+        q.add_after("a", 100, 0);
+        q.add_after("a", 50, 0); // earlier wins
+        assert_eq!(q.delayed_len(), 1);
+        assert_eq!(q.get(60).as_deref(), Some("a"));
+    }
+
+    #[test]
+    fn add_after_ignored_if_later_than_existing() {
+        let mut q = WorkQueue::new(cfg());
+        q.add_after("a", 50, 0);
+        q.add_after("a", 100, 0); // later: ignored
+        assert_eq!(q.delayed_len(), 1);
+        assert_eq!(q.get(50).as_deref(), Some("a"));
+    }
+
+    #[test]
+    fn immediate_add_beats_pending_delay() {
+        let mut q = WorkQueue::new(cfg());
+        q.add_after("a", 100, 0);
+        q.add("a"); // becomes ready now; the delayed copy must collapse
+        assert_eq!(q.get(0).as_deref(), Some("a"));
+        // Draining the delayed bucket later must not double-deliver.
+        assert_eq!(q.get(200), None);
+    }
+
+    #[test]
+    fn delayed_items_become_ready_in_due_order() {
+        let mut q = WorkQueue::new(cfg());
+        q.add_after("late", 100, 0);
+        q.add_after("early", 10, 0);
+        assert_eq!(q.get(100).as_deref(), Some("early"));
+        assert_eq!(q.get(100).as_deref(), Some("late"));
+    }
+
+    #[test]
+    fn backoff_curve_doubles_per_failure() {
+        let c = cfg(); // base 10, cap 1000
+        assert_eq!(c.backoff_for(1), 10);
+        assert_eq!(c.backoff_for(2), 20);
+        assert_eq!(c.backoff_for(3), 40);
+        assert_eq!(c.backoff_for(4), 80);
+        assert_eq!(c.backoff_for(5), 160);
+    }
+
+    #[test]
+    fn backoff_curve_caps_at_max_delay() {
+        let c = cfg(); // cap 1000
+        assert_eq!(c.backoff_for(7), 640);
+        assert_eq!(c.backoff_for(8), 1000, "1280 clamped to 1000");
+        assert_eq!(c.backoff_for(40), 1000, "huge shift clamps to cap");
+        assert_eq!(c.backoff_for(200), 1000, "shift beyond 64 clamps to cap");
+    }
+
+    #[test]
+    fn backoff_for_zero_is_base() {
+        assert_eq!(cfg().backoff_for(0), 10);
+    }
+
+    #[test]
+    fn rate_limited_add_schedules_growing_delays() {
+        let mut q = WorkQueue::new(cfg());
+        let o1 = q.add_rate_limited("a", 0);
+        assert_eq!(o1, AddOutcome::Requeued { failures: 1, delay: 10 });
+        // Becomes ready at 10; drain it so the next add can reschedule.
+        assert_eq!(q.get(10).as_deref(), Some("a"));
+        q.done("a");
+        let o2 = q.add_rate_limited("a", 10);
+        assert_eq!(o2, AddOutcome::Requeued { failures: 2, delay: 20 });
+        assert_eq!(q.get(20), None, "ready at 10+20=30");
+        assert_eq!(q.get(30).as_deref(), Some("a"));
+    }
+
+    #[test]
+    fn rate_limited_add_drops_after_max_retries() {
+        let mut q = WorkQueue::new(cfg()); // max_retries = 3
+        for n in 1..=3 {
+            let o = q.add_rate_limited("a", 0);
+            assert!(matches!(o, AddOutcome::Requeued { failures, .. } if failures == n));
+            // drain so each re-add reschedules cleanly
+            let _ = q.get(1_000_000);
+            q.done("a");
+        }
+        let dropped = q.add_rate_limited("a", 0);
+        assert_eq!(dropped, AddOutcome::Dropped { failures: 4 });
+        assert!(q.is_empty(), "dropped key is not requeued");
+        assert_eq!(q.retries("a"), 0, "history forgotten on drop");
+    }
+
+    #[test]
+    fn forget_resets_backoff() {
+        let mut q = WorkQueue::new(cfg());
+        let _ = q.add_rate_limited("a", 0);
+        let _ = q.get(1_000_000);
+        q.done("a");
+        let _ = q.add_rate_limited("a", 0);
+        assert_eq!(q.retries("a"), 2);
+        q.forget("a");
+        assert_eq!(q.retries("a"), 0);
+        let _ = q.get(1_000_000);
+        q.done("a");
+        let after = q.add_rate_limited("a", 0);
+        assert_eq!(after, AddOutcome::Requeued { failures: 1, delay: 10 });
+    }
+
+    #[test]
+    fn len_counts_ready_and_delayed_but_not_inflight() {
+        let mut q = WorkQueue::new(cfg());
+        q.add("ready");
+        q.add_after("later", 100, 0);
+        assert_eq!(q.len(), 2);
+        let _ = q.get(0); // pulls "ready" in-flight
+        assert_eq!(q.len(), 1, "in-flight not counted");
     }
 }

@@ -1,24 +1,162 @@
-# cave-home-unifi-protect — parity manifest scaffold.
+# cave-home-unifi-protect — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-unifi-protect — UniFi Protect port (cameras, doorbells, motion/smart detections; converges with Frigate camera pillar); upstream: home-assistant/core unifiprotect integration + Ubiquiti Protect REST/WebSocket; port method: line-by-line (ADR-009)
+# Phase 1 ships the UniFi Protect *decision brain*: the typed device models
+# (camera / doorbell / sensor / light / chime / viewer), the smart-detect event
+# model + taxonomy, the recording-mode decision (Never / Always / Detections /
+# Schedule), smart-detect zone + line-crossing arming, the doorbell ring event,
+# rapid-detection de-dupe / grouping, the privacy schedule (Charter §9) and the
+# EN/DE/TR grandma-friendly phrasing. This is the brain every automation, Portal
+# tile and voice reply consumes for a UniFi-Protect house.
+#
+# The UniFi Protect bootstrap REST + binary WebSocket update-packet transport,
+# the RTSPS stream + recording download, the thumbnail / snapshot fetch and the
+# integration with the cave-home-camera inference pillar + cave-home-core are
+# network/video-bound and deferred to Phase 1b — each is enumerated below with
+# an ADR-009 disposition.
+#
+# Port method: the device/event/zone/recording semantics are implemented from
+# the *public UniFi Protect device & data model* and the HA `unifiprotect`
+# integration shape, both Apache-2.0-compatible. No GPL source was read.
+# no-backcompat: per Charter §8 the crate targets the current Protect API only.
 
 [crate]
 name             = "cave-home-unifi-protect"
-upstream_repo    = "home-assistant/core (unifiprotect) + Ubiquiti Protect REST/WebSocket"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "home-assistant/core (unifiprotect) + public UniFi Protect device/data model"
+port_method      = "spec-based (detection-policy core)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "Public UniFi Protect device taxonomy (camera/doorbell/sensor/light/chime/viewer)",
+    "Public UniFi Protect smartDetectTypes vocabulary (person/vehicle/package/animal/licensePlate/face/smoke/co)",
+    "Public UniFi Protect recording-mode set (never/always/detections/schedule)",
+    "Public UniFi Protect smart-detect zone + line-crossing configuration shape",
+    "home-assistant/core unifiprotect integration device-class semantics (Apache-2.0), tag 2026.5.2",
+    "ADR-009 — UniFi (Ubiquiti) ecosystem port; ADR-007 / Charter §6.3 grandma-friendly UX",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (decision brain + the wire-side
+# transport: REST bootstrap, binary WebSocket updates, RTSPS streaming +
+# recording download, thumbnail fetch, and the camera-pillar / core glue). The
+# brain is implemented and tested in full; the network/video transport remains
+# and is all ADR-009-justified Phase 1b.
+fill_ratio              = 0.30
+fill_ratio_basis        = "device models + smart-detect event model + recording-mode/zone/privacy decisions + de-dupe + EN/DE/TR UX, fully implemented & tested; the network/video transport deferred"
+test_port_ratio         = 0.0   # tests designed from spec/public model, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-009 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "UniFi Protect device taxonomy (camera/doorbell flags, sensor, light, chime, viewer) + online/offline state"
+ours = "src/device.rs::{ProtectCamera,ProtectSensor,ProtectLight,ProtectChime,ProtectViewer,DeviceState}"
+
+[[mapped]]
+spec = "Camera recording-mode + capability flags (mic / speaker / doorbell / smart-detect feature set)"
+ours = "src/device.rs::ProtectCamera::{as_doorbell,with_recording_mode,with_feature,supports}"
+
+[[mapped]]
+spec = "smartDetectTypes taxonomy (person/vehicle/package/animal/licensePlate/face/smoke/co) + wire parse"
+ours = "src/detect.rs::SmartDetectType::{wire,parse,is_safety_alarm}"
+
+[[mapped]]
+spec = "Smart-detect event (camera, types[], score, start/end tick, thumbnail id) + primary-type selection"
+ours = "src/detect.rs::DetectionEvent"
+
+[[mapped]]
+spec = "Recording-mode decision: Never / Always / Detections / Schedule given live detection + schedule window"
+ours = "src/recording.rs::{RecordMode,should_record,Schedule}"
+
+[[mapped]]
+spec = "Smart-detect zone + line-crossing arming + 'does this event fall in an armed zone' decision"
+ours = "src/zone.rs::{Zone,LineCrossing}"
+
+[[mapped]]
+spec = "Doorbell ring event"
+ours = "src/event.rs::RingEvent"
+
+[[mapped]]
+spec = "Rapid-detection de-dupe / grouping with caller-supplied cooldown + now (safety alarms never absorbed)"
+ours = "src/event.rs::EventGrouper"
+
+[[mapped]]
+spec = "Privacy zone / privacy schedule: mask/disable a camera by time of day (Charter §9), safety-alarm override"
+ours = "src/privacy.rs::{PrivacySchedule,PrivacyState,TimeOfDay}"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR phrasing for detections + doorbell ring (Charter §6.3, ADR-007)"
+ours = "src/label.rs::{detection_line,detected_headline,ring_line,all_quiet}"
+
+# ---- unmapped (NOT in this crate; ADR-009 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "UniFi Protect REST bootstrap"
+priority = "phase-1b"
+note     = "ADR-009: the initial /bootstrap fetch that populates the device models from a live NVR. Network/auth-bound; fills device.rs structs then reuses this engine unchanged. No new decision logic."
+
+[[unmapped]]
+area     = "UniFi Protect binary WebSocket update-packet transport"
+priority = "phase-1b"
+note     = "ADR-009: the Protect WS dialect (action-frame + binary delta packets) that streams live device + event updates. Network/protocol-bound; decodes onto detect.rs/event.rs models then drives this engine. Deferred until the transport crate lands."
+
+[[unmapped]]
+area     = "RTSPS live stream + recording (clip) download"
+priority = "phase-1b"
+note     = "ADR-009: the on-device video path. Video/IO-bound and shared with the camera pillar; the brain decides whether to record (should_record), the transport performs it. Per Charter §9 video stays on-device."
+
+[[unmapped]]
+area     = "Thumbnail / snapshot fetch"
+priority = "phase-1b"
+note     = "ADR-009: DetectionEvent already carries the opaque thumbnail handle; fetching the actual JPEG over the local API is the network-bound step deferred here."
+
+[[unmapped]]
+area     = "cave-home-camera inference-pillar convergence"
+priority = "phase-1b"
+note     = "ADR-009 / ADR-014: rendering Protect cameras and Frigate cameras through one Portal grid, and choosing which subsystem owns an event stream. Cross-crate glue; lands once both pillars' surfaces stabilise. The brain is already pillar-agnostic."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration + automation triggers"
+priority = "phase-1b"
+note     = "ADR-009: surfacing Protect devices/events as core State entities + automation triggers lands once cave-home-core's entity API stabilises. The engine is already core-agnostic."
+
+[[unmapped]]
+area     = "PTZ / number / select control surfaces, locks / sirens"
+priority = "phase-2"
+note     = "ADR-009: the writable control entities (PTZ move, smart-detect sensitivity numbers, doorbell chime select, professional-camera locks/sirens) are a Phase 2 surface over the same device model."
+
+[[unmapped]]
+area     = "Ubiquiti cloud (remote-access) dependency"
+priority = "permanent"
+note     = "Charter §9 privacy-first / local-API-only: cave-home never routes Protect control through Ubiquiti's cloud. The only supported control surface is the on-prem local Protect API, permanently. ADR-009 records the vendor-account limitation as the user's own, never cave-home's critical path."
+
+# ---- spec_test (designed from the public model / Charter requirements) -----
+
+[[spec_test]]
+designed_for = "Device model defaults, doorbell capability flags, feature-set de-dup, online/offline state"
+ours         = "src/device.rs::tests"
+
+[[spec_test]]
+designed_for = "smartDetectType wire round-trip, score clamp, type de-dup, primary-type (safety > person) selection"
+ours         = "src/detect.rs::tests"
+
+[[spec_test]]
+designed_for = "Recording-mode decision per mode + same-day and overnight schedule windows"
+ours         = "src/recording.rs::tests"
+
+[[spec_test]]
+designed_for = "Zone / line-crossing arm decision incl. multi-type events + safety-alarm always-arms"
+ours         = "src/zone.rs::tests"
+
+[[spec_test]]
+designed_for = "Rapid-detection de-dupe cooldown boundaries, per-(camera,type) independence, safety never absorbed, reset"
+ours         = "src/event.rs::tests"
+
+[[spec_test]]
+designed_for = "Privacy schedule masking (day + overnight + disabled) and safety-alarm override (Charter §9)"
+ours         = "src/privacy.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3) + EN/DE/TR coverage"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

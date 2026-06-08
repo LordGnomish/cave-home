@@ -1,24 +1,168 @@
-# cave-home-traefik-rs — parity manifest scaffold.
+# cave-home-traefik-rs — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-traefik-rs — ingress (K3s default; optional in cave-home); upstream: traefik/traefik (MIT); port method: line-by-line (Orchestration Phase 4, ADR-004)
+# Phase 1 ships the ingress *routing-decision core*: the reverse-proxy routing
+# brain, std-only and fully deterministic. That is — the Traefik-style rule
+# parser + evaluator (Host / Path / PathPrefix / Header / Method with
+# && / || / ! / parentheses), priority-based router selection (default
+# priority = rule length, deterministic tie-break), the service + weighted /
+# sticky / health-aware load-balancer selection, the typed middleware chain
+# (StripPrefix / AddPrefix / RedirectScheme / Headers transforms, plus
+# BasicAuth / RateLimit *config* modelling), and a validated dynamic-config
+# snapshot with reference checking.
+#
+# This crate is INFRASTRUCTURE (ADR-004, K3s ingress layer). It is hidden from
+# end-users (Charter §6.3) and produces NO user-facing strings.
+#
+# What is NOT in this crate (network/clock/crypto-bound; all phase-1b, each
+# dispositioned below): the actual TCP/TLS listener + byte-level proxying,
+# ACME / TLS certificate management, the dynamic provider watchers (file /
+# Kubernetes CRD / Docker), the BasicAuth credential crypto, and the RateLimit
+# token-bucket runtime.
+#
+# Port method: HONEST spec-based behavioural reimplementation of the documented
+# Traefik v3 routing semantics from public Traefik documentation. This is NOT a
+# verbatim line-by-line port of Traefik's Go (ANTLR-derived) matcher engine; no
+# Traefik source was transcribed. Traefik upstream is MIT-licensed
+# (Apache-2.0-compatible, permissive); the cave-home tree stays Apache-2.0.
 
 [crate]
 name             = "cave-home-traefik-rs"
 upstream_repo    = "traefik/traefik"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_subpath = "pkg/server/router, pkg/server/service, pkg/middlewares (behavioural reference only)"
+port_method      = "spec-based behavioural reimplementation (NOT verbatim line-by-line)"
+upstream_license = "MIT (Apache-2.0-compatible, permissive)"
+spec_sources     = [
+    "Traefik routing — HTTP routers & rule syntax: https://doc.traefik.io/traefik/routing/routers/",
+    "Traefik default router priority = len(rule): https://doc.traefik.io/traefik/routing/routers/#priority",
+    "Traefik services — weighted round-robin & sticky sessions: https://doc.traefik.io/traefik/routing/services/",
+    "Traefik middlewares — StripPrefix / AddPrefix / RedirectScheme / Headers: https://doc.traefik.io/traefik/middlewares/overview/",
+    "Traefik dynamic configuration model (routers/services/middlewares by name): https://doc.traefik.io/traefik/providers/overview/",
+    "RFC 9110 §5.1 (field names case-insensitive), §5.2 (multi-value header join)",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL ingress scope (decision core + TCP/TLS
+# listener + ACME + provider watchers + byte-level proxying + auth/ratelimit
+# runtimes). The decision core is implemented and tested in full; the
+# network/clock/crypto-bound remainder is all ADR-004 phase-1b, each
+# dispositioned below.
+fill_ratio              = 0.30
+fill_ratio_basis        = "rule parser+evaluator, router priority selection, service/load-balancer selection (WRR + sticky + health-skip), middleware-chain transforms, and validated dynamic-config — all implemented & tested; listener/ACME/providers/proxying/auth-crypto/ratelimit-runtime deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported from upstream
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-004 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + (1-0.30)*(1-1.00)) = 1.00
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real, tested implementation present in this crate) ------------
 
+[[mapped]]
+spec = "Traefik rule grammar parse: Host/Path/PathPrefix/Header/Method + && / || / ! / parentheses (hand-rolled lexer+recursive-descent parser, no regex)"
+ours = "src/rule.rs::parse"
+
+[[mapped]]
+spec = "Rule evaluation against a request (host/path/method/headers); multi-arg matchers OR together; segment-aware PathPrefix; case-insensitive host/method/header-name"
+ours = "src/matcher.rs::matches"
+
+[[mapped]]
+spec = "Default router priority = len(rule); explicit priority override"
+ours = "src/rule.rs::Rule::default_priority + src/router.rs::Router::effective_priority"
+
+[[mapped]]
+spec = "Highest-priority matching router wins; deterministic tie-break; entrypoint filtering"
+ours = "src/router.rs::select"
+
+[[mapped]]
+spec = "Service + weighted round-robin load-balancer selection (deterministic by caller-supplied counter)"
+ours = "src/loadbalancer.rs::Service::pick_round_robin"
+
+[[mapped]]
+spec = "Sticky-session selection by cookie; fall back + re-assign cookie when pinned server is gone/unhealthy"
+ours = "src/loadbalancer.rs::Service::pick_sticky"
+
+[[mapped]]
+spec = "Health-aware server pool: unhealthy / zero-weight servers skipped"
+ours = "src/loadbalancer.rs::Service::{healthy,pick_round_robin}"
+
+[[mapped]]
+spec = "Middleware chain apply in order, with short-circuit on terminal response"
+ours = "src/middleware.rs::MiddlewareChain::apply"
+
+[[mapped]]
+spec = "StripPrefix / AddPrefix / RedirectScheme / Headers request+response transforms"
+ours = "src/middleware.rs::Middleware::apply_one"
+
+[[mapped]]
+spec = "Dynamic-config snapshot model + reference validation (dangling service/middleware, duplicate names, empty service)"
+ours = "src/config.rs::DynamicConfig::build"
+
+[[mapped]]
+spec = "Request/response descriptor with RFC-9110 case-insensitive header handling"
+ours = "src/request.rs::{RequestDescriptor,ResponseDescriptor}"
+
+# ---- unmapped (NOT in this crate; ADR-004 phase disposition) ---------------
+
+[[unmapped]]
+area     = "TCP/TLS entrypoint listener + byte-level reverse proxying"
+priority = "phase-1b"
+note     = "ADR-004: the decision core is I/O-free on purpose. The actual listener (accept sockets, parse HTTP, stream bytes to the chosen backend) is network-bound and lands when the orchestration listener layer is wired. It consumes this crate's RequestDescriptor -> Route decision."
+
+[[unmapped]]
+area     = "ACME / TLS certificate management (Let's Encrypt, cert resolvers)"
+priority = "phase-1b"
+note     = "ADR-004: automatic certificate provisioning + renewal is network- and disk-bound and depends on the listener. The Router only carries a tls on/off flag here; cert acquisition is deferred."
+
+[[unmapped]]
+area     = "Dynamic provider watchers (file / Kubernetes CRD / Docker labels)"
+priority = "phase-1b"
+note     = "ADR-004: the providers that *produce* dynamic-config snapshots are I/O- and cluster-bound. This crate models + validates the snapshot they feed; the watch/parse loops land with the orchestration provider layer."
+
+[[unmapped]]
+area     = "BasicAuth credential verification (htpasswd / constant-time hash compare)"
+priority = "phase-1b"
+note     = "ADR-004: the credential crypto is modelled as config here (realm + user refs) but the actual verification is deferred to the listener phase, where the request body/headers are real and a crypto dep is justified. Keeping crypto out of the decision core keeps it std-only and deterministic."
+
+[[unmapped]]
+area     = "RateLimit token-bucket runtime enforcement"
+priority = "phase-1b"
+note     = "ADR-004: rate limiting needs a clock + per-source state, both runtime concerns. The configured average/burst is modelled here; the enforcing token bucket lands with the listener so the decision core stays clock-free and deterministic."
+
+[[unmapped]]
+area     = "Verbatim line-by-line parity with Traefik's Go matcher engine"
+priority = "permanent"
+note     = "Charter §6 HONEST-port stance: this crate is a spec-based behavioural reimplementation of documented Traefik routing semantics, NOT a transcription of Traefik's ANTLR-derived Go matcher. The remaining rule features Traefik exposes but cave-home does not yet model (HostRegexp, Query, ClientIP, HeaderRegexp, HostSNI for TCP) are deferred; per Charter §7/§8 we ship the current documented semantics with no legacy compat mode."
+
+[[unmapped]]
+area     = "Additional matchers: HostRegexp / HeaderRegexp / Query / ClientIP / HostSNI(TCP)"
+priority = "phase-2"
+note     = "ADR-004: the implemented matcher set covers the common HTTP routing cases. Regexp matchers would reintroduce a regex engine (deliberately avoided in the parser per the no-regex constraint); TCP HostSNI belongs with the TCP listener. Added incrementally over the same parser/evaluator."
+
+# ---- spec_test (designed from public Traefik docs / RFC behaviour) ---------
+
+[[spec_test]]
+designed_for = "Rule grammar parse for each matcher + && / || / ! / parentheses + precedence (AND binds tighter than OR) + malformed-rule rejection"
+ours         = "src/rule.rs::tests"
+
+[[spec_test]]
+designed_for = "Rule evaluation: per-matcher semantics, segment-aware PathPrefix, case-insensitivity, combinator + precedence + parenthesised-grouping results"
+ours         = "src/matcher.rs::tests"
+
+[[spec_test]]
+designed_for = "Priority selection: longest rule wins by default, explicit priority override, deterministic name tie-break, entrypoint filtering"
+ours         = "src/router.rs::tests"
+
+[[spec_test]]
+designed_for = "Load balancer: round-robin cycling, proportional weighted distribution, unhealthy + zero-weight skip, sticky pin / fall-back / cookie assignment"
+ours         = "src/loadbalancer.rs::tests"
+
+[[spec_test]]
+designed_for = "Middleware transforms: StripPrefix (segment-aware), AddPrefix, RedirectScheme (302/301 + port + short-circuit), Headers, chain ordering"
+ours         = "src/middleware.rs::tests"
+
+[[spec_test]]
+designed_for = "Dynamic-config reference validation: dangling service/middleware, duplicate router/service names, empty service, end-to-end route resolution"
+ours         = "src/config.rs::tests"
+
+[[spec_test]]
+designed_for = "RFC-9110 case-insensitive header lookup + method/host/scheme normalisation"
+ours         = "src/request.rs::tests"

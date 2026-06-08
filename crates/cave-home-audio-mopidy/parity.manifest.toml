@@ -1,24 +1,142 @@
-# cave-home-audio-mopidy — parity manifest scaffold.
+# cave-home-audio-mopidy — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-audio-mopidy — local music server (Mopidy backend client + HA mopidy integration); upstream: mopidy/mopidy (Apache-2.0); port method: line-by-line (ADR-020)
+# Phase 1 ships the local music server's *protocol & playback-state engine*: the
+# MPD line-protocol command parser, the play-queue model (stable song ids vs.
+# positions, add/delete/move/clear), the transport-state model (play/pause/stop,
+# volume 0..=100, elapsed, the four toggle modes), the next-song computation
+# under every random/repeat/single/consume combination, the `status` /
+# `currentsong` / `playlistinfo` response builders with `OK` / `ACK` framing, and
+# the EN/DE/TR grandma-friendly phrase layer. This is the brain the TCP server,
+# the audio pipeline and the multi-room integration all drive — they add I/O,
+# not core logic, and are network/pipeline-bound, so they are deferred to
+# Phase 1b with an ADR-020 disposition each.
+#
+# Port method: the MPD command/response grammar and the next-song mode semantics
+# are implemented from the *public, documented* MPD text protocol; no GPL MPD
+# server source was read (Charter §6.1). Mopidy itself is Apache-2.0.
 
 [crate]
 name             = "cave-home-audio-mopidy"
 upstream_repo    = "mopidy/mopidy + home-assistant/core (mopidy integration)"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+port_method      = "spec-based (MPD protocol engine; clean-room per Charter §6.1) + line-by-line (Mopidy adapters, phase-1b)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "MPD protocol — public documented line protocol (command/response grammar, ACK error codes 2/5/50, quoting rules)",
+    "MPD playback modes — random / repeat / single / consume next-song semantics (public protocol docs)",
+    "MPD status / currentsong / playlistinfo field sets (public protocol docs)",
+    "Mopidy backend/tracklist concepts — Apache-2.0 (modelled, not network-bound, in phase 1)",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (protocol/state engine + TCP server
+# + GStreamer pipeline + Mopidy backend extensions + library browsing +
+# core/Snapcast integration). The engine is implemented and tested in full; the
+# network/pipeline-bound remainder is all ADR-justified Phase 1b.
+fill_ratio              = 0.30
+fill_ratio_basis        = "MPD command parser + queue model (id/position, add/delete/move/clear) + playback state + next-song under all mode combos + status/currentsong/playlistinfo builders + ACK error model + EN/DE/TR UX, fully implemented & tested; TCP server / audio pipeline / backend extensions deferred"
+test_port_ratio         = 0.0   # tests designed from the protocol spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-020 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "MPD line-protocol command parsing with quoted/escaped argument handling"
+ours = "src/command.rs::parse"
+
+[[mapped]]
+spec = "MPD ACK error model (codes 2 ARG / 5 UNKNOWN / 50 NO_EXIST) — reject, never panic"
+ours = "src/command.rs::ParseError + src/response.rs::AckError"
+
+[[mapped]]
+spec = "MPD response framing: key:value lines terminated by OK or ACK [code@idx] {cmd} msg"
+ours = "src/response.rs::Response"
+
+[[mapped]]
+spec = "Play queue: stable song ids vs. positions, add / delete / deleteid / move / clear"
+ours = "src/tracklist.rs::Tracklist"
+
+[[mapped]]
+spec = "Next-song computation honouring random / repeat / single / consume (the core)"
+ours = "src/tracklist.rs::{next_after,consume_finished,shuffle_order}"
+
+[[mapped]]
+spec = "Playback-state model: play/pause/stop, volume 0..=100, current position, elapsed, toggle modes"
+ours = "src/playback.rs::Playback"
+
+[[mapped]]
+spec = "MPD status / currentsong / playlistinfo snapshot field builders"
+ours = "src/status.rs::{status,current_song,playlist_info}"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR phrases (Playing…/paused/stopped/repeat/shuffle/volume) — ADR-007"
+ours = "src/label.rs"
+
+# ---- unmapped (NOT in this crate; ADR-020 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "TCP MPD server (socket loop, idle subsystem, command_list, binary responses)"
+priority = "phase-1b"
+note     = "ADR-020: the wire server wraps this engine over a TCP listener with MPD's idle/command-list/binary framing. Network-bound; feeds parsed Commands into the engine and serialises Responses back. No new core logic."
+
+[[unmapped]]
+area     = "GStreamer / audio playback pipeline (decode, output, gapless, replaygain)"
+priority = "phase-1b"
+note     = "ADR-020: actual audio rendering is a GStreamer pipeline driven by this transport state. Pipeline/hardware-bound; the PlayState/elapsed model here is its control surface."
+
+[[unmapped]]
+area     = "Mopidy backend extensions (local, Spotify, TuneIn, SoundCloud, …)"
+priority = "phase-1b"
+note     = "ADR-020: per-backend URI resolution and streaming. Each is network/account-bound and iterative (ADR-020 §Consequences); they resolve the opaque URIs this engine already carries in Song."
+
+[[unmapped]]
+area     = "Library browsing / search over real backends (lsinfo, find, search, listplaylists)"
+priority = "phase-1b"
+note     = "ADR-020: browsing surfaces depend on live backends, deferred with them. The queue/tracklist model here is backend-agnostic and ready to receive their results."
+
+[[unmapped]]
+area     = "cave-home-core entity/state + Snapcast multi-room integration"
+priority = "phase-1b"
+note     = "ADR-020: surfacing the player as a core media entity and routing output through cave-home-audio-snapcast for synchronised rooms lands once those crates stabilise. The engine is already core-agnostic."
+
+[[unmapped]]
+area     = "cave-home-audio-mpd clean-room server (if Mopidy proves insufficient)"
+priority = "phase-2"
+note     = "ADR-020 §Decision [ASSUMPTION]: MPD upstream is GPL-only, so a native MPD server, if ever needed, would be a separate clean-room crate via a future ADR-020b. This crate implements only the public protocol grammar, read from docs."
+
+[[unmapped]]
+area     = "Legacy / pre-current MPD protocol compatibility shims"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home tracks the current documented MPD protocol only; no historical-version compatibility mode."
+
+# ---- spec_test (designed from the public MPD protocol) ---------------------
+
+[[spec_test]]
+designed_for = "Command parsing incl. quoted/escaped args, missing/bad args, unknown command, unterminated quote"
+ours         = "src/command.rs::tests"
+
+[[spec_test]]
+designed_for = "Next-song under every random/repeat/single/consume combination (the core logic)"
+ours         = "src/tracklist.rs::tests"
+
+[[spec_test]]
+designed_for = "Stable song id survives reorder while position does not"
+ours         = "src/tracklist.rs::tests::songid_survives_reorder_but_position_does_not"
+
+[[spec_test]]
+designed_for = "Volume / time range validation rejects out-of-range without panic"
+ours         = "src/playback.rs::tests"
+
+[[spec_test]]
+designed_for = "OK / ACK response framing with correct codes, indices and field ordering"
+ours         = "src/response.rs::tests"
+
+[[spec_test]]
+designed_for = "status / currentsong / playlistinfo field sets match the protocol"
+ours         = "src/status.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

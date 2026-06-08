@@ -6,11 +6,11 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-audio-mass — Music Assistant orchestration; upstream: music-assistant/server (Apache-2.0); port method: line-by-line (ADR-020)"
+description = "cave-home-audio-mass — Music Assistant-class orchestration; upstream: music-assistant/server (Apache-2.0, domain reference only); port method: spec-based (first-party domain logic) (ADR-020)"
 
 [package.metadata.cave-home]
-upstream    = "music-assistant/server"
-port-method = "line-by-line"
+upstream    = "music-assistant/server (domain reference only; first-party implementation)"
+port-method = "spec-based (first-party domain logic; Music-Assistant-class)"
 adr         = "ADR-020"
 
 [lints]

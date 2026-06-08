@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Pure rule generator — line-by-line port of the ClusterIP path of
-//! upstream `pkg/proxy/iptables/proxier.go syncProxyRules` (lines ~1200-1900).
+//! Pure iptables rule generator — a behavioural reimplementation of the
+//! documented ClusterIP `syncProxyRules` rule shape (the
+//! `KUBE-SERVICES`/`KUBE-SVC-`/`KUBE-SEP-` chain layout), not a verbatim port
+//! of a specific unread upstream source revision.
 //!
 //! Phase 1 emits ONLY the ClusterIP / KUBE-SERVICES → KUBE-SVC- → KUBE-SEP-
 //! dispatch chain, plus the static KUBE-POSTROUTING / KUBE-MARK-MASQ

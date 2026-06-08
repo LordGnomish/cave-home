@@ -1,71 +1,102 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Crate-wide error type.
+//! Decode/encode error type for the Z-Wave Command Class engine.
 //!
-//! # Upstream: zwave-js/zwave-js@5ffca2b38393f9eab0bffcdbd65b3020cbeda492:packages/core/src/error/ZWaveError.ts
-//!
-//! `ZWaveError` upstream is a class with a numeric `code` and a `message`; we
-//! port the discriminants that the Phase 1 slice actually produces. The "long
-//! tail" of upstream error codes (firmware update, NVM, OTA, …) will follow in
-//! Phase 1b when their callers land.
+//! Every parser in this crate returns a [`ZwaveResult`]; nothing ever panics on
+//! malformed input. The discriminants mirror the failure modes a real radio
+//! frame produces: a payload that is too short to hold the fields the command
+//! requires, a value outside the range the Command Class specification allows,
+//! or a Command Class / command byte the engine does not (yet) model.
 
-use thiserror::Error;
-
-/// The crate-wide error.
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
+/// Why a Command Class payload could not be decoded (or a value encoded).
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ZwaveError {
-    /// A serial frame failed framing rules (truncated / bad SOF / etc.).
+    /// The payload ended before all required fields were present.
     ///
-    /// Upstream: `ZWaveErrorCodes.PacketFormat_Invalid` /
-    /// `PacketFormat_Truncated`.
-    #[error("packet format invalid: {0}")]
-    PacketFormat(String),
+    /// `need` is the minimum byte count the command requires; `got` is what the
+    /// payload actually carried.
+    Truncated {
+        /// Minimum bytes the command needs.
+        need: usize,
+        /// Bytes actually present.
+        got: usize,
+    },
 
-    /// A serial frame checksum did not match the computed XOR.
-    ///
-    /// Upstream: `ZWaveErrorCodes.PacketFormat_Checksum`.
-    #[error("packet checksum mismatch (expected {expected:#04x}, got {got:#04x})")]
-    PacketChecksum {
-        /// Computed XOR over bytes 1..len-1.
+    /// A field carried a value the specification does not permit (e.g. a
+    /// Multilevel Switch level of 100, which is reserved).
+    OutOfRange {
+        /// What field was bad (a short static identifier, not user-facing).
+        field: &'static str,
+        /// The offending value.
+        value: u32,
+    },
+
+    /// The Command Class byte does not match the command being decoded.
+    UnexpectedCommandClass {
+        /// Command Class id the decoder expected.
         expected: u8,
-        /// Value present in the last byte of the frame.
+        /// Command Class id the payload carried.
         got: u8,
     },
 
-    /// An argument violated a precondition (length / value / range).
-    ///
-    /// Upstream: `ZWaveErrorCodes.Argument_Invalid`.
-    #[error("invalid argument: {0}")]
-    Argument(String),
+    /// The command id within the Command Class is unknown / not modelled.
+    UnknownCommand {
+        /// Command Class id.
+        command_class: u8,
+        /// Command id within that class.
+        command: u8,
+    },
 
-    /// The transport's underlying I/O failed (UART hang-up, EOF, …).
-    #[error("transport: {0}")]
-    Transport(String),
-
-    /// Driver / controller is not yet in the state required by the caller.
-    #[error("driver not ready: {0}")]
-    NotReady(String),
-
-    /// Controller responded with an explicit failure.
-    #[error("controller responded with failure: {0}")]
-    Controller(String),
-
-    /// An inclusion / exclusion run failed.
-    #[error("inclusion failed: {0}")]
-    Inclusion(String),
-
-    /// Security S0 / S2 bootstrap failed.
-    #[error("security: {0}")]
-    Security(String),
-
-    /// A node-targeted operation timed out.
-    #[error("node {node_id} timed out after {millis} ms")]
-    NodeTimeout {
-        /// Node ID the operation targeted.
-        node_id: u8,
-        /// Milliseconds we waited.
-        millis: u64,
+    /// A size/precision field nominated a byte width the spec does not allow
+    /// (the spec permits 1, 2 or 4 octets for fixed-point values).
+    BadValueSize {
+        /// The illegal size in octets.
+        size: u8,
     },
 }
 
+impl core::fmt::Display for ZwaveError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Truncated { need, got } => {
+                write!(f, "payload truncated: need {need} bytes, got {got}")
+            }
+            Self::OutOfRange { field, value } => {
+                write!(f, "value {value} out of range for field {field}")
+            }
+            Self::UnexpectedCommandClass { expected, got } => {
+                write!(
+                    f,
+                    "unexpected command class: expected {expected:#04x}, got {got:#04x}"
+                )
+            }
+            Self::UnknownCommand {
+                command_class,
+                command,
+            } => write!(
+                f,
+                "unknown command {command:#04x} for command class {command_class:#04x}"
+            ),
+            Self::BadValueSize { size } => {
+                write!(f, "illegal fixed-point value size: {size} octets")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ZwaveError {}
+
 /// Crate-wide `Result` alias.
 pub type ZwaveResult<T> = Result<T, ZwaveError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_is_descriptive() {
+        let e = ZwaveError::Truncated { need: 4, got: 1 };
+        assert!(e.to_string().contains("truncated"));
+        let e = ZwaveError::BadValueSize { size: 3 };
+        assert!(e.to_string().contains('3'));
+    }
+}

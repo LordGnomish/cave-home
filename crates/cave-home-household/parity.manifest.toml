@@ -1,24 +1,158 @@
-# cave-home-household — parity manifest scaffold.
+# cave-home-household — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-household — household management (Grocy port: food/medicine/battery inventory, chores, shopping list); upstream: grocy/grocy (MIT); port method: line-by-line (ADR-026)
+# Phase 1 ships the household-management *decision engine* (Grocy-class
+# semantics): the product/inventory model, stock operations (consume / purchase
+# / open) with over-draw protection, the below-min shopping-list engine with
+# manual-item merge and purchase-unit rounding, expiry classification
+# (Fresh / ExpiringSoon / Expired) with a report, the recurring-chore model
+# (due / next-due math, member assignment, due-list) and the recipe stock-check
+# with a shortfall shopping list — all surfaced grandma-friendly in EN/DE/TR.
+# This is the brain every Portal tile, shopping view and chore reminder
+# consumes. The storage / network / clock-bound pieces (barcode lookup +
+# product-database import, the Grocy REST API-compat layer, persistent storage,
+# and cave-home-core / cave-home-calendar integration) are deferred to Phase 1b
+# and enumerated below with an ADR-026 disposition.
+#
+# Port method: the domain model is implemented FIRST-PARTY from Grocy-class
+# *behavioural* semantics (food/medicine/battery inventory, chores, shopping,
+# recipes), per ADR-026's [ASSUMPTION] note (behavioural port, not a literal
+# PHP translation). No Grocy PHP source was read or ported; the data model and
+# the household concepts are the shared surface, written in idiomatic std-only
+# Rust. Grocy is MIT (Apache-2.0-compatible); this crate is Apache-2.0.
 
 [crate]
 name             = "cave-home-household"
 upstream_repo    = "grocy/grocy"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+port_method      = "spec-based (first-party domain model from Grocy-class semantics; no PHP source ported)"
+upstream_license = "MIT"
+spec_sources     = [
+    "Grocy public feature documentation — inventory (food/medicine/battery), chores, shopping list, recipes (behavioural semantics only; ADR-026 [ASSUMPTION] behavioural-port note)",
+    "ADR-026 — household management scope: inventory + chores + shopping + recipes as one integrated pillar",
+    "Charter §6.3 / ADR-007 — grandma-friendly localised UX (EN/DE/TR) from M1",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (engine + barcode/product-DB import
+# + Grocy REST API-compat layer + persistent storage + core/calendar glue). The
+# pure-logic engine is implemented and tested in full; the remaining items are
+# all storage/network/clock-bound and ADR-justified Phase 1b.
+fill_ratio              = 0.40
+fill_ratio_basis        = "product model + stock ops + shopping engine + expiry + chores + recipe check + EN/DE/TR UX, fully implemented & tested; storage / API-compat / barcode-import / core+calendar glue deferred"
+test_port_ratio         = 0.0   # tests designed from semantics, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-026 phase disposition
+honest_ratio            = 1.00  # 0.40 / (0.40 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Product / inventory entry model with validated name + amounts + optional best-before"
+ours = "src/product.rs::Product"
+
+[[mapped]]
+spec = "Quantity units + purchase-step rounding (pieces / packs / grams / millilitres)"
+ours = "src/product.rs::QuantityUnit"
+
+[[mapped]]
+spec = "Stock operation: consume (over-draw rejected, never goes negative)"
+ours = "src/stock.rs::consume"
+
+[[mapped]]
+spec = "Stock operations: purchase/add and open-a-package"
+ours = "src/stock.rs::{purchase,open}"
+
+[[mapped]]
+spec = "Below-min shopping-list generation with purchase-unit rounding"
+ours = "src/shopping.rs::below_min"
+
+[[mapped]]
+spec = "Shopping-list merge of auto + manually-added items (same-product summing)"
+ours = "src/shopping.rs::merge"
+
+[[mapped]]
+spec = "Expiry classification Fresh / ExpiringSoon / Expired against caller-supplied today + window"
+ours = "src/expiry.rs::Freshness"
+
+[[mapped]]
+spec = "Expiry report grouping (expired / expiring-soon / all-fresh)"
+ours = "src/expiry.rs::report"
+
+[[mapped]]
+spec = "Recurring chore model + is_due / next_due math + due-list + member assignment"
+ours = "src/chore.rs::Chore"
+
+[[mapped]]
+spec = "Recipe stock-check: can-we-make-it + shortfall shopping list"
+ours = "src/recipe.rs::can_make"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR localisation surface (Charter §6.3, ADR-007)"
+ours = "src/label.rs::Lang + per-module line()/reminder()/summary()"
+
+# ---- unmapped (NOT in this crate; ADR-026 Phase 1b/permanent disposition) --
+
+[[unmapped]]
+area     = "Barcode lookup + product-database import"
+priority = "phase-1b"
+note     = "ADR-026: scanning a barcode and pulling product details from an open product database is a network-bound I/O adapter. It builds product::Product values and then reuses this engine unchanged — no new domain logic."
+
+[[unmapped]]
+area     = "Grocy REST API-compatibility layer"
+priority = "phase-1b"
+note     = "ADR-026: exposing the same data model over a compatible HTTP surface (so existing Grocy mobile clients keep working) is a network/transport layer over this engine. Deferred until the engine's types are stable; no domain logic lives there."
+
+[[unmapped]]
+area     = "Persistent storage (inventory / chore / shopping-list store)"
+priority = "phase-1b"
+note     = "ADR-026: the MVP engine is pure and storage-neutral. A filesystem-backed store (also needed for recipe photos per ADR-026) lands in Phase 1b; it loads/saves Product/Chore values the engine already validates."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration"
+priority = "phase-1b"
+note     = "ADR-026: surfacing low-stock / expiry / due-chore as core State entities + automation triggers (e.g. the smoke-detector battery tracker tying into low-battery sensors) lands once cave-home-core's entity API stabilises. The engine is already core-agnostic."
+
+[[unmapped]]
+area     = "cave-home-calendar / notify integration (chore reminders as events)"
+priority = "phase-1b"
+note     = "ADR-026: turning due_chores + expiry warnings into calendar/notify events is clock- and transport-bound. The engine already produces the plain-language reminder text; this just schedules and delivers it."
+
+[[unmapped]]
+area     = "Real calendar-date best-before / due dates (timezone-aware)"
+priority = "phase-1b"
+note     = "ADR-026 + no-clock-in-engine: the engine uses caller-supplied integer day numbers so it stays pure and deterministic. Converting real dates/timezones into day numbers is an adapter concern at the edge."
+
+[[unmapped]]
+area     = "Literal Grocy PHP-source port"
+priority = "permanent"
+note     = "ADR-026 [ASSUMPTION] + Charter §7 always-latest / §8 no-backcompat: the port is behavioural (first-party idiomatic Rust), not a literal PHP translation. There will never be a PHP-runtime compatibility mode and no backward-compat with Grocy's internal schema."
+
+# ---- spec_test (designed from semantics / ADR-026 scope) -------------------
+
+[[spec_test]]
+designed_for = "Stock consume/purchase/open + over-consume error + zero-floor"
+ours         = "src/stock.rs::tests"
+
+[[spec_test]]
+designed_for = "Below-min shopping list + purchase-unit rounding (pieces/packs/volume)"
+ours         = "src/shopping.rs::tests"
+
+[[spec_test]]
+designed_for = "Shopping-list merge: same-product summing + manual/auto flag"
+ours         = "src/shopping.rs::tests::merge_sums_the_same_product"
+
+[[spec_test]]
+designed_for = "Expiry classification boundary days (today / window edge / past)"
+ours         = "src/expiry.rs::tests::classify_boundaries"
+
+[[spec_test]]
+designed_for = "Chore due / next-due math at the period boundary + never-done"
+ours         = "src/chore.rs::tests"
+
+[[spec_test]]
+designed_for = "Recipe shortfall shopping list (missing + partial stock, rounded up)"
+ours         = "src/recipe.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/lib.rs::tests::ui_strings_carry_no_implementation_jargon"

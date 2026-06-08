@@ -1,24 +1,189 @@
-# cave-home-calendar — parity manifest scaffold.
+# cave-home-calendar — clean-room reimplementation manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-calendar — CalDAV + CardDAV server (Radicale-class) + HA caldav client integration; reference: Kozea/Radicale (GPL-3.0, source NOT read); server: CLEAN-ROOM from RFC 4791 + 6352 + 5545 + 6350; client: line-by-line (ADR-027, Charter §6.1)
+# Per ADR-027 + Charter §6.1: the calendar/PIM reference (Kozea/Radicale, the
+# CalDAV server) is GPL-3.0, so this crate is implemented strictly from the
+# PUBLIC RFCs — RFC 5545 (iCalendar: content lines + line folding §3.1,
+# parameters §3.2, value types §3.3, the RECUR rule §3.3.10, VEVENT §3.6.1) and
+# RFC 4791 (CalDAV, for the deferred server scope). The Radicale source has NOT
+# been read or ported.
+#
+# Honest scoping: the full calendar pillar is the *pure-logic engine* (iCalendar
+# parsing + the recurrence expansion brain + agenda queries + grandma-friendly
+# EN/DE/TR phrasing) PLUS the CalDAV HTTP server (REPORT/PROPFIND/PUT), sync
+# tokens / etags, a storage backend, the time-zone database (TZID/VTIMEZONE),
+# and VTODO/VJOURNAL handling. The engine is implemented & tested here in full;
+# everything network/storage/TZ-data-bound is deferred to Phase 1b (ROADMAP M10)
+# and enumerated in [[unmapped]] below. Phase 1 treats times as floating/local.
 
 [crate]
 name             = "cave-home-calendar"
-upstream_repo    = "Kozea/Radicale (GPL-3.0, reference only, source NOT read) + home-assistant/core (caldav client)"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "mixed"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "Kozea/Radicale (CalDAV/CardDAV server, reference only — GPL, source NOT read)"
+upstream_license = "GPL-3.0-only"
+port_method      = "clean-room"
+spec_sources     = [
+    "RFC 5545 (iCalendar) §3.1 content lines + line folding — unfolding, CRLF/LF robustness",
+    "RFC 5545 §3.2 property parameters + §3.3 value types (DATE, DATE-TIME, DURATION)",
+    "RFC 5545 §3.3.10 RECUR — FREQ/INTERVAL/COUNT/UNTIL/BYDAY/BYMONTHDAY/BYMONTH/WKST",
+    "RFC 5545 §3.6.1 VEVENT component (DTSTART/DTEND/DURATION/SUMMARY/UID/RRULE/EXDATE)",
+    "RFC 4791 (CalDAV) — HTTP method surface (REPORT/PROPFIND/PUT), recorded for the deferred Phase-1b server scope",
+    "Proleptic Gregorian calendar arithmetic (leap-year rule; Howard Hinnant public days-from-civil / civil-from-days algorithm) for the std-only date model",
+]
+# Clean-room declaration (Charter §6.1 / ADR-027, mirrors cave-home-solar-hoymiles):
+# implemented from the public RFC text + public calendar-math algorithm.
+clean_room_note  = "Implemented from public RFC 5545 (iCalendar) + RFC 4791 (CalDAV) text and the public proleptic-Gregorian date algorithm; GPL upstream (Radicale) was NOT read or ported."
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (pure-logic engine + CalDAV HTTP
+# server + sync/etag + storage + TZ database + VTODO/VJOURNAL). The engine — the
+# std-only civil-date model, iCalendar unfolding/parsing, the full recurrence
+# expansion (DAILY/WEEKLY/MONTHLY/YEARLY with INTERVAL/COUNT/UNTIL/BYDAY/
+# BYMONTHDAY/BYMONTH/WKST + EXDATE), agenda + next-occurrence queries, and the
+# grandma-friendly EN/DE/TR phrasing — is implemented and tested in full. The
+# server/storage/TZ halves are all ADR-027 / ROADMAP-M10 Phase-1b deferrals.
+fill_ratio              = 0.30
+fill_ratio_basis        = "civil date/time model + iCalendar (RFC 5545) unfolding/VEVENT parse + recurrence (RRULE) expansion with EXDATE + agenda/next-occurrence + EN/DE/TR phrasing, fully implemented & tested; CalDAV server + sync/etag + storage + TZID/VTIMEZONE + VTODO/VJOURNAL deferred"
+test_port_ratio         = 0.0   # clean-room: tests designed from the RFC worked examples, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries a phase disposition + note
+honest_ratio            = 1.00  # 0.30 / (0.30 + (1-0.30)*(1-1.00)) = 1.00
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- spec_section (clean-room reimpl present in this crate) -----------------
 
+[[spec_section]]
+spec = "Proleptic Gregorian civil date model — leap years, month lengths, weekday-of-date, days-from-epoch round trip, month/year-clamped arithmetic"
+ours = "src/date.rs::{Date,DateTime,Weekday,is_leap_year,days_in_month}"
+
+[[spec_section]]
+spec = "RFC 5545 §3.1 content-line unfolding (CRLF/LF + space/tab continuation)"
+ours = "src/ical/parse.rs::unfold_lines"
+
+[[spec_section]]
+spec = "RFC 5545 §3.1/§3.2 content-line property + parameter parsing (quoted values, unquoted colon split)"
+ours = "src/ical/parse.rs::{parse_content_line,ContentLine}"
+
+[[spec_section]]
+spec = "RFC 5545 §3.3 DATE / DATE-TIME value parsing (YYYYMMDD, YYYYMMDDTHHMMSS[Z])"
+ours = "src/ical/parse.rs::parse_date_value"
+
+[[spec_section]]
+spec = "RFC 5545 §3.6.1 VCALENDAR/VEVENT block parsing (skips nested VALARM/VTIMEZONE in Phase 1)"
+ours = "src/ical/parse.rs::parse_vcalendar"
+
+[[spec_section]]
+spec = "RFC 5545 §3.3.6 DURATION value parsing (P/W/D/T/H/M/S, signed)"
+ours = "src/event.rs::parse_duration"
+
+[[spec_section]]
+spec = "Appointment model — UID/SUMMARY/start, end via DTEND or DTSTART+DURATION, all-day, RRULE, EXDATE"
+ours = "src/event.rs::Event"
+
+[[spec_section]]
+spec = "RFC 5545 §3.3.10 RECUR parse — FREQ/INTERVAL/COUNT/UNTIL/BYDAY/BYMONTHDAY/BYMONTH/WKST"
+ours = "src/rrule.rs::RRule::parse"
+
+[[spec_section]]
+spec = "RFC 5545 §3.3.10 recurrence expansion into concrete occurrences within a window (DTSTART floor, UNTIL/COUNT bound, BYDAY ordinals 1FR/-1SU, BYMONTHDAY negatives, day clamping)"
+ours = "src/rrule.rs::RRule::occurrences"
+
+[[spec_section]]
+spec = "EXDATE exclusion applied over expanded occurrences"
+ours = "src/event.rs::Event::occurrence_dates"
+
+[[spec_section]]
+spec = "Agenda query — chronologically sorted occurrences over a window + next-occurrence-after-a-moment"
+ours = "src/agenda.rs::{agenda,next_occurrence,Occurrence}"
+
+[[spec_section]]
+spec = "Grandma-friendly EN/DE/TR phrasing — occurrence line, recurrence phrase, event headline (Charter §6.3, ADR-007, ADR-027)"
+ours = "src/label.rs::{occurrence_phrase,recurrence_phrase,event_headline,weekday_name}"
+
+# ---- unmapped (NOT in this crate; ADR-027 / ROADMAP M10 disposition) --------
+
+[[unmapped]]
+area     = "CalDAV server HTTP methods (RFC 4791 REPORT / PROPFIND / PUT)"
+priority = "phase-1b"
+note     = "ADR-027 / ROADMAP M10: the CalDAV server surface (calendar-query / calendar-multiget REPORT, PROPFIND, resource PUT/DELETE) is the HTTP front-end over this engine. Network/HTTP-bound; consumes the parsing + recurrence brain unchanged. Clean-room from RFC 4791, not from Radicale."
+
+[[unmapped]]
+area     = "Sync-token + ETag change tracking"
+priority = "phase-1b"
+note     = "ADR-027 / ROADMAP M10: WebDAV sync-collection sync-tokens and per-resource ETags let clients sync incrementally. State/storage-bound; layered on the server scope above. Clean-room from RFC 6578 + RFC 4791."
+
+[[unmapped]]
+area     = "Calendar storage backend (collection + resource persistence)"
+priority = "phase-1b"
+note     = "ADR-027 / ROADMAP M10: durable storage of calendars/resources on disk. Storage/IO-bound; the engine here is storage-agnostic (it parses and reasons over in-memory text). No new calendar logic."
+
+[[unmapped]]
+area     = "Time-zone database — TZID / VTIMEZONE resolution"
+priority = "phase-1b"
+note     = "ADR-027: Phase 1 deliberately treats all times as floating/local (documented in src/date.rs and lib.rs). Full TZID resolution against a VTIMEZONE / IANA tz database is TZ-data-bound and a Phase-1b refinement; the date model already separates civil date from any offset."
+
+[[unmapped]]
+area     = "VTODO / VJOURNAL component handling"
+priority = "phase-1b"
+note     = "ADR-027: Phase 1 ships the VEVENT (appointment) path — the household headline value. VTODO (to-dos) and VJOURNAL (notes) reuse the same content-line + recurrence plumbing with additional component properties; deferred to Phase 1b."
+
+[[unmapped]]
+area     = "Recurrence parts beyond Phase 1 (BYSETPOS / BYYEARDAY / BYWEEKNO / BYHOUR / BYMINUTE / BYSECOND / RDATE)"
+priority = "phase-2"
+note     = "ADR-027: the common household rules (daily/weekly/monthly/yearly with INTERVAL/COUNT/UNTIL/BYDAY/BYMONTHDAY/BYMONTH/WKST) are implemented. The rarer RECUR parts are parsed-but-ignored today and become a Phase-2 completion of the expansion engine; same RRULE plumbing, additional filters."
+
+[[unmapped]]
+area     = "CardDAV / vCard (RFC 6352 / RFC 6350) contacts"
+priority = "phase-2"
+note     = "ADR-027: shared contacts are a sibling PIM surface to the calendar. Out of the Phase-1 calendar-engine scope; a separate clean-room reimplementation from RFC 6352/6350 when the contacts pillar lands."
+
+[[unmapped]]
+area     = "Radicale GPL source reuse"
+priority = "permanent"
+note     = "Charter §6.1 / ADR-027: the upstream Radicale server is GPL-3.0 and may not be read or ported. This crate is clean-room from the public RFCs only — this gap is intentional and permanent."
+
+[[unmapped]]
+area     = "Pre-RFC-5545 (vCalendar 1.0) / legacy iCalendar compatibility"
+priority = "permanent"
+note     = "Charter §8 no-backcompat + §7 always-latest: cave-home targets current RFC 5545 iCalendar only; no historical vCalendar 1.0 compatibility mode."
+
+[[unmapped]]
+area     = "32-bit ARM / pre-Linux 7.1 kernels"
+priority = "permanent"
+note     = "Charter §6.2 / ADR-003 — Linux 7.1+ only."
+
+# ---- spec_test (clean-room: tests designed from the RFC worked examples) ----
+
+[[spec_test]]
+designed_for = "Date math — leap-year rule, month lengths, weekday-of-date against known reference dates, days-from-epoch round trip, month/year clamping, ordinal"
+ours         = "src/date.rs::tests"
+
+[[spec_test]]
+designed_for = "RFC 5545 §3.1 line unfolding (CRLF + LF, space + tab continuation)"
+ours         = "src/ical/parse.rs::tests::{unfolds_crlf_and_lf_folding,unfolds_with_tab_continuation_and_bare_lf}"
+
+[[spec_test]]
+designed_for = "Content-line property/parameter parse + quoted values; VEVENT/VCALENDAR parse incl. nested-VALARM skip and error paths"
+ours         = "src/ical/parse.rs::tests"
+
+[[spec_test]]
+designed_for = "DATE / DATE-TIME value parse (with/without trailing Z) + bad-value rejection"
+ours         = "src/ical/parse.rs::tests::{parses_date_only_value,parses_datetime_value_with_and_without_z,rejects_bad_date_values}"
+
+[[spec_test]]
+designed_for = "DURATION parse forms (PT1H, PT1H30M, P1D, P1W, negative) + event end via DTEND/DURATION/all-day + EXDATE"
+ours         = "src/event.rs::tests"
+
+[[spec_test]]
+designed_for = "RFC 5545 RECUR worked examples — daily COUNT/INTERVAL/UNTIL, every-other-week Mon/Wed/Fri, monthly 1st-Friday + last-Sunday + BYMONTHDAY + negative monthday + day clamping, yearly + yearly with BYMONTH/BYDAY, window clipping, DTSTART floor, COUNT-over-series"
+ours         = "src/rrule.rs::tests"
+
+[[spec_test]]
+designed_for = "Agenda chronological ordering, all-day-before-timed tiebreak, next-occurrence respecting time-of-day, horizon, empty window"
+ours         = "src/agenda.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly EN/DE/TR phrasing — 'Dentist at 3pm tomorrow', 'Trash day every Tuesday', 'Birthday next month', every-other-week / yearly / COUNT / UNTIL phrasing"
+ours         = "src/label.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3 / ADR-027)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

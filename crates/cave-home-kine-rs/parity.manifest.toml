@@ -1,24 +1,192 @@
-# cave-home-kine-rs — parity manifest scaffold.
+# cave-home-kine-rs — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-kine-rs — etcd-compatible SQLite/Postgres-backed datastore (K3s's single-binary trick); upstream: k3s-io/kine; port method: line-by-line (Orchestration Phase 3, ADR-004)
+# Phase 1 ships the kine *decision core*: the etcd-MVCC key/value semantics that
+# kine ("kine is not etcd") presents to the Kubernetes apiserver while storing
+# everything in one SQL table (ADR-004, Orchestration Phase 3 — K3s's single-
+# binary trick). Implemented here as pure, std-only logic over an in-memory row
+# log so the semantics are testable without a database or a network:
+#
+#   * a monotonic global revision (etcd's MVCC clock)
+#   * an append-only revisioned row model: create / update / put / delete
+#     (tombstones) + the current-state view (latest live row per key)
+#   * Range RPC semantics: point get, prefix scan, [key, range_end) intervals,
+#     historical reads at a past revision, and limit
+#   * compaction + the "mvcc: required revision has been compacted" read guard
+#   * watch: the ordered PUT/DELETE event stream after a start revision
+#   * lease/TTL attachment and the (caller-clocked) expiry decision
+#   * the SQL row schema + query templates kine WOULD issue, modelled as typed
+#     Rust and never executed
+#
+# kine is INFRASTRUCTURE, hidden from the homeowner (Charter section 6.3 /
+# ADR-004): this crate produces no user-facing strings. Errors model the etcd
+# wire vocabulary for the future gRPC layer, never the Portal.
+#
+# Port method: HONEST behavioural reimplementation of documented etcd-MVCC and
+# kine semantics from PUBLIC sources — the etcd v3 API reference / MVCC design
+# and the Apache-2.0 k3s-io/kine generic backend. This is NOT a verbatim line-
+# by-line port and is not claimed as one. The real SQL driver, transactions/
+# locking, the etcd gRPC server, TLS and the apiserver wiring are all deferred
+# and enumerated below with an ADR-004 phase disposition.
 
 [crate]
 name             = "cave-home-kine-rs"
 upstream_repo    = "k3s-io/kine"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+port_method      = "spec-based (behavioural reimplementation of etcd-MVCC + kine semantics; NOT verbatim line-by-line)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "etcd v3 API reference — Range / Put / DeleteRange / Txn / Watch / Lease / Compact RPCs (etcd-io/etcd docs, Apache-2.0)",
+    "etcd MVCC design — main revision, create_revision / mod_revision / version, key index & generations (etcd-io/etcd mvcc/, Apache-2.0)",
+    "etcd ErrCompacted semantics — 'mvcc: required revision has been compacted' / ErrFutureRev",
+    "etcd clientv3 prefix & range conventions — WithPrefix / range_end = key+1 / whole-keyspace '\\0'",
+    "k3s-io/kine generic SQL backend — single-table schema (id/name/created/deleted/create_revision/prev_revision/lease/value/old_value) + List/Watch/Compact (Apache-2.0)",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL kine scope (decision core + SQL driver + gRPC
+# etcd server + apiserver wiring). The decision core — the etcd-MVCC semantics
+# kine must get exactly right — is implemented and tested in full; the I/O and
+# protocol shells around it remain and are all ADR-004 Phase-1b deferrals.
+fill_ratio              = 0.30
+fill_ratio_basis        = "revision clock + append-only revisioned store + Range (point/prefix/interval/historical/limit) + compaction & compacted-read guard + watch event stream + lease/TTL expiry + SQL schema/template model, fully implemented & tested; SQL driver + gRPC server + apiserver wiring deferred"
+test_port_ratio         = 0.0   # tests designed from etcd/kine spec, none ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-004 phase disposition + note
+honest_ratio            = 1.00  # 0.30 / (0.30 + (1-0.30)*(1-1.00)) = 1.00
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "etcd monotonic global (main) revision — one revision per write, 0 = current on read"
+ours = "src/revision.rs::Clock"
+
+[[mapped]]
+spec = "etcd future-revision / negative-revision read guard (ErrFutureRev)"
+ours = "src/revision.rs::Clock::resolve_read"
+
+[[mapped]]
+spec = "kine append-only revisioned rows — create_revision / mod_revision / value / lease / deleted"
+ours = "src/store.rs::Row"
+
+[[mapped]]
+spec = "etcd Put / Create / Update / DeleteRange — tombstone-on-delete, generation reset on recreate"
+ours = "src/store.rs::Store::{create,update,put,delete}"
+
+[[mapped]]
+spec = "etcd current-state view — latest non-deleted row per key"
+ours = "src/store.rs::Store::{get_live,live_keys}"
+
+[[mapped]]
+spec = "etcd Range RPC — point get, prefix scan, [key,range_end) interval, whole-keyspace"
+ours = "src/range.rs::execute"
+
+[[mapped]]
+spec = "etcd Range historical read (revision) + limit + more/count flags"
+ours = "src/range.rs::{RangeRequest,RangeResponse}"
+
+[[mapped]]
+spec = "clientv3 prefix successor convention (range_end = key+1, 0xFF carry then whole keyspace)"
+ours = "src/range.rs::prefix_successor"
+
+[[mapped]]
+spec = "etcd Compact — drop superseded/tombstoned history, preserve current state, advance floor"
+ours = "src/compact.rs::compact"
+
+[[mapped]]
+spec = "etcd ErrCompacted — reject historical reads/watches below the compacted revision"
+ours = "src/range.rs::execute + src/watch.rs::watch (KineError::Compacted)"
+
+[[mapped]]
+spec = "etcd Watch — ordered PUT/DELETE event stream after start_revision, key/prefix filtered"
+ours = "src/watch.rs::watch"
+
+[[mapped]]
+spec = "etcd Lease — grant/renew/revoke + TTL expiry deletes attached keys (caller-clocked)"
+ours = "src/lease.rs::LeaseTable"
+
+[[mapped]]
+spec = "kine single-table SQL schema + canonical statement templates (modelled, not executed)"
+ours = "src/sql.rs::{SCHEMA,Statement,create_table_ddl}"
+
+[[mapped]]
+spec = "etcd input validation — empty key, inverted range, negative limit/revision, bad lease/TTL"
+ours = "src/error.rs::KineError + per-module validate"
+
+# ---- unmapped (NOT in this crate; ADR-004 Phase-1b disposition) ------------
+
+[[unmapped]]
+area     = "SQL driver (SQLite / Postgres / MySQL / dqlite)"
+priority = "phase-1b"
+note     = "ADR-004 Phase 3: the decision core is driver-agnostic pure logic; src/sql.rs models the exact table schema + statement templates a driver must satisfy. Wiring those to an actual connection pool is I/O-bound and deferred. No new MVCC logic — the driver executes the plan this crate already defines."
+
+[[unmapped]]
+area     = "gRPC etcd v3 server (Range/Put/DeleteRange/Txn/Watch/Lease/Compact RPCs)"
+priority = "phase-1b"
+note     = "ADR-004 Phase 3: kine speaks the etcd v3 gRPC API to the apiserver. The request/response semantics are implemented here; the tonic/gRPC transport, streaming Watch wire framing and protobuf marshalling are a protocol shell deferred to Phase-1b."
+
+[[unmapped]]
+area     = "Real transactions, row-locking and concurrency control"
+priority = "phase-1b"
+note     = "ADR-004 Phase 3: the in-memory model is single-threaded and append-only; SQL-level BEGIN/COMMIT, the compare-and-swap Txn isolation and the SELECT ... FOR UPDATE locking kine uses for safe concurrent writers are driver-coupled and deferred with the driver."
+
+[[unmapped]]
+area     = "TLS / peer and client transport security"
+priority = "phase-1b"
+note     = "ADR-004 Phase 3: kine's listener serves the apiserver over TLS. Transport security is an I/O concern attached to the gRPC server, deferred with it."
+
+[[unmapped]]
+area     = "apiserver storage-backend wiring (cave-home-apiserver-rs)"
+priority = "phase-1b"
+note     = "ADR-004 Phase 2/3: connecting this datastore to the Kubernetes apiserver storage interface lands once cave-home-apiserver-rs is in place. Cross-crate integration; this crate stays apiserver-agnostic per Charter section 5.1 (no cave-home crate deps)."
+
+[[unmapped]]
+area     = "Lease keep-alive stream + lessor background tick"
+priority = "phase-2"
+note     = "ADR-004: the expiry DECISION is implemented and tested (caller supplies now); the streaming LeaseKeepAlive RPC and the periodic lessor tick that calls it are server-loop concerns that land with the gRPC server."
+
+[[unmapped]]
+area     = "Pre-3.x etcd API / legacy storage-format compatibility"
+priority = "permanent"
+note     = "Charter section 7 always-latest + section 8 no-backcompat: cave-home targets the current etcd v3 API only; no v2 keyspace, no legacy on-disk format, no backward-compat shims."
+
+# ---- spec_test (designed from etcd / kine documented semantics) ------------
+
+[[spec_test]]
+designed_for = "Global revision monotonicity across create/update/put/delete"
+ours         = "src/store.rs::tests::revision_is_monotonic_across_mixed_ops + src/revision.rs::tests"
+
+[[spec_test]]
+designed_for = "Current-state view + tombstone-on-delete + generation reset on recreate"
+ours         = "src/store.rs::tests::{recreate_after_delete_starts_a_new_generation,current_state_view_lists_only_live_keys}"
+
+[[spec_test]]
+designed_for = "Range point get / prefix scan / half-open interval / whole keyspace"
+ours         = "src/range.rs::tests::{point_get_returns_single_key,prefix_scan_selects_only_the_subtree_sorted,explicit_interval_is_half_open,all_keys_returns_everything_live}"
+
+[[spec_test]]
+designed_for = "Historical read at a past revision (value, pre-create, pre-delete)"
+ours         = "src/range.rs::tests::{historical_read_sees_old_value,historical_read_before_create_is_empty,historical_read_sees_key_as_live_before_its_delete}"
+
+[[spec_test]]
+designed_for = "Limit truncation + more/count flags"
+ours         = "src/range.rs::tests::{limit_truncates_and_sets_more,limit_at_or_above_count_clears_more}"
+
+[[spec_test]]
+designed_for = "Compaction drops superseded/tombstoned history, preserves current, + ErrCompacted rejection"
+ours         = "src/compact.rs::tests::{compaction_drops_superseded_values_but_keeps_current,compaction_removes_tombstone_at_or_below_floor,historical_read_below_compacted_floor_is_rejected}"
+
+[[spec_test]]
+designed_for = "Watch event stream ordering + PUT/DELETE classification + start-revision and prefix filtering"
+ours         = "src/watch.rs::tests::{watch_from_zero_replays_all_changes_in_order,watch_classifies_put_and_delete,watch_starts_strictly_after_start_revision,watch_filters_to_a_prefix}"
+
+[[spec_test]]
+designed_for = "Lease TTL expiry deletes attached keys (boundary-inclusive), renewal extends, watchable"
+ours         = "src/lease.rs::tests::{lease_expires_at_granted_plus_ttl_inclusive,expire_deletes_keys_attached_to_the_lease,renewing_a_lease_extends_its_expiry,expiry_deletion_bumps_revision_and_is_watchable}"
+
+[[spec_test]]
+designed_for = "Validation errors — empty key, inverted/equal range, negative limit/revision, bad lease/TTL"
+ours         = "src/range.rs::tests::{inverted_interval_is_rejected,equal_interval_bounds_are_rejected,negative_limit_is_rejected} + src/lease.rs::tests::{grant_rejects_zero_lease_id,grant_rejects_non_positive_ttl}"
+
+[[spec_test]]
+designed_for = "kine SQL schema completeness + statement templates model the MVCC plan (not executed)"
+ours         = "src/sql.rs::tests"

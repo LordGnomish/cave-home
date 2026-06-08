@@ -1,24 +1,165 @@
-# cave-home-wellness — parity manifest scaffold.
+# cave-home-wellness — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-wellness — wearable + health-data integrations (Withings, Garmin, Fitbit, Oura); upstream: HA wellness integrations (Apache-2.0); port method: line-by-line (ADR-025)
+# Phase 1 ships the wellness *decision engine*: validated metric value objects
+# (steps, heart rate, sleep, active minutes, body weight) + a daily aggregate;
+# a goal engine (step / active-minute / sleep goals) with clamped progress and a
+# met flag; the three grandma-friendly bands (resting-HR, sleep-duration,
+# step-activity) with EN/DE/TR names + gentle, non-clinical advice; a pure
+# Improving/Steady/Declining trend classifier; and pure goal-streak counting.
+# This is the brain every Portal tile, voice reply and automation consumes.
+#
+# The wearable/health I/O adapters (Apple Health, Google Fit, Fitbit, Withings,
+# Garmin, BLE heart-rate/scale), the persistent on-device history store, and the
+# cave-home-core integration are network/BLE/storage-bound and deferred to
+# Phase 1b — each is enumerated below with an ADR-025 disposition.
+#
+# Port method: the metric ranges, band thresholds and goal math are implemented
+# from *public, general-population wellness guidance* (sleep-foundation adult
+# 7-9h guidance; widely-published daily-step activity tiers; common adult
+# resting-heart-rate reference ranges), all Apache-2.0-compatible. No GPL source
+# was read. Wellness framing only — these are not clinical/diagnostic criteria.
 
 [crate]
 name             = "cave-home-wellness"
 upstream_repo    = "home-assistant/core (withings, garmin_connect, fitbit, oura)"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+port_method      = "spec-based (wellness engine) + line-by-line (vendor adapters, phase-1b)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "Sleep-foundation general-adult sleep-duration guidance (~7-9 h/night)",
+    "Widely-published daily-step activity tiers (<5k sedentary / 5k-7.5k low / 7.5k-10k active / 10k+ very active)",
+    "Common adult resting-heart-rate reference ranges (~60-100 bpm typical adult resting pulse)",
+    "General plausibility bounds for human metric value objects (sanity guards, not medical limits)",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (engine + wearable/health adapters
+# + on-device history store + core-state integration). The engine is implemented
+# and tested in full; the adapters + history store + core glue remain and are
+# all ADR-justified Phase 1b (or, for cloud-upload, a permanent no).
+fill_ratio              = 0.30
+fill_ratio_basis        = "metric value objects + daily aggregate + goal engine + 3 bands w/ EN/DE/TR UX + trend + streak, fully implemented & tested; wearable/health I/O adapters, on-device history store and core glue deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-025 / Charter disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Validated metric value objects (steps, heart rate, sleep, active minutes, body weight) rejecting impossible values"
+ours = "src/metric.rs::{Steps,HeartRate,SleepDuration,ActiveMinutes,BodyWeight}"
+
+[[mapped]]
+spec = "Per-day metric aggregate keyed on a caller-supplied day tick (no clock)"
+ours = "src/metric.rs::DailyMetrics"
+
+[[mapped]]
+spec = "Goal engine: metric + target + period, clamped progress with met boundary"
+ours = "src/goal.rs::{Goal,progress,GoalProgress}"
+
+[[mapped]]
+spec = "Resting-heart-rate wellness band (Low/Normal/Elevated/High, adult reference ranges)"
+ours = "src/band.rs::RestingHrBand"
+
+[[mapped]]
+spec = "Sleep-duration wellness band (Insufficient/Adequate/Optimal/Excessive, ~7-9h adult guidance)"
+ours = "src/band.rs::SleepBand"
+
+[[mapped]]
+spec = "Step-activity wellness band (Sedentary/Low/Active/VeryActive, published step tiers)"
+ours = "src/band.rs::ActivityBand"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR names + gentle non-clinical advice per band (ADR-007, ADR-025)"
+ours = "src/band.rs::{RestingHrBand,SleepBand,ActivityBand}::{name,advice}"
+
+[[mapped]]
+spec = "Pure trend classifier (Improving/Steady/Declining) over a caller-supplied series with a relative dead-band"
+ours = "src/trend.rs::classify_trend"
+
+[[mapped]]
+spec = "Pure goal-streak counting (longest run + current run) over a passed-in series"
+ours = "src/streak.rs::{longest_streak,current_streak}"
+
+# ---- unmapped (NOT in this crate; ADR-025 / Charter disposition) -----------
+
+[[unmapped]]
+area     = "Apple Health adapter (via HomeKit / HealthKit surface)"
+priority = "phase-1b"
+note     = "ADR-025: read-only Apple Health surfaced via the existing HomeKit accessory bridge. OS/permission-bound; maps onto metric value objects then reuses this engine. No new decision logic."
+
+[[unmapped]]
+area     = "Google Fit adapter"
+priority = "phase-1b"
+note     = "ADR-025: Google Fit cloud read API. Account/OAuth-bound on the user side; cave-home itself stays account-free. I/O adapter only, maps onto metric value objects."
+
+[[unmapped]]
+area     = "Fitbit adapter"
+priority = "phase-1b"
+note     = "ADR-025: line-by-line port of the HA fitbit integration (Apache-2.0). Cloud-API, account-bound on the user side. I/O adapter only; routes readings into this engine."
+
+[[unmapped]]
+area     = "Withings adapter (sleep / scale)"
+priority = "phase-1b"
+note     = "ADR-025: line-by-line port of the HA withings integration (Apache-2.0). Cloud API, optional local hub. Network/account-bound I/O adapter feeding metric value objects."
+
+[[unmapped]]
+area     = "Garmin Connect adapter"
+priority = "phase-1b"
+note     = "ADR-025: line-by-line port of the HA garmin_connect integration (Apache-2.0). Cloud API, account-bound on the user side. I/O adapter only."
+
+[[unmapped]]
+area     = "BLE heart-rate / smart-scale adapter"
+priority = "phase-1b"
+note     = "ADR-025: direct Bluetooth-LE heart-rate (0x180D) and weight-scale profiles for account-free local sensors. BLE/hardware-bound; emits HeartRate / BodyWeight value objects into this engine."
+
+[[unmapped]]
+area     = "Persistent on-device wellness history store"
+priority = "phase-1b"
+note     = "ADR-025 / Charter §9: the multi-day series feeding trend + streak is held on-device only. Storage-bound; lands once the on-device store stabilises. The engine is already store-agnostic (series passed in)."
+
+[[unmapped]]
+area     = "cave-home-core entity/state + automation-trigger integration"
+priority = "phase-1b"
+note     = "ADR-025: surfacing wellness signals as core State entities + family-role-gated (ADR-007) automation triggers lands once cave-home-core's entity API stabilises. The engine is already core-agnostic."
+
+[[unmapped]]
+area     = "Cloud upload / off-device sync of any wellness data"
+priority = "permanent"
+note     = "Charter §9 + ADR-025: wellness data is the most sensitive data in the home. It is computed and kept on-device; cave-home itself never uploads it to any cloud. This is a permanent boundary, not a deferral."
+
+[[unmapped]]
+area     = "Legacy / historical band-threshold compatibility mode"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home ships the current public wellness-guidance thresholds only; no historical-snapshot or legacy-threshold mode."
+
+# ---- spec_test (designed from spec / public wellness guidance) -------------
+
+[[spec_test]]
+designed_for = "Metric validation bounds (steps cap, HR range, sleep/active caps, weight finite+range)"
+ours         = "src/metric.rs::tests"
+
+[[spec_test]]
+designed_for = "Goal progress percent + met boundary (exact, just-under, over-target clamp, zero target)"
+ours         = "src/goal.rs::tests"
+
+[[spec_test]]
+designed_for = "Resting-HR / sleep-duration / step-activity band boundaries"
+ours         = "src/band.rs::tests::{resting_hr_band_boundaries,sleep_band_boundaries,activity_band_boundaries}"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/band.rs::tests::ui_strings_carry_no_implementation_jargon"
+
+[[spec_test]]
+designed_for = "Wellness copy carries no clinical-diagnosis words (ADR-025 non-clinical framing)"
+ours         = "src/band.rs::tests::ui_strings_carry_no_clinical_diagnosis_words"
+
+[[spec_test]]
+designed_for = "Trend up / flat / down + dead-band + degenerate series"
+ours         = "src/trend.rs::tests"
+
+[[spec_test]]
+designed_for = "Goal-streak counting (empty, all-met, gaps, current vs longest)"
+ours         = "src/streak.rs::tests"

@@ -1,939 +1,279 @@
 // SPDX-License-Identifier: Apache-2.0
-//! HTTP layer + in-process client.
+//! The blocking socket loop that binds the [`crate::handler::ApiServer`] to a
+//! real TCP listener — the transport's outermost layer.
 //!
-//! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
-//! - staging/src/k8s.io/apiserver/pkg/server/genericapiserver.go::GenericAPIServer
-//! - staging/src/k8s.io/apiserver/pkg/endpoints/installer.go::APIInstaller
+//! Behavioural reference: the HTTP/1.1 connection lifecycle (read one request,
+//! dispatch, write one response, close). This is a std-only,
+//! thread-per-connection server: no async runtime and no external HTTP/TLS
+//! crate. The connection handler ([`serve_stream`]) is generic over any
+//! `Read + Write`, so a rustls `StreamOwned` (TLS termination) or an h2 framer
+//! slots in front of it without touching the handler chain — TLS itself is
+//! deferred (see `parity.manifest.toml`). HTTP keep-alive is also deferred: each
+//! connection serves exactly one request and then closes (`Connection: close`).
 
-use std::sync::Arc;
+use std::io::{self, Read, Write};
+use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
+use std::sync::{Arc, Mutex};
 
-use async_trait::async_trait;
-use axum::Router;
-use axum::extract::{Path, State};
-use axum::http::{HeaderMap, StatusCode};
-use axum::response::IntoResponse;
-use axum::routing::get;
-use tokio::sync::broadcast;
+use crate::handler::ApiServer;
+use crate::http::Request;
 
-use crate::admission::{AdmissionChain, AdmissionController, AdmissionError};
-use crate::api::{ApiList, ApiObject, ListMeta, TypeMeta, WatchEvent};
-use crate::auth::{
-    AuthzDecision, Authorizer as _, ChainAuthenticator, RbacAuthorizer,
-};
-use crate::client_trait::{ApiClient, ApiClientError, ApiResult};
-use crate::serialization::{decode, encode};
-use crate::storage::{InMemoryStorage, Storage as _, StorageError};
-use crate::types::{AdmissionAttributes, ContentType, ResourceRef, UserInfo, Verb};
-
-/// Top-level server handle.
-pub struct ApiServer {
-    pub storage: Arc<InMemoryStorage>,
-    pub admission: Arc<AdmissionChain>,
-    pub authn: Arc<ChainAuthenticator>,
-    pub authz: Arc<RbacAuthorizer>,
+fn to_io<E: std::fmt::Display>(e: E) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, e.to_string())
 }
 
-impl ApiServer {
-    /// Construct from the four collaborators.
-    pub fn new(
-        storage: Arc<InMemoryStorage>,
-        admission: Arc<AdmissionChain>,
-        authn: Arc<ChainAuthenticator>,
-        authz: Arc<RbacAuthorizer>,
-    ) -> Self {
-        Self {
-            storage,
-            admission,
-            authn,
-            authz,
+fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+fn content_length(req: &Request) -> usize {
+    req.headers
+        .get("content-length")
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(0)
+}
+
+/// Read one complete HTTP/1.1 request from `stream`: the header block (to the
+/// blank line) and then exactly `Content-Length` body bytes. Returns `Ok(None)`
+/// on a clean EOF before any bytes arrive (peer closed without a request).
+///
+/// # Errors
+/// `UnexpectedEof` if the stream ends mid-message, or `InvalidData` if the bytes
+/// do not parse as a request.
+pub fn read_request<R: Read>(stream: &mut R) -> io::Result<Option<Request>> {
+    let mut buf: Vec<u8> = Vec::new();
+    let mut tmp = [0u8; 2048];
+
+    let header_end = loop {
+        if let Some(p) = find_subsequence(&buf, b"\r\n\r\n") {
+            break p + 4;
         }
+        let n = stream.read(&mut tmp)?;
+        if n == 0 {
+            if buf.is_empty() {
+                return Ok(None);
+            }
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "connection closed before request headers completed",
+            ));
+        }
+        buf.extend_from_slice(&tmp[..n]);
+    };
+
+    // Parse the head to learn the body length, then read the rest of the body.
+    let head = Request::parse(&buf[..header_end]).map_err(to_io)?;
+    let want = header_end + content_length(&head);
+    while buf.len() < want {
+        let n = stream.read(&mut tmp)?;
+        if n == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "connection closed before request body completed",
+            ));
+        }
+        buf.extend_from_slice(&tmp[..n]);
     }
 
-    /// Run the full admission/authz/registry pipeline for a write request.
+    Ok(Some(Request::parse(&buf[..want]).map_err(to_io)?))
+}
+
+/// Serve exactly one request on `stream`: read it, run the handler under the
+/// shared lock, write the response (with `Connection: close`), and flush. A
+/// peer that closes without sending a request is a no-op.
+///
+/// # Errors
+/// I/O errors from the underlying stream.
+pub fn serve_stream<S: Read + Write>(stream: &mut S, app: &Mutex<ApiServer>) -> io::Result<()> {
+    let Some(req) = read_request(stream)? else {
+        return Ok(());
+    };
+    let mut resp = {
+        // A poisoned lock still holds a valid server; recover and continue.
+        let mut guard = app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        guard.handle(&req)
+    };
+    resp.headers.insert("connection", "close");
+    stream.write_all(&resp.to_bytes())?;
+    stream.flush()
+}
+
+/// A blocking, thread-per-connection HTTP server bound to a TCP port.
+pub struct Server {
+    listener: TcpListener,
+    app: Arc<Mutex<ApiServer>>,
+}
+
+impl Server {
+    /// Bind to `addr` (use port `0` for an ephemeral port) wrapping a shared
+    /// [`ApiServer`].
     ///
-    /// Source: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/{create,update,delete}.go
-    async fn process_write(
-        &self,
-        user: &UserInfo,
-        key: &ResourceRef,
-        verb: Verb,
-        mut object: Option<ApiObject>,
-    ) -> ApiResult<ApiObject> {
-        // AuthZ first.
-        match self.authz.authorize(user, key, verb).await {
-            Ok(AuthzDecision::Allow) => {}
-            Ok(AuthzDecision::Deny) => {
-                return Err(ApiClientError::Forbidden(format!(
-                    "user {} denied {} on {}",
-                    user.name,
-                    verb.as_str(),
-                    key.storage_key()
-                )));
-            }
-            Ok(AuthzDecision::NoOpinion) => {
-                // Phase 2: no other authorizers => default deny ONLY when
-                // there are bindings configured. With empty bindings the
-                // server runs open (test-friendly).
-                if !user.name.is_empty() && user.name == "system:anonymous" {
-                    return Err(ApiClientError::Unauthorized("anonymous".into()));
+    /// # Errors
+    /// Any bind error from the OS.
+    pub fn bind(addr: impl ToSocketAddrs, app: Arc<Mutex<ApiServer>>) -> io::Result<Self> {
+        Ok(Self {
+            listener: TcpListener::bind(addr)?,
+            app,
+        })
+    }
+
+    /// The bound local address (resolves the ephemeral port).
+    ///
+    /// # Errors
+    /// If the socket address cannot be read.
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.listener.local_addr()
+    }
+
+    /// Accept and fully serve a single connection (one request). Used by tests
+    /// and by callers that drive their own accept cadence.
+    ///
+    /// # Errors
+    /// Accept or per-connection I/O errors.
+    pub fn serve_once(&self) -> io::Result<()> {
+        let (mut stream, _peer) = self.listener.accept()?;
+        serve_stream(&mut stream, &self.app)
+    }
+
+    /// Run the accept loop forever, serving each connection on the calling
+    /// thread. Per-connection errors are swallowed so one bad client cannot stop
+    /// the server.
+    ///
+    /// # Errors
+    /// A fatal accept error.
+    pub fn run(&self) -> io::Result<()> {
+        for conn in self.listener.incoming() {
+            match conn {
+                Ok(mut stream) => {
+                    let _ = serve_stream(&mut stream, &self.app);
                 }
-            }
-            Err(e) => return Err(ApiClientError::Internal(e.to_string())),
-        }
-
-        // Admission chain.
-        let mut attrs = AdmissionAttributes {
-            resource: key.clone(),
-            verb,
-            user: user.clone(),
-            object: object.as_ref().and_then(|o| serde_json::to_value(o).ok()),
-            old_object: None,
-            dry_run: false,
-        };
-        if let Err(e) = self.admission.admit(&mut attrs).await {
-            return Err(admission_to_api(e));
-        }
-        if let Err(e) = self.admission.validate(&attrs).await {
-            return Err(admission_to_api(e));
-        }
-        // Mutating admission may have rewritten the object — pull it back.
-        if let Some(mutated) = attrs.object.take()
-            && object.is_some()
-        {
-            if let Ok(o) = serde_json::from_value::<ApiObject>(mutated) {
-                object = Some(o);
+                Err(e) => return Err(e),
             }
         }
-
-        // Storage dispatch.
-        let res = match verb {
-            Verb::Create => self.storage.create(key, object.unwrap_or_default()).await,
-            Verb::Update => self.storage.update(key, object.unwrap_or_default()).await,
-            Verb::Delete => self.storage.delete(key).await,
-            _ => unreachable!("process_write only handles writes"),
-        };
-        res.map_err(storage_to_api)
-    }
-
-    /// AuthZ + storage read.
-    async fn process_read(
-        &self,
-        user: &UserInfo,
-        key: &ResourceRef,
-        verb: Verb,
-    ) -> ApiResult<ApiObject> {
-        let _ = self.authz.authorize(user, key, verb).await; // reads are open in Phase 2
-        self.storage.get(key).await.map_err(storage_to_api)
-    }
-
-    async fn process_list(
-        &self,
-        user: &UserInfo,
-        key: &ResourceRef,
-    ) -> ApiResult<Vec<ApiObject>> {
-        let _ = self.authz.authorize(user, key, Verb::List).await;
-        self.storage.list(key).await.map_err(storage_to_api)
-    }
-
-    fn process_watch(&self, key: &ResourceRef) -> broadcast::Receiver<WatchEvent> {
-        self.storage.watch(key)
+        Ok(())
     }
 }
-
-fn storage_to_api(e: StorageError) -> ApiClientError {
-    match e {
-        StorageError::NotFound(s) => ApiClientError::NotFound(s),
-        StorageError::AlreadyExists(s) => ApiClientError::AlreadyExists(s),
-        StorageError::Conflict(s, _, _) => ApiClientError::Conflict(s),
-        StorageError::Invalid(s) => ApiClientError::Invalid(s),
-        StorageError::Internal(s) => ApiClientError::Internal(s),
-    }
-}
-
-fn admission_to_api(e: AdmissionError) -> ApiClientError {
-    match e {
-        AdmissionError::Rejected(s) => ApiClientError::Invalid(s),
-        AdmissionError::Internal(s) => ApiClientError::Internal(s),
-    }
-}
-
-// ---------- InProcessClient ------------------------------------------------
-
-/// `ApiClient` impl that dispatches directly to the registry inside the
-/// same Rust process. Used by the in-binary scheduler/controller-manager
-/// without going through HTTP.
-pub struct InProcessClient {
-    pub server: Arc<ApiServer>,
-    /// Identity passed to authz/admission. Defaults to the cluster admin.
-    pub user: UserInfo,
-}
-
-impl InProcessClient {
-    /// Construct a direct-call client.
-    #[must_use]
-    pub fn new(server: Arc<ApiServer>) -> Self {
-        Self {
-            server,
-            user: UserInfo {
-                name: "system:admin".to_string(),
-                uid: String::new(),
-                groups: vec!["system:masters".to_string()],
-                extra: Default::default(),
-            },
-        }
-    }
-
-    /// Override the identity (used in tests / non-admin callers).
-    #[must_use]
-    pub fn with_user(mut self, user: UserInfo) -> Self {
-        self.user = user;
-        self
-    }
-}
-
-#[async_trait]
-impl ApiClient for InProcessClient {
-    async fn get(&self, key: &ResourceRef) -> ApiResult<ApiObject> {
-        self.server.process_read(&self.user, key, Verb::Get).await
-    }
-    async fn list(&self, key: &ResourceRef) -> ApiResult<Vec<ApiObject>> {
-        self.server.process_list(&self.user, key).await
-    }
-    fn watch(&self, key: &ResourceRef) -> broadcast::Receiver<WatchEvent> {
-        self.server.process_watch(key)
-    }
-    async fn create(&self, key: &ResourceRef, obj: ApiObject) -> ApiResult<ApiObject> {
-        self.server
-            .process_write(&self.user, key, Verb::Create, Some(obj))
-            .await
-    }
-    async fn update(&self, key: &ResourceRef, obj: ApiObject) -> ApiResult<ApiObject> {
-        self.server
-            .process_write(&self.user, key, Verb::Update, Some(obj))
-            .await
-    }
-    async fn patch(&self, key: &ResourceRef, patch: serde_json::Value) -> ApiResult<ApiObject> {
-        // JSON-Merge-Patch (RFC 7396).
-        let current = self.server.process_read(&self.user, key, Verb::Patch).await?;
-        let mut value = serde_json::to_value(&current)
-            .map_err(|e| ApiClientError::Internal(e.to_string()))?;
-        merge_patch(&mut value, &patch);
-        let merged: ApiObject = serde_json::from_value(value)
-            .map_err(|e| ApiClientError::Invalid(e.to_string()))?;
-        self.server
-            .process_write(&self.user, key, Verb::Update, Some(merged))
-            .await
-    }
-    async fn delete(&self, key: &ResourceRef) -> ApiResult<ApiObject> {
-        self.server
-            .process_write(&self.user, key, Verb::Delete, None)
-            .await
-    }
-}
-
-/// JSON Merge Patch (RFC 7396) — mutates `target` in place.
-///
-/// Source: staging/src/k8s.io/apimachinery/pkg/util/strategicpatch (the
-/// merge-patch path; strategic-merge is not Phase 2 scope).
-fn merge_patch(target: &mut serde_json::Value, patch: &serde_json::Value) {
-    use serde_json::Value;
-    match (target, patch) {
-        (Value::Object(t), Value::Object(p)) => {
-            for (k, v) in p {
-                if v.is_null() {
-                    t.remove(k);
-                } else if t.contains_key(k) {
-                    if let Some(existing) = t.get_mut(k) {
-                        merge_patch(existing, v);
-                    }
-                } else {
-                    t.insert(k.clone(), v.clone());
-                }
-            }
-        }
-        (t, p) => *t = p.clone(),
-    }
-}
-
-// ---------- HTTP router ----------------------------------------------------
-
-/// Build the axum `Router` that serves core/v1, apps/v1, batch/v1.
-///
-/// Source: staging/src/k8s.io/apiserver/pkg/endpoints/installer.go::APIInstaller
-pub fn http_router(server: Arc<ApiServer>) -> Router {
-    Router::new()
-        // /api/v1/...
-        .route(
-            "/api/v1/:resource",
-            get(handle_list_cluster).post(handle_create_cluster),
-        )
-        .route(
-            "/api/v1/:resource/:name",
-            get(handle_get_cluster)
-                .put(handle_update_cluster)
-                .delete(handle_delete_cluster)
-                .patch(handle_patch_cluster),
-        )
-        .route(
-            "/api/v1/namespaces/:namespace/:resource",
-            get(handle_list_namespaced).post(handle_create_namespaced),
-        )
-        .route(
-            "/api/v1/namespaces/:namespace/:resource/:name",
-            get(handle_get_namespaced)
-                .put(handle_update_namespaced)
-                .delete(handle_delete_namespaced)
-                .patch(handle_patch_namespaced),
-        )
-        // /apis/{group}/{version}/...
-        .route(
-            "/apis/:group/:version/:resource",
-            get(handle_list_grouped_cluster).post(handle_create_grouped_cluster),
-        )
-        .route(
-            "/apis/:group/:version/namespaces/:namespace/:resource",
-            get(handle_list_grouped).post(handle_create_grouped),
-        )
-        .route(
-            "/apis/:group/:version/namespaces/:namespace/:resource/:name",
-            get(handle_get_grouped)
-                .put(handle_update_grouped)
-                .delete(handle_delete_grouped)
-                .patch(handle_patch_grouped),
-        )
-        .with_state(server)
-}
-
-/// Build a real HTTP server bound to `addr` and run it to completion.
-///
-/// This is the surface the binary main wires up. Test-only callers can
-/// hold the `Router` directly via `http_router`.
-pub async fn serve(server: Arc<ApiServer>, addr: std::net::SocketAddr) -> std::io::Result<()> {
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, http_router(server))
-        .await
-        .map_err(std::io::Error::other)
-}
-
-fn pick_content_type(headers: &HeaderMap) -> ContentType {
-    headers
-        .get("accept")
-        .and_then(|v| v.to_str().ok())
-        .map(ContentType::parse)
-        .unwrap_or(ContentType::Json)
-}
-
-fn extract_user(_headers: &HeaderMap) -> UserInfo {
-    // Phase 2 minimal: every HTTP caller is system:admin until we wire
-    // the authenticator chain into the axum layer. Real wiring lands
-    // alongside the front-proxy work in Phase 2b.
-    UserInfo {
-        name: "system:admin".to_string(),
-        uid: String::new(),
-        groups: vec!["system:masters".to_string()],
-        extra: Default::default(),
-    }
-}
-
-fn api_error_status(err: &ApiClientError) -> StatusCode {
-    match err {
-        ApiClientError::NotFound(_) => StatusCode::NOT_FOUND,
-        ApiClientError::AlreadyExists(_) => StatusCode::CONFLICT,
-        ApiClientError::Conflict(_) => StatusCode::CONFLICT,
-        ApiClientError::Forbidden(_) => StatusCode::FORBIDDEN,
-        ApiClientError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
-        ApiClientError::Invalid(_) => StatusCode::UNPROCESSABLE_ENTITY,
-        ApiClientError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-    }
-}
-
-fn err_response(err: ApiClientError) -> axum::response::Response {
-    let status = api_error_status(&err);
-    let body = serde_json::json!({
-        "kind": "Status",
-        "apiVersion": "v1",
-        "status": "Failure",
-        "message": err.to_string(),
-        "code": status.as_u16(),
-    });
-    (status, axum::Json(body)).into_response()
-}
-
-fn ok_object(obj: ApiObject, headers: &HeaderMap) -> axum::response::Response {
-    let ct = pick_content_type(headers);
-    match encode(&obj, ct) {
-        Ok(bytes) => ([("content-type", ct.mime())], bytes).into_response(),
-        Err(e) => err_response(ApiClientError::Internal(e.to_string())),
-    }
-}
-
-fn ok_list(items: Vec<ApiObject>, headers: &HeaderMap, kind: &str) -> axum::response::Response {
-    let list = ApiList {
-        type_meta: TypeMeta {
-            api_version: "v1".to_string(),
-            kind: format!("{kind}List"),
-        },
-        metadata: ListMeta::default(),
-        items,
-    };
-    let ct = pick_content_type(headers);
-    let body = match ct {
-        ContentType::Json => serde_json::to_vec(&list)
-            .map_err(|e| ApiClientError::Internal(e.to_string())),
-        ContentType::Yaml => serde_yaml::to_string(&list)
-            .map(String::into_bytes)
-            .map_err(|e| ApiClientError::Internal(e.to_string())),
-    };
-    match body {
-        Ok(b) => ([("content-type", ct.mime())], b).into_response(),
-        Err(e) => err_response(e),
-    }
-}
-
-// ---------- core/v1 cluster-scoped ----------------------------------------
-
-async fn handle_list_cluster(
-    Path(resource): Path<String>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let kref = ResourceRef::cluster("", "v1", resource.clone(), "");
-    match server.process_list(&user, &kref).await {
-        Ok(items) => {
-            let kind = crate::api::core_v1::kind_of(&resource).unwrap_or("Object");
-            ok_list(items, &headers, kind)
-        }
-        Err(e) => err_response(e),
-    }
-}
-
-async fn handle_get_cluster(
-    Path((resource, name)): Path<(String, String)>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let kref = ResourceRef::cluster("", "v1", resource, name);
-    match server.process_read(&user, &kref, Verb::Get).await {
-        Ok(o) => ok_object(o, &headers),
-        Err(e) => err_response(e),
-    }
-}
-
-async fn handle_create_cluster(
-    Path(resource): Path<String>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-    body: axum::body::Bytes,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let ct = headers
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .map(ContentType::parse)
-        .unwrap_or(ContentType::Json);
-    let obj = match decode(&body, ct) {
-        Ok(o) => o,
-        Err(e) => return err_response(ApiClientError::Invalid(e.to_string())),
-    };
-    let kref = ResourceRef::cluster("", "v1", resource, obj.metadata.name.clone());
-    match server
-        .process_write(&user, &kref, Verb::Create, Some(obj))
-        .await
-    {
-        Ok(o) => ok_object(o, &headers),
-        Err(e) => err_response(e),
-    }
-}
-
-async fn handle_update_cluster(
-    Path((resource, name)): Path<(String, String)>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-    body: axum::body::Bytes,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let ct = pick_content_type(&headers);
-    let obj = match decode(&body, ct) {
-        Ok(o) => o,
-        Err(e) => return err_response(ApiClientError::Invalid(e.to_string())),
-    };
-    let kref = ResourceRef::cluster("", "v1", resource, name);
-    match server
-        .process_write(&user, &kref, Verb::Update, Some(obj))
-        .await
-    {
-        Ok(o) => ok_object(o, &headers),
-        Err(e) => err_response(e),
-    }
-}
-
-async fn handle_patch_cluster(
-    Path((resource, name)): Path<(String, String)>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-    body: axum::body::Bytes,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let patch: serde_json::Value = match serde_json::from_slice(&body) {
-        Ok(v) => v,
-        Err(e) => return err_response(ApiClientError::Invalid(e.to_string())),
-    };
-    let client = InProcessClient::new(server.clone()).with_user(user);
-    let kref = ResourceRef::cluster("", "v1", resource, name);
-    match client.patch(&kref, patch).await {
-        Ok(o) => ok_object(o, &headers),
-        Err(e) => err_response(e),
-    }
-}
-
-async fn handle_delete_cluster(
-    Path((resource, name)): Path<(String, String)>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let kref = ResourceRef::cluster("", "v1", resource, name);
-    match server
-        .process_write(&user, &kref, Verb::Delete, None)
-        .await
-    {
-        Ok(o) => ok_object(o, &headers),
-        Err(e) => err_response(e),
-    }
-}
-
-// ---------- core/v1 namespaced --------------------------------------------
-
-async fn handle_list_namespaced(
-    Path((namespace, resource)): Path<(String, String)>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let kref = ResourceRef::namespaced("", "v1", resource.clone(), namespace, "");
-    match server.process_list(&user, &kref).await {
-        Ok(items) => {
-            let kind = crate::api::core_v1::kind_of(&resource).unwrap_or("Object");
-            ok_list(items, &headers, kind)
-        }
-        Err(e) => err_response(e),
-    }
-}
-
-async fn handle_get_namespaced(
-    Path((namespace, resource, name)): Path<(String, String, String)>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let kref = ResourceRef::namespaced("", "v1", resource, namespace, name);
-    match server.process_read(&user, &kref, Verb::Get).await {
-        Ok(o) => ok_object(o, &headers),
-        Err(e) => err_response(e),
-    }
-}
-
-async fn handle_create_namespaced(
-    Path((namespace, resource)): Path<(String, String)>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-    body: axum::body::Bytes,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let ct = headers
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .map(ContentType::parse)
-        .unwrap_or(ContentType::Json);
-    let mut obj = match decode(&body, ct) {
-        Ok(o) => o,
-        Err(e) => return err_response(ApiClientError::Invalid(e.to_string())),
-    };
-    obj.metadata.namespace = namespace.clone();
-    let kref = ResourceRef::namespaced(
-        "",
-        "v1",
-        resource,
-        namespace,
-        obj.metadata.name.clone(),
-    );
-    match server
-        .process_write(&user, &kref, Verb::Create, Some(obj))
-        .await
-    {
-        Ok(o) => ok_object(o, &headers),
-        Err(e) => err_response(e),
-    }
-}
-
-async fn handle_update_namespaced(
-    Path((namespace, resource, name)): Path<(String, String, String)>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-    body: axum::body::Bytes,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let ct = pick_content_type(&headers);
-    let obj = match decode(&body, ct) {
-        Ok(o) => o,
-        Err(e) => return err_response(ApiClientError::Invalid(e.to_string())),
-    };
-    let kref = ResourceRef::namespaced("", "v1", resource, namespace, name);
-    match server
-        .process_write(&user, &kref, Verb::Update, Some(obj))
-        .await
-    {
-        Ok(o) => ok_object(o, &headers),
-        Err(e) => err_response(e),
-    }
-}
-
-async fn handle_patch_namespaced(
-    Path((namespace, resource, name)): Path<(String, String, String)>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-    body: axum::body::Bytes,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let patch: serde_json::Value = match serde_json::from_slice(&body) {
-        Ok(v) => v,
-        Err(e) => return err_response(ApiClientError::Invalid(e.to_string())),
-    };
-    let client = InProcessClient::new(server.clone()).with_user(user);
-    let kref = ResourceRef::namespaced("", "v1", resource, namespace, name);
-    match client.patch(&kref, patch).await {
-        Ok(o) => ok_object(o, &headers),
-        Err(e) => err_response(e),
-    }
-}
-
-async fn handle_delete_namespaced(
-    Path((namespace, resource, name)): Path<(String, String, String)>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let kref = ResourceRef::namespaced("", "v1", resource, namespace, name);
-    match server
-        .process_write(&user, &kref, Verb::Delete, None)
-        .await
-    {
-        Ok(o) => ok_object(o, &headers),
-        Err(e) => err_response(e),
-    }
-}
-
-// ---------- /apis/{group}/{version} ---------------------------------------
-
-async fn handle_list_grouped_cluster(
-    Path((group, version, resource)): Path<(String, String, String)>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let kref = ResourceRef::cluster(group, version, resource, "");
-    match server.process_list(&user, &kref).await {
-        Ok(items) => ok_list(items, &headers, "Object"),
-        Err(e) => err_response(e),
-    }
-}
-
-async fn handle_create_grouped_cluster(
-    Path((group, version, resource)): Path<(String, String, String)>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-    body: axum::body::Bytes,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let ct = pick_content_type(&headers);
-    let obj = match decode(&body, ct) {
-        Ok(o) => o,
-        Err(e) => return err_response(ApiClientError::Invalid(e.to_string())),
-    };
-    let kref = ResourceRef::cluster(group, version, resource, obj.metadata.name.clone());
-    match server
-        .process_write(&user, &kref, Verb::Create, Some(obj))
-        .await
-    {
-        Ok(o) => ok_object(o, &headers),
-        Err(e) => err_response(e),
-    }
-}
-
-async fn handle_list_grouped(
-    Path((group, version, namespace, resource)): Path<(String, String, String, String)>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let kref = ResourceRef::namespaced(group, version, resource, namespace, "");
-    match server.process_list(&user, &kref).await {
-        Ok(items) => ok_list(items, &headers, "Object"),
-        Err(e) => err_response(e),
-    }
-}
-
-async fn handle_create_grouped(
-    Path((group, version, namespace, resource)): Path<(String, String, String, String)>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-    body: axum::body::Bytes,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let ct = pick_content_type(&headers);
-    let mut obj = match decode(&body, ct) {
-        Ok(o) => o,
-        Err(e) => return err_response(ApiClientError::Invalid(e.to_string())),
-    };
-    obj.metadata.namespace = namespace.clone();
-    let kref = ResourceRef::namespaced(
-        group,
-        version,
-        resource,
-        namespace,
-        obj.metadata.name.clone(),
-    );
-    match server
-        .process_write(&user, &kref, Verb::Create, Some(obj))
-        .await
-    {
-        Ok(o) => ok_object(o, &headers),
-        Err(e) => err_response(e),
-    }
-}
-
-async fn handle_get_grouped(
-    Path((group, version, namespace, resource, name)): Path<(
-        String,
-        String,
-        String,
-        String,
-        String,
-    )>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let kref = ResourceRef::namespaced(group, version, resource, namespace, name);
-    match server.process_read(&user, &kref, Verb::Get).await {
-        Ok(o) => ok_object(o, &headers),
-        Err(e) => err_response(e),
-    }
-}
-
-async fn handle_update_grouped(
-    Path((group, version, namespace, resource, name)): Path<(
-        String,
-        String,
-        String,
-        String,
-        String,
-    )>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-    body: axum::body::Bytes,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let ct = pick_content_type(&headers);
-    let obj = match decode(&body, ct) {
-        Ok(o) => o,
-        Err(e) => return err_response(ApiClientError::Invalid(e.to_string())),
-    };
-    let kref = ResourceRef::namespaced(group, version, resource, namespace, name);
-    match server
-        .process_write(&user, &kref, Verb::Update, Some(obj))
-        .await
-    {
-        Ok(o) => ok_object(o, &headers),
-        Err(e) => err_response(e),
-    }
-}
-
-async fn handle_patch_grouped(
-    Path((group, version, namespace, resource, name)): Path<(
-        String,
-        String,
-        String,
-        String,
-        String,
-    )>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-    body: axum::body::Bytes,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let patch: serde_json::Value = match serde_json::from_slice(&body) {
-        Ok(v) => v,
-        Err(e) => return err_response(ApiClientError::Invalid(e.to_string())),
-    };
-    let client = InProcessClient::new(server.clone()).with_user(user);
-    let kref = ResourceRef::namespaced(group, version, resource, namespace, name);
-    match client.patch(&kref, patch).await {
-        Ok(o) => ok_object(o, &headers),
-        Err(e) => err_response(e),
-    }
-}
-
-async fn handle_delete_grouped(
-    Path((group, version, namespace, resource, name)): Path<(
-        String,
-        String,
-        String,
-        String,
-        String,
-    )>,
-    State(server): State<Arc<ApiServer>>,
-    headers: HeaderMap,
-) -> axum::response::Response {
-    let user = extract_user(&headers);
-    let kref = ResourceRef::namespaced(group, version, resource, namespace, name);
-    match server
-        .process_write(&user, &kref, Verb::Delete, None)
-        .await
-    {
-        Ok(o) => ok_object(o, &headers),
-        Err(e) => err_response(e),
-    }
-}
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::admission::{NamespaceLifecycle, ServiceAccount};
-    use crate::client_trait::ApiClient;
+    use std::io::Cursor;
+    use std::net::TcpStream;
 
-    fn build_server() -> Arc<ApiServer> {
-        Arc::new(ApiServer::new(
-            Arc::new(InMemoryStorage::new()),
-            Arc::new(AdmissionChain::new(vec![
-                Box::new(NamespaceLifecycle::new(vec!["default".into()])),
-                Box::new(ServiceAccount::new()),
-            ])),
-            Arc::new(ChainAuthenticator::new(vec![])),
-            Arc::new(RbacAuthorizer::new()),
-        ))
+    /// An in-memory duplex stream: reads drain `input`, writes accumulate in
+    /// `output`. Lets us exercise [`serve_stream`] without a socket.
+    struct MockStream {
+        input: Cursor<Vec<u8>>,
+        output: Vec<u8>,
     }
 
-    #[tokio::test]
-    async fn in_process_create_get_list_delete() {
-        let server = build_server();
-        let client = InProcessClient::new(server.clone());
-
-        let key = ResourceRef::namespaced("", "v1", "pods", "default", "p1");
-        let mut pod = ApiObject::new("v1", "Pod", "p1").with_namespace("default");
-        pod.spec = Some(serde_json::json!({"serviceAccountName": "default"}));
-
-        let created = client.create(&key, pod).await.expect("create");
-        assert!(!created.metadata.uid.is_empty());
-
-        let got = client.get(&key).await.expect("get");
-        assert_eq!(got.metadata.name, "p1");
-
-        let listed = client
-            .list(&ResourceRef::namespaced("", "v1", "pods", "default", ""))
-            .await
-            .expect("list");
-        assert_eq!(listed.len(), 1);
-
-        let deleted = client.delete(&key).await.expect("delete");
-        assert_eq!(deleted.metadata.name, "p1");
+    impl Read for MockStream {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.input.read(buf)
+        }
     }
-
-    #[tokio::test]
-    async fn namespace_lifecycle_rejects_create_in_missing_namespace() {
-        let server = build_server();
-        let client = InProcessClient::new(server);
-        let key = ResourceRef::namespaced("", "v1", "pods", "non-existent", "p1");
-        let mut pod = ApiObject::new("v1", "Pod", "p1").with_namespace("non-existent");
-        pod.spec = Some(serde_json::json!({"serviceAccountName": "default"}));
-        let err = client.create(&key, pod).await.expect_err("rejected");
-        assert!(matches!(err, ApiClientError::Invalid(_)));
-    }
-
-    #[tokio::test]
-    async fn admission_injects_default_service_account() {
-        let server = build_server();
-        let client = InProcessClient::new(server);
-        let key = ResourceRef::namespaced("", "v1", "pods", "default", "p2");
-        let mut pod = ApiObject::new("v1", "Pod", "p2").with_namespace("default");
-        pod.spec = Some(serde_json::json!({}));
-        let created = client.create(&key, pod).await.expect("create");
-        let sa = created
-            .spec
-            .as_ref()
-            .and_then(|s| s.get("serviceAccountName"))
-            .and_then(|v| v.as_str())
-            .expect("sa set");
-        assert_eq!(sa, "default");
-    }
-
-    #[tokio::test]
-    async fn patch_merges_into_existing_data() {
-        let server = build_server();
-        let client = InProcessClient::new(server);
-        let key = ResourceRef::namespaced("", "v1", "configmaps", "default", "cm");
-        let cm = ApiObject::new("v1", "ConfigMap", "cm").with_namespace("default");
-        client.create(&key, cm).await.expect("create");
-
-        let patch_v = serde_json::json!({"data": {"hello": "world"}});
-        let patched = client.patch(&key, patch_v).await.expect("patch");
-        assert_eq!(
-            patched
-                .extra
-                .get("data")
-                .and_then(|d| d.get("hello"))
-                .and_then(|v| v.as_str()),
-            Some("world")
-        );
+    impl Write for MockStream {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.output.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
     }
 
     #[test]
-    fn merge_patch_deletes_null_keys() {
-        let mut t = serde_json::json!({"a": 1, "b": 2});
-        let p = serde_json::json!({"b": null, "c": 3});
-        merge_patch(&mut t, &p);
-        assert_eq!(t, serde_json::json!({"a": 1, "c": 3}));
+    fn read_request_parses_buffered_message() {
+        let raw = b"POST /api/v1/namespaces/default/pods HTTP/1.1\r\ncontent-length: 5\r\n\r\nhello";
+        let mut cur = Cursor::new(raw.to_vec());
+        let req = read_request(&mut cur).expect("io").expect("some");
+        assert_eq!(req.path(), "/api/v1/namespaces/default/pods");
+        assert_eq!(req.body, b"hello");
     }
 
-    #[tokio::test]
-    async fn http_router_lists_pods() {
-        let server = build_server();
-        let router = http_router(server.clone());
-
-        let client = InProcessClient::new(server);
-        let key = ResourceRef::namespaced("", "v1", "pods", "default", "pp");
-        let mut pod = ApiObject::new("v1", "Pod", "pp").with_namespace("default");
-        pod.spec = Some(serde_json::json!({"serviceAccountName": "default"}));
-        client.create(&key, pod).await.expect("create");
-
-        use tower::ServiceExt;
-        let req = axum::http::Request::builder()
-            .uri("/api/v1/namespaces/default/pods")
-            .body(axum::body::Body::empty())
-            .unwrap();
-        let resp = router.oneshot(req).await.expect("call");
-        assert_eq!(resp.status(), StatusCode::OK);
+    #[test]
+    fn read_request_clean_eof_is_none() {
+        let mut cur = Cursor::new(Vec::new());
+        assert!(read_request(&mut cur).expect("io").is_none());
     }
 
-    #[tokio::test]
-    async fn http_router_get_one_pod() {
-        let server = build_server();
-        let router = http_router(server.clone());
-        let client = InProcessClient::new(server);
-        let key = ResourceRef::namespaced("", "v1", "pods", "default", "got");
-        let mut pod = ApiObject::new("v1", "Pod", "got").with_namespace("default");
-        pod.spec = Some(serde_json::json!({"serviceAccountName": "default"}));
-        client.create(&key, pod).await.expect("create");
+    #[test]
+    fn serve_stream_writes_handler_response() {
+        let app = Mutex::new(ApiServer::new());
+        let raw = b"GET /healthz HTTP/1.1\r\n\r\n";
+        let mut stream = MockStream { input: Cursor::new(raw.to_vec()), output: Vec::new() };
+        serve_stream(&mut stream, &app).expect("serve");
+        let text = String::from_utf8(stream.output).expect("utf8");
+        assert!(text.starts_with("HTTP/1.1 200 OK\r\n"));
+        assert!(text.to_ascii_lowercase().contains("connection: close"));
+        assert!(text.ends_with("ok"));
+    }
 
-        use tower::ServiceExt;
-        let req = axum::http::Request::builder()
-            .uri("/api/v1/namespaces/default/pods/got")
-            .body(axum::body::Body::empty())
-            .unwrap();
-        let resp = router.oneshot(req).await.expect("call");
-        assert_eq!(resp.status(), StatusCode::OK);
+    // --- real TCP integration: a kubectl-style REST session -----------------
+
+    /// Open a fresh connection, send `raw`, and read the whole response to EOF.
+    fn http_call(addr: SocketAddr, raw: &str) -> String {
+        let mut conn = TcpStream::connect(addr).expect("connect");
+        conn.write_all(raw.as_bytes()).expect("write");
+        conn.flush().expect("flush");
+        let mut resp = Vec::new();
+        conn.read_to_end(&mut resp).expect("read");
+        String::from_utf8_lossy(&resp).into_owned()
+    }
+
+    fn get(path: &str) -> String {
+        format!("GET {path} HTTP/1.1\r\nhost: test\r\n\r\n")
+    }
+
+    fn post(path: &str, body: &str) -> String {
+        format!(
+            "POST {path} HTTP/1.1\r\nhost: test\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
+            body.len()
+        )
+    }
+
+    #[test]
+    fn kubectl_style_rest_session_over_tcp() {
+        let app = Arc::new(Mutex::new(ApiServer::new()));
+        let server = Server::bind("127.0.0.1:0", app).expect("bind");
+        let addr = server.local_addr().expect("addr");
+
+        // Serve 5 connections (create, get, list, watch, delete) on a worker.
+        let worker = std::thread::spawn(move || {
+            for _ in 0..5 {
+                server.serve_once().expect("serve_once");
+            }
+        });
+
+        // 1. Create a pod (POST collection → 201).
+        let pod = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default"}}"#;
+        let created = http_call(addr, &post("/api/v1/namespaces/default/pods", pod));
+        assert!(created.starts_with("HTTP/1.1 201 Created\r\n"), "create: {created}");
+        assert!(created.contains(r#""name":"nginx""#));
+        assert!(created.contains(r#""resourceVersion":"1""#));
+
+        // 2. Get it back (200).
+        let got = http_call(addr, &get("/api/v1/namespaces/default/pods/nginx"));
+        assert!(got.starts_with("HTTP/1.1 200 OK\r\n"), "get: {got}");
+        assert!(got.contains(r#""name":"nginx""#));
+
+        // 3. List the collection (200, PodList).
+        let listed = http_call(addr, &get("/api/v1/namespaces/default/pods"));
+        assert!(listed.contains(r#""kind":"PodList""#), "list: {listed}");
+
+        // 4. Watch the collection from rv 0 (chunked stream with an ADDED event).
+        let watched = http_call(addr, &get("/api/v1/namespaces/default/pods?watch=true&resourceVersion=0"));
+        assert!(watched.contains("transfer-encoding: chunked"), "watch head: {watched}");
+        assert!(watched.contains(r#""type":"ADDED""#), "watch body: {watched}");
+        assert!(watched.trim_end().ends_with("0"), "watch terminator: {watched:?}");
+
+        // 5. Delete it (200).
+        let deleted = http_call(addr, &format!("DELETE /api/v1/namespaces/default/pods/nginx HTTP/1.1\r\nhost: test\r\n\r\n"));
+        assert!(deleted.starts_with("HTTP/1.1 200 OK\r\n"), "delete: {deleted}");
+
+        worker.join().expect("worker");
     }
 }

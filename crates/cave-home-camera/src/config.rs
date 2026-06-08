@@ -1,160 +1,178 @@
-// SPDX-License-Identifier: Apache-2.0
-//! Camera configuration types.
+//! What a single camera is set up to do.
 //!
-//! Upstream: blakeblackshear/frigate@416a9b7692e052be98ad503704d26c7ef7a4c88d
-//! :: frigate/config/config.py :: `FrigateConfig`, `CameraConfig`,
-//! `MotionConfig`, `RecordConfig`, `DetectConfig`.
-//!
-//! Frigate's config object is huge (>1k lines of pydantic models).
-//! Phase 1 ports just the fields the runtime pipeline actually reads.
-//! Everything else lives in `parity.manifest.toml` `[[unmapped]]`.
+//! A [`CameraConfig`] is the household's settings for one camera: its id and
+//! friendly name, which things it should bother watching for, the zones drawn
+//! over its view, when it should record, and how long clips and events are kept.
+//! It carries no live state and reads no clock — it is the static description a
+//! running pipeline (Phase 1b) would consume.
 
-use std::path::PathBuf;
+use crate::label::ObjectLabel;
+use crate::zone::Zone;
 
-use serde::{Deserialize, Serialize};
+/// When a camera writes recordings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RecordMode {
+    /// Never record (live view only).
+    Off,
+    /// Record only around detection / motion events. The privacy-friendly
+    /// default: most of the day nothing is written.
+    #[default]
+    MotionOnly,
+    /// Record continuously, 24/7.
+    Continuous,
+}
 
-use crate::error::{CameraError, CameraResult};
+impl RecordMode {
+    /// Whether this mode ever records at all.
+    #[must_use]
+    pub const fn records_anything(self) -> bool {
+        !matches!(self, Self::Off)
+    }
+}
 
-/// One camera.
-///
-/// Port of `frigate.config.config.CameraConfig` (cut down to the Phase 1
-/// fields). Grandma-friendly: this is what backs a single tile in the
-/// `/admin/camera` grid.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+/// Settings for one camera.
+#[derive(Debug, Clone)]
 pub struct CameraConfig {
-    /// Unique camera key (also displayed as "Kamera adı" in the Portal).
-    pub name: String,
-
-    /// RTSP / file source URL. Passed verbatim to `ffmpeg -i ...`.
-    pub source: String,
-
-    /// Stream geometry — width pixels (`detect.width` in Frigate YAML).
-    pub width: u32,
-
-    /// Stream geometry — height pixels (`detect.height` in Frigate YAML).
-    pub height: u32,
-
-    /// Target frame rate the capture loop will produce, after downsampling
-    /// from the RTSP source. Frigate clamps detect.fps to ≤ source fps.
-    pub fps: u32,
-
-    /// Detector to use for this camera.
-    pub detector: DetectorKind,
-
-    /// Motion-detection parameters.
-    #[serde(default)]
-    pub motion: MotionConfig,
-
-    /// Recording parameters.
-    #[serde(default)]
-    pub record: RecordConfig,
+    id: String,
+    name: String,
+    enabled_labels: Vec<ObjectLabel>,
+    zones: Vec<Zone>,
+    record_mode: RecordMode,
+    retention_days: u32,
 }
 
 impl CameraConfig {
-    /// Bytes per raw YUV420p frame for the configured geometry.
-    /// Frigate writes raw frames in YUV420p (`-f rawvideo -pix_fmt yuv420p`),
-    /// which is 1.5 bytes per pixel.
+    /// A camera with the given stable `id` and friendly `name`, recording in
+    /// the privacy-friendly [`RecordMode::MotionOnly`] default, watching for
+    /// nothing yet, with no zones and a `retention_days` of zero. Use the
+    /// builder methods to fill it in.
     #[must_use]
-    pub fn frame_bytes(&self) -> usize {
-        let pixels = self.width as usize * self.height as usize;
-        pixels + pixels / 2
-    }
-
-    /// Validate the config (mirrors `frigate.config.config.runtime_config`).
-    pub fn validate(&self) -> CameraResult<()> {
-        if self.name.is_empty() {
-            return Err(CameraError::Config("camera name is empty".into()));
-        }
-        if self.source.is_empty() {
-            return Err(CameraError::Config(format!(
-                "camera {name:?} has empty source",
-                name = self.name
-            )));
-        }
-        if self.width == 0 || self.height == 0 {
-            return Err(CameraError::Config(format!(
-                "camera {name:?} has zero width/height",
-                name = self.name
-            )));
-        }
-        if self.fps == 0 {
-            return Err(CameraError::Config(format!(
-                "camera {name:?} has fps=0",
-                name = self.name
-            )));
-        }
-        Ok(())
-    }
-}
-
-/// Which detector implementation this camera uses.
-///
-/// Port of `frigate.detectors.DetectorTypeEnum`.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DetectorKind {
-    /// CPU YOLOv8/YOLOv9 via onnxruntime.
-    #[default]
-    CpuYolo,
-    /// Google Coral EdgeTPU (Linux only).
-    CoralEdgeTpu,
-    /// NVIDIA TensorRT (Linux only).
-    NvidiaTrt,
-    /// In-process deterministic mock — production code never picks this.
-    /// Tests pick it explicitly.
-    Mock,
-}
-
-/// Motion-detection knobs. Port of `frigate.config.config.MotionConfig`.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct MotionConfig {
-    /// Per-pixel luminance delta above which a pixel is "moving"
-    /// (Frigate default: 30).
-    pub threshold: u8,
-
-    /// Minimum contiguous-moving-pixel count required to fire a motion
-    /// event (Frigate default: 30).
-    pub contour_area: u32,
-
-    /// Exponential running-average weight on the background model
-    /// (Frigate default: 0.05 — slow adaptation so a parked car isn't
-    /// absorbed in five frames).
-    pub frame_alpha: f32,
-}
-
-impl Default for MotionConfig {
-    fn default() -> Self {
+    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
-            threshold: 30,
-            contour_area: 30,
-            frame_alpha: 0.05,
+            id: id.into(),
+            name: name.into(),
+            enabled_labels: Vec::new(),
+            zones: Vec::new(),
+            record_mode: RecordMode::default(),
+            retention_days: 0,
         }
+    }
+
+    /// Set the things this camera watches for.
+    #[must_use]
+    pub fn with_labels(mut self, labels: Vec<ObjectLabel>) -> Self {
+        self.enabled_labels = labels;
+        self
+    }
+
+    /// Add a zone.
+    #[must_use]
+    pub fn with_zone(mut self, zone: Zone) -> Self {
+        self.zones.push(zone);
+        self
+    }
+
+    /// Set the record mode.
+    #[must_use]
+    pub const fn with_record_mode(mut self, mode: RecordMode) -> Self {
+        self.record_mode = mode;
+        self
+    }
+
+    /// Set how many days clips / events are kept.
+    #[must_use]
+    pub const fn with_retention_days(mut self, days: u32) -> Self {
+        self.retention_days = days;
+        self
+    }
+
+    /// The stable identifier.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// The friendly name shown to the household.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The configured zones.
+    #[must_use]
+    pub fn zones(&self) -> &[Zone] {
+        &self.zones
+    }
+
+    /// The record mode.
+    #[must_use]
+    pub const fn record_mode(&self) -> RecordMode {
+        self.record_mode
+    }
+
+    /// How many days clips / events are kept.
+    #[must_use]
+    pub const fn retention_days(&self) -> u32 {
+        self.retention_days
+    }
+
+    /// Whether this camera is watching for `label`. An empty enabled set means
+    /// the camera is not watching for anything specific yet.
+    #[must_use]
+    pub fn watches(&self, label: ObjectLabel) -> bool {
+        self.enabled_labels.contains(&label)
     }
 }
 
-/// Recording knobs. Port of `frigate.config.config.RecordConfig`.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct RecordConfig {
-    /// Master switch.
-    pub enabled: bool,
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geometry::{Point, Polygon};
 
-    /// Where MP4 segments are written.
-    pub root: PathBuf,
+    fn a_zone() -> Zone {
+        Zone::new(
+            "driveway",
+            Polygon::new(vec![
+                Point::new(0.0, 0.0),
+                Point::new(10.0, 0.0),
+                Point::new(10.0, 10.0),
+            ])
+            .expect("triangle"),
+            vec![],
+            0.5,
+        )
+    }
 
-    /// Segment length, seconds (Frigate default: 10).
-    pub segment_seconds: u32,
+    #[test]
+    fn default_record_mode_is_motion_only() {
+        assert_eq!(RecordMode::default(), RecordMode::MotionOnly);
+        assert!(RecordMode::MotionOnly.records_anything());
+        assert!(RecordMode::Continuous.records_anything());
+        assert!(!RecordMode::Off.records_anything());
+    }
 
-    /// Keep events younger than this many days.
-    pub event_retention_days: u32,
-}
+    #[test]
+    fn builder_assembles_a_camera() {
+        let cam = CameraConfig::new("front", "Front door camera")
+            .with_labels(vec![ObjectLabel::Person, ObjectLabel::DeliveryVan])
+            .with_zone(a_zone())
+            .with_record_mode(RecordMode::Continuous)
+            .with_retention_days(14);
+        assert_eq!(cam.id(), "front");
+        assert_eq!(cam.name(), "Front door camera");
+        assert_eq!(cam.zones().len(), 1);
+        assert_eq!(cam.record_mode(), RecordMode::Continuous);
+        assert_eq!(cam.retention_days(), 14);
+        assert!(cam.watches(ObjectLabel::Person));
+        assert!(!cam.watches(ObjectLabel::Cat));
+    }
 
-impl Default for RecordConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            root: PathBuf::from("/var/lib/cave-home/camera"),
-            segment_seconds: 10,
-            event_retention_days: 14,
-        }
+    #[test]
+    fn fresh_camera_has_safe_defaults() {
+        let cam = CameraConfig::new("x", "X");
+        assert_eq!(cam.record_mode(), RecordMode::MotionOnly);
+        assert_eq!(cam.retention_days(), 0);
+        assert!(cam.zones().is_empty());
+        assert!(!cam.watches(ObjectLabel::Person));
     }
 }

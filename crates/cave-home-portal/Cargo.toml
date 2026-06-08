@@ -6,11 +6,14 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-portal — Lovelace-class web dashboard (upstream: home-assistant/core (frontend) + koush/scrypted, port method: line-by-line)"
+description = "cave-home-portal — Lovelace-class dashboard view-model + layout engine (first-party, spec-informed by the Lovelace UX concept)"
 
 [package.metadata.cave-home]
-upstream    = "home-assistant/core (frontend) + koush/scrypted"
-port-method = "line-by-line"
+# First-party design. We took the *concept* of a card-based, area-organised
+# household dashboard (the "Lovelace-class" target in Charter §3) as a spec, not
+# the upstream code: no Home Assistant frontend or Scrypted source was ported.
+upstream    = "none (first-party; Lovelace UX concept as spec)"
+port-method = "first-party (spec-informed)"
 
 [lints]
 workspace = true

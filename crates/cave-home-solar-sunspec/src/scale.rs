@@ -1,66 +1,74 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //
-//! SunSpec scale factor handling. Per SunSpec spec §B.3, each
-//! measurement register has an associated `_SF` field of type
-//! `sunssf` (signed int16) in the range `-10..=10` such that the
-//! physical value is `register × 10^SF`.
+//! SunSpec scale-factor (`sunssf`) handling.
+//!
+//! A SunSpec integer point carries its physical value as a raw integer plus a
+//! companion `sunssf` point — a signed power-of-ten exponent. The real value
+//! is `raw * 10^sf`. For example AC power `W = 1234` with `W_SF = -1` is
+//! `123.4` W; a voltage `2301` with `V_SF = -1` is `230.1` V; a large energy
+//! counter might use a positive exponent.
+//!
+//! Source: SunSpec Information Model Specification, "Scale Factors".
 
-use crate::error::{Error, Result};
-use serde::{Deserialize, Serialize};
-
-/// Scale factor wrapper enforcing the legal range.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ScaleFactor(pub i16);
+/// A SunSpec scale factor: a signed power-of-ten exponent applied to a raw
+/// integer point to recover the physical value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScaleFactor(i16);
 
 impl ScaleFactor {
-    /// SunSpec sentinel "not implemented" for sunssf is `0x8000`
-    /// (i.e. `i16::MIN`). Source: spec §B.3.
-    pub const NOT_IMPLEMENTED: i16 = i16::MIN;
-
-    /// Construct from a raw register value, returning `None` if the
-    /// register carries the not-implemented sentinel.
+    /// Build from the decoded `sunssf` exponent. SunSpec constrains the
+    /// exponent to roughly `-10..=10`; out-of-range values are clamped so an
+    /// arithmetic overflow can never reach the caller.
     #[must_use]
-    pub fn from_register(raw: i16) -> Option<Self> {
-        if raw == Self::NOT_IMPLEMENTED {
-            None
-        } else {
-            Some(Self(raw))
-        }
+    pub fn new(exponent: i16) -> Self {
+        Self(exponent.clamp(-10, 10))
     }
 
-    /// Validate the scale factor is in `-10..=10`.
-    pub fn validated(self) -> Result<Self> {
-        if self.0 < -10 || self.0 > 10 {
-            Err(Error::ScaleOutOfRange(self.0))
-        } else {
-            Ok(self)
-        }
-    }
-
-    /// Apply this scale factor to an unsigned register value, returning
-    /// the physical f64 value.
+    /// A scale factor of `10^0 == 1` — the identity, used when a model omits
+    /// (or sentinels) its scale-factor point.
     #[must_use]
-    pub fn apply_u16(self, raw: u16) -> f64 {
-        f64::from(raw) * 10.0_f64.powi(i32::from(self.0))
+    pub const fn unity() -> Self {
+        Self(0)
     }
 
-    /// Apply this scale factor to a signed register value.
+    /// The underlying exponent.
+    #[must_use]
+    pub const fn exponent(self) -> i16 {
+        self.0
+    }
+
+    /// Apply the factor to a raw integer, returning the physical value.
+    ///
+    /// `value * 10^exponent`, computed in `f64` so both signs of exponent are
+    /// exact for the magnitudes inverters report.
+    #[must_use]
+    pub fn apply(self, raw: f64) -> f64 {
+        raw * 10f64.powi(i32::from(self.0))
+    }
+
+    /// Convenience: apply to a signed 16-bit raw point.
     #[must_use]
     pub fn apply_i16(self, raw: i16) -> f64 {
-        f64::from(raw) * 10.0_f64.powi(i32::from(self.0))
+        self.apply(f64::from(raw))
     }
 
-    /// Apply this scale factor to a 32-bit unsigned value (acc32 / uint32).
+    /// Convenience: apply to an unsigned 16-bit raw point.
+    #[must_use]
+    pub fn apply_u16(self, raw: u16) -> f64 {
+        self.apply(f64::from(raw))
+    }
+
+    /// Convenience: apply to a 32-bit accumulator/raw point.
     #[must_use]
     pub fn apply_u32(self, raw: u32) -> f64 {
-        f64::from(raw) * 10.0_f64.powi(i32::from(self.0))
+        self.apply(f64::from(raw))
     }
 }
 
 impl Default for ScaleFactor {
     fn default() -> Self {
-        Self(0)
+        Self::unity()
     }
 }
 
@@ -69,44 +77,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn from_register_detects_sentinel() {
-        assert_eq!(ScaleFactor::from_register(i16::MIN), None);
-        assert_eq!(ScaleFactor::from_register(2), Some(ScaleFactor(2)));
+    fn negative_exponent_divides() {
+        let sf = ScaleFactor::new(-1);
+        assert!((sf.apply_u16(2301) - 230.1).abs() < 1e-9, "230.1 V");
+        let sf2 = ScaleFactor::new(-2);
+        assert!((sf2.apply_u16(5000) - 50.0).abs() < 1e-9, "50.00 Hz");
     }
 
     #[test]
-    fn validated_rejects_out_of_range() {
-        assert!(ScaleFactor(11).validated().is_err());
-        assert!(ScaleFactor(-11).validated().is_err());
-        assert!(ScaleFactor(0).validated().is_ok());
-        assert!(ScaleFactor(10).validated().is_ok());
-        assert!(ScaleFactor(-10).validated().is_ok());
+    fn positive_exponent_multiplies() {
+        let sf = ScaleFactor::new(3);
+        assert!((sf.apply_u16(12) - 12_000.0).abs() < 1e-9, "12 * 10^3");
     }
 
     #[test]
-    fn apply_u16_zero_scale_identity() {
-        assert!((ScaleFactor(0).apply_u16(7350) - 7350.0).abs() < f64::EPSILON);
+    fn unity_is_identity() {
+        let sf = ScaleFactor::unity();
+        assert!((sf.apply_i16(1234) - 1234.0).abs() < 1e-9);
+        assert_eq!(ScaleFactor::default(), ScaleFactor::unity());
     }
 
     #[test]
-    fn apply_u16_positive_scale_amplifies() {
-        // 7350 × 10^2 = 735000 (e.g. AC power scale +2)
-        assert!((ScaleFactor(2).apply_u16(7350) - 735_000.0).abs() < f64::EPSILON);
+    fn signed_raw_with_factor() {
+        let sf = ScaleFactor::new(-1);
+        assert!((sf.apply_i16(-500) + 50.0).abs() < 1e-9, "-50.0 W (consuming)");
     }
 
     #[test]
-    fn apply_u16_negative_scale_divides() {
-        // 7350 × 10^-1 = 735.0 (e.g. voltage scale -1 ⇒ 735.0 V)
-        assert!((ScaleFactor(-1).apply_u16(7350) - 735.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn apply_i16_handles_negative() {
-        assert!((ScaleFactor(-1).apply_i16(-1234) - (-123.4)).abs() < 1e-9);
-    }
-
-    #[test]
-    fn apply_u32_works() {
-        assert!((ScaleFactor(-3).apply_u32(1_234_567) - 1234.567).abs() < 1e-6);
+    fn exponent_is_clamped_not_overflowing() {
+        let sf = ScaleFactor::new(100);
+        assert_eq!(sf.exponent(), 10);
+        let sf = ScaleFactor::new(-100);
+        assert_eq!(sf.exponent(), -10);
     }
 }

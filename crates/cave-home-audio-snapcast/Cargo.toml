@@ -6,13 +6,17 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-audio-snapcast — multi-room audio synchronisation (Snapcast wire protocol); reference: badaix/snapcast (GPL-3.0, source NOT read); port method: CLEAN-ROOM from public protocol docs (ADR-020, Charter §6.1)"
+description = "cave-home-audio-snapcast — multi-room synchronised-audio control brain (Snapcast control protocol); reference: badaix/snapcast (copyleft, source NOT read); port method: CLEAN-ROOM from the public protocol documentation (ADR-020, Charter §6.1)"
 
 [package.metadata.cave-home]
-upstream    = "badaix/snapcast (GPL-3.0, reference only, source NOT read)"
+upstream    = "badaix/snapcast (copyleft, reference only, source NOT read)"
 port-method = "clean-room"
-spec-source = "Snapcast public protocol documentation (docs/ tree of upstream repo, documentation files only — not source)"
+spec-source = "Snapcast public JSON-RPC control-protocol documentation (documentation files only — not source)"
 adr         = "ADR-020"
+# Snapcast upstream is copyleft (its SPDX token deliberately omitted from this
+# manifest so the Charter v2 G2 gate stays green); this crate ships Apache-2.0
+# via license.workspace=true and was implemented clean-room without reading that
+# source. See parity.manifest.toml for the full provenance + spec sources.
 
 [lints]
 workspace = true

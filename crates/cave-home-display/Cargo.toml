@@ -6,11 +6,11 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-display — TV/display integration (LG webOS, Samsung Tizen, Android TV/Cast) + Portal wall-panel render mode; upstream: HA TV integrations (Apache-2.0); port method: line-by-line + first-party wall-panel mode (ADR-028)"
+description = "cave-home-display — TV/display integration (LG webOS, Samsung Tizen, Android TV/Cast) + Portal wall-panel render mode; upstream: HA TV integrations (Apache-2.0); port method: spec-based (control engine) + line-by-line (vendor adapters, deferred) (ADR-028)"
 
 [package.metadata.cave-home]
 upstream    = "home-assistant/core (webostv, samsungtv, androidtv, cast) + first-party Portal wall-panel mode"
-port-method = "line-by-line + first-party"
+port-method = "spec-based (control engine) + line-by-line (vendor adapters, deferred)"
 adr         = "ADR-028"
 
 [lints]

@@ -6,12 +6,12 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-orchestration — umbrella for the in-binary K3s line-by-line Rust port (ADR-004 Accepted 2026-05-14); re-exports Phase 1–4 sub-crates (containerd, kubelet, kube-proxy, cni, apiserver, scheduler, controller-manager, kine, helm-controller, klipper-lb, traefik)"
+description = "cave-home-orchestration — the in-process K3s-orchestration bootstrap + component-coordination decision core (ADR-004). The control-plane wiring DECISIONS — node-role config, component dependency topo bring-up order, the bootstrap state machine, single-binary invariant, shutdown ordering — that bring apiserver/scheduler/controller-manager/kine/kubelet/proxy/cni up inside ONE binary (Charter §5). std-only, pure logic; actual process supervision + runtime wiring are ADR-004 phase-1b."
 
 [package.metadata.cave-home]
 upstream    = "k3s-io/k3s"
-port-method = "line-by-line"
-role        = "umbrella"
+port-method = "behavioural reimplementation (spec/contract-based; not verbatim line-by-line)"
+role        = "decision-core"
 
 [lints]
 workspace = true

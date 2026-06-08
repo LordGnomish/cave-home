@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `EndpointSliceCache` — line-by-line port of upstream
-//! `pkg/proxy/endpointslicecache.go`.
+//! `EndpointSliceCache` — behavioural reimplementation of the documented
+//! `pkg/proxy/endpointslicecache.go` merge semantics.
 //!
 //! Multiple `EndpointSlice` objects can belong to one Service (via
 //! `kubernetes.io/service-name` label). We track them per

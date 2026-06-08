@@ -114,4 +114,40 @@ mod tests {
         assert!(rx.recv().await.is_some());
         assert!(rx.recv().await.is_none());
     }
+
+    #[tokio::test]
+    async fn wildcard_listen_once_consumes_first_event_only() {
+        let bus = EventBus::new();
+        let (_id, mut rx) = bus.listen_once(MATCH_ALL);
+        bus.fire(Event::local("first", json!({})));
+        bus.fire(Event::local("second", json!({})));
+        assert_eq!(rx.recv().await.expect("first").event_type, "first");
+        assert!(rx.recv().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn fire_with_no_listeners_and_dropped_receiver_is_silent() {
+        let bus = EventBus::new();
+        // no listeners at all — fire must not panic
+        bus.fire(Event::local("orphan", json!({})));
+
+        // a dropped receiver must not break later delivery to others
+        let (_dead_id, dead_rx) = bus.listen("topic");
+        drop(dead_rx);
+        let (_live_id, mut live_rx) = bus.listen("topic");
+        bus.fire(Event::local("topic", json!({"n": 1})));
+        assert_eq!(live_rx.recv().await.expect("live").data["n"], 1);
+    }
+
+    #[tokio::test]
+    async fn distinct_event_types_are_isolated() {
+        let bus = EventBus::new();
+        let (_id, mut rx) = bus.listen("only_this");
+        bus.fire(Event::local("not_this", json!({})));
+        bus.fire(Event::local("only_this", json!({"ok": true})));
+        // the first matching event is the one we asked for
+        let evt = rx.recv().await.expect("matched");
+        assert_eq!(evt.event_type, "only_this");
+        assert_eq!(evt.data["ok"], true);
+    }
 }

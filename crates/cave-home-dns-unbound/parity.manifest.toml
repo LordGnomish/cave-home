@@ -1,24 +1,144 @@
-# cave-home-dns-unbound — parity manifest scaffold.
+# cave-home-dns-unbound — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-dns-unbound — recursive DNS resolver (Unbound BSD line-by-line); upstream: NLnetLabs/unbound (BSD-3-Clause); port method: line-by-line (ADR-022)
+# Phase 1 ships the local DNS *resolution-decision* core: the name + record
+# model, the local-zone decision engine for every documented Unbound
+# local-zone type, forward/stub-zone longest-suffix routing, the access-control
+# CIDR engine (first-party containment), a pure TTL response cache, PTR reverse
+# mapping, and grandma-friendly EN/DE/TR UX. This is the brain that decides
+# whether a query is answered at home, refused, reported missing, or routed
+# upstream. The DNS wire server, the real recursive algorithm (root hints /
+# delegation / DNSSEC) and upstream query I/O are network/crypto-bound and
+# deferred to Phase 1b — each is enumerated below with an ADR-022 disposition.
+#
+# Port method: Unbound is BSD. Rather than copy its C source, the config and
+# resolution model is implemented first-party from Unbound's *public*
+# unbound.conf(5) documentation (local-zone/local-data, forward-zone/stub-zone,
+# access-control, cache-min/max-ttl) and the public DNS RFCs. No C source read.
 
 [crate]
 name             = "cave-home-dns-unbound"
 upstream_repo    = "NLnetLabs/unbound"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+port_method      = "spec-based (unbound.conf(5) documented behaviour + DNS RFCs)"
+upstream_license = "BSD-3-Clause"
+spec_sources     = [
+    "unbound.conf(5) — local-zone / local-data type semantics (static, transparent, redirect, refuse, deny, always_nxdomain)",
+    "unbound.conf(5) — forward-zone / stub-zone (most-specific-match upstream routing)",
+    "unbound.conf(5) — access-control (CIDR allow / refuse / allow_snoop)",
+    "unbound.conf(5) — cache-min-ttl / cache-max-ttl clamping",
+    "RFC 1035 §2.3.1 / RFC 1123 §2.1 — name & label syntax; §3.5 in-addr.arpa",
+    "RFC 3596 §2.5 — ip6.arpa nibble reverse form",
+    "RFC 2181 §8 — TTL handling",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (decision core + wire server +
+# real recursive algorithm + DNSSEC + upstream I/O + core integration). The
+# decision core is implemented and tested in full; the network/crypto-bound
+# transport and recursion remain and are all ADR-justified Phase 1b.
+fill_ratio              = 0.30
+fill_ratio_basis        = "name/record model + local-zone decision engine (all 6 types) + forward/stub routing + access-control CIDR engine + TTL cache + PTR mapping + EN/DE/TR UX, fully implemented & tested; wire server / real recursion / DNSSEC / upstream I/O deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-022 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "RFC 1035 / 1123 name syntax: 1–63-octet labels, ≤253-octet name, [A-Za-z0-9-], no hyphen at label edge; lower-case + trailing-dot normalisation"
+ours = "src/name.rs::DnsName"
+
+[[mapped]]
+spec = "DNS record-type registry (A/AAAA/CNAME/MX/TXT/PTR/SRV/NS/SOA) + A/AAAA address parsing via std::net::IpAddr"
+ours = "src/record.rs::{RecordType,RecordData}"
+
+[[mapped]]
+spec = "unbound.conf(5) local-zone type semantics — static / transparent / redirect / refuse / deny / always_nxdomain decision"
+ours = "src/local_zone.rs::LocalZone::decide"
+
+[[mapped]]
+spec = "unbound.conf(5) forward-zone / stub-zone most-specific (longest-suffix) upstream routing"
+ours = "src/forward.rs::ForwardTable::route"
+
+[[mapped]]
+spec = "unbound.conf(5) access-control: CIDR containment (v4 + v6 mask-compare, first-party) + longest-prefix allow/refuse/allow_snoop decision"
+ours = "src/access.rs::{Cidr,AccessControl}"
+
+[[mapped]]
+spec = "RFC 2181 §8 TTL caching with cache-min-ttl / cache-max-ttl clamping (pure, caller-supplied clock)"
+ours = "src/cache.rs::ResponseCache"
+
+[[mapped]]
+spec = "RFC 1035 §3.5 in-addr.arpa + RFC 3596 §2.5 ip6.arpa reverse (PTR) name↔IP mapping"
+ours = "src/reverse.rs::{ptr_name,ReverseZone}"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR UX (Charter §6.3, ADR-007) — jargon-free local-DNS phrasing"
+ours = "src/label.rs"
+
+# ---- unmapped (NOT in this crate; ADR-022 Phase 1b/permanent disposition) --
+
+[[unmapped]]
+area     = "DNS server transport (UDP/TCP + DoT/DoH)"
+priority = "phase-1b"
+note     = "ADR-022: the wire listener that receives queries and serialises answers is network/TLS-bound. It feeds parsed (name,type) into this decision core and encodes the LocalDecision/cache result back onto the wire. No new decision logic."
+
+[[unmapped]]
+area     = "Real recursive-resolution algorithm (root hints, delegation following, glue, QNAME minimisation)"
+priority = "phase-1b"
+note     = "ADR-022: full iterative recursion against the root + delegation chain is network-bound I/O. Phase 1 routes the passthrough decision to the chosen upstream (forward.rs); doing the iteration ourselves is the deferred recursive layer."
+
+[[unmapped]]
+area     = "DNSSEC validation (signature chain, trust anchors)"
+priority = "phase-1b"
+note     = "ADR-022: validating RRSIG/DNSKEY chains is crypto-bound and depends on the wire-format records the transport layer decodes. Deferred with the resolver loop."
+
+[[unmapped]]
+area     = "Upstream query I/O + failover / EDNS"
+priority = "phase-1b"
+note     = "ADR-022: actually sending the query to the routed upstream, timing out, and failing over across the configured resolvers is socket I/O. forward.rs already decides which upstream(s) a query routes to."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration"
+priority = "phase-1b"
+note     = "ADR-022: surfacing resolver status + per-device policy as core State entities lands once cave-home-core's entity API stabilises. The decision core is already core-agnostic and depends on no other cave-home crate."
+
+[[unmapped]]
+area     = "Cloud / third-party DNS relay"
+priority = "permanent"
+note     = "Charter §9 sovereignty: cave-home resolves recursively on the home LAN and never relays the household's lookups through a third-party cloud DNS provider. There is intentionally no such path."
+
+# ---- spec_test (designed from spec / RFC + unbound.conf(5) reference) -------
+
+[[spec_test]]
+designed_for = "RFC 1035/1123 name validation + lower-case/trailing-dot normalisation + label-aligned containment"
+ours         = "src/name.rs::tests"
+
+[[spec_test]]
+designed_for = "A/AAAA dotted-quad + IPv6 parsing, address-family-mismatch rejection, record-type round-trip"
+ours         = "src/record.rs::tests"
+
+[[spec_test]]
+designed_for = "Each local-zone type decision (static answer/NODATA/NXDOMAIN, transparent passthrough, redirect-to-apex, refuse, deny, always_nxdomain)"
+ours         = "src/local_zone.rs::tests"
+
+[[spec_test]]
+designed_for = "Forward/stub-zone longest-suffix routing incl. root default and label-aligned (not string) suffix match"
+ours         = "src/forward.rs::tests"
+
+[[spec_test]]
+designed_for = "CIDR containment on octet + partial-octet boundaries (v4 + v6) and access-control longest-prefix decision"
+ours         = "src/access.rs::tests"
+
+[[spec_test]]
+designed_for = "TTL cache insert/lookup/expiry, min/max clamp, evict-expired, replace"
+ours         = "src/cache.rs::tests"
+
+[[spec_test]]
+designed_for = "PTR reverse mapping (in-addr.arpa + ip6.arpa nibble) and reverse-zone round-trip"
+ours         = "src/reverse.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

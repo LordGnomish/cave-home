@@ -106,4 +106,41 @@ mod tests {
         assert!("light.kitchen.x".parse::<EntityId>().is_err());
         assert!("light.".parse::<EntityId>().is_err());
     }
+
+    #[test]
+    fn entity_id_new_validates_both_halves() {
+        assert!(EntityId::new("binary_sensor", "front_door").is_ok());
+        assert!(EntityId::new("sensor", "temp_2").is_ok());
+        // empty halves rejected
+        assert!(EntityId::new("", "kitchen").is_err());
+        assert!(EntityId::new("light", "").is_err());
+        // uppercase / hyphen / space rejected (HA slug grammar)
+        assert!(EntityId::new("Light", "kitchen").is_err());
+        assert!(EntityId::new("light", "Kitchen").is_err());
+        assert!(EntityId::new("light", "front-door").is_err());
+        assert!(EntityId::new("light", "front door").is_err());
+    }
+
+    #[test]
+    fn entity_id_from_str_no_dot_is_error() {
+        assert!("lightkitchen".parse::<EntityId>().is_err());
+        // leading/trailing dot variants
+        assert!(".kitchen".parse::<EntityId>().is_err());
+        assert!("light.kitchen.".parse::<EntityId>().is_err());
+    }
+
+    #[test]
+    fn state_serde_round_trip() {
+        let id: EntityId = "light.kitchen".parse().expect("parse");
+        let mut attrs = StateAttributes::new();
+        attrs.insert("brightness".into(), serde_json::json!(128));
+        let st = State::new(id, "on", attrs, Context::new());
+        let s = serde_json::to_string(&st).expect("serialise");
+        let back: State = serde_json::from_str(&s).expect("deserialise");
+        assert_eq!(back.state, "on");
+        assert_eq!(back.attributes["brightness"], 128);
+        assert_eq!(back.entity_id.to_string(), "light.kitchen");
+        // fresh State has last_changed == last_updated
+        assert_eq!(back.last_changed, back.last_updated);
+    }
 }

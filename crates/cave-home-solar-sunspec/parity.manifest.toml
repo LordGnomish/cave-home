@@ -1,25 +1,170 @@
-# cave-home-solar-sunspec — parity manifest scaffold.
+# cave-home-solar-sunspec — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-solar-sunspec — SunSpec Modbus models for vendor-agnostic inverter monitoring (SMA / Fronius / SolarEdge / Huawei / Goodwe / Kostal); spec: SunSpec Alliance public, port method: spec-based
+# Phase 1 ships the SunSpec *register-map decoder*: the point-type decoders
+# (int16 / uint16 / int32 / uint32 / acc32 / float32 / sunssf / string) with
+# their not-implemented sentinels, scale-factor application, model-chain
+# discovery (the "SunS" marker + (id, length) walk), the Common model (1) and
+# the inverter models (101/102/103 integer + 111/112/113 float), bounds-checked
+# against malformed register blocks, plus the grandma-friendly EN/DE/TR status
+# layer. This is the brain that every solar tile, automation and voice reply
+# consumes. The live Modbus-TCP/RTU transport, the polling loop, and the
+# remaining SunSpec models (meter 20x, storage 124, MPPT 160) are
+# network/hardware-bound and deferred to Phase 1b — each is enumerated below.
+#
+# Port method: implemented from the *public* SunSpec Alliance information-model
+# specification (model definitions 1, 101-103, 111-113 and the Modbus model-
+# discovery rules). SunSpec is an open standard; no GPL pysunspec/library
+# source was read or ported. Everything here is pure byte/register logic over a
+# &[u16] — std-only, no external crates, no network, no hardware.
 
 [crate]
 name             = "cave-home-solar-sunspec"
-upstream_repo    = "SunSpec Alliance public model spec"
+upstream_repo    = "SunSpec Alliance public information-model specification"
 port_method      = "spec-based"
+upstream_license = "Apache-2.0"
 spec_sources     = [
-    "SunSpec Alliance — public model definitions (1, 101-103, 120-124, 160-161, etc.)",
+    "SunSpec Alliance — Information Model Specification (data point types: int16/uint16/int32/uint32/acc32/float32/sunssf/string + not-implemented sentinels)",
+    "SunSpec Alliance — Modbus model-discovery rules ('SunS' 0x53756e53 identifier marker + (model_id, length) chain, 0xFFFF end sentinel)",
+    "SunSpec Alliance — Common model (1): manufacturer / model / version / serial / device-address layout",
+    "SunSpec Alliance — Inverter models 101/102/103 (integer + scale factor) and 111/112/113 (float32), incl. the St operating-state enumeration",
 ]
-ported_at        = "2026-05-25"
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (decode engine + live transport +
+# polling loop + meter/storage/MPPT models + core/history integration). The
+# decode engine is implemented and tested in full; the I/O transport and the
+# extra models remain and are all ADR-justified Phase 1b/2.
+fill_ratio              = 0.28
+fill_ratio_basis        = "point-type decoders + sentinels + scale factors + model discovery + Common(1) + inverter(101-103/111-113) + bounds checks + EN/DE/TR UX, fully implemented & tested; transport + extra models deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries a phase disposition
+honest_ratio            = 1.00  # 0.28 / (0.28 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "SunSpec point types int16/uint16/int32/uint32 with 0x8000 / 0xFFFF / 0x80000000 / 0xFFFFFFFF not-implemented sentinels"
+ours = "src/point.rs::{int16,uint16,int32,uint32}"
+
+[[mapped]]
+spec = "SunSpec acc32 accumulator (zero = not-accumulated) and float32 (NaN = not-implemented)"
+ours = "src/point.rs::{acc32,float32}"
+
+[[mapped]]
+spec = "SunSpec string point (register-pair MSB-first ASCII, NUL/space padded)"
+ours = "src/point.rs::string"
+
+[[mapped]]
+spec = "SunSpec sunssf scale factor: real value = raw * 10^sf (positive & negative exponent)"
+ours = "src/scale.rs::ScaleFactor"
+
+[[mapped]]
+spec = "SunSpec model discovery: 'SunS' (0x53756e53) marker check + (model_id, length) chain walk to 0xFFFF"
+ours = "src/discovery.rs::{check_marker,walk_chain,discover}"
+
+[[mapped]]
+spec = "SunSpec Common model 1 (manufacturer / model / version / serial / device address)"
+ours = "src/common.rs::CommonModel"
+
+[[mapped]]
+spec = "SunSpec inverter models 101/102/103 (integer + scale factor) decode: AC power/current/voltage, frequency, DC power, lifetime energy, cabinet temperature"
+ours = "src/inverter.rs::InverterReading::decode_integer"
+
+[[mapped]]
+spec = "SunSpec inverter models 111/112/113 (float32) decode"
+ours = "src/inverter.rs::InverterReading::decode_float"
+
+[[mapped]]
+spec = "SunSpec inverter St operating-state enum (off/sleeping/starting/MPPT/throttled/shutting-down/fault/standby)"
+ours = "src/inverter.rs::OperatingState"
+
+[[mapped]]
+spec = "Bounds-checked register slicing — a model claiming more registers than provided is rejected, not a panic"
+ours = "src/point.rs (OutOfBounds) + src/discovery.rs (LengthMismatch)"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR solar status + 'producing N.N kW' phrasing (Charter §6.3, ADR-007)"
+ours = "src/label.rs::{SolarStatus,describe}"
+
+# ---- unmapped (NOT in this crate; Phase 1b/2 disposition) ------------------
+
+[[unmapped]]
+area     = "Live Modbus-TCP transport (read holding registers over the network)"
+priority = "phase-1b"
+note     = "ADR-019 disposition pattern: the decoder is transport-agnostic (operates on a &[u16]). A TCP reader probes SUNSPEC_BASE_REGISTERS, reads the block, and feeds discover()/decode_inverter(). Network-bound I/O only — no new decode logic. Excluded from Phase 1 because the Charter §6.3 MVP is the pure decision/decode engine."
+
+[[unmapped]]
+area     = "Modbus-RTU / serial transport"
+priority = "phase-1b"
+note     = "Serial-port-bound sibling of the TCP transport; same decode core. Hardware-bound, deferred with the transport layer."
+
+[[unmapped]]
+area     = "Device polling loop + caching"
+priority = "phase-1b"
+note     = "A periodic poller that refreshes readings on an interval and debounces transient sentinels. Timer/runtime-bound; lands with the transport. The decode core it drives is complete."
+
+[[unmapped]]
+area     = "SunSpec meter models (201-204)"
+priority = "phase-1b"
+note     = "Grid/consumption meter models, same point-type and scale-factor primitives as the inverter models already implemented in src/point.rs + src/scale.rs. Additive decode; deferred until the transport surfaces a meter on the chain."
+
+[[unmapped]]
+area     = "SunSpec storage / battery model (124)"
+priority = "phase-1b"
+note     = "Battery state-of-charge / charge-discharge model. Reuses the implemented point/scale primitives. Additive; deferred with the storage-inverter transport path."
+
+[[unmapped]]
+area     = "SunSpec multiple-MPPT model (160)"
+priority = "phase-1b"
+note     = "Per-string MPPT extension model. Repeating-block decode over the same primitives; additive, deferred to Phase 1b."
+
+[[unmapped]]
+area     = "cave-home-core entity/state + cave-home-history integration"
+priority = "phase-1b"
+note     = "ADR-019 pattern: surfacing readings as core State entities + writing lifetime-energy to the history database lands once those crates' APIs stabilise. The decoder is already core-agnostic (returns plain typed values)."
+
+[[unmapped]]
+area     = "Vendor-private models (64xxx) decode"
+priority = "phase-2"
+note     = "SMA / Fronius / SolarEdge vendor-extension models are non-standard and per-vendor. Treated as opaque until a concrete household need justifies the per-vendor reverse-engineering. The standard models cover AC/DC power, energy, frequency and state for all six families."
+
+[[unmapped]]
+area     = "Pre-revision SunSpec model compatibility shims"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home decodes the current public SunSpec model definitions only; no historical-snapshot or deprecated-layout mode."
+
+# ---- spec_test (designed from the SunSpec spec / reference values) ---------
+
+[[spec_test]]
+designed_for = "Point-type decode incl. all not-implemented sentinels (int16 0x8000, uint16 0xFFFF, int32/uint32, acc32 zero, float32 NaN) + big-endian word order"
+ours         = "src/point.rs::tests"
+
+[[spec_test]]
+designed_for = "Scale-factor application with positive and negative power-of-ten exponents + clamping"
+ours         = "src/scale.rs::tests"
+
+[[spec_test]]
+designed_for = "String point decode (MSB-first, NUL/space trim, empty field)"
+ours         = "src/point.rs::tests::{string_decodes_msb_first_and_trims_padding,string_trims_trailing_spaces,string_empty_field}"
+
+[[spec_test]]
+designed_for = "Model-chain walk: marker check, single/multi-model, end sentinel, and rejection of a model declaring more registers than present"
+ours         = "src/discovery.rs::tests"
+
+[[spec_test]]
+designed_for = "Common model (1) decode from a hand-built register array + manufacturer→family mapping"
+ours         = "src/common.rs::tests"
+
+[[spec_test]]
+designed_for = "Inverter model decode (integer 101-103 + float 111-113), out-of-bounds rejection, sentinel/None handling, operating-state mapping"
+ours         = "src/inverter.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3) + EN/DE/TR coverage"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"
+
+[[spec_test]]
+designed_for = "End-to-end: discover a block then decode the inverter model it contains"
+ours         = "src/lib.rs::tests::end_to_end_discover_then_decode"

@@ -1,25 +1,193 @@
-# cave-home-audio-snapcast — parity manifest scaffold.
+# cave-home-audio-snapcast — clean-room reimplementation manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-audio-snapcast — multi-room audio synchronisation (Snapcast wire protocol); reference: badaix/snapcast (GPL-3.0, source NOT read); port method: CLEAN-ROOM from public protocol docs (ADR-020, Charter §6.1)
+# Per ADR-020 + Charter §6.1: Snapcast upstream is GPL-3.0, so this crate is a
+# clean-room Rust reimplementation built strictly from the PUBLIC Snapcast
+# control-protocol documentation — the JSON-RPC 2.0 `Server.GetStatus` tree
+# shape (streams / clients / groups) and the documented control verbs
+# (`Client.SetVolume`, `Client.SetLatency`, `Client.SetName`, `Group.SetStream`,
+# `Group.SetMute`, `Group.SetClients`) plus the on-change notification methods.
+# The Snapcast source (snapserver / snapclient) was NOT read or ported.
+#
+# Honest scoping: the full Snapcast pillar is the *control brain* (implemented &
+# tested here) PLUS the device half — the TCP JSON-RPC transport and live
+# notification stream, the snapserver/snapclient audio pipeline (PCM streaming
+# and the real wire-level time-sync handshake), the source/stream backends
+# (Spotify / AirPlay / pipe), and the cave-home-core entity integration.
+# Everything network- or audio-pipeline-bound is deferred to Phase 1b (ROADMAP
+# M9) and enumerated in [[unmapped]] below.
 
 [crate]
 name             = "cave-home-audio-snapcast"
 upstream_repo    = "badaix/snapcast (GPL-3.0, reference only, source NOT read)"
+upstream_license = "GPL-3.0 (copyleft — treated per ADR-020 / Charter §6.1; source not read)"
 port_method      = "clean-room"
 spec_sources     = [
-    "Snapcast public protocol documentation (docs/ tree of upstream repo, documentation files only — not source)",
+    "Snapcast public JSON-RPC control-protocol documentation — `Server.GetStatus` tree: server / streams / groups (with members) / clients",
+    "Snapcast public control-protocol documentation — Stream object: id / status (playing|idle) / codec / sampleformat",
+    "Snapcast public control-protocol documentation — Client object: id / name / connected / config.volume {muted, percent 0..=100} / config.latency",
+    "Snapcast public control-protocol documentation — Group object: id / name / stream_id / muted / clients[]",
+    "Snapcast public control-protocol documentation — control methods Client.SetVolume / Client.SetLatency / Client.SetName / Group.SetStream / Group.SetMute / Group.SetClients",
+    "Snapcast public control-protocol documentation — notification methods Client.OnConnect / Client.OnVolumeChanged / Group.OnStreamChanged",
+    "JSON-RPC 2.0 specification (public) — request/notification envelope (id, jsonrpc, method, params)",
+    "Snapcast public description of group volume = average of member volumes with proportional spread, and chunk-timestamp time-sync (target buffer minus client latency)",
 ]
-ported_at        = "2026-05-25"
+# Clean-room declaration (Charter §6.1 / ADR-020, mirrors cave-home-zigbee +
+# cave-home-lighting-wled): implemented from the public protocol documentation;
+# Snapcast source NOT read or ported.
+clean_room_note  = "Source not read. Implemented from the public Snapcast JSON-RPC control-protocol documentation + the public JSON-RPC 2.0 spec only; the Snapcast (GPL-3.0) source — snapserver/snapclient — was NOT read or ported. Per ADR-020, contributors who have read Snapcast source are recused from this crate."
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (control brain + TCP JSON-RPC
+# transport + notification stream + snapserver/snapclient audio pipeline + real
+# wire time-sync + source backends + core glue). The control brain — the
+# Server.GetStatus topology model (streams/clients/groups) with the one-group
+# invariant, the validated Volume + LatencyMs value objects, the pure control
+# operations (volume/mute/latency/name, group stream/mute, group-volume
+# proportional spread, create/dissolve/move with invariant preservation), the
+# time-sync arithmetic, the typed JSON-RPC 2.0 message model with std-only JSON
+# round-trip, and the grandma-friendly EN/DE/TR wording — is implemented and
+# tested in full. The transport + audio-pipeline halves are all ADR-020 Phase 1b
+# deferrals.
+fill_ratio              = 0.30
+fill_ratio_basis        = "Server.GetStatus topology model + one-group invariant + Volume/LatencyMs value objects + pure validated control ops (volume/mute/latency/name, group stream/mute, group-volume proportional spread, create/dissolve/move) + time-sync delay/target-buffer arithmetic + typed JSON-RPC 2.0 message model with std-only JSON round-trip + EN/DE/TR UX, fully implemented & tested; TCP transport + notification stream + snapserver/snapclient audio pipeline + real wire time-sync + source backends + core glue deferred"
+test_port_ratio         = 0.0   # clean-room: tests designed from the public protocol description, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries a phase disposition + note
+honest_ratio            = 1.00  # 0.30 / (0.30 + (1-0.30)*(1-1.00)) = 1.00
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- spec_section (clean-room reimpl present in this crate) -----------------
 
+[[spec_section]]
+spec = "`Server.GetStatus` topology tree — streams + clients + groups as one state object"
+ours = "src/topology.rs::Topology"
+
+[[spec_section]]
+spec = "Stream object — id / status (playing|idle) / codec / sampleformat, with wire-token round-trip"
+ours = "src/topology.rs::{Stream,StreamStatus}"
+
+[[spec_section]]
+spec = "Client object — id / name / connected / volume {muted, percent 0..=100} / latency; validated Volume value object (bounds + untrusted clamp); mute is independent of volume"
+ours = "src/client.rs::{Client,Volume,VolumeError}"
+
+[[spec_section]]
+spec = "Group object — id / name / stream_id / members[] / muted; membership helpers"
+ours = "src/group.rs::Group"
+
+[[spec_section]]
+spec = "One-group invariant — every client belongs to exactly one group; every group member is a known client"
+ours = "src/topology.rs::Topology::invariant_holds"
+
+[[spec_section]]
+spec = "Group volume = average of unmuted members; proportional, per-member-clamped spread of a group-volume change (standard Snapcast behaviour)"
+ours = "src/group.rs::{effective_volume,spread_group_volume}"
+
+[[spec_section]]
+spec = "Pure validated control ops — set client volume/mute/latency/name, set group stream/mute, set group volume, move client between groups, create/dissolve group (each bounds-checked, unknown-id rejecting, invariant-preserving)"
+ours = "src/control.rs::{set_client_volume,set_client_mute,set_client_latency,set_client_name,set_group_stream,set_group_mute,set_group_volume,move_client_to_group,create_group,dissolve_group}"
+
+[[spec_section]]
+spec = "Time-sync model — signed latency/offset value object (clamped) + per-client play-delay (target buffer minus latency, clamped) + minimum shared target buffer from the slowest client"
+ours = "src/sync.rs::{LatencyMs,client_delay_ms,min_target_buffer_ms}"
+
+[[spec_section]]
+spec = "JSON-RPC 2.0 message model — typed Request (id/method/params) + Notification (no id), with documented method names and the Client.SetVolume / Group.SetStream param shapes; std-only JSON round-trip"
+ours = "src/rpc.rs::{Request,Notification,method,client_set_volume,group_set_stream}"
+
+[[spec_section]]
+spec = "Minimal std-only JSON value model + parser + serializer (objects/arrays/strings/ints/bools) for the JSON-RPC envelopes"
+ours = "src/json.rs::Json"
+
+[[spec_section]]
+spec = "Grandma-friendly EN/DE/TR wording — house headline (playing together / every room / nothing / muted) + per-speaker status (Charter §6.3, ADR-007 / ADR-020)"
+ours = "src/label.rs + src/control.rs::{headline,client_headline}"
+
+# ---- unmapped (NOT in this crate; ADR-020 / ROADMAP M9 disposition) ---------
+
+[[unmapped]]
+area     = "TCP JSON-RPC control transport (connect to snapserver, send requests, correlate responses by id)"
+priority = "phase-1b"
+note     = "ADR-020 / ROADMAP M9: the control brain already produces/consumes the JSON-RPC envelopes (rpc.rs); the TCP client that frames newline-delimited JSON over a socket is pure network I/O on top. Clean-room from the public control-protocol endpoint description."
+
+[[unmapped]]
+area     = "Live notification stream (Client.OnConnect / OnVolumeChanged / Group.OnStreamChanged push updates applied to the topology)"
+priority = "phase-1b"
+note     = "ADR-020 / ROADMAP M9: the Notification type + method names are modelled (rpc.rs); decoding a pushed notification and folding it into a Topology is an apply-loop over the same typed messages. Async/socket-bound; no new message logic."
+
+[[unmapped]]
+area     = "snapserver / snapclient audio pipeline (PCM chunk streaming, encoder/decoder, ring buffer, playback)"
+priority = "phase-1b"
+note     = "ADR-020: the actual audio data plane (PCM streaming to each speaker, codec FLAC/Opus/PCM framing, jitter/ring buffering, ALSA/Pulse output) is audio-pipeline-bound and the largest deferred piece; the Phase-1 control brain reasons about it without moving samples."
+
+[[unmapped]]
+area     = "Real wire-level time-sync handshake (server clock-offset estimation + chunk timestamping)"
+priority = "phase-1b"
+note     = "ADR-020: sync.rs implements the pure delay/target-buffer arithmetic; the live protocol that estimates each client's clock offset and stamps PCM chunks with a play-at wall-clock time is timing/network-bound and lands with the audio pipeline."
+
+[[unmapped]]
+area     = "Source / stream backends (Spotify, AirPlay, named pipe, process, TCP source) feeding snapserver"
+priority = "phase-1b"
+note     = "ADR-020: a stream's id/codec/status are modelled (topology.rs); the backends that actually produce audio into a Snapcast stream are per-source I/O integrations layered on the audio pipeline, several account/protocol-bound."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration + automation triggers"
+priority = "phase-1b"
+note     = "ADR-020 / ROADMAP M9: surfacing speakers/groups as core State entities + automation targets lands once cave-home-core's entity API stabilises. The control brain is already core-agnostic (no cave-home-* dependency)."
+
+[[unmapped]]
+area     = "Music Assistant / Mopidy orchestration handoff (what to play, playlists, queue)"
+priority = "phase-2"
+note     = "ADR-020: Snapcast is the sync layer; choosing/queuing content is Music Assistant (cave-home-audio-mass) + Mopidy (cave-home-audio-mopidy). Cross-crate orchestration is a Phase-2 concern on top of these three brains."
+
+[[unmapped]]
+area     = "Legacy Snapcast control-protocol versions / pre-JSON-RPC compatibility"
+priority = "permanent"
+note     = "Charter §8 no-backcompat + §7 always-latest: cave-home targets the current Snapcast JSON-RPC control protocol only; no historical-protocol compatibility mode."
+
+[[unmapped]]
+area     = "Snapcast source reuse (snapserver / snapclient code)"
+priority = "permanent"
+note     = "Charter §6.1 / ADR-020: Snapcast is GPL-3.0 and may not be read or ported. This crate is clean-room from the public control-protocol documentation only — this gap is intentional and permanent. Source NOT read."
+
+[[unmapped]]
+area     = "32-bit ARM / pre-Linux 7.1 kernels"
+priority = "permanent"
+note     = "Charter §6.2 / ADR-003 — Linux 7.1+ only."
+
+# ---- spec_test (clean-room: tests designed from the public protocol description) ----
+
+[[spec_test]]
+designed_for = "Stream status wire-token round-trip + unknown-token fail-safe; topology build + invariant; duplicate/unknown id rejection; stream replace-by-id"
+ours         = "src/topology.rs::tests"
+
+[[spec_test]]
+designed_for = "Volume bounds (reject >100) + untrusted clamp + mute-is-not-volume-zero + client defaults"
+ours         = "src/client.rs::tests"
+
+[[spec_test]]
+designed_for = "Group-volume average of unmuted members (rounding); proportional spread up (with per-member clamp) and down; flat spread from a silent group; membership helpers"
+ours         = "src/group.rs::tests"
+
+[[spec_test]]
+designed_for = "Control ops pure & bounds-checked: volume/latency/stream rejection of unknown ids; group-volume spread to members; move/create/dissolve preserve the one-group invariant; create/dissolve error paths"
+ours         = "src/control.rs::tests"
+
+[[spec_test]]
+designed_for = "Time-sync: latency clamping; play-delay = buffer-minus-latency with zero/over-buffer clamps; minimum shared target buffer from the slowest client; negative-latency and empty-set handling"
+ours         = "src/sync.rs::tests"
+
+[[spec_test]]
+designed_for = "JSON-RPC 2.0 round-trip: request encode/decode (jsonrpc 2.0 envelope, Client.SetVolume param shape); notification has no id and rejects a request; missing method/id rejection; non-object params rejection"
+ours         = "src/rpc.rs::tests"
+
+[[spec_test]]
+designed_for = "Minimal JSON parse/serialize: scalars, nesting, whitespace, escapes, unicode escape, malformed-input rejection, deterministic key order"
+ours         = "src/json.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly headline (playing together / every room / nothing / muted) + per-speaker status + localised name joining in EN/DE/TR"
+ours         = "src/control.rs::tests + src/label.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/control.rs::tests::ui_strings_carry_no_implementation_jargon"

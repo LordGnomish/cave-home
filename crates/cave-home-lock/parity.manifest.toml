@@ -1,24 +1,179 @@
-# cave-home-lock — parity manifest scaffold.
+# cave-home-lock — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-lock — residential smart locks (Nuki, SwitchBot, August/Yale, ESPHome lock components) + Zigbee/Z-Wave/Matter lock-domain bindings; port method: line-by-line (ADR-016)
+# Phase 1 ships the residential lock *safety brain*: the door-lock state
+# machine (HA `lock` entity-domain semantics — optimistic apply, confirm/fail
+# settling, jam handling, capability gating, illegal-transition rejection), the
+# keypad-PIN credential model (validated value object, opaque digest, constant-
+# time-ish compare, brute-force lock-out), and the EN/DE/TR grandma-friendly
+# status labels + advice. This is the pure logic every vendor adapter, Portal
+# tile and voice reply will consume. The vendor I/O adapters (Nuki, SwitchBot,
+# August/Yale, Aqara, ESPHome, Zigbee/Z-Wave/Matter bindings), real crypto PIN
+# hashing, and core-state integration are network/hardware/crypto-bound and
+# deferred to Phase 1b — each enumerated below with an ADR-016 disposition.
+#
+# Port method: the lock state machine is implemented from the *public* Home
+# Assistant `lock` entity-domain semantics (Apache-2.0) plus first-party safety
+# logic (jam/lock-out/PIN handling). No GPL source was read.
 
 [crate]
 name             = "cave-home-lock"
-upstream_repo    = "home-assistant/core (lock-domain integrations) + Nuki/SwitchBot public REST APIs"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "home-assistant/core (lock entity domain)"
+port_method      = "spec-based (lock state machine) + first-party (safety/PIN logic)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "Home Assistant `lock` entity domain — states (locked/unlocked/locking/unlocking/jammed/open/unknown) and LockEntityFeature.OPEN capability (Apache-2.0)",
+    "Home Assistant lock service semantics — lock/unlock/open commands (Apache-2.0)",
+    "First-party safety logic: jam surfacing, optimistic confirm/fail settling, keypad brute-force lock-out (ADR-016)",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (state-machine engine + PIN model
+# + i18n labels + the vendor I/O adapters + real crypto hashing + core-state
+# integration). The engine, PIN contract and labels are implemented and tested
+# in full; the I/O adapters, crypto primitive and core glue remain and are all
+# ADR-justified Phase 1b. The lock domain's hard work is the safety state
+# machine, which is done — but it is an honestly small slice of the eventual
+# multi-vendor crate, so fill stays conservative.
+fill_ratio              = 0.28
+fill_ratio_basis        = "Lock state machine (apply/confirm/fail/jam/capability gating) + keypad PIN credential model + EN/DE/TR UX, fully implemented & tested; vendor I/O adapters, real crypto hashing & core integration deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-016 phase disposition
+honest_ratio            = 1.00  # 0.28 / (0.28 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "HA lock states: locked / unlocked / locking / unlocking / jammed / open / unknown"
+ours = "src/state.rs::LockState"
+
+[[mapped]]
+spec = "HA lock commands: lock / unlock / open"
+ours = "src/state.rs::LockCommand"
+
+[[mapped]]
+spec = "Optimistic transition: lock/unlock enter a transient in-flight state"
+ours = "src/machine.rs::Lock::apply"
+
+[[mapped]]
+spec = "Confirm/fail settling: Locking->Locked, Unlocking->Unlocked, *->Jammed on failure"
+ours = "src/machine.rs::Lock::{confirm,fail}"
+
+[[mapped]]
+spec = "Jam handling: a jammed lock rejects software commands until physically cleared"
+ours = "src/machine.rs::Lock::{is_legal,clear_jam}"
+
+[[mapped]]
+spec = "LockEntityFeature.OPEN capability gating (reject Open when unsupported)"
+ours = "src/machine.rs::{LockFeatures,Lock::is_legal}"
+
+[[mapped]]
+spec = "Illegal-transition rejection (redundant in-flight command, jammed lock)"
+ours = "src/machine.rs::TransitionError"
+
+[[mapped]]
+spec = "Keypad PIN value object: validated, non-empty, length-bounded, digits-only"
+ours = "src/code.rs::LockCode"
+
+[[mapped]]
+spec = "No-plaintext credential contract: opaque digest + constant-time-ish compare"
+ours = "src/code.rs::{CodeDigest,CodeCredential::verify}"
+
+[[mapped]]
+spec = "Keypad brute-force lock-out after N consecutive failures"
+ours = "src/code.rs::CodeCredential"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR status label & advice per state (Charter §6.3, ADR-007)"
+ours = "src/label.rs::LockState::{label,advice}"
+
+# ---- unmapped (NOT in this crate; ADR-016 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "Nuki adapter (HA integration + Nuki Smart Lock REST API)"
+priority = "phase-1b"
+note     = "ADR-016: Nuki exposes a local Bridge HTTP API (and optional Nuki Web cloud). Network-bound; the adapter maps Nuki lock states/commands onto state::LockState + machine::Lock and reuses this engine unchanged. cave-home prefers the local API and surfaces the cloud trade-off in UI."
+
+[[unmapped]]
+area     = "SwitchBot Lock adapter (HA integration + SwitchBot Lock API)"
+priority = "phase-1b"
+note     = "ADR-016: SwitchBot Lock over BLE / SwitchBot cloud API. Hardware/account-bound I/O adapter; routes vendor states into this state machine. No new lock logic."
+
+[[unmapped]]
+area     = "August / Yale adapter"
+priority = "phase-1b"
+note     = "ADR-016: August/Yale residential locks via their HA integration. Cloud/account-bound I/O adapter onto this engine."
+
+[[unmapped]]
+area     = "Aqara lock adapter"
+priority = "phase-1b"
+note     = "ADR-016: Aqara door locks via hub/Zigbee. Hardware-bound; binds the lock-domain entity onto this state machine."
+
+[[unmapped]]
+area     = "ESPHome lock-component bindings"
+priority = "phase-1b"
+note     = "ADR-016: ESPHome-flashed custom locks expose lock components (MIT, transitive via the ESPHome adapter). This crate adds the lock-domain entity bindings; the wire transport is the ESPHome adapter's job."
+
+[[unmapped]]
+area     = "Zigbee / Z-Wave / Matter door-lock bindings"
+priority = "phase-1b"
+note     = "ADR-016: protocol-pillar locks (e.g. Zigbee DoorLock cluster, Z-Wave/Matter door-lock device types) are driven via the existing protocol crates; this crate supplies the lock-domain abstraction they bind onto. Radio/protocol-bound."
+
+[[unmapped]]
+area     = "Real cryptographic PIN hashing (salted Argon2id/scrypt, constant-time crate)"
+priority = "phase-1b"
+note     = "ADR-016: the Phase-1 digest in code::CodeDigest is a deliberately dependency-free fold and is NOT password-grade. The Phase-1b adapter swaps in a salted password KDF + a vetted constant-time primitive behind the same validate/digest/compare contract this crate already owns."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration + automation triggers"
+priority = "phase-1b"
+note     = "ADR-016: surfacing locks as core State entities and wiring automations ('auto-lock at 22:00', 'unlock when family arrives') lands once cave-home-core's entity API stabilises. The state machine is already core-agnostic."
+
+[[unmapped]]
+area     = "Captured-trace vendor integration-test fixtures"
+priority = "phase-1b"
+note     = "ADR-016 accepted-costs: lock state is safety-critical and PRs shipping vendor adapters require integration tests against captured-trace fixtures. The fixtures arrive with each vendor adapter (which are themselves Phase 1b); the engine's own state-machine invariants are unit-tested here."
+
+[[unmapped]]
+area     = "Legacy lock-state compatibility / pre-current HA state names"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home models the current HA lock-domain state set only; no historical-snapshot or legacy-name compatibility mode."
+
+# ---- spec_test (designed from spec / HA lock-domain semantics) -------------
+
+[[spec_test]]
+designed_for = "Lock state predicates (transient / secure / needs-attention)"
+ours         = "src/state.rs::tests"
+
+[[spec_test]]
+designed_for = "Optimistic apply + confirm settles Locking->Locked / Unlocking->Unlocked"
+ours         = "src/machine.rs::tests::{lock_from_unlocked_goes_locking_then_locked,unlock_from_locked_goes_unlocking_then_unlocked}"
+
+[[spec_test]]
+designed_for = "Jam safety invariant: failure -> Jammed, jammed lock rejects commands"
+ours         = "src/machine.rs::tests::{locking_that_fails_becomes_jammed,commands_on_jammed_lock_are_rejected}"
+
+[[spec_test]]
+designed_for = "Open capability gating (Unsupported on a deadbolt)"
+ours         = "src/machine.rs::tests::{open_unsupported_on_deadbolt,open_supported_settles_to_open}"
+
+[[spec_test]]
+designed_for = "Illegal-transition rejection (redundant in-flight command)"
+ours         = "src/machine.rs::tests::redundant_in_flight_command_rejected"
+
+[[spec_test]]
+designed_for = "Keypad PIN validation boundaries (length / digits-only)"
+ours         = "src/code.rs::tests"
+
+[[spec_test]]
+designed_for = "Brute-force lock-out: refuses even the correct PIN once locked out"
+ours         = "src/code.rs::tests::locked_out_refuses_even_correct_pin"
+
+[[spec_test]]
+designed_for = "No-plaintext: a PIN never leaks through Debug"
+ours         = "src/code.rs::tests::debug_never_reveals_digits"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

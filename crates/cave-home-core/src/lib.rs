@@ -12,11 +12,13 @@
 pub mod context;
 pub mod event;
 pub mod event_bus;
+pub mod service;
 pub mod state;
 pub mod state_machine;
 
 pub use context::Context;
 pub use event::{Event, EventOrigin};
 pub use event_bus::{EventBus, Listener};
+pub use service::{Service, ServiceCall, ServiceError, ServiceRegistry};
 pub use state::{EntityId, State, StateAttributes};
 pub use state_machine::{StateChange, StateMachine, StateMachineError};

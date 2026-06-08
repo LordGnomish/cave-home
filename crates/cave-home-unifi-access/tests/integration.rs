@@ -1,147 +1,145 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 //
-// RED-phase integration tests for cave-home-unifi-access.
-//
-// Upstream pin: home-assistant/core@456202325ac48549bd3c895dc3e69ecd3e2ba6a4
-//               (tag 2026.5.2) :: homeassistant/components/unifi_access/
+//! End-to-end integration tests for the cave-home-unifi-access Phase-1 engine:
+//! a credential is presented, the policy decides, the controller acts, and the
+//! event log records it — exercised across module boundaries.
 
 use cave_home_unifi_access::{
-    AccessClient, AccessConfig, AccessError, Door, DoorEvent, DoorEventCategory,
-    DoorEventKind, DoorId, DoorLockRule, DoorLockRuleType, DoorPositionStatus,
-    EmergencyStatus, LockRelayStatus, friendly_door_label,
-    DEFAULT_LOCK_RULE_INTERVAL, MAX_LOCK_RULE_INTERVAL, MIN_LOCK_RULE_INTERVAL,
+    minute_of_week, AccessController, AccessDoor, AccessEvent, AccessLog, AccessMessage,
+    Credential, DenyReason, Direction, DoorId, DoorPosition, EnrolledCredential, Lang, LockState,
+    Permission, Policy, Schedule, Window,
 };
 
-#[test]
-fn access_config_uses_api_token() {
-    // Source: home-assistant/core@456202325ac48549bd3c895dc3e69ecd3e2ba6a4
-    // unifi_access/__init__.py — auth uses CONF_API_TOKEN, not user/pass.
-    let cfg = AccessConfig::new("access.local", "tok123");
-    assert_eq!(cfg.host, "access.local");
-    assert_eq!(cfg.api_token, "tok123");
-    assert!(!cfg.verify_ssl); // default: skip self-signed verification
+fn front() -> DoorId {
+    DoorId::new("front")
+}
+
+fn weekday_business_hours() -> Schedule {
+    // Monday 08:00 -> Monday 18:00 only (a cleaner who comes Monday mornings).
+    Schedule::from_windows(vec![Window::new(
+        minute_of_week(0, 8, 0),
+        minute_of_week(0, 18, 0),
+    )])
 }
 
 #[test]
-fn lock_rule_interval_bounds() {
-    // Source: unifi_access/const.py
-    assert_eq!(DEFAULT_LOCK_RULE_INTERVAL, 10);
-    assert_eq!(MIN_LOCK_RULE_INTERVAL, 1);
-    assert_eq!(MAX_LOCK_RULE_INTERVAL, 480);
+fn granted_entry_drives_controller_and_log() {
+    let mut controller = AccessController::new();
+    controller.add_door(AccessDoor::new(front(), "Front door"));
+
+    let mut policy = Policy::new();
+    let pin = Credential::pin("1234").expect("valid");
+    policy.set_person(
+        "alice",
+        Permission::new(
+            EnrolledCredential::enroll(&pin),
+            vec![front()],
+            weekday_business_hours(),
+        ),
+    );
+
+    let mut log = AccessLog::new();
+
+    // Monday 09:00 — inside the window.
+    let now = minute_of_week(0, 9, 0);
+    let attempt = Credential::pin("1234").expect("valid");
+    let decision = policy.decide("alice", &attempt, &front(), now, false);
+    assert!(decision.granted);
+
+    // Act: temporarily unlock for 30s, record the entry.
+    controller.temporary_unlock(&front(), 1_000, 30).expect("temp unlock");
+    log.record(AccessEvent::granted("alice", front(), Direction::Entry, 1_000));
+    assert_eq!(
+        controller.door(&front()).expect("door").lock_state(),
+        LockState::Unlocked
+    );
+
+    // 30s later the door auto-relocks.
+    let relocked = controller.tick(1_030);
+    assert_eq!(relocked, vec![front()]);
+    assert_eq!(
+        controller.door(&front()).expect("door").lock_state(),
+        LockState::Locked
+    );
+
+    // The household-facing line is plain language.
+    assert_eq!(
+        decision.message("Front door").text(Lang::En),
+        "Welcome — Front door is open for you."
+    );
+    assert_eq!(log.granted_for("alice").len(), 1);
 }
 
 #[test]
-fn lock_rule_normalises_clamped() {
-    // HA coordinator._normalize_interval(): clamp to [MIN, MAX], round.
-    assert_eq!(DoorLockRule::normalise_interval(None), DEFAULT_LOCK_RULE_INTERVAL);
-    assert_eq!(DoorLockRule::normalise_interval(Some(0.0)), MIN_LOCK_RULE_INTERVAL);
-    assert_eq!(DoorLockRule::normalise_interval(Some(500.0)), MAX_LOCK_RULE_INTERVAL);
-    assert_eq!(DoorLockRule::normalise_interval(Some(15.4)), 15);
-    assert_eq!(DoorLockRule::normalise_interval(Some(15.6)), 16);
+fn denied_outside_hours_is_logged_with_reason() {
+    let mut policy = Policy::new();
+    let pin = Credential::pin("1234").expect("valid");
+    policy.set_person(
+        "alice",
+        Permission::new(
+            EnrolledCredential::enroll(&pin),
+            vec![front()],
+            weekday_business_hours(),
+        ),
+    );
+    let mut log = AccessLog::new();
+
+    // Monday 22:00 — past the window.
+    let now = minute_of_week(0, 22, 0);
+    let attempt = Credential::pin("1234").expect("valid");
+    let decision = policy.decide("alice", &attempt, &front(), now, false);
+    assert_eq!(decision.reason, Some(DenyReason::OutsideSchedule));
+
+    log.record(AccessEvent::denied("alice", front(), DenyReason::OutsideSchedule, 5));
+    assert!(!log.events()[0].outcome.is_granted());
+    assert_eq!(
+        decision.message("Front door").text(Lang::De),
+        "Zugang verweigert — außerhalb der erlaubten Zeiten."
+    );
 }
 
 #[test]
-fn lock_rule_type_strings() {
-    // Source: unifi_access_api.DoorLockRuleType enum.
-    assert_eq!(DoorLockRuleType::Lock.as_str(), "lock");
-    assert_eq!(DoorLockRuleType::Unlock.as_str(), "unlock");
-    assert_eq!(DoorLockRuleType::Reset.as_str(), "reset");
-    assert_eq!(DoorLockRuleType::None.as_str(), "none");
+fn lockdown_blocks_everyone_and_controller_locks_all() {
+    let mut controller = AccessController::new();
+    controller.add_door(AccessDoor::new(front(), "Front door"));
+    controller.add_door(AccessDoor::new(DoorId::new("back"), "Back door"));
+    controller.lockdown();
+    assert_eq!(
+        controller.door(&front()).expect("door").lock_state(),
+        LockState::Locked
+    );
+
+    let mut policy = Policy::new();
+    let pin = Credential::pin("1234").expect("valid");
+    policy.set_person(
+        "alice",
+        Permission::new(
+            EnrolledCredential::enroll(&pin),
+            vec![front()],
+            Schedule::always(),
+        ),
+    );
+    // Even valid Alice is refused during lockdown.
+    let attempt = Credential::pin("1234").expect("valid");
+    let decision = policy.decide("alice", &attempt, &front(), 0, true);
+    assert_eq!(decision.reason, Some(DenyReason::LockedDown));
+    assert_eq!(decision.message("Front door"), AccessMessage::DeniedLockdown);
 }
 
 #[test]
-fn lock_rule_type_parse_round_trip() {
-    for v in DoorLockRuleType::all() {
-        assert_eq!(DoorLockRuleType::parse(v.as_str()), Some(v));
-    }
-    assert_eq!(DoorLockRuleType::parse("nonsense"), None);
-}
+fn held_open_alarm_after_evacuation() {
+    let mut controller = AccessController::new();
+    let mut door = AccessDoor::new(front(), "Front door");
+    door.set_position(DoorPosition::Open);
+    controller.add_door(door);
+    controller.evacuate();
 
-#[test]
-fn door_constructs_with_locked_default() {
-    let d = Door::new(DoorId::new("d1"), "Ön kapı");
-    assert_eq!(d.label, "Ön kapı");
-    assert_eq!(d.lock_relay, LockRelayStatus::Lock);
-    assert_eq!(d.position, DoorPositionStatus::Unknown);
-}
-
-#[test]
-fn lock_relay_status_strings() {
-    assert_eq!(LockRelayStatus::Lock.as_str(), "locked");
-    assert_eq!(LockRelayStatus::Unlock.as_str(), "unlocked");
-}
-
-#[test]
-fn door_position_status_strings() {
-    assert_eq!(DoorPositionStatus::Open.as_str(), "open");
-    assert_eq!(DoorPositionStatus::Close.as_str(), "close");
-    assert_eq!(DoorPositionStatus::Unknown.as_str(), "unknown");
-}
-
-#[test]
-fn emergency_status_default_clear() {
-    let e = EmergencyStatus::default();
-    assert!(!e.evacuation);
-    assert!(!e.lockdown);
-    assert!(e.is_clear());
-}
-
-#[test]
-fn emergency_lockdown_is_critical() {
-    let e = EmergencyStatus {
-        evacuation: false,
-        lockdown: true,
+    // A door left open 45s past a 30s limit raises the held-open alarm.
+    assert!(controller.is_held_open(&front(), 45, 30).expect("known door"));
+    let msg = AccessMessage::HeldOpen {
+        door: "Front door".into(),
     };
-    assert!(!e.is_clear());
-    assert!(e.is_lockdown());
-}
-
-#[test]
-fn door_event_kind_strings() {
-    // Source: unifi_access/coordinator.py _handle_doorbell / _handle_insights_add
-    assert_eq!(DoorEventKind::DoorbellRing.as_str(), "ring");
-    assert_eq!(DoorEventKind::AccessGranted.as_str(), "access_granted");
-    assert_eq!(DoorEventKind::AccessDenied.as_str(), "access_denied");
-}
-
-#[test]
-fn door_event_category_strings() {
-    assert_eq!(DoorEventCategory::Doorbell.as_str(), "doorbell");
-    assert_eq!(DoorEventCategory::Access.as_str(), "access");
-}
-
-#[test]
-fn door_event_construction() {
-    let e = DoorEvent {
-        door: DoorId::new("d1"),
-        category: DoorEventCategory::Doorbell,
-        kind: DoorEventKind::DoorbellRing,
-        actor: None,
-        authentication: None,
-    };
-    assert_eq!(e.category, DoorEventCategory::Doorbell);
-}
-
-#[test]
-fn friendly_door_label_appends_kapi() {
-    // ADR-007 — portal says "Ön kapı", never the door GUID.
-    assert_eq!(friendly_door_label("Ön"), "Ön kapı");
-    assert_eq!(friendly_door_label("Salon"), "Salon kapı");
-    assert_eq!(friendly_door_label(""), "Adsız kapı");
-}
-
-#[test]
-fn access_client_unauthenticated_initially() {
-    let cfg = AccessConfig::new("access.local", "tok");
-    let c = AccessClient::new(cfg);
-    assert!(!c.is_authenticated());
-}
-
-#[tokio::test]
-async fn access_client_login_against_offline_host_errors() {
-    let cfg = AccessConfig::new("127.0.0.1", "tok").with_port(1);
-    let mut c = AccessClient::new(cfg);
-    let err = c.login().await.unwrap_err();
-    assert!(matches!(err, AccessError::Connect(_) | AccessError::Timeout));
+    assert_eq!(msg.text(Lang::Tr), "Front door açık kaldı — lütfen kapatın.");
 }

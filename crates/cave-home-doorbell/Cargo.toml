@@ -6,11 +6,11 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-doorbell — Reolink + DoorBird + Ring (RTSP-only) doorbells/intercoms; upstream: HA doorbell integrations + vendor public REST/RTSP; port method: line-by-line (ADR-018)"
+description = "cave-home-doorbell — Reolink + DoorBird + Ring (RTSP-only) doorbells/intercoms; upstream: HA doorbell integrations + vendor public REST/RTSP; port method: spec-based (call engine) + line-by-line (vendor adapters, phase-1b) (ADR-018)"
 
 [package.metadata.cave-home]
 upstream    = "home-assistant/core (reolink, doorbird, ring RTSP-only)"
-port-method = "line-by-line"
+port-method = "spec-based (call engine) + line-by-line (vendor adapters, phase-1b)"
 adr         = "ADR-018"
 
 [lints]

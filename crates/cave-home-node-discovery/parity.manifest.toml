@@ -1,22 +1,150 @@
-# cave-home-node-discovery — parity manifest scaffold.
+# cave-home-node-discovery — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-node-discovery — LAN auto-discovery (mDNS / Bonjour, plus a cave-home-specific discovery protocol) for multi-node bootstrap; first-party, no upstream port. Used by cave-home-cluster during join. Shape gated by ADR-005.
+# Phase 1 ships the node/peer-discovery *logic core*: the mDNS / DNS-SD record
+# model for the `_cavehome._tcp.local` service (PTR / SRV / TXT / A as typed
+# structs + the TXT key=value codec), the length-prefixed DNS label & name wire
+# codec, the discovered-peer model, the clock-pure peer cache (add / refresh /
+# dedupe / expire / address-change), the self-announcement builder, the
+# version-skew compatibility policy (Charter §7 always-latest), and the
+# join-token + pairing-handshake state machine (Charter §6.3 / ADR-005). All
+# pure logic, std-only (incl. std::net), no sockets, no crypto.
+#
+# The actual UDP multicast transport, DNS message framing/compression, the live
+# announcement loop, the real pairing crypto, and the cluster/core integration
+# are network/crypto-bound and deferred to Phase 1b — each enumerated below
+# with an ADR-005 disposition.
+#
+# Port method: first-party clean-room implementation from public protocol
+# specs (RFC 1035 DNS, RFC 6762 mDNS, RFC 6763 DNS-SD) and the cave-home ADRs.
+# No GPL source was read; all spec sources are freely published RFCs.
 
 [crate]
 name             = "cave-home-node-discovery"
 upstream_repo    = "none (first-party)"
-port_method      = "first-party"
-ported_at        = "2026-05-25"
+port_method      = "first-party (spec-based: RFC 1035 / 6762 / 6763 + ADR-005)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "RFC 1035 — Domain Names: Implementation and Specification (label/name wire format §3.1, §2.3.4)",
+    "RFC 6762 — Multicast DNS (mDNS group 224.0.0.251:5353; record TTLs)",
+    "RFC 6763 — DNS-Based Service Discovery (PTR/SRV/TXT layout; TXT key=value §6)",
+    "ADR-005 — deployment topology / multi-node bootstrap (roles, join-token / QR pairing path)",
+    "Charter §5 multi-node cluster, §6.3 grandma-friendly UX, §7 always-latest, §8 no-backcompat",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (discovery logic + live multicast
+# transport + real pairing crypto + cluster/core integration). The decision &
+# protocol-state core is implemented and tested in full; the transport, crypto
+# and integration remain and are all ADR-justified Phase 1b/permanent.
+fill_ratio              = 0.30
+fill_ratio_basis        = "DNS label/name wire codec + PTR/SRV/TXT/A record model + TXT codec + peer model + clock-pure registry (add/refresh/dedupe/expire/address-change) + announce builder + version-compat policy + join-token & pairing state machine + EN/DE/TR UX, fully implemented & tested; multicast socket, DNS message framing/compression, pairing crypto and cluster/core integration deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-005 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "RFC 1035 §3.1 length-prefixed label encode/decode (1..=63 octets, root terminator)"
+ours = "src/label.rs::{encode_label,decode_label}"
+
+[[mapped]]
+spec = "RFC 1035 §2.3.4 domain-name wire encode/decode (labels + root, 255-octet cap, ASCII-case-insensitive compare)"
+ours = "src/dns_name.rs::DnsName"
+
+[[mapped]]
+spec = "RFC 6763 PTR/SRV/A record layout for _cavehome._tcp.local + TXT key=value codec (id/role/v/api)"
+ours = "src/record.rs::{ServiceRecord,PtrRecord,SrvRecord,ARecord,TxtRecord}"
+
+[[mapped]]
+spec = "Discovered-peer model: node id, hostname, std::net::IpAddr list, port, role, version, last-seen, TTL (clock-pure expiry)"
+ours = "src/peer.rs::DiscoveredPeer"
+
+[[mapped]]
+spec = "Peer cache: add / refresh / dedupe-by-node-id / expire-past-TTL / address-change detection over a caller clock"
+ours = "src/registry.rs::PeerRegistry"
+
+[[mapped]]
+spec = "Self-announcement: build this node's PTR+SRV+TXT+A advertisement set (ADR-005 'box announces itself')"
+ours = "src/announce.rs::{announce_self,announce_self_multi}"
+
+[[mapped]]
+spec = "Version-skew policy (Charter §7 always-latest, §8 no-backcompat): same minor compatible, one-minor upgrade nudge, else reject"
+ours = "src/compat.rs::{Version,compatibility,version_is_compatible}"
+
+[[mapped]]
+spec = "Join-token shape/validation (length, charset, clock-pure expiry) + pairing handshake state machine (ADR-005 QR/token path)"
+ours = "src/join.rs::{JoinToken,Pairing,PairingState}"
+
+[[mapped]]
+spec = "Cluster roles primary / secondary / ml-node (ADR-005) with EN/DE/TR grandma-friendly names (Charter §6.3)"
+ours = "src/peer.rs::NodeRole"
+
+# ---- unmapped (NOT in this crate; ADR-005 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "UDP multicast mDNS socket (send/receive on 224.0.0.251:5353 / FF02::FB)"
+priority = "phase-1b"
+note     = "ADR-005: the live transport binds the multicast group and emits/receives the records this crate models. Network-bound; the record codec and registry are transport-agnostic and reused unchanged."
+
+[[unmapped]]
+area     = "DNS message framing + compression-pointer encode (RFC 1035 §4.1, §4.1.4)"
+priority = "phase-1b"
+note     = "ADR-005: a full mDNS *message* (header + question/answer/additional sections, name compression) wraps the per-record codec implemented here. Compression-pointer DECODE is already flagged as a typed deferral in label.rs; encode lands with the wire transport."
+
+[[unmapped]]
+area     = "Live announcement / probing loop (RFC 6762 probe + announce + goodbye timing)"
+priority = "phase-1b"
+note     = "ADR-005: the periodic re-announce, conflict probing and goodbye packets are a timing/IO loop over announce_self's record set. Clock/IO-bound; the record set itself is pure and complete here."
+
+[[unmapped]]
+area     = "Secure pairing crypto (mutual-TLS / PSK enrolment)"
+priority = "phase-1b"
+note     = "ADR-005 + Charter §9 (account-free): the join token here is modelled as a validated bearer string with a clock-pure validity window and a handshake state machine. The real cryptographic mutual-TLS / PSK exchange (and constant-time compare) is crypto-bound and deferred; the state machine is the integration seam it slots into."
+
+[[unmapped]]
+area     = "cave-home-cluster join integration (cavehome join --token / --hub)"
+priority = "phase-1b"
+note     = "ADR-005: cave-home-cluster drives this crate's Pairing state machine during K3s join. Deferred until the cluster lifecycle API stabilises; this crate has no dependency on cave-home-cluster (no cross-crate coupling)."
+
+[[unmapped]]
+area     = "cave-home-core entity/state surfacing of discovered peers"
+priority = "phase-1b"
+note     = "ADR-005: presenting peers as core State entities + the Portal 'Add node' wizard lands once cave-home-core's entity API stabilises. The peer model is already core-agnostic."
+
+[[unmapped]]
+area     = "Pre-current protocol / legacy-version compatibility mode"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: the cluster runs one version line; the compat policy rejects (rather than shims) versions more than one minor apart. No historical-protocol mode will ship."
+
+# ---- spec_test (designed from spec / RFC reference behaviour) --------------
+
+[[spec_test]]
+designed_for = "RFC 1035 label encode/decode: length prefix, 63-octet cap, root terminator, truncation/compression-pointer guards"
+ours         = "src/label.rs::tests"
+
+[[spec_test]]
+designed_for = "RFC 1035 name wire round-trip for the service + instance names, 255-octet cap, case-insensitive compare"
+ours         = "src/dns_name.rs::tests"
+
+[[spec_test]]
+designed_for = "RFC 6763 TXT key=value round-trip + malformed/duplicate/missing-key/unknown-value rejection; ServiceRecord build & validation"
+ours         = "src/record.rs::tests"
+
+[[spec_test]]
+designed_for = "Peer add / refresh / dedupe / clock-pure expiry / address-change detection"
+ours         = "src/registry.rs::tests"
+
+[[spec_test]]
+designed_for = "Version-skew policy boundaries (same-minor / one-minor / multi-minor / cross-major)"
+ours         = "src/compat.rs::tests"
+
+[[spec_test]]
+designed_for = "Join-token validation + pairing handshake transitions (happy path, mismatch, expiry, illegal transition, version reject)"
+ours         = "src/join.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/peer.rs::tests::ui_strings_carry_no_implementation_jargon"

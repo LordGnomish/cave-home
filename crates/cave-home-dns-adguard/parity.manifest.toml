@@ -1,25 +1,179 @@
-# cave-home-dns-adguard — parity manifest scaffold.
+# cave-home-dns-adguard — clean-room reimplementation manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-dns-adguard — DNS ad-blocking + parental controls (AdGuard Home-class); reference: AdguardTeam/AdGuardHome (GPL, source NOT read); port method: CLEAN-ROOM from AdGuard admin-API public docs + OpenAPI spec (ADR-022, Charter §6.1)
+# Per ADR-022 + Charter §6.1: AdGuard Home is GPL, so this crate is implemented
+# strictly from the PUBLIC filter-syntax documentation — Adblock-style domain
+# rules (||domain^, @@ allowlist exceptions, |…| anchors), /etc/hosts blackhole
+# lines, dnsmasq-style comments, and plain domain lists. The upstream AdGuard
+# Home source was NOT read or ported.
+#
+# Honest scoping: the full DNS-filtering pillar is the *decision core* (the rule
+# parser + match engine + rewrites + stats + grandma-friendly UX, implemented &
+# tested here) PLUS the DNS server transport (UDP/TCP/DoH/DoT), the upstream
+# recursive resolver, blocklist auto-update fetch, the live query-interception
+# loop, and the cave-home-core glue. Everything network-bound is deferred to
+# Phase 1b (ROADMAP M10) and enumerated in [[unmapped]] below. Per Charter §9 a
+# permanent entry forbids cloud-relayed DNS.
 
 [crate]
 name             = "cave-home-dns-adguard"
-upstream_repo    = "AdguardTeam/AdGuardHome (GPL, reference only, source NOT read)"
+upstream_repo    = "AdguardTeam/AdGuardHome (reference only, GPL)"
+upstream_license = "GPL-3.0-only"
 port_method      = "clean-room"
 spec_sources     = [
-    "AdGuard Home admin-API public docs (github.com/AdguardTeam/AdGuardHome/wiki) + OpenAPI spec",
+    "Adblock-style filter syntax — public documentation (||domain^ host rules, @@ allowlist exceptions, |…| anchoring, ^ separator, ! comments)",
+    "/etc/hosts file format — POSIX public spec (blackhole entries: 0.0.0.0 / 127.0.0.1 / :: sink + domain)",
+    "dnsmasq address/server public documentation (# comment convention, domain-list style)",
+    "Plain domain-list blocklist convention — public (one bare domain per line, host-and-subdomain semantics)",
+    "DNS domain-name label rules (RFC 1035 §2.3.1 / RFC 1123 §2.1) — public (label length ≤63, name ≤253, LDH characters, trailing-dot root label)",
+    "DNS-rewrite behaviour — public feature description (map a name + its subdomains to a fixed A/AAAA/CNAME-like answer)",
 ]
-ported_at        = "2026-05-25"
+# Clean-room declaration (Charter §6.1, mirrors cave-home-solar-hoymiles):
+# implemented from the public filter-syntax description; upstream source not read.
+clean_room_note  = "Source not read. Implemented from the public Adblock/hosts/dnsmasq filter-syntax documentation + public DNS RFC label rules; the GPL AdGuard Home upstream source was NOT read or ported (Charter §6.1 / ADR-022)."
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (decision core + DNS server
+# transport + upstream resolver + auto-update fetch + interception loop + core
+# glue). The decision core — rule model + multi-format parser + match engine
+# with allowlist precedence + client overrides + rewrites + stats aggregation +
+# EN/DE/TR UX — is implemented and tested in full. The network/transport halves
+# are all ADR-022-justified Phase 1b deferrals.
+fill_ratio              = 0.30
+fill_ratio_basis        = "Rule model + /etc/hosts/Adblock/plain-list parser + decide() match engine (allowlist precedence, exact-vs-subdomain, client overrides) + DNS rewrites + query/blocked stats + EN/DE/TR grandma-friendly UX, fully implemented & tested; DNS server transport + resolver + auto-update + interception loop + core glue deferred"
+test_port_ratio         = 0.0   # clean-room: tests designed from the public syntax docs, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries a phase disposition + note
+honest_ratio            = 1.00  # 0.30 / (0.30 + (1-0.30)*(1-1.00)) = 1.00
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- spec_section (clean-room reimpl present in this crate) -----------------
 
+[[spec_section]]
+spec = "Filter-rule model: block/allow action, exact-vs-subdomain domain pattern"
+ours = "src/rule.rs::{Rule,Action,DomainPattern}"
+
+[[spec_section]]
+spec = "Domain normalisation (lowercase ASCII, strip trailing root dot, trim) + plausibility check (RFC 1035/1123 label rules)"
+ours = "src/rule.rs::{normalize_domain,is_plausible_domain}"
+
+[[spec_section]]
+spec = "/etc/hosts blackhole parsing (0.0.0.0/127.0.0.1/:: sink + domain, host-and-subdomain block)"
+ours = "src/parse.rs::parse_hosts_line"
+
+[[spec_section]]
+spec = "Adblock-style domain rules: ||domain^ block, @@ allowlist exception, |domain| exact anchor, ^ separator strip, ! comments"
+ours = "src/parse.rs::parse_adblock_line"
+
+[[spec_section]]
+spec = "Plain domain-list parsing (bare domain → host-and-subdomain block) + # comment / blank handling"
+ours = "src/parse.rs::{parse_plain_domain,is_comment,parse_blocklist}"
+
+[[spec_section]]
+spec = "Malformed-line and unsupported-modifier ($-option) handling: skip, never panic"
+ours = "src/parse.rs::parse_line"
+
+[[spec_section]]
+spec = "Match engine: decide(domain) -> Blocked/Allowed/NotFiltered with allowlist precedence over block rules"
+ours = "src/engine.rs::RuleSet::decide"
+
+[[spec_section]]
+spec = "Custom client rules / per-domain overrides (household allow/block ahead of imported lists)"
+ours = "src/engine.rs::RuleSet::add_client_rule"
+
+[[spec_section]]
+spec = "DNS rewrite model: map a domain (and subdomains, or exact) to a fixed A/AAAA/CNAME-like answer; first-match-wins table"
+ours = "src/rewrite.rs::{Rewrite,RewriteTable,Answer}"
+
+[[spec_section]]
+spec = "Query statistics: total/blocked counts, per-domain + per-blocked-domain aggregation, blocked ratio, top-blocked"
+ours = "src/stats.rs::Stats"
+
+[[spec_section]]
+spec = "Grandma-friendly localised UX (EN/DE/TR): protection on/off, blocked-today headline with thousands grouping, per-site verdict (Charter §6.3, ADR-007)"
+ours = "src/label.rs"
+
+# ---- unmapped (NOT in this crate; ADR-022 / ROADMAP M10 disposition) --------
+
+[[unmapped]]
+area     = "DNS server transport (UDP/TCP + DoH/DoT listeners)"
+priority = "phase-1b"
+note     = "ADR-022 / ROADMAP M10: the on-the-wire DNS server (parse query packets, answer over UDP/TCP, and the encrypted DoH/DoT front-ends) is network/socket-bound. It sits directly on top of this decision core — it calls RuleSet::decide and RewriteTable::resolve per query; no new filtering logic. Clean-room from the DNS wire-format RFCs, not from upstream source."
+
+[[unmapped]]
+area     = "Upstream recursive resolver integration"
+priority = "phase-1b"
+note     = "ADR-022: queries this core does not block must be resolved. cave-home-dns-unbound (the BSD recursive layer) sits below this crate; wiring decide()==NotFiltered to forward to it is the integration step. Network-bound."
+
+[[unmapped]]
+area     = "Blocklist auto-update fetch + scheduled refresh"
+priority = "phase-1b"
+note     = "ADR-022: periodically downloading/refreshing hosted blocklists is HTTP/timer-bound. The parser here already compiles whatever text is fetched; the fetcher is pure I/O feeding parse_blocklist."
+
+[[unmapped]]
+area     = "Live query-interception loop + persisted query log"
+priority = "phase-1b"
+note     = "ADR-022: the loop that captures real lookups, calls decide(), records events and persists them. The stats module here aggregates an in-memory QueryEvent log; the live capture + persistence is async/storage-bound."
+
+[[unmapped]]
+area     = "Per-client policy + parental-controls scheduling"
+priority = "phase-1b"
+note     = "ADR-022: per-device rule sets (e.g. 'phone X bedtime limit') and time-of-day schedules build on the client-override model already here (add_client_rule); the per-client routing + clock/scheduler are the deferred parts."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration + automation triggers"
+priority = "phase-1b"
+note     = "ADR-022: surfacing block stats / toggles as core State entities + triggers lands once cave-home-core's entity API stabilises. The decision core is already core-agnostic (no cave-home-* dependency)."
+
+[[unmapped]]
+area     = "Adblock cosmetic/$-modifier rules (element hiding, $third-party, regex/path rules)"
+priority = "phase-2"
+note     = "ADR-022: cosmetic filters and the $-option scoping (third-party, important, dnstype, …) are a DNS-irrelevant or refinement layer. Phase 1 deliberately skips $-modifier lines rather than mis-applying them (parse_line returns None); they re-enter as a Phase 2 modifier evaluator over the same Rule model."
+
+[[unmapped]]
+area     = "Cloud-relayed / third-party DNS providers"
+priority = "permanent"
+note     = "Charter §9: cave-home never routes the home's DNS through a third-party/cloud provider. Resolution stays on the LAN via the recursive layer (cave-home-dns-unbound). This gap is intentional and permanent."
+
+[[unmapped]]
+area     = "Pre-current Adblock-syntax / legacy blocklist-format compatibility mode"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home parses the current public filter syntaxes only; no historical-format compatibility mode."
+
+[[unmapped]]
+area     = "AdGuard Home GPL source reuse"
+priority = "permanent"
+note     = "Charter §6.1 / ADR-022: the upstream is GPL and may not be read or ported. This crate is clean-room from the public filter-syntax documentation only — this gap is intentional and permanent."
+
+# ---- spec_test (clean-room: tests designed from the public syntax docs) -----
+
+[[spec_test]]
+designed_for = "Domain pattern matching — subdomain covers children, suffix-lookalike rejection, exact-only matches itself"
+ours         = "src/rule.rs::tests"
+
+[[spec_test]]
+designed_for = "Normalisation (case + trailing dot) and domain plausibility (accepts real domains, rejects empty/double-dot/space/leading-hyphen labels)"
+ours         = "src/rule.rs::tests::{normalize_lowercases_and_strips_trailing_dot,plausible_domain_accepts_real_domains,plausible_domain_rejects_garbage}"
+
+[[spec_test]]
+designed_for = "Each rule format parses — /etc/hosts (0.0.0.0 + loopback), Adblock ||^/|…|/@@, plain domain"
+ours         = "src/parse.rs::tests"
+
+[[spec_test]]
+designed_for = "Comment (# and !) + blank-line handling, modifier-rule skip, malformed-line skip without panic, real-host-mapping not treated as a block"
+ours         = "src/parse.rs::tests::{ignores_comments_and_blanks,skips_modifier_rules_in_phase_1,skips_malformed_without_panicking,ignores_real_host_mapping_not_a_sink}"
+
+[[spec_test]]
+designed_for = "Engine decide(): block self+subdomains, exact-only, allowlist exception beats block, client allow/block overrides, query normalisation, decision carries source rule"
+ours         = "src/engine.rs::tests"
+
+[[spec_test]]
+designed_for = "DNS rewrites: subdomain vs exact coverage, query normalisation, first-match-wins specificity, IPv4/IPv6/alias answers"
+ours         = "src/rewrite.rs::tests"
+
+[[spec_test]]
+designed_for = "Stats aggregation: totals/blocked counts, per-domain + blocked-per-domain, blocked ratio (empty/full), top-blocked sort+truncate, run-through-engine path"
+ours         = "src/stats.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX: thousands grouping, all phrases present in EN/DE/TR, and carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests"

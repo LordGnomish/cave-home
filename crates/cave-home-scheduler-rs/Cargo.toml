@@ -6,17 +6,18 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-scheduler-rs — Kubernetes scheduler; upstream: kubernetes/kubernetes (K3s-vendored); port method: line-by-line (Orchestration Phase 2, ADR-004)"
+description = "cave-home-scheduler-rs — Kubernetes scheduler decision core; upstream: kubernetes/kubernetes (K3s-vendored); port method: behavioural reimplementation (spec/contract-based; not verbatim line-by-line) (Orchestration Phase 2, ADR-004)"
 
 [package.metadata.cave-home]
 upstream    = "kubernetes/kubernetes (K3s-vendored)"
-port-method = "line-by-line"
+# Behavioural reference only; not a verbatim transcription. A prior pinned SHA
+# was unverified (reused across k3s crates) and was removed.
+port-method = "behavioural-reimplementation"
 phase       = "orchestration-phase-2"
 
 [package.metadata.upstream]
 repo    = "kubernetes/kubernetes"
-release = "v1.36.1"
-sha     = "756939600b9a7180fc2df6550a4585b638875e67"
+release = "v1.36.1 (behavioural reference)"
 subpath = "pkg/scheduler"
 
 [dependencies]

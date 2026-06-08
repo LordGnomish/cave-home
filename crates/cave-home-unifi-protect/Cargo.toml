@@ -6,29 +6,26 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-unifi-protect — UniFi Protect port (cameras, doorbells, motion/smart detections; converges with Frigate camera pillar); upstream: home-assistant/core unifiprotect integration + Ubiquiti Protect REST/WebSocket; port method: line-by-line (ADR-009)"
+description = "cave-home-unifi-protect — UniFi Protect decision brain (cameras, doorbells, smart detections, recording-mode/zone/privacy policy; Phase-1 pure-logic core, transport/video deferred per ADR-009)"
 
 [package.metadata.cave-home]
-upstream    = "home-assistant/core (unifiprotect) + Ubiquiti Protect REST/WebSocket"
-port-method = "line-by-line"
+upstream    = "home-assistant/core (unifiprotect) + public UniFi Protect device/data model"
+port-method = "spec-based (detection-policy core)"
 adr         = "ADR-009"
 
-[package.metadata.upstream]
-repo    = "home-assistant/core"
-release = "2026.5.2"
-sha     = "456202325ac48549bd3c895dc3e69ecd3e2ba6a4"
-subpath = "homeassistant/components/unifiprotect"
+# Phase 1 ships the std-only UniFi Protect decision core: the typed device
+# models (camera/doorbell/sensor/light/chime/viewer), the smart-detect event
+# model + taxonomy, the recording-mode decision, smart-detect zone / line
+# arming, doorbell ring + rapid-detection de-dupe, the privacy schedule
+# (Charter §9) and the EN/DE/TR grandma-friendly phrasing. The UniFi Protect
+# REST bootstrap + binary WebSocket transport, RTSPS stream/recording download,
+# thumbnail/snapshot fetch and the cave-home-camera/-core integration are
+# network/video-bound and deferred to Phase 1b — see parity.manifest.toml
+# [[unmapped]]. The core therefore depends on no external crates.
 
 [dependencies]
-parking_lot  = "0.12"
-serde        = { version = "1", features = ["derive"] }
-serde_json   = "1"
-thiserror    = "2"
-tokio        = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "net", "io-util"] }
-tracing      = "0.1"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "net", "test-util"] }
 
 [lints]
 workspace = true

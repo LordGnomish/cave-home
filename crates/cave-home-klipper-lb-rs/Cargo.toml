@@ -6,11 +6,12 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-klipper-lb-rs — ServiceLB / 'service-lb' (K3s default); upstream: rancher/klipper-lb; port method: line-by-line (Orchestration Phase 4, ADR-004)"
+description = "cave-home-klipper-lb-rs — K3s ServiceLB (svclb / klipper-lb) decision core: host-port allocation + conflict detection, svclb pod-spec construction, node selection, status ingress-IP computation; behavioural reimplementation of the documented svclb algorithm (Orchestration Phase 4, ADR-004)"
 
 [package.metadata.cave-home]
-upstream    = "rancher/klipper-lb"
-port-method = "line-by-line"
+upstream    = "k3s-io/k3s (pkg/cloudprovider ServiceLB) + rancher/klipper-lb"
+spec-sources = "public K3s ServiceLB docs + Kubernetes Service API (see parity.manifest.toml)"
+port-method = "behavioral-reimplementation"
 phase       = "orchestration-phase-4"
 
 [lints]

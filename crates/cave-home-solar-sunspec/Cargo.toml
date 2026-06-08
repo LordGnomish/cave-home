@@ -6,25 +6,17 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-solar-sunspec — SunSpec Modbus models for vendor-agnostic inverter monitoring (SMA / Fronius / SolarEdge / Huawei / Goodwe / Kostal); spec: SunSpec Alliance public, port method: spec-based"
+description = "cave-home-solar-sunspec — vendor-agnostic SunSpec Modbus register decoder for solar inverter monitoring (SMA / Fronius / SolarEdge / Huawei / Goodwe / Kostal); spec: SunSpec Alliance public, port method: spec-based"
 
 [package.metadata.cave-home]
 upstream    = "SunSpec Alliance public model spec"
 port-method = "spec-based"
-spec-source = "SunSpec Alliance — public model definitions (1, 101-103, 120-124, 160-161, etc.)"
+spec-source = "SunSpec Alliance — public model definitions (1, 101-103, 111-113)"
 spec-url    = "https://sunspec.org/sunspec-information-model-specifications/"
 
-[dependencies]
-thiserror   = "2"
-serde       = { version = "1", features = ["derive"] }
-serde_json  = "1"
-tokio       = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros", "time", "io-util", "net"] }
-tracing     = "0.1"
-byteorder   = "1"
-async-trait = "0.1"
-
-[dev-dependencies]
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros", "time", "io-util", "net", "test-util"] }
+# Phase-1 MVP is pure decode logic — std-only, no external crates, no network
+# or hardware. The live Modbus-TCP/RTU transport and device polling are
+# Phase-1b (see parity.manifest.toml [[unmapped]]).
 
 [lints]
 workspace = true

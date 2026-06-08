@@ -6,11 +6,11 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-hvac — HVAC / heat-pump / climate; upstream: HA climate-domain integrations (Viessmann Open3EClient, Daikin, LG, Bosch, Mitsubishi, Samsung); port method: line-by-line (ADR-012)"
+description = "cave-home-hvac — HVAC / heat-pump / climate; upstream: HA climate-domain integrations (Viessmann Open3EClient, Daikin, LG, Bosch, Mitsubishi, Samsung); port method: line-by-line (vendor adapters) + spec-based (climate engine) (ADR-012)"
 
 [package.metadata.cave-home]
 upstream    = "home-assistant/core (climate-domain integrations) + Open3EClient (Viessmann ViCare)"
-port-method = "line-by-line"
+port-method = "line-by-line (vendor adapters) + spec-based (climate engine)"
 adr         = "ADR-012"
 
 [lints]

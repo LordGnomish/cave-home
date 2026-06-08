@@ -1,24 +1,160 @@
-# cave-home-helm-controller-rs — parity manifest scaffold.
+# cave-home-helm-controller-rs — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-helm-controller-rs — Helm chart reconciler (K3s default); upstream: k3s-io/helm-controller; port method: line-by-line (Orchestration Phase 4, ADR-004)
+# Phase-4 (ADR-004) ships the helm-controller *decision core*: the HelmChart /
+# HelmChartConfig CRD model, the Helm values deep-merge with documented layer
+# precedence + --set null-removal, the deterministic change-detection hash, the
+# install/upgrade/no-op/rollback/uninstall reconcile state machine, the pure
+# helm-job argument construction, version pin / always-latest resolution, repo
+# URL validation, and retry/backoff classification. This is the brain that
+# decides *what* to do; the cluster-side actuation (run the Helm job, watch the
+# CRD, apply to the cluster, fetch the repo) is network/cluster-bound and
+# deferred to Phase 1b, each enumerated below with a disposition.
+#
+# Port method: HONEST behavioural reimplementation from *public* helm-controller
+# and Helm documentation (Apache-2.0-compatible). No verbatim line-by-line
+# parity is claimed; the upstream is Apache-2.0 so a future verbatim pass is
+# legally available but is deliberately deferred (see [[unmapped]]).
 
 [crate]
 name             = "cave-home-helm-controller-rs"
 upstream_repo    = "k3s-io/helm-controller"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_subpath = "pkg/controllers/chart (behavioural reference only)"
+port_method      = "behavioural-reimplementation (spec/docs-based)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "k3s-io/helm-controller public HelmChart / HelmChartConfig CRD reference (group helm.cattle.io/v1)",
+    "Helm docs — Values Files & 'The Format and Limitations of --set' (deep-merge + null-removal semantics)",
+    "Helm CLI reference — helm install|upgrade|uninstall flags (--namespace, --version, --repo, --set, --create-namespace)",
+    "Helm release lifecycle — deployed/failed/pending statuses and `helm rollback` on a failed upgrade",
+    "Helm chart-repository spec — index.yaml HTTP(S) repos and OCI oci:// references",
+    "Charter §7 (always-latest) — unset/`latest` version resolves to the newest available chart",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (decision core + cluster-side
+# actuation + repo/registry I/O). The decision core is implemented and tested
+# in full; the actuation and I/O surfaces remain and are all justified Phase-1b.
+fill_ratio              = 0.30
+fill_ratio_basis        = "CRD model + values deep-merge + change-hash + reconcile state machine + job-arg construction + version/repo handling + retry/backoff, fully implemented & tested; Helm-job exec, CRD watch, cluster apply, repo/OCI fetch deferred"
+test_port_ratio         = 0.0   # tests designed from spec/docs, not ported from upstream
+adr_justified_ratio     = 1.00  # every unfilled item below carries a phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "HelmChart spec model (chart, repo, version, targetNamespace, valuesContent, set, bootstrap, jobImage)"
+ours = "src/chart.rs::HelmChartSpec"
+
+[[mapped]]
+spec = "HelmChartConfig values-overlay model"
+ours = "src/chart.rs::HelmChartConfig"
+
+[[mapped]]
+spec = "HelmChart status (jobName, last-applied hash, last revision)"
+ours = "src/chart.rs::HelmChartStatus"
+
+[[mapped]]
+spec = "Helm values deep-merge: object recursion, scalar/array wholesale replace, --set null-removal"
+ours = "src/values.rs::Value::deep_merge"
+
+[[mapped]]
+spec = "Layer precedence: chart defaults < valuesContent < HelmChartConfig overlay < explicit set"
+ours = "src/values.rs::merge_layers"
+
+[[mapped]]
+spec = "Deterministic change-detection hash over merged values + identity-affecting spec fields"
+ours = "src/chart.rs::HelmChart::desired_hash + src/hash.rs::fnv1a64"
+
+[[mapped]]
+spec = "Reconcile decision: Install / Upgrade / NoOp / Rollback / Uninstall from desired vs observed release"
+ours = "src/reconcile.rs::decide"
+
+[[mapped]]
+spec = "Helm job argument construction (install/upgrade/delete verbs + --namespace/--version/--repo/--set flags)"
+ours = "src/job.rs::build_args"
+
+[[mapped]]
+spec = "Chart version pinning vs always-latest resolution (Charter §7) + SemVer validation"
+ours = "src/chart.rs::VersionPolicy"
+
+[[mapped]]
+spec = "Repo URL validation + kind classification (HTTP(S) / OCI)"
+ours = "src/chart.rs::Repo"
+
+[[mapped]]
+spec = "Spec validation (reject empty chart / namespace / jobImage / bad repo / bad version)"
+ours = "src/chart.rs::HelmChartSpec::validate"
+
+[[mapped]]
+spec = "Failed-reconcile retry classification + exponential backoff with cap"
+ours = "src/reconcile.rs::{FailureReason::classify, backoff_secs}"
+
+# ---- unmapped (NOT in this crate; Phase-1b/permanent disposition) ----------
+
+[[unmapped]]
+area     = "Helm SDK / `helm` exec via in-cluster Job (klipper-helm) runner"
+priority = "phase-1b"
+note     = "The decision core emits the operation + args (src/job.rs); actually constructing the Kubernetes Job object, scheduling it, streaming its logs, and reaping it is cluster-bound I/O. Lands once the kubelet/Job surface (Phase 1) is wired. No new decision logic — pure actuation."
+
+[[unmapped]]
+area     = "HelmChart CRD watch / informer (event-driven reconcile trigger)"
+priority = "phase-1b"
+note     = "Reconcile is implemented as a pure function of desired-vs-observed; driving it from a live CRD watch/informer depends on the apiserver client surface (Phase 2 control plane). The function is already informer-agnostic."
+
+[[unmapped]]
+area     = "Cluster apply / status write-back (job name, applied hash, revision)"
+priority = "phase-1b"
+note     = "The status model exists (HelmChartStatus); persisting it to the apiserver via optimistic-concurrency PATCH is cluster I/O and depends on the apiserver client. Conflict is already classified as a retryable failure."
+
+[[unmapped]]
+area     = "Chart repository fetch + index.yaml resolution + auth"
+priority = "phase-1b"
+note     = "Resolving `latest` against a live repo index, downloading the chart tarball, and handling repo credentials are network/secret-bound. Repo URLs are validated and classified here; the fetch itself is the helm-job's job (Phase 1b)."
+
+[[unmapped]]
+area     = "OCI registry (oci://) chart pull"
+priority = "phase-1b"
+note     = "OCI references are recognised and classified (RepoKind::Oci); the registry handshake, manifest pull, and layer download are network-bound and land with the repo-fetch work."
+
+[[unmapped]]
+area     = "Verbatim line-by-line parity with k3s-io/helm-controller Go source"
+priority = "deferred"
+note     = "Upstream is Apache-2.0, so a verbatim port is legally available, but this slice is an HONEST behavioural reimplementation from public docs. A future verbatim pass (matching exact annotation keys, job env, and Go struct tags) is deferred until the actuation surface above exists to test it against."
+
+[[unmapped]]
+area     = "Pre-v1 HelmChart CRD compatibility / legacy annotation keys"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home tracks the current helm.cattle.io/v1 CRD only; no historical-CRD-version shim."
+
+# ---- spec_test (designed from spec / public docs) --------------------------
+
+[[spec_test]]
+designed_for = "Values deep-merge precedence (set>config>content>defaults), nested override, array wholesale-replace, --set null-removal (root + nested)"
+ours         = "src/values.rs::tests"
+
+[[spec_test]]
+designed_for = "Change-hash stability (same input → same hash) + sensitivity (any meaningful change flips it), FNV-1a reference vectors"
+ours         = "src/hash.rs::tests + src/reconcile.rs::tests::{matching_hash_is_noop, changed_values_flip_the_decision_to_upgrade, config_overlay_change_flips_hash}"
+
+[[spec_test]]
+designed_for = "Reconcile action per release state: install / upgrade / no-op / rollback / uninstall + deletion-priority ordering"
+ours         = "src/reconcile.rs::tests"
+
+[[spec_test]]
+designed_for = "Helm job-arg generation: install/upgrade/uninstall verbs, namespace/create, repo & version flags, sorted typed --set leaves, array index form"
+ours         = "src/job.rs::tests"
+
+[[spec_test]]
+designed_for = "Version pin vs always-latest resolution + SemVer rejection; repo URL validation (HTTP/OCI accept, bad-scheme/no-host reject)"
+ours         = "src/chart.rs::tests"
+
+[[spec_test]]
+designed_for = "Bad-spec rejection (empty chart/namespace/jobImage, bad repo) with no panics"
+ours         = "src/chart.rs::tests::{validate_rejects_empty_chart, validate_rejects_empty_namespace, validate_rejects_empty_job_image, validate_rejects_bad_repo}"
+
+[[spec_test]]
+designed_for = "Retry classification (retryable vs permanent) + capped exponential backoff (no overflow)"
+ours         = "src/reconcile.rs::tests::{retryable_failures_classified, permanent_failures_classified, backoff_doubles_and_caps, backoff_never_overflows}"

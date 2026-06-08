@@ -1,24 +1,162 @@
-# cave-home-history — parity manifest scaffold.
+# cave-home-history — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-history — time-series sensor-history store (InfluxDB 2.0 embedded default + TimescaleDB + VictoriaMetrics opt-in); port method: line-by-line (ADR-023)
+# Phase 1 ships the time-series *history processing engine* — the analytics
+# core that turns a household's raw sensor samples into chart-ready, decided,
+# grandma-friendly history: fixed-window downsampling (mean/min/max/sum/count/
+# first/last/median/p95), window statistics (stddev, trapezoidal area under the
+# curve, time-weighted mean, rate-of-change), a retention/roll-up ladder, LTTB +
+# min/max chart decimation, gap detection, typed on/off & home/away state
+# timelines with duration-in-state, and EN/DE/TR phrasing.
+#
+# The engine is pure: std-only, no external crates, no clock, no network, no
+# storage. It operates on in-memory slices the storage layer will feed. The
+# on-disk storage engine of ADR-023 (WAL + columnar/LSM segments, write path +
+# compaction, query interface, ingestion endpoints, core recorder integration)
+# is storage/IO-bound and deferred to Phase 1b — each item is enumerated below
+# with an ADR-023 disposition.
+#
+# Port method: the analytics are implemented from *public, well-known
+# algorithms and definitions* (trapezoidal rule, population standard deviation,
+# linear-interpolation percentiles, Steinarsson's LTTB), all of which are
+# standard textbook / public-paper material and Apache-2.0-compatible. No GPL
+# source was read; the deferred storage layer will be a line-by-line port of the
+# permissive upstreams named in ADR-023.
 
 [crate]
 name             = "cave-home-history"
-upstream_repo    = "influxdata/influxdb (MIT, embedded default) + timescale/timescaledb (Apache, opt-in) + VictoriaMetrics/VictoriaMetrics (Apache, opt-in)"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "influxdata/influxdb (MIT, embedded default) + timescale/timescaledb (Apache-2.0, opt-in) + VictoriaMetrics/VictoriaMetrics (Apache-2.0, opt-in)"
+port_method      = "spec-based (analytics engine) + line-by-line (storage layer, deferred)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "Trapezoidal rule for numerical integration (area under the curve) — standard numerical-analysis definition",
+    "Population standard deviation σ = sqrt(Σ(x−μ)²/n) — standard descriptive-statistics definition",
+    "Linear-interpolation percentile (NIST/Excel PERCENTILE.INC method) for median and p95",
+    "Steinarsson, S. (2013) 'Downsampling Time Series for Visual Representation' — Largest-Triangle-Three-Buckets (LTTB) algorithm, public MSc thesis",
+    "ADR-023 retention-ladder model (raw / 1-min / 1-hr tiers) — cave-home design doc",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (analytics engine + on-disk storage
+# engine + ingestion + core integration per ADR-023). The analytics engine is
+# implemented and tested in full; the storage/IO layer remains and is entirely
+# ADR-justified Phase 1b. Charter §8 no-backcompat applies (no legacy schema
+# import). Charter §7 always-latest (no pinned-snapshot mode).
+fill_ratio              = 0.30
+fill_ratio_basis        = "history processing engine — aggregation/downsampling, window statistics (stddev/integral/time-weighted-mean/rate), retention/roll-up classification, LTTB + min/max decimation, gap detection, typed state-history with duration-in-state, EN/DE/TR phrasing — fully implemented & tested; on-disk storage engine + ingestion + core integration deferred"
+test_port_ratio         = 0.0   # tests designed from spec/algorithm, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-023 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Validated sample model (finite-only value) + time-ordered series with stable sort"
+ours = "src/sample.rs::{Sample,Series,SeriesKey}"
+
+[[mapped]]
+spec = "Fixed-window bucketing anchored at epoch 0 (floor division, negative-safe)"
+ours = "src/aggregate.rs::{bucket_start,downsample}"
+
+[[mapped]]
+spec = "Bucket aggregators: mean/min/max/sum/count/first/last/median/p95 + empty-bucket (gap) skipping"
+ours = "src/aggregate.rs::Aggregator::apply"
+
+[[mapped]]
+spec = "Window statistics: min/max/mean/population-stddev/sum"
+ours = "src/stats.rs::summarize"
+
+[[mapped]]
+spec = "Trapezoidal area under the curve + time-weighted mean + rate-of-change"
+ours = "src/stats.rs::{integral,time_weighted_mean,rate_of_change}"
+
+[[mapped]]
+spec = "Gap detection: runs longer than the expected sampling interval"
+ours = "src/stats.rs::find_gaps"
+
+[[mapped]]
+spec = "Retention/roll-up ladder: classify each sample keep-raw/roll-up/evict vs caller-supplied now"
+ours = "src/retention.rs::{RetentionPolicy,Tier,Disposition,Partitioned}"
+
+[[mapped]]
+spec = "LTTB (Largest-Triangle-Three-Buckets) chart decimation: endpoints preserved, exact target count, time-ordered"
+ours = "src/decimate.rs::lttb"
+
+[[mapped]]
+spec = "Min/max-per-bucket chart decimation (spike-preserving)"
+ours = "src/decimate.rs::min_max"
+
+[[mapped]]
+spec = "Typed on/off & home/away state timeline with duration-in-state aggregation"
+ours = "src/state_history.rs::{StateSample,StateTimeline}"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR chart phrasing (Charter §6.3, ADR-007, ADR-023)"
+ours = "src/label.rs::{average,no_data,time_in_state,humanize_duration}"
+
+# ---- unmapped (NOT in this crate; ADR-023 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "On-disk storage engine: write-ahead log + columnar/LSM segment files"
+priority = "phase-1b"
+note     = "ADR-023: the durable storage engine (WAL for crash-safety + columnar/LSM segments for year-scale retention) is storage/IO-bound. This pure analytics engine operates on the in-memory slices that layer reads back. Line-by-line port of the permissive InfluxDB 2.0 storage engine."
+
+[[unmapped]]
+area     = "Write path + compaction"
+priority = "phase-1b"
+note     = "ADR-023: ingest buffering, flush-to-segment, and background compaction/roll-up execution are IO-bound and live with the storage engine. This crate already decides *what* to roll up and evict (retention::RetentionPolicy::partition); the storage layer executes it on disk."
+
+[[unmapped]]
+area     = "Query / SQL-ish interface"
+priority = "phase-1b"
+note     = "ADR-023: the Flux-style query layer that selects ranges and series sits over the storage engine. cave-home's UX surfaces phrased results (src/label.rs), never a raw query — queries are an internal storage concern, deferred with it."
+
+[[unmapped]]
+area     = "InfluxDB / Prometheus-style ingestion endpoints"
+priority = "phase-1b"
+note     = "ADR-023: network line-protocol / remote-write ingestion is network-bound. It maps wire samples onto sample::Sample then feeds this engine unchanged — no new analytics logic."
+
+[[unmapped]]
+area     = "cave-home-core recorder integration"
+priority = "phase-1b"
+note     = "ADR-023: wiring sensor State changes into the history store (and back out as chart tiles) lands once cave-home-core's entity/state API stabilises. The engine is already core-agnostic and crate-independent."
+
+[[unmapped]]
+area     = "Legacy SQLite-recorder schema import / pre-existing snapshot mode"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home ships the current schema only; no historical-recorder import or pinned-snapshot compatibility mode."
+
+# ---- spec_test (designed from spec / reference algorithms) -----------------
+
+[[spec_test]]
+designed_for = "Each bucket aggregator (mean/min/max/sum/count/first/last/median/p95) + empty-bucket handling"
+ours         = "src/aggregate.rs::tests"
+
+[[spec_test]]
+designed_for = "Downsampling skips empty buckets (gaps) and fabricates no points"
+ours         = "src/aggregate.rs::tests::downsample_skips_empty_buckets_no_fabricated_points"
+
+[[spec_test]]
+designed_for = "Population stddev against a hand-computed value; trapezoidal integral against known rectangle/triangle shapes; rate-of-change sign + magnitude"
+ours         = "src/stats.rs::tests"
+
+[[spec_test]]
+designed_for = "Gap detection finds silence longer than the expected interval"
+ours         = "src/stats.rs::tests::find_gaps_detects_silence"
+
+[[spec_test]]
+designed_for = "Retention ladder classification at tier boundaries (keep-raw/roll-up/evict) vs now"
+ours         = "src/retention.rs::tests"
+
+[[spec_test]]
+designed_for = "LTTB preserves endpoints, hits exact target count, keeps a spike, stays time-ordered"
+ours         = "src/decimate.rs::tests"
+
+[[spec_test]]
+designed_for = "Duration-in-state for on/off and home/away timelines up to caller-supplied now"
+ours         = "src/state_history.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

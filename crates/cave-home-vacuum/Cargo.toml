@@ -6,11 +6,11 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-vacuum — robot vacuum (Valetudo for cloud-free Xiaomi/Roborock/Dreame); upstream: Hypfer/Valetudo (MIT) + HA vacuum-domain integrations; port method: line-by-line (ADR-017)"
+description = "cave-home-vacuum — robot vacuum (Valetudo for cloud-free Xiaomi/Roborock/Dreame); upstream: Hypfer/Valetudo (MIT) + HA vacuum-domain integrations; port method: spec-based (domain semantics) — adapters line-by-line in phase-1b (ADR-017)"
 
 [package.metadata.cave-home]
 upstream    = "Hypfer/Valetudo + home-assistant/core (xiaomi_miio, vacuum-domain)"
-port-method = "line-by-line"
+port-method = "spec-based (domain semantics) — adapters line-by-line in phase-1b"
 adr         = "ADR-017"
 
 [lints]

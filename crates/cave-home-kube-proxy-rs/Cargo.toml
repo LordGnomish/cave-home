@@ -6,24 +6,19 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-kube-proxy-rs — service-proxy data plane; upstream: kubernetes/kubernetes (line-by-line, iptables ClusterIP MVP) (Orchestration Phase 1, ADR-004)"
+description = "cave-home-kube-proxy-rs — service-proxy decision core (Service/EndpointSlice -> forwarding rules); behavioural reimplementation of the documented kube-proxy algorithm + iptables ClusterIP lowering (Orchestration Phase 1, ADR-004)"
 
 [package.metadata.cave-home]
-upstream         = "kubernetes/kubernetes"
-upstream-tag     = "v1.36.1"
-upstream-sha     = "756939600b9a7180fc2df6550a4585b638875e67"
-upstream-subpath = "pkg/proxy/iptables"
-port-method      = "line-by-line"
+spec-sources     = "public Kubernetes Service/EndpointSlice API + kube-proxy concepts docs (see parity.manifest.toml)"
+port-method      = "behavioral-reimplementation"
 phase            = "orchestration-phase-1"
 
 [dependencies]
 thiserror   = "1"
 sha2        = "0.10"
 base32      = "0.5"
-indexmap    = "2"
 parking_lot = "0.12"
 async-trait = "0.1"
-ipnet       = "2"
 tokio       = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros", "time", "process"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

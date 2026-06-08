@@ -1,24 +1,177 @@
-# cave-home-voice — parity manifest scaffold.
+# cave-home-voice — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-voice — local STT (whisper.cpp) + TTS (piper) + wake-word (openWakeWord) + intent routing (OVOS Adapt/Padatious) + dialog management; upstreams: ggerganov/whisper.cpp + rhasspy/piper + dscripka/openWakeWord + OpenVoiceOS/ovos-core; port method: line-by-line (ADR-024)
+# Phase 1 ships the voice *intent engine* (the NLU/routing core): a hand-rolled
+# sentence-template grammar (optional / alternatives / slots), a backtracking
+# intent matcher with inline slot resolution, slot vocabularies with synonyms,
+# EN/DE/TR number-word parsing, the built-in multilingual command set (lights /
+# climate / covers / scenes / state queries), typed action routing, the
+# grandma-friendly localised reply generator, and the wake-word + assistant
+# configuration model. This is the brain the voice front-end consumes once
+# speech has been recognised.
+#
+# The audio/ML layers — speech-to-text, text-to-speech, wake-word *detection*,
+# the capture pipeline + VAD — are model- and hardware-bound and deferred to
+# Phase 1b, each enumerated below with an ADR-024 disposition. A cloud STT/TTS
+# path is excluded permanently (Charter §9, local-first / no cloud).
+#
+# Port method: spec-based / clean-room. The sentence-template approach mirrors
+# the public design of Rhasspy and Home Assistant "Assist" (both permissively
+# licensed); no GPL source was read. The grammar, matcher, number-word tables
+# and reply copy are original.
 
 [crate]
 name             = "cave-home-voice"
-upstream_repo    = "ggerganov/whisper.cpp + rhasspy/piper + dscripka/openWakeWord + OpenVoiceOS/ovos-core (+ ovos-workshop + ovos-bus-client + adapt)"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "rhasspy/rhasspy + OpenVoiceOS/ovos-core (sentence-template intent matching)"
+port_method      = "spec-based"
+upstream_license = "MIT / Apache-2.0 (Rhasspy MIT, OVOS Apache-2.0)"
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
+spec_sources     = [
+    "Rhasspy sentences.ini template grammar — optional [..], alternatives (a|b), {slot} substitution (public docs)",
+    "Home Assistant 'Assist' intents — hassio-addons/intents sentence-template + slot-list design (public)",
+    "OVOS / Adapt / Padatious intent-matching design notes (public) — intent id + slot model",
+    "Charter §6.3 multilingual mandate (EN/DE/TR) + ADR-007 grandma-friendly UX",
+    "ADR-024 — voice framework expansion (wake-word + intent routing + dialog, all permissive upstreams)",
+]
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL voice-pillar scope: intent engine + STT + TTS +
+# wake-word detection + audio pipeline/VAD + per-user profiles + core execution
+# wiring. The intent/NLU engine is implemented and tested in full; the
+# audio/ML layers + core glue remain and are all ADR-024-justified Phase 1b
+# (or permanently out of scope for cloud STT/TTS).
+fill_ratio              = 0.30
+fill_ratio_basis        = "sentence-template grammar + backtracking matcher + slot vocabularies/synonyms + EN/DE/TR number words + built-in multilingual intent set + typed action routing + localised reply generator + assistant/wake-word config, fully implemented & tested; STT/TTS/wake-word/audio/profiles/core-wiring deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-024 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Sentence-template grammar: optional [..], alternatives (a|b), {slot}, nesting (Rhasspy/Assist)"
+ours = "src/template.rs::Template::parse"
+
+[[mapped]]
+spec = "Input normalisation (lower-case, trim, collapse whitespace, strip punctuation)"
+ours = "src/matcher.rs::normalize_tokens"
+
+[[mapped]]
+spec = "Intent matcher: walk compiled templates over an utterance, extract slots, best-match selection"
+ours = "src/matcher.rs::match_intent"
+
+[[mapped]]
+spec = "Backtracking slot capture with inline resolution (greedy span, shrink on resolve failure)"
+ours = "src/matcher.rs::walk"
+
+[[mapped]]
+spec = "Slot types: fixed value list + synonyms, bounded number, open capture; validation + canonicalisation"
+ours = "src/slot.rs::{SlotKind,ValueList,resolve}"
+
+[[mapped]]
+spec = "Spoken-number parsing (digits + words) for EN/DE/TR, 0..=100 household range"
+ours = "src/number_words.rs::parse_number"
+
+[[mapped]]
+spec = "Built-in intent set (light on/off/brightness, HVAC set temp, cover open/close, scene activate, state queries) with EN/DE/TR sentence sets"
+ours = "src/intents.rs::builtin_intents"
+
+[[mapped]]
+spec = "Intent routing to a typed IntentAction + carried confidence"
+ours = "src/route.rs::route"
+
+[[mapped]]
+spec = "Grandma-friendly localised spoken-reply generation (EN/DE/TR) + no-match/ambiguity replies"
+ours = "src/response.rs::{respond,not_understood,please_clarify}"
+
+[[mapped]]
+spec = "Wake-word + assistant configuration model (enabled wake words / language / voice) with validation — config only"
+ours = "src/config.rs::AssistantConfig"
+
+[[mapped]]
+spec = "Ambiguous-match handling (report tied intents) + unknown-slot-value rejection"
+ours = "src/matcher.rs::MatchOutcome + src/lib.rs::Understanding"
+
+[[mapped]]
+spec = "End-to-end understand(): utterance -> match -> route -> spoken reply"
+ours = "src/lib.rs::understand"
+
+# ---- unmapped (NOT in this crate; ADR-024 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "Speech-to-text engine (whisper.cpp-class)"
+priority = "phase-1b"
+note     = "ADR-024: STT is a native model (whisper.cpp) bound to a C library + model weights and audio frames. It produces the recognised text this engine already consumes. Model/audio-bound; no NLU logic changes when it lands."
+
+[[unmapped]]
+area     = "Text-to-speech engine (piper-class)"
+priority = "phase-1b"
+note     = "ADR-024: TTS turns the reply strings this crate already generates into audio via piper (native model + voice files). Model/audio-bound; consumes response::respond output unchanged."
+
+[[unmapped]]
+area     = "Wake-word detection (openWakeWord-class)"
+priority = "phase-1b"
+note     = "ADR-024: detecting 'Hey cave-home' in a live audio stream is ONNX inference over PCM. The config model (enabled wake words / voice / language) is implemented here; the detector itself is model/audio-bound."
+
+[[unmapped]]
+area     = "Audio capture pipeline + voice-activity detection (VAD)"
+priority = "phase-1b"
+note     = "ADR-024: microphone capture, framing and VAD (endpointing) are hardware/audio-bound and feed the STT stage. No text-level logic; lands with the audio layer."
+
+[[unmapped]]
+area     = "Per-user voice profiles"
+priority = "phase-1b"
+note     = "ADR-024: per-speaker recognition/personalisation depends on the audio + STT layers existing first; it personalises which household member is speaking, not how a sentence is parsed."
+
+[[unmapped]]
+area     = "cave-home-core intent execution wiring"
+priority = "phase-1b"
+note     = "ADR-024: handing a routed IntentAction to cave-home-core to actually switch the light / read the temperature lands once core's entity/command API stabilises. The engine already emits the typed action and is core-agnostic."
+
+[[unmapped]]
+area     = "Dialog management / multi-turn follow-ups + slot-filling re-prompts"
+priority = "phase-2"
+note     = "ADR-024: single-shot intent matching is the Phase-1 MVP. Multi-turn dialog state (asking a follow-up to fill a missing slot) is a Phase-2 layer over this same matcher; the ambiguity outcome already exposes the re-prompt hook."
+
+[[unmapped]]
+area     = "Cloud speech-to-text / text-to-speech"
+priority = "permanent"
+note     = "Charter §9 local-first / no cloud: cave-home never sends audio or text to a cloud STT/TTS service. On-device whisper/piper only; this path is permanently out of scope."
+
+# ---- spec_test (designed from spec / public template-grammar behaviour) ----
+
+[[spec_test]]
+designed_for = "Template grammar: optional / alternatives / slot parsing + error cases (unbalanced, empty slot)"
+ours         = "src/template.rs::tests"
+
+[[spec_test]]
+designed_for = "Matching + slot extraction + greedy-capture backtracking + best-match / ambiguity / no-match"
+ours         = "src/matcher.rs::tests"
+
+[[spec_test]]
+designed_for = "Slot value lists, synonym folding, number/open slot validation + range rejection"
+ours         = "src/slot.rs::tests"
+
+[[spec_test]]
+designed_for = "EN/DE/TR number-word parsing (digits, units, tens, compounds) + rejection of non-numbers"
+ours         = "src/number_words.rs::tests"
+
+[[spec_test]]
+designed_for = "Built-in EN/DE/TR intent sets match across languages + reject unknown rooms / out-of-range values"
+ours         = "src/intents.rs::tests"
+
+[[spec_test]]
+designed_for = "Routing matched intents to typed actions + unknown-intent / missing-slot errors"
+ours         = "src/route.rs::tests"
+
+[[spec_test]]
+designed_for = "Localised reply generation across EN/DE/TR + query answer payload handling"
+ours         = "src/response.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3 / ADR-007)"
+ours         = "src/response.rs::tests::ui_strings_carry_no_implementation_jargon"
+
+[[spec_test]]
+designed_for = "Assistant/wake-word config validation (no enabled wake word, blank phrase, missing voice)"
+ours         = "src/config.rs::tests"

@@ -1,22 +1,166 @@
-# cave-home-cluster — parity manifest scaffold.
+# cave-home-cluster — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-cluster — multi-node cluster lifecycle (init / join / status / destroy), K3s join-token coordination, active-passive failover; first-party, no upstream port (Charter §5 deployment-topology). Shape gated by ADR-005.
+# Phase 1 ships the cluster *decision engine*: the multi-node topology model and
+# its invariants (exactly one active primary hub; at least one primary-capable
+# node), heartbeat-age health classification, the active-passive failover
+# decision with a split-brain / fencing guard and a manual-vs-automatic failback
+# policy, workload-placement hints (radios → hub with radios; camera inference →
+# ML/GPU node; automation/broker/portal → active primary), a small-cluster
+# (1–3 node) quorum/membership summary, and the rolling-update / drain-safety +
+# update-order model. All user-facing status is grandma-friendly EN/DE/TR
+# (Charter §6.3, ADR-007) — never K3s/quorum/fencing vocabulary.
+#
+# This crate is FIRST-PARTY: there is no upstream to port line-by-line. It is a
+# clean-room design implemented from cave-home's own ADRs (ADR-004 orchestration
+# layer, ADR-005 deployment topology) and Charter §5 (multi-node, active-passive
+# failover). No GPL/AGPL source was read; no other cave-home crate is depended
+# on.
+#
+# It is deliberately PURE LOGIC, std-only: no network, no clock, no consensus
+# transport. The caller supplies the current tick and the observed heartbeats;
+# this crate makes the decisions. The wire — heartbeat/gossip transport, the
+# leader-election protocol implementation (Raft/lease), real STONITH-class
+# fencing, and the wiring into the ADR-004 K3s orchestration layer +
+# cave-home-node-discovery — is network/consensus-bound and is enumerated below
+# as Phase-1b [[unmapped]] work. The decisions those protocols drive live here;
+# only the transport does not.
 
 [crate]
 name             = "cave-home-cluster"
 upstream_repo    = "none (first-party)"
-port_method      = "first-party"
-ported_at        = "2026-05-25"
+port_method      = "first-party (clean-room from ADR-004 / ADR-005 + Charter §5)"
+upstream_license = "n/a (first-party, Apache-2.0)"
+spec_sources     = [
+    "cave-home Charter §5 — server-class bare-metal multi-node topology (primary hub + optional secondary failover + optional ML/GPU node), active-passive HA",
+    "cave-home Charter §6.3 / ADR-007 — grandma-friendly UX mandate (no orchestration vocabulary in user-facing strings)",
+    "ADR-005 (Accepted) — deployment topology / multi-node bootstrap, (c) Hybrid; failover-node sync open question",
+    "ADR-004 (Accepted) — K3s line-by-line orchestration layer the transport/leader-election lands on in Phase 1b",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (decision engine + heartbeat/gossip
+# transport + leader-election wire protocol + real fencing + orchestration-layer
+# integration). The decision engine — topology, health, failover, placement,
+# quorum, update, i18n — is implemented and tested in full; the transport /
+# protocol / integration half is network/consensus-bound and ADR-justified
+# Phase 1b.
+fill_ratio              = 0.35
+fill_ratio_basis        = "topology invariants + heartbeat-age health + active-passive failover with split-brain/fencing guard + failback policy + workload placement + 1–3 node quorum + drain-safety/update-order + EN/DE/TR UX, all implemented & tested; transport/leader-election wire protocol/real fencing/K3s integration deferred"
+test_port_ratio         = 0.0   # tests designed from spec/ADR, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-004/005 phase disposition
+honest_ratio            = 1.00  # 0.35 / (0.35 + (1-0.35)*(1-1.00)) = 1.00
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Node model: id/name/role(Primary,BackupHub,MlGpu)/health/last-heartbeat/capabilities/version"
+ours = "src/node.rs::{Node,NodeRole,NodeHealth,Capabilities}"
+
+[[mapped]]
+spec = "Topology with exactly-one-active-primary invariant; reject two primaries / no primary-capable node"
+ours = "src/topology.rs::{Cluster,TopologyError}::validate"
+
+[[mapped]]
+spec = "Heartbeat-age health classification (Healthy/Degraded/Unreachable) vs caller-supplied thresholds"
+ours = "src/health.rs::{classify_health,HealthThresholds}"
+
+[[mapped]]
+spec = "Active-passive failover decision: promote healthy backup when primary unreachable"
+ours = "src/failover.rs::decide_failover"
+
+[[mapped]]
+spec = "Split-brain guard: fencing gate — do not promote when the old primary cannot be confirmed down"
+ours = "src/failover.rs::{FenceStatus,FailoverPlan::BlockedOnFencing}"
+
+[[mapped]]
+spec = "Failback policy decision (manual vs automatic) when a former primary returns"
+ours = "src/failover.rs::{FailbackPolicy,decide_failback}"
+
+[[mapped]]
+spec = "Workload-placement hints with documented fallback (radios/camera-inference/automation/broker/portal)"
+ours = "src/placement.rs::{Workload,place}"
+
+[[mapped]]
+spec = "Small-cluster (1–3 node) quorum/membership: operational / degraded / down"
+ours = "src/quorum.rs::{ClusterStatus,status}"
+
+[[mapped]]
+spec = "Rolling-update drain safety (not sole primary; workloads can move) + update order"
+ours = "src/update.rs::{DrainPlan,DrainError}"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR cluster status & failover headlines (Charter §6.3, ADR-007)"
+ours = "src/label.rs::{Lang,ClusterStatus::headline,FailoverPlan::headline,updating_headline}"
+
+# ---- unmapped (NOT in this crate; ADR-004/005 Phase 1b+ disposition) -------
+
+[[unmapped]]
+area     = "Heartbeat / gossip transport"
+priority = "phase-1b"
+note     = "ADR-005 open-question 'failover-node sync'. This crate consumes observed heartbeats (caller supplies tick + last-seen); the actual transport that gathers them across the LAN is network-bound and lands with cave-home-node-discovery in M6 Phase A. No new decision logic — it feeds Cluster::set_heartbeat."
+
+[[unmapped]]
+area     = "Leader-election wire protocol (Raft / lease)"
+priority = "phase-1b"
+note     = "ADR-004 K3s line-by-line port. This crate models the failover DECISION (who becomes primary, when, guarded against split-brain); the consensus/lease wire protocol that two nodes run to agree on it is consensus-bound and ports under the ADR-004 control-plane crates. The decision boundary is deliberately on this side; the wire on that side."
+
+[[unmapped]]
+area     = "Real fencing (STONITH-class)"
+priority = "phase-1b"
+note     = "ADR-005. This crate models the fencing GATE (FenceStatus -> promote/hold); the mechanism that actually isolates a stuck primary (power control / network cut-off) is hardware/network-bound and supplies the FenceStatus this engine consumes."
+
+[[unmapped]]
+area     = "ADR-004 K3s orchestration-layer integration"
+priority = "phase-1b"
+note     = "ADR-004: failover/placement decisions become real by acting on the in-process K3s control plane (node cordon, workload reschedule). The integration lands once the ADR-004 apiserver/scheduler crates stabilise; the engine is already orchestrator-agnostic."
+
+[[unmapped]]
+area     = "cave-home-node-discovery integration (mDNS join / enrolment)"
+priority = "phase-1b"
+note     = "ADR-005 M6 Phase A: LAN auto-discovery + join-token coordination populate the Cluster membership. Network-bound; this crate is the membership/decision model the discovery layer drives."
+
+[[unmapped]]
+area     = "CLI init/join/status/destroy + Portal 'Add node' surface"
+priority = "phase-1b"
+note     = "ADR-005 (c) Hybrid: the user-facing bootstrap surfaces (CLI for power users, Portal QR/token wizard for the family persona) drive this engine's primitives. UI/CLI layer, deferred to M6 Phase A/B."
+
+[[unmapped]]
+area     = "Larger-than-3-node / multi-site quorum voting"
+priority = "permanent"
+note     = "Charter §5 + §8 no-backcompat: cave-home targets a 1–3 node single-household cluster. A datacenter-scale voting quorum (the Cave Runtime enterprise audience) is explicitly out of cave-home's scope; the membership summary here is sized for the home."
+
+# ---- spec_test (designed from ADR / Charter, not ported) -------------------
+
+[[spec_test]]
+designed_for = "Topology invariants: two-active-primaries rejected, no-primary-capable rejected, duplicate id refused (Charter §5)"
+ours         = "src/topology.rs::tests"
+
+[[spec_test]]
+designed_for = "Heartbeat-age health classification boundaries (healthy/degraded/unreachable, skew clamp)"
+ours         = "src/health.rs::tests"
+
+[[spec_test]]
+designed_for = "Failover promotion (primary down + backup healthy) and split-brain guard (no promote when fencing unconfirmed)"
+ours         = "src/failover.rs::tests::{primary_down_backup_healthy_fence_confirmed_promotes,split_brain_guard_holds_when_fence_unconfirmed}"
+
+[[spec_test]]
+designed_for = "Failback policy: manual holds, automatic hands the role back"
+ours         = "src/failover.rs::tests::{manual_failback_is_no_action,automatic_failback_hands_role_back}"
+
+[[spec_test]]
+designed_for = "Workload placement + documented fallback (radios/inference/automation)"
+ours         = "src/placement.rs::tests"
+
+[[spec_test]]
+designed_for = "Small-cluster quorum operational/degraded/down (1–3 nodes)"
+ours         = "src/quorum.rs::tests"
+
+[[spec_test]]
+designed_for = "Drain safety (sole primary not drainable; lone backup not drainable when primary down) + update order"
+ours         = "src/update.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3, ADR-004/005)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

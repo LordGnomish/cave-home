@@ -1,24 +1,170 @@
-# cave-home-cover — parity manifest scaffold.
+# cave-home-cover — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-cover — covers/blinds/garage/awning; upstreams: OpenGarage (Apache, line-by-line) + ESPHome cover bindings (MIT, line-by-line) + Somfy RTS (clean-room from public RF spec, no source read); port method: hybrid (ADR-015)
+# Phase 1 ships the cover *decision engine*: the validated 0..=100 position
+# value object, the five-state motion lifecycle, the nine device classes with
+# their capability/feature model, the position state machine (direction
+# inference, independent tilt axis, always-honoured Stop, obstruction safety
+# override), and grandma-friendly EN/DE/TR status sentences. This is the brain
+# every cover automation, Portal tile and voice reply consumes. The vendor I/O
+# adapters (OpenGarage / ESPHome cover bindings / Somfy RTS, and the
+# Zigbee / Z-Wave / Matter / MQTT cover paths), real motor travel-time
+# calibration, and the cave-home-core entity integration are network/RF/
+# hardware-bound and deferred to Phase 1b — each is enumerated below with an
+# ADR-015 disposition.
+#
+# Port method: hybrid. The engine models the Home Assistant `cover` entity-
+# domain *semantics* (Apache-2.0) from first principles — no GPL source read.
+# OpenGarage (Apache-2.0) and ESPHome cover bindings (MIT) are line-by-line in
+# the deferred adapters; the Somfy RTS sub-module is clean-room from the public
+# RF spec (no third-party reverse-engineering repo read).
 
 [crate]
 name             = "cave-home-cover"
-upstream_repo    = "OpenGarage HA integration (Apache-2.0) + ESPHome cover bindings (MIT) + Somfy RTS public RF spec (clean-room)"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "hybrid"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "OpenGarage (Apache-2.0) + ESPHome cover bindings (MIT) + Somfy RTS public RF spec (clean-room)"
+port_method      = "hybrid (spec-based engine + line-by-line/clean-room adapters)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "Home Assistant cover entity domain semantics (Apache-2.0): states open/closed/opening/closing/stopped; services open/close/stop/set_position/set_tilt_position; supported-features flags",
+    "Home Assistant cover device classes (garage, blind, shade, awning, curtain, shutter, gate, door, window)",
+    "OpenGarage public controller behaviour (open/close/stop, obstruction reporting)",
+    "Somfy RTS: public RF spec + Wireshark dissections + public reverse-engineering write-ups (no specific repo read)",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (engine + OpenGarage/ESPHome/Somfy
+# adapters + the protocol-pillar cover paths + motor travel-time calibration +
+# core-state integration). The engine is implemented and tested in full; the
+# I/O adapters, motor timing and core glue remain and are all ADR-justified
+# Phase 1b.
+fill_ratio              = 0.30
+fill_ratio_basis        = "Position model + motion-state lifecycle + device-class/feature model + position state machine (direction, tilt, stop, obstruction) + EN/DE/TR UX, fully implemented & tested; vendor I/O adapters, motor timing and core glue deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-015 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "Cover position as a validated 0..=100 percentage (rejects >100; u8 makes NaN/negative impossible)"
+ours = "src/position.rs::Position"
+
+[[mapped]]
+spec = "Cover motion states open/closed/opening/closing/stopped + position-derived at-rest state"
+ours = "src/state.rs::CoverState"
+
+[[mapped]]
+spec = "Cover device classes (garage, blind, shade, awning, curtain, shutter, gate, door, window)"
+ours = "src/device_class.rs::DeviceClass"
+
+[[mapped]]
+spec = "Supported-features model (set_position / tilt / stop) + per-class defaults"
+ours = "src/device_class.rs::Features"
+
+[[mapped]]
+spec = "Cover commands open/close/stop/set_position/set_tilt_position"
+ours = "src/machine.rs::CoverCommand"
+
+[[mapped]]
+spec = "Position state machine: apply command, settle to at-rest open/closed/stopped"
+ours = "src/machine.rs::Cover::apply"
+
+[[mapped]]
+spec = "Travel-direction inference (opening if target>current, closing if target<current, no-move if equal)"
+ours = "src/machine.rs::Cover::{begin,direction}"
+
+[[mapped]]
+spec = "Reject commands the device's features do not support (set_position / tilt)"
+ours = "src/machine.rs::CommandError"
+
+[[mapped]]
+spec = "Stop is always honoured while moving, even on a cover that does not declare the stop feature"
+ours = "src/machine.rs::Cover::apply (CoverCommand::Stop)"
+
+[[mapped]]
+spec = "Obstruction/jam safety override forces Stopped regardless of motion or features"
+ours = "src/machine.rs::Cover::report_obstruction"
+
+[[mapped]]
+spec = "Independent tilt axis (0..=100) that never moves the main openness axis"
+ours = "src/machine.rs::Cover::apply (CoverCommand::SetTiltPosition)"
+
+[[mapped]]
+spec = "Grandma-friendly localised status sentence per class/state in EN/DE/TR (ADR-007, no percentages or jargon)"
+ours = "src/label.rs::status_sentence"
+
+# ---- unmapped (NOT in this crate; ADR-015 Phase 1b+ disposition) -----------
+
+[[unmapped]]
+area     = "OpenGarage HTTP controller adapter"
+priority = "phase-1b"
+note     = "ADR-015: OpenGarage exposes a local HTTP API (open/close/stop + obstruction/distance sensor). Network-bound; maps onto the Cover engine then reuses it unchanged. Line-by-line port (Apache-2.0)."
+
+[[unmapped]]
+area     = "ESPHome cover bindings adapter"
+priority = "phase-1b"
+note     = "ADR-015: ESPHome cover components reach cave-home via the existing ESPHome adapter; this glue routes their position/tilt/state onto the Cover engine. Line-by-line (MIT). I/O adapter only."
+
+[[unmapped]]
+area     = "Somfy RTS RF adapter (clean-room)"
+priority = "phase-1b"
+note     = "ADR-015: Somfy RTS is one-way RF over an RFXtrx-class transceiver dongle (hardware-floor add). Clean-room from the public RF spec; contributor recusal applies. RF/hardware-bound transport, no new cover logic."
+
+[[unmapped]]
+area     = "Zigbee / Z-Wave / Matter / MQTT cover transports"
+priority = "phase-1b"
+note     = "ADR-015: these covers reach cave-home via the existing protocol pillars (and KNX via ADR-011 cave-home-knx). This crate handles only the upstreams not covered there; the pillar glue maps their position/tilt onto the Cover engine."
+
+[[unmapped]]
+area     = "Real motor travel-time calibration & live position estimation"
+priority = "phase-1b"
+note     = "ADR-015: position-only covers (no feedback) estimate openness from a calibrated full-travel time. The engine already models begin()/settle_at() for an in-flight motor; the timing/calibration loop is hardware-bound and lands with the adapters."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration"
+priority = "phase-1b"
+note     = "ADR-015: surfacing covers as core State entities + automation triggers (sun-tracking blinds, presence-based garage close) lands once cave-home-core's entity API stabilises. The engine is already core-agnostic."
+
+[[unmapped]]
+area     = "Legacy open/close-only compatibility shim for position-capable covers"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home models the current cover domain only; no historical open/close-only compatibility mode is shipped."
+
+# ---- spec_test (designed from spec / HA cover domain semantics) ------------
+
+[[spec_test]]
+designed_for = "Position clamping & 0..=100 boundary validation"
+ours         = "src/position.rs::tests"
+
+[[spec_test]]
+designed_for = "Position-derived at-rest state (open/closed/stopped) at endpoints and mid-travel"
+ours         = "src/state.rs::tests"
+
+[[spec_test]]
+designed_for = "Device-class default feature sets (garage no-position; blind tilts; shade positions-not-tilts)"
+ours         = "src/device_class.rs::tests"
+
+[[spec_test]]
+designed_for = "Direction inference (opening/closing/no-move) from current vs target position"
+ours         = "src/machine.rs::tests::{direction_inferred_opening_when_target_higher,direction_inferred_closing_when_target_lower,begin_to_same_position_does_not_move}"
+
+[[spec_test]]
+designed_for = "Unsupported-feature rejection for set_position and tilt"
+ours         = "src/machine.rs::tests::{set_position_rejected_when_unsupported,tilt_rejected_when_unsupported}"
+
+[[spec_test]]
+designed_for = "Stop always accepted while moving, even without the stop feature"
+ours         = "src/machine.rs::tests::{stop_halts_at_current_position_while_moving,stop_is_accepted_even_without_stop_feature}"
+
+[[spec_test]]
+designed_for = "Obstruction safety override forces Stopped while opening or closing"
+ours         = "src/machine.rs::tests::{obstruction_forces_stop_while_opening,obstruction_forces_stop_while_closing}"
+
+[[spec_test]]
+designed_for = "Tilt is an independent axis that never disturbs openness"
+ours         = "src/machine.rs::tests::tilt_is_independent_of_openness"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon and no percentages (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

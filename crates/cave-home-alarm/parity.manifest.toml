@@ -1,24 +1,191 @@
-# cave-home-alarm — parity manifest scaffold.
+# cave-home-alarm — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-alarm — alarm panels (AlarmDecoder for Honeywell/DSC + Bosch + ELK-M1 + HA alarm_control_panel domain); port method: line-by-line (ADR-018)
+# Phase 1 ships the alarm-panel *safety brain*: the `alarm_control_panel` state
+# machine (HA entity-domain semantics — disarmed / armed-home/away/night/
+# vacation/custom-bypass / arming / pending / triggered), the exit-delay,
+# entry-delay and siren-time countdowns (caller-supplied integer seconds, no
+# clock), the user-code credential model (validated value object that never
+# leaks via Debug, opaque constant-time-comparable digest, code-on-arm policy,
+# disarm-always-needs-code, keypad brute-force lock-out), validated per-panel
+# timing/policy config, and the EN/DE/TR grandma-friendly status labels +
+# advice. This is the pure safety logic every vendor panel adapter, Portal tile
+# and voice reply will consume. The sensor/zone hardware adapters, the siren
+# actuator output, real crypto code hashing, and core-state integration are
+# hardware/crypto/network-bound and deferred to Phase 1b — each enumerated below
+# with an ADR-018 disposition.
+#
+# Port method: the alarm state machine is implemented from the *public* Home
+# Assistant `alarm_control_panel` entity-domain semantics (Apache-2.0) plus
+# first-party safety logic (delay countdowns, code-gating, lock-out). No GPL
+# source was read; no vendor source ported.
 
 [crate]
 name             = "cave-home-alarm"
-upstream_repo    = "home-assistant/core (alarmdecoder, alarm_control_panel domain, vendor panel integrations)"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "home-assistant/core (alarm_control_panel entity domain)"
+port_method      = "spec-based (alarm state machine) + first-party (safety/code/delay logic)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "Home Assistant `alarm_control_panel` entity domain — states (disarmed / armed_home / armed_away / armed_night / armed_vacation / armed_custom_bypass / arming / pending / triggered) (Apache-2.0)",
+    "Home Assistant alarm_control_panel services — alarm_disarm / alarm_arm_home / alarm_arm_away / alarm_arm_night / alarm_arm_vacation / alarm_trigger, and the CODE_ARM_REQUIRED / arming-delay / pending-delay / trigger-time config knobs (Apache-2.0)",
+    "First-party safety logic: exit/entry/siren delay countdowns over caller-supplied integer seconds, code-gated disarm, instant zones, keypad brute-force lock-out (ADR-018)",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (state-machine engine + delay
+# countdowns + user-code model + validated config + i18n labels + the
+# sensor/zone hardware adapters + siren actuator output + real crypto hashing +
+# core-state integration). The engine, code contract, config and labels are
+# implemented and tested in full; the I/O adapters, siren output, crypto
+# primitive and core glue remain and are all ADR-justified Phase 1b. The alarm
+# domain's hard work is the safety state machine, which is done — but it is an
+# honestly small slice of the eventual multi-panel, sensor-and-siren-wired
+# crate, so fill stays conservative.
+fill_ratio              = 0.27
+fill_ratio_basis        = "Alarm state machine (arm/exit-delay/entry-delay/trigger/siren-return, code-gated disarm, instant zones, illegal-transition rejection) + user-code credential model + validated PanelConfig + EN/DE/TR UX, fully implemented & tested; sensor/zone adapters, siren output, real crypto hashing & core integration deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-018 phase disposition
+honest_ratio            = 1.00  # 0.27 / (0.27 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "HA alarm states: disarmed / armed_home / armed_away / armed_night / armed_vacation / armed_custom_bypass / arming / pending / triggered"
+ours = "src/state.rs::AlarmState"
+
+[[mapped]]
+spec = "HA alarm commands: disarm / arm_home / arm_away / arm_night / arm_vacation / trigger"
+ours = "src/state.rs::AlarmCommand"
+
+[[mapped]]
+spec = "Exit-delay arming: an arm command enters the transient Arming state, then the requested armed state once the exit delay elapses"
+ours = "src/machine.rs::AlarmPanel::{apply_with_code,apply,tick}"
+
+[[mapped]]
+spec = "Entry-delay: a watched sensor trip while armed enters Pending, then Triggered once the entry delay elapses if not disarmed"
+ours = "src/machine.rs::AlarmPanel::{sensor_trip,tick}"
+
+[[mapped]]
+spec = "Instant zone: armed_home / armed_night may sound the alarm immediately, skipping the entry delay"
+ours = "src/machine.rs::AlarmPanel::{zone_is_instant,sensor_trip}"
+
+[[mapped]]
+spec = "Siren time: Triggered persists for the configured trigger_time, then auto-returns to the prior armed state (or stays, per config)"
+ours = "src/machine.rs::AlarmPanel::tick"
+
+[[mapped]]
+spec = "Disarm always requires a valid code; arming is code-optional per config (HA CODE_ARM_REQUIRED)"
+ours = "src/machine.rs::AlarmPanel::{command_requires_code,apply,apply_with_code}"
+
+[[mapped]]
+spec = "Illegal-transition rejection (re-arm same mode, arm/trigger while pending/triggered, disarm-while-disarmed)"
+ours = "src/machine.rs::{AlarmError,AlarmPanel::check_legal}"
+
+[[mapped]]
+spec = "Validated per-panel timing/policy config (exit/entry/trigger delays, code-on-arm, instant flags), rejects silent-alarm & out-of-range"
+ours = "src/config.rs::{PanelConfig,ConfigError}"
+
+[[mapped]]
+spec = "User-code value object: validated, non-empty, length-bounded, digits-only, never leaks via Debug"
+ours = "src/code.rs::UserCode"
+
+[[mapped]]
+spec = "No-plaintext credential contract: opaque digest + constant-time compare"
+ours = "src/code.rs::{CodeDigest,CodeCredential::verify}"
+
+[[mapped]]
+spec = "Keypad brute-force lock-out after N consecutive failures (refuses even the correct code once locked out)"
+ours = "src/code.rs::CodeCredential"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR status label & advice per state (Charter §6.3, ADR-007)"
+ours = "src/label.rs::AlarmState::{label,advice}"
+
+# ---- unmapped (NOT in this crate; ADR-018 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "Door/window/motion sensor & zone hardware adapters (Zigbee / Z-Wave / MQTT)"
+priority = "phase-1b"
+note     = "ADR-018: real watched zones arrive over the protocol pillars (Zigbee binary-sensor / Z-Wave notification / MQTT) and via panel integrations. The adapters map a hardware trip onto machine::Zone + AlarmPanel::sensor_trip and reuse this state machine unchanged. Radio/hardware-bound I/O; no new alarm logic."
+
+[[unmapped]]
+area     = "Siren / strobe actuator output"
+priority = "phase-1b"
+note     = "ADR-018: when this engine enters Triggered, a Phase-1b actuator adapter drives the physical siren/strobe (and the notify pillar). The machine already owns *when* the alarm sounds and for how long; the adapter only carries that decision to hardware. Hardware-bound."
+
+[[unmapped]]
+area     = "AlarmDecoder adapter (Honeywell / DSC wired panels over USB/network)"
+priority = "phase-1b"
+note     = "ADR-018: AlarmDecoder talks to legacy Honeywell/DSC panels over a USB CDC / network adapter. The adapter maps the panel's reported state and keypad events onto state::AlarmState + machine::AlarmPanel. Hardware-bound I/O adapter onto this engine."
+
+[[unmapped]]
+area     = "Per-panel vendor integrations (Bosch, ELK-M1, and other HA alarm panels)"
+priority = "phase-1b"
+note     = "ADR-018: modern panel-class integrations bind their vendor state/command set onto this domain abstraction. Network/account/hardware-bound I/O adapters; the safety state machine is shared."
+
+[[unmapped]]
+area     = "Real cryptographic code hashing (salted Argon2id/scrypt, vetted constant-time crate)"
+priority = "phase-1b"
+note     = "ADR-018: the Phase-1 digest in code::CodeDigest is a deliberately dependency-free fold and is NOT password-grade. The Phase-1b adapter swaps in a salted password KDF + a vetted constant-time primitive behind the same validate/digest/compare contract this crate already owns. Crypto-bound."
+
+[[unmapped]]
+area     = "cave-home-core event-bus / entity-state integration + automation triggers"
+priority = "phase-1b"
+note     = "ADR-018: surfacing the panel as a core State entity, emitting arm/disarm/trigger events on the bus, and wiring automations ('arm away when everyone leaves', 'push + camera-capture on trigger', ADR-006) lands once cave-home-core's entity/event API stabilises. The state machine is already core-agnostic."
+
+[[unmapped]]
+area     = "Third-party alarm-monitoring relay"
+priority = "permanent"
+note     = "ADR-018 + Charter §9: cave-home is the single trust boundary for the alarm pillar; there is no third-party monitored-alarm-service relay. Users who want monitored service integrate at the §3.2 notify pillar, not here. Permanently out of scope by privacy posture."
+
+[[unmapped]]
+area     = "Legacy alarm-state compatibility / pre-current HA state names"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home models the current HA alarm_control_panel state set only; no historical-snapshot or legacy-name compatibility mode."
+
+# ---- spec_test (designed from spec / HA alarm-domain semantics) ------------
+
+[[spec_test]]
+designed_for = "Alarm state & command predicates (armed / transient / triggered, arm-command mapping)"
+ours         = "src/state.rs::tests"
+
+[[spec_test]]
+designed_for = "Full safety cycle: arm -> Arming -> ArmedAway -> trip -> Pending -> Triggered -> disarm"
+ours         = "src/machine.rs::tests::full_cycle_arm_pending_triggered_disarm"
+
+[[spec_test]]
+designed_for = "Exit/entry delay boundaries (one second short stays; exactly at delay resolves)"
+ours         = "src/machine.rs::tests::{exit_delay_boundary_one_second_short_stays_arming,entry_delay_boundary_disarm_in_time_prevents_trigger,entry_delay_elapses_exactly_triggers}"
+
+[[spec_test]]
+designed_for = "Instant zones (home/night) and home-mode interior bypass"
+ours         = "src/machine.rs::tests::{instant_home_zone_triggers_without_entry_delay,instant_night_zone_triggers_without_entry_delay,home_mode_bypasses_interior_motion_when_not_instant}"
+
+[[spec_test]]
+designed_for = "Siren-time settling: auto-return to prior armed state, or stay-triggered per config"
+ours         = "src/machine.rs::tests::{triggered_auto_returns_to_prior_armed_state_after_siren,triggered_stays_when_config_says_stay}"
+
+[[spec_test]]
+designed_for = "Disarm always requires a code; arm is code-optional per config"
+ours         = "src/machine.rs::tests::{code_optional_arm_when_configured,code_free_arm_refused_when_code_required,disarm_without_code_always_refused,disarm_requires_correct_code}"
+
+[[spec_test]]
+designed_for = "Brute-force lock-out refuses even the correct code; an illegal command does not spend an attempt"
+ours         = "src/machine.rs::tests::{brute_force_lockout_then_correct_code_refused,illegal_command_does_not_spend_an_attempt}"
+
+[[spec_test]]
+designed_for = "Illegal-transition rejection (re-arm same mode, arm while pending, double-trigger)"
+ours         = "src/machine.rs::tests::{cannot_arm_into_the_same_mode,cannot_arm_while_pending,cannot_trigger_when_already_triggered}"
+
+[[spec_test]]
+designed_for = "Config validation rejects silent alarm (zero trigger time) and out-of-range delays"
+ours         = "src/config.rs::tests"
+
+[[spec_test]]
+designed_for = "User-code validation, no-plaintext Debug, constant-time compare, lock-out"
+ours         = "src/code.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

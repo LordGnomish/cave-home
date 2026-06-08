@@ -1,24 +1,201 @@
-# cave-home-zwave — parity manifest scaffold.
+# cave-home-zwave — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-zwave — Z-Wave stack (upstream: zwave-js/node-zwave-js, port method: line-by-line, smart-home device pillar per Charter §3.7)
+# Phase 1 ships the Z-Wave *Command Class engine*: the CC framing, the typed
+# encode/decode for the core Command Classes a home actually uses (Basic,
+# Binary/Multilevel Switch, Binary/Multilevel Sensor, Meter, Color Switch,
+# Thermostat Setpoint, Configuration, Notification, Battery), the shared
+# precision/scale/size fixed-point value codec, a vendor-neutral Value model,
+# node/endpoint addressing, and grandma-friendly EN/DE/TR rendering. This is the
+# brain that turns a raw application payload into "Bedroom switch on" / "Sensor:
+# 21°" / "Battery low" and back to bytes. It is pure logic: std-only, no
+# network, no hardware, no crypto, no `unsafe`.
+#
+# The transport half of Z-Wave (Serial API / Z/IP to a 700/800-series
+# controller, inclusion/exclusion + S2 security, network management, association
+# groups, OTA) is hardware/serial/crypto-bound and is deferred to Phase 1b —
+# each item is enumerated below with a phase disposition.
+#
+# Port method: the CC encodings and value codec are implemented from the
+# *public* Silicon Labs Z-Wave Command Class specification (SDS13781 family).
+# node-zwave-js (MIT) was the ecosystem reference per ADR-001; this is a
+# clean-room first-party implementation of public protocol behavior. No GPL/AGPL
+# source was read or ported.
 
 [crate]
 name             = "cave-home-zwave"
-upstream_repo    = "zwave-js/node-zwave-js"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+upstream_repo    = "zwave-js/node-zwave-js (MIT, ecosystem reference per ADR-001)"
+port_method      = "spec-based (clean-room; public Z-Wave Command Class specification)"
+upstream_license = "Apache-2.0 (this crate); reference ecosystem is MIT"
+spec_sources     = [
+    "Silicon Labs Z-Wave Command Class Specification SDS13781 (public) — CC framing, Set/Get/Report model",
+    "Z-Wave CC spec — Basic CC (0x20): value 0..=99 + 0xFF",
+    "Z-Wave CC spec — Binary Switch CC (0x25): 0x00/0xFF on/off",
+    "Z-Wave CC spec — Multilevel Switch CC (0x26): 0..=99, Start/Stop Level Change",
+    "Z-Wave CC spec — Binary Sensor (0x30) + Multilevel Sensor (0x31) sensor-type/scale + precision/scale/size value encoding",
+    "Z-Wave CC spec — Meter CC (0x32) fixed-point reading",
+    "Z-Wave CC spec — Color Switch CC (0x33) component id + value",
+    "Z-Wave CC spec — Notification CC (0x71) type + event report",
+    "Z-Wave CC spec — Thermostat Setpoint CC (0x43) setpoint type + float encoding",
+    "Z-Wave CC spec — Configuration CC (0x70) parameter/size/value",
+    "Z-Wave CC spec — Battery CC (0x80) level 0..=100 + 0xFF low sentinel",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (CC application engine + the serial
+# /security/controller transport stack). The CC engine, value codec, addressing
+# and EN/DE/TR UX are implemented and tested in full; the transport, security
+# and controller-management half remains and is entirely ADR-justified Phase 1b
+# (hardware/serial/crypto-bound).
+fill_ratio              = 0.30
+fill_ratio_basis        = "CC framing + 11 Command Classes encode/decode + precision/scale/size fixed-point codec + Value model + node/endpoint addressing + EN/DE/TR UX, fully implemented & tested; serial/security/controller transport deferred"
+test_port_ratio         = 0.0   # tests designed from spec encodings, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries a phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# no-backcompat (Charter §8): cave-home tracks the current Z-Wave CC versions
+# only; no historical CC-version compatibility shims are shipped (see the
+# permanent [[unmapped]] entry below).
 
+# ---- mapped (real implementation present in this crate) --------------------
+
+[[mapped]]
+spec = "CC framing: command-class id + command id + body; raw payload <-> typed command"
+ours = "src/command_class.rs::{CommandClass,Command::decode,Command::encode}"
+
+[[mapped]]
+spec = "Basic CC (0x20) Set/Get/Report, value 0..=99 + 0xFF"
+ours = "src/command_class.rs::Command::{BasicSet,BasicGet,BasicReport}"
+
+[[mapped]]
+spec = "Binary Switch CC (0x25) Set/Get/Report on/off (0x00/0xFF)"
+ours = "src/command_class.rs::Command::BinarySwitch*"
+
+[[mapped]]
+spec = "Multilevel Switch CC (0x26) Set/Get/Report 0..=99 + Start/Stop Level Change"
+ours = "src/command_class.rs::Command::MultilevelSwitch*"
+
+[[mapped]]
+spec = "Binary Sensor CC (0x30) Get/Report"
+ours = "src/command_class.rs::Command::BinarySensor*"
+
+[[mapped]]
+spec = "Multilevel Sensor CC (0x31) sensor type + precision/scale/size fixed-point value"
+ours = "src/command_class.rs::Command::MultilevelSensorReport + src/sensor_decode.rs"
+
+[[mapped]]
+spec = "Precision/scale/size metadata byte + 1/2/4-byte signed value with 10^precision divisor"
+ours = "src/sensor_decode.rs::{split_meta,compose_meta,decode,encode}"
+
+[[mapped]]
+spec = "Meter CC (0x32) meter type + fixed-point reading"
+ours = "src/command_class.rs::Command::MeterReport"
+
+[[mapped]]
+spec = "Color Switch CC (0x33) component id + value Set/Get/Report"
+ours = "src/command_class.rs::Command::ColorSwitch*"
+
+[[mapped]]
+spec = "Thermostat Setpoint CC (0x43) setpoint type + float-encoded value"
+ours = "src/command_class.rs::Command::ThermostatSetpoint*"
+
+[[mapped]]
+spec = "Configuration CC (0x70) parameter/size/signed-value Set/Get/Report"
+ours = "src/command_class.rs::Command::Configuration*"
+
+[[mapped]]
+spec = "Notification CC (0x71) notification type + event report"
+ours = "src/command_class.rs::Command::NotificationReport"
+
+[[mapped]]
+spec = "Battery CC (0x80) level 0..=100 + 0xFF low-battery sentinel"
+ours = "src/command_class.rs::Command::BatteryReport"
+
+[[mapped]]
+spec = "Vendor-neutral typed value model produced by the CC decoders"
+ours = "src/value.rs::Value"
+
+[[mapped]]
+spec = "Node + multi-channel endpoint addressing + household device-role hint"
+ours = "src/address.rs::{Address,DeviceRole}"
+
+[[mapped]]
+spec = "Truncated / bad-size / out-of-range payload rejection (never panics)"
+ours = "src/error.rs::ZwaveError + every Command::decode_* path"
+
+[[mapped]]
+spec = "Grandma-friendly EN/DE/TR rendering of decoded values (Charter §6.3, ADR-007)"
+ours = "src/label.rs::{describe,Lang}"
+
+# ---- unmapped (NOT in this crate; phase disposition) -----------------------
+
+[[unmapped]]
+area     = "Z-Wave Serial API frame layer (SOF/ACK/NAK/CAN, checksum, message envelope)"
+priority = "phase-1b"
+note     = "Charter §3.2: the Serial API transport carries CCs over a USB UART to a 700/800-series controller. Hardware/serial-bound; it frames and routes the payloads this CC engine already encodes/decodes. No new application logic."
+
+[[unmapped]]
+area     = "Z/IP gateway transport"
+priority = "phase-1b"
+note     = "Charter §3.2: the alternative IP-side transport to a Z/IP gateway. Network-bound I/O adapter onto the same CC engine; no new CC logic."
+
+[[unmapped]]
+area     = "Inclusion / exclusion + S2 security (DSK / ECDH / CKDF, S0 nonce framework)"
+priority = "phase-1b"
+note     = "Charter §3.2: S2 bootstrapping is crypto-bound (Curve25519 ECDH, CCM, CKDF) and inclusion is controller/hardware-bound. Encrypted CC payloads decrypt to the same byte strings this engine parses; the security envelope is a separable layer."
+
+[[unmapped]]
+area     = "Controller / network management (node list, lifecycle, heal, routing)"
+priority = "phase-1b"
+note     = "Charter §3.2: controller-side commands talk to a physical controller and maintain live network state. Hardware-bound; orthogonal to CC encode/decode."
+
+[[unmapped]]
+area     = "Association groups + multi-channel association"
+priority = "phase-1b"
+note     = "Charter §3.2: association configuration is a controller/network-management concern that rides on the transport and controller layers deferred above."
+
+[[unmapped]]
+area     = "OTA firmware update (Firmware Update Meta Data CC)"
+priority = "phase-1b"
+note     = "Charter §3.2: OTA is transport- and lifecycle-bound (fragmented transfer over a live link to real hardware); it depends on the serial transport and controller layers deferred above."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration + automation triggers"
+priority = "phase-1b"
+note     = "Charter §3.2: surfacing decoded values as core State entities lands once cave-home-core's entity API stabilises. The Value model here is already core-agnostic."
+
+[[unmapped]]
+area     = "Legacy Command-Class-version compatibility shims"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home implements the current CC versions only; it ships no historical-CC-version compatibility mode."
+
+# ---- spec_test (designed from spec encodings / known byte sequences) -------
+
+[[spec_test]]
+designed_for = "CC id <-> byte round-trip + decode/encode round-trip for every modelled Command Class"
+ours         = "src/command_class.rs::tests"
+
+[[spec_test]]
+designed_for = "Multilevel-sensor / meter precision/scale/size fixed-point decode against known byte sequences (24.4 °C, -20 °C, 42% humidity, 100000 lux, 10 kWh)"
+ours         = "src/sensor_decode.rs::tests + src/command_class.rs::tests::{multilevel_sensor_temperature_report,meter_report_roundtrips_and_value}"
+
+[[spec_test]]
+designed_for = "Basic / Binary Switch / Multilevel Switch known encodings + reserved-level rejection"
+ours         = "src/command_class.rs::tests::{basic_set_known_bytes,binary_switch_roundtrips_and_sentinels,multilevel_switch_rejects_reserved_level}"
+
+[[spec_test]]
+designed_for = "Battery 0xFF low-battery sentinel vs percentage + impossible-percentage rejection"
+ours         = "src/command_class.rs::tests::{battery_roundtrips_and_low_sentinel,battery_rejects_impossible_percentage}"
+
+[[spec_test]]
+designed_for = "Truncated / unknown-command / bad-size payloads are rejected, never panicked"
+ours         = "src/command_class.rs::tests::{truncated_payloads_are_rejected_not_panicked,unknown_command_class_and_command} + src/sensor_decode.rs::tests::{rejects_empty_and_truncated,rejects_illegal_size}"
+
+[[spec_test]]
+designed_for = "Vendor-neutral Value model projection from decoded commands"
+ours         = "src/value.rs::tests + src/command_class.rs::tests (to_value assertions)"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/label.rs::tests::ui_strings_carry_no_implementation_jargon"

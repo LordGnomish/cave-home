@@ -13,10 +13,11 @@ upstream    = "home-assistant/core"
 port-method = "line-by-line"
 phase       = "phase-1-mvp"
 
+# Reference upstream — no commit is pinned. A prior pinned SHA was unverified
+# (the same hash had been reused across unrelated upstreams) and was removed.
 [package.metadata.upstream]
 repo    = "home-assistant/core"
 release = "2026.5.2"
-sha     = "456202325ac48549bd3c895dc3e69ecd3e2ba6a4"
 subpath = "homeassistant"
 
 [dependencies]

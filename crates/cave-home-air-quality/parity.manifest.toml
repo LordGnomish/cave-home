@@ -1,24 +1,142 @@
-# cave-home-air-quality — parity manifest scaffold.
+# cave-home-air-quality — parity manifest.
 #
-# Charter v2 G4: every crate ships a parity.manifest.toml. This is the
-# scaffold form — fill_ratio is bumped as the line-by-line port lands.
-# cave-home-air-quality — CO2/PM2.5/VOC/radon sensors (AirGradient, Awair, IKEA Vindriktning, Airthings); port method: line-by-line (ADR-019)
+# Phase 1 ships the air-quality *decision engine*: the US EPA AQI computation
+# (2024 PM2.5 revision), the CO2 / VOC-index / radon classifiers, the six
+# grandma-friendly bands with EN/DE/TR names + advice, and worst-of room
+# aggregation. This is the brain every automation, Portal tile and voice reply
+# consumes. The four vendor I/O adapters (AirGradient / Awair / IKEA
+# Vindriktning / Airthings) are network/BLE-bound and deferred to Phase 1b —
+# each is enumerated below with an ADR-019 disposition.
+#
+# Port method: the AQI math and reference thresholds are implemented from
+# *public standards* (US EPA EPA-454/B-24-002; WHO/EPA radon reference levels;
+# Sensirion VOC Index docs), all Apache-2.0-compatible. No GPL source was read.
 
 [crate]
 name             = "cave-home-air-quality"
 upstream_repo    = "home-assistant/core (airgradient, awair, ikea_vindriktning, airthings)"
-upstream_subpath = ""  # TODO: pin once line-by-line port begins
-port_method      = "line-by-line"
-upstream_license = "Apache-2.0 (verify per source)"  # TODO confirm
-ported_at        = "2026-05-25"
+port_method      = "line-by-line (vendor adapters) + spec-based (AQI engine)"
+upstream_license = "Apache-2.0"
+spec_sources     = [
+    "US EPA EPA-454/B-24-002 — AQI Technical Assistance Document (May 2024 PM2.5 revision)",
+    "WHO Handbook on Indoor Radon (100 Bq/m³ reference level)",
+    "US EPA radon action level (148 Bq/m³ ≈ 4 pCi/L)",
+    "Sensirion VOC Index public application notes (1..=500, 100 ≈ baseline)",
+    "OSHA CO₂ PEL 5000 ppm (8-hour) — top classification band anchor",
+]
+ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
 
 [ratios]
-fill_ratio              = 0.00
-fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
-fill_ratio_full_module  = 0.00
-test_port_ratio         = 0.00
+# fill_ratio is against the FULL crate scope (engine + 4 vendor adapters +
+# core-state integration). The engine is implemented and tested in full; the
+# four I/O adapters + core glue remain and are all ADR-justified Phase 1b.
+fill_ratio              = 0.32
+fill_ratio_basis        = "AQI/classification engine + reading model + room aggregation + EN/DE/TR UX + EPA NowCast time-weighting, fully implemented & tested; vendor I/O adapters deferred"
+test_port_ratio         = 0.0   # tests designed from spec, not ported
+adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-019 phase disposition
+honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
 
-# Once the port begins, replace this scaffold with [[mapped]] / [[unmapped]] /
-# [[test_port]] tables (see crates/cave-home-core/parity.manifest.toml for shape).
+# ---- mapped (real implementation present in this crate) --------------------
 
+[[mapped]]
+spec = "EPA AQI piecewise-linear formula I_p=(I_hi-I_lo)/(C_hi-C_lo)*(C_p-C_lo)+I_lo"
+ours = "src/aqi.rs::sub_index"
+
+[[mapped]]
+spec = "EPA 2024 PM2.5 / PM10 / O3 / NO2 / SO2 / CO breakpoint tables"
+ours = "src/aqi.rs::{PM25,PM10,OZONE,NO2,SO2,CO}"
+
+[[mapped]]
+spec = "EPA concentration truncation-to-table-precision rule"
+ours = "src/aqi.rs::truncate"
+
+[[mapped]]
+spec = "CO₂ indoor-air classification (OSHA-anchored)"
+ours = "src/classify.rs::classify_co2"
+
+[[mapped]]
+spec = "Sensirion VOC Index classification (1..=500)"
+ours = "src/classify.rs::classify_voc"
+
+[[mapped]]
+spec = "Radon classification (WHO 100 / EPA 148 Bq/m³)"
+ours = "src/classify.rs::classify_radon"
+
+[[mapped]]
+spec = "Six-band grandma-friendly category + EN/DE/TR name & advice (ADR-007)"
+ours = "src/category.rs::AirCategory"
+
+[[mapped]]
+spec = "Worst-of room aggregation with dominant-pollutant attribution"
+ours = "src/assessment.rs::assess"
+
+[[mapped]]
+spec = "EPA NowCast PM time-weighted average (weight=min/max floored 0.5; 12h window; 2-of-3 recent-hour validity)"
+ours = "src/nowcast.rs::now_cast"
+
+[[mapped]]
+spec = "Vendor-neutral validated reading model (rejects NaN/negative)"
+ours = "src/reading.rs::Reading"
+
+# ---- unmapped (NOT in this crate; ADR-019 Phase 1b disposition) ------------
+
+[[unmapped]]
+area     = "AirGradient local HTTP API adapter"
+priority = "phase-1b"
+note     = "ADR-019: AirGradient exposes a local /measures JSON endpoint. Network-bound; maps onto reading::Reading then reuses this engine. No new logic, just an HTTP poller."
+
+[[unmapped]]
+area     = "Awair local + cloud API adapter"
+priority = "phase-1b"
+note     = "ADR-019: Awair Element local API (and optional cloud). Account-bound for cloud; cave-home stays account-free by preferring the local API. I/O adapter only."
+
+[[unmapped]]
+area     = "IKEA Vindriktning PM2.5 adapter"
+priority = "phase-1b"
+note     = "ADR-019: Vindriktning is read over its UART/ESPHome bridge or via Zigbee. Hardware-bound; routes a single PM2.5 reading into the engine."
+
+[[unmapped]]
+area     = "Airthings radon adapter (BLE + cloud)"
+priority = "phase-1b"
+note     = "ADR-019: Airthings Wave is BLE; View is cloud. The only sovereign radon path for that sensor class. BLE/network-bound I/O adapter."
+
+[[unmapped]]
+area     = "cave-home-core entity/state integration"
+priority = "phase-1b"
+note     = "ADR-019: surfacing assessments as core State entities + automation triggers lands once cave-home-core's entity API stabilises. The engine is already core-agnostic."
+
+[[unmapped]]
+area     = "Pre-2024 PM2.5 breakpoint compatibility mode"
+priority = "permanent"
+note     = "Charter §7 always-latest + §8 no-backcompat: cave-home ships the current EPA breakpoints only; no historical-snapshot mode."
+
+# ---- spec_test (designed from spec / EPA reference values) -----------------
+
+[[spec_test]]
+designed_for = "EPA AQI breakpoint endpoints + mid-band interpolation (PM2.5/PM10/O3/CO)"
+ours         = "src/aqi.rs::tests"
+
+[[spec_test]]
+designed_for = "EPA truncation (not rounding) of input concentration"
+ours         = "src/aqi.rs::tests::pm25_truncates_not_rounds_input"
+
+[[spec_test]]
+designed_for = "Above-table ceiling reporting (no fabricated index)"
+ours         = "src/aqi.rs::tests::above_table_reports_ceiling_not_garbage"
+
+[[spec_test]]
+designed_for = "CO₂ / VOC / radon classification band boundaries"
+ours         = "src/classify.rs::tests"
+
+[[spec_test]]
+designed_for = "Grandma-friendly UX carries no implementation jargon (Charter §6.3)"
+ours         = "src/category.rs::tests::ui_strings_carry_no_implementation_jargon"
+
+[[spec_test]]
+designed_for = "Worst-of room aggregation + dominant pollutant"
+ours         = "src/assessment.rs::tests"
+
+[[spec_test]]
+designed_for = "EPA NowCast weight floor, recent-hour validity, window cap, raw precision"
+ours         = "tests/nowcast.rs + src/nowcast.rs::tests"

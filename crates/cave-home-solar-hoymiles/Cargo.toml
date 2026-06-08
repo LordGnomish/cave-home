@@ -6,10 +6,10 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-solar-hoymiles — Hoymiles microinverter support (HM/HMS/HMT series); upstream refs: lumapu/ahoy (AhoyDTU) + tbnobody/OpenDTU GPL-3.0, port method: clean-room (Hoymiles protocol spec + AhoyDTU public API docs; source not read)"
+description = "cave-home-solar-hoymiles — Hoymiles microinverter telemetry (HM/HMS/HMT series); upstream refs: lumapu/ahoy (AhoyDTU) + tbnobody/OpenDTU (copyleft, reference only), port method: clean-room (Hoymiles protocol spec + AhoyDTU public API docs; source not read). Upstream licence recorded in parity.manifest.toml."
 
 [package.metadata.cave-home]
-upstream    = "lumapu/ahoy (AhoyDTU) + tbnobody/OpenDTU (reference only, GPL-3.0)"
+upstream    = "lumapu/ahoy (AhoyDTU) + tbnobody/OpenDTU (copyleft, reference only)"
 port-method = "clean-room"
 spec-source = "Hoymiles HM/HMS/HMT wire protocol (reverse-engineered, publicly documented) + AhoyDTU public API documentation"
 
