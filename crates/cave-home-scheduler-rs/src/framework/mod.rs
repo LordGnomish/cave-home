@@ -30,6 +30,10 @@ pub enum Code {
     Success,
     Unschedulable,
     UnschedulableAndUnresolvable,
+    /// A [`PermitPlugin`] asks the framework to hold the pod in the binding
+    /// cycle until it is explicitly approved (or its timeout elapses).
+    /// Upstream: `framework.Wait`.
+    Wait,
     Error,
     Skip,
 }
@@ -84,6 +88,19 @@ impl Status {
         }
     }
 
+    /// Upstream: `framework.NewStatus(framework.Wait)` — a [`PermitPlugin`]
+    /// holds the pod until [`WaitingPod::allow`] / [`WaitingPod::reject`] is
+    /// called (or the plugin's timeout elapses, which the framework treats as a
+    /// rejection). See [`PermitPlugin::permit`].
+    #[must_use]
+    pub fn wait(plugin: &str) -> Self {
+        Self {
+            code: Code::Wait,
+            plugin: plugin.into(),
+            reasons: Vec::new(),
+        }
+    }
+
     /// Upstream: `framework.AsStatus(err)` — error-class status.
     #[must_use]
     pub fn error(plugin: &str, reason: impl Into<String>) -> Self {
@@ -97,6 +114,13 @@ impl Status {
     #[must_use]
     pub fn is_success(&self) -> bool {
         matches!(self.code, Code::Success | Code::Skip)
+    }
+
+    /// True for the [`Code::Wait`] disposition returned by a [`PermitPlugin`]
+    /// that wants to hold the pod. Upstream: `Status.IsWait`.
+    #[must_use]
+    pub fn is_wait(&self) -> bool {
+        self.code == Code::Wait
     }
 
     #[must_use]
@@ -141,6 +165,55 @@ pub struct PreFilterResult {
     pub node_names: Option<std::collections::BTreeSet<String>>,
 }
 
+/// Upstream: `pkg/scheduler/framework/interface.go::PreEnqueuePlugin`.
+///
+/// Runs before a pod is admitted to the active scheduling queue. Every
+/// registered PreEnqueue plugin must return [`Code::Success`] for the pod to
+/// become schedulable; if any returns a non-success status the pod is held out
+/// of the active queue (parked, gated) until a cluster event re-evaluates it.
+/// This is purely a gate — it never narrows nodes and runs entirely off the
+/// scheduling cycle, so it takes neither [`CycleState`] nor [`NodeInfo`].
+pub trait PreEnqueuePlugin: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn pre_enqueue(&self, pod: &Pod) -> Status;
+}
+
+/// Upstream: `pkg/scheduler/framework/interface.go::QueueSortPlugin`.
+///
+/// Provides the strict-weak ordering the active queue pops in: `less(a, b)`
+/// returns `true` when `a` should be scheduled before `b`. Exactly one
+/// QueueSort plugin is enabled per profile (upstream enforces this); the
+/// built-in [`PrioritySort`](crate::plugins::PrioritySort) orders by descending
+/// `Pod.Spec.Priority`, ties broken by admission order (handled by the queue's
+/// sequence number, not the plugin).
+pub trait QueueSortPlugin: Send + Sync {
+    fn name(&self) -> &'static str;
+    /// `true` iff `a` sorts before `b` (pops first).
+    fn less(&self, a: &Pod, b: &Pod) -> bool;
+}
+
+/// Upstream: `pkg/scheduler/framework/interface.go::PreFilterExtensions`.
+///
+/// The optional incremental-update hook a PreFilter plugin exposes so the
+/// preemption machinery can evaluate a node *as if* a victim pod were removed
+/// (`remove_pod`) or an additional pod were added (`add_pod`) without recomputing
+/// the whole pod-level state from scratch. The plugin mutates its own slice of
+/// [`CycleState`] in place. Returning a non-success [`Status`] aborts the
+/// hypothetical evaluation.
+pub trait PreFilterExtensions: Send + Sync {
+    /// A pod is being added to `node` in the hypothetical; update cycle state.
+    fn add_pod(&self, state: &mut CycleState, pod: &Pod, pod_to_add: &Pod, node: &NodeInfo)
+        -> Status;
+    /// A pod is being removed from `node` in the hypothetical; update cycle state.
+    fn remove_pod(
+        &self,
+        state: &mut CycleState,
+        pod: &Pod,
+        pod_to_remove: &Pod,
+        node: &NodeInfo,
+    ) -> Status;
+}
+
 /// Upstream: `pkg/scheduler/framework/interface.go::PreFilterPlugin`.
 ///
 /// Runs once per pod before the per-node Filter loop: it can precompute
@@ -149,6 +222,16 @@ pub struct PreFilterResult {
 pub trait PreFilterPlugin: Send + Sync {
     fn name(&self) -> &'static str;
     fn pre_filter(&self, state: &mut CycleState, pod: &Pod) -> (Option<PreFilterResult>, Status);
+
+    /// Upstream: `PreFilterPlugin.PreFilterExtensions()`.
+    ///
+    /// Returns the plugin's incremental add/remove-pod hook, or `None` if it
+    /// does not support hypothetical node mutation (the common case). The
+    /// preemption machinery calls this to keep each plugin's cycle state
+    /// consistent while it removes victim pods from a candidate node.
+    fn pre_filter_extensions(&self) -> Option<&dyn PreFilterExtensions> {
+        None
+    }
 }
 
 /// Upstream: `pkg/scheduler/framework/interface.go::FilterPlugin`.
@@ -226,12 +309,102 @@ pub trait ReservePlugin: Send + Sync {
 
 /// Upstream: `pkg/scheduler/framework/interface.go::PermitPlugin`.
 ///
-/// Gates whether the reserved pod may proceed to bind. Phase 2 supports
-/// approve (`Success`) or deny (`Unschedulable`); the timed "wait" disposition
-/// is deferred (see `parity.manifest.toml`).
+/// Gates whether the reserved pod may proceed to bind. A plugin returns one of
+/// three dispositions:
+///
+/// * [`Code::Success`] — approve immediately, the next Permit plugin runs.
+/// * a non-success, non-[`Code::Wait`] status (e.g. [`Status::unschedulable`]) —
+///   reject; the framework Unreserves every Reserve plugin and re-queues the pod.
+/// * [`Status::wait`] together with a [`Duration`](std::time::Duration) timeout —
+///   hold the pod. The framework parks the pod (it does **not** bind) until the
+///   plugin (or another plugin) calls [`WaitingPod::allow`] /
+///   [`WaitingPod::reject`], or the *shortest* requested timeout elapses (which
+///   the framework treats as a rejection). When a plugin returns
+///   [`Code::Wait`] it must also report its timeout via
+///   [`permit_timeout`](Self::permit_timeout).
 pub trait PermitPlugin: Send + Sync {
     fn name(&self) -> &'static str;
     fn permit(&self, state: &mut CycleState, pod: &Pod, node_name: &str) -> Status;
+
+    /// The timeout for this plugin's [`Code::Wait`] disposition. The framework
+    /// waits at most the minimum timeout across all waiting plugins; a plugin
+    /// that never returns [`Code::Wait`] can leave this at its default of
+    /// [`Duration::ZERO`], which is ignored. Upstream: the `timeout` returned
+    /// alongside `framework.Wait` from `Permit`.
+    fn permit_timeout(&self) -> std::time::Duration {
+        std::time::Duration::ZERO
+    }
+}
+
+/// Upstream: `pkg/scheduler/framework/runtime/waiting_pods_map.go::waitingPod`.
+///
+/// The gate the framework hands to whatever decides a waiting pod's fate. While
+/// a pod is in the [`Code::Wait`] state, callers (e.g. a sibling Permit plugin
+/// reacting to a cluster event) call [`allow`](Self::allow) to let it proceed to
+/// bind, or [`reject`](Self::reject) to fail it. The framework's own timeout
+/// fires a `reject` if neither is called in time. The signal is single-shot:
+/// the first disposition wins and later calls are ignored.
+#[derive(Clone)]
+pub struct WaitingPod {
+    pod_uid: String,
+    inner: std::sync::Arc<WaitingPodInner>,
+}
+
+struct WaitingPodInner {
+    tx: tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<PermitDecision>>>,
+}
+
+/// The terminal disposition of a [`WaitingPod`]. Upstream: the `s *Status` the
+/// `waitingPod`'s channel carries — `nil` for allow, non-`nil` for reject.
+#[derive(Debug, Clone)]
+pub enum PermitDecision {
+    Allow,
+    Reject(String),
+}
+
+impl WaitingPod {
+    /// Construct a waiting-pod handle plus the receiver the framework awaits.
+    #[must_use]
+    pub fn new(pod_uid: impl Into<String>) -> (Self, tokio::sync::oneshot::Receiver<PermitDecision>) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let wp = Self {
+            pod_uid: pod_uid.into(),
+            inner: std::sync::Arc::new(WaitingPodInner {
+                tx: tokio::sync::Mutex::new(Some(tx)),
+            }),
+        };
+        (wp, rx)
+    }
+
+    /// The uid of the pod this gate controls.
+    #[must_use]
+    pub fn pod_uid(&self) -> &str {
+        &self.pod_uid
+    }
+
+    fn signal(&self, decision: PermitDecision) -> bool {
+        // try_lock never blocks; the lock is uncontended in practice (the only
+        // writer is whoever resolves the gate first) and a contended lock means
+        // someone else is mid-resolution, so dropping the signal is correct.
+        if let Ok(mut guard) = self.inner.tx.try_lock() {
+            if let Some(tx) = guard.take() {
+                return tx.send(decision).is_ok();
+            }
+        }
+        false
+    }
+
+    /// Let the waiting pod proceed to bind. Returns `false` if the pod was
+    /// already resolved (allowed, rejected, or timed out).
+    pub fn allow(&self) -> bool {
+        self.signal(PermitDecision::Allow)
+    }
+
+    /// Fail the waiting pod with `reason`; the framework Unreserves and
+    /// re-queues it. Returns `false` if already resolved.
+    pub fn reject(&self, reason: impl Into<String>) -> bool {
+        self.signal(PermitDecision::Reject(reason.into()))
+    }
 }
 
 /// Upstream: `pkg/scheduler/framework/interface.go::PreBindPlugin`.

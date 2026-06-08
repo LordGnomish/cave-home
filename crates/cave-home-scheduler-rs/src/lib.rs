@@ -49,9 +49,10 @@ pub mod types;
 
 pub use cache::{NodeInfo, SchedulerCache};
 pub use framework::{
-    ActionType, BindPlugin, ClusterEvent, CycleState, Gvk, NodeScore, PermitPlugin, PluginRegistry,
-    PostBindPlugin, PreBindPlugin, PreFilterPlugin, PreFilterResult, PreScorePlugin,
-    RegistryBuilder, ReservePlugin, Status,
+    ActionType, BindPlugin, ClusterEvent, Code, CycleState, FilterPlugin, Gvk, NodeScore,
+    PermitDecision, PermitPlugin, PluginRegistry, PostBindPlugin, PostFilterPlugin, PreBindPlugin,
+    PreEnqueuePlugin, PreFilterExtensions, PreFilterPlugin, PreFilterResult, PreScorePlugin,
+    QueueSortPlugin, RegistryBuilder, ReservePlugin, ScorePlugin, Status, WaitingPod,
 };
 pub use plugins::default_registry;
 pub use preemption::DefaultPreemption;

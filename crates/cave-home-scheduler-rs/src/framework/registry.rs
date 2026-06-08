@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use super::{
     BindPlugin, FilterPlugin, PermitPlugin, PostBindPlugin, PostFilterPlugin, PreBindPlugin,
-    PreFilterPlugin, PreScorePlugin, ReservePlugin, ScorePlugin,
+    PreEnqueuePlugin, PreFilterPlugin, PreScorePlugin, QueueSortPlugin, ReservePlugin, ScorePlugin,
 };
 
 /// Upstream: `pkg/scheduler/framework/runtime/framework.go::frameworkImpl`.
@@ -20,6 +20,8 @@ use super::{
 /// each extension point — is preserved 1:1.
 #[derive(Clone, Default)]
 pub struct PluginRegistry {
+    pre_enqueues: Vec<Arc<dyn PreEnqueuePlugin>>,
+    queue_sort: Option<Arc<dyn QueueSortPlugin>>,
     pre_filters: Vec<Arc<dyn PreFilterPlugin>>,
     filters: Vec<Arc<dyn FilterPlugin>>,
     pre_scores: Vec<Arc<dyn PreScorePlugin>>,
@@ -36,6 +38,16 @@ impl PluginRegistry {
     #[must_use]
     pub fn builder() -> RegistryBuilder {
         RegistryBuilder::default()
+    }
+
+    #[must_use]
+    pub fn pre_enqueues(&self) -> &[Arc<dyn PreEnqueuePlugin>] {
+        &self.pre_enqueues
+    }
+
+    #[must_use]
+    pub fn queue_sort(&self) -> Option<&Arc<dyn QueueSortPlugin>> {
+        self.queue_sort.as_ref()
     }
 
     #[must_use]
@@ -92,6 +104,8 @@ impl PluginRegistry {
 /// Builder for [`PluginRegistry`].
 #[derive(Default)]
 pub struct RegistryBuilder {
+    pre_enqueues: Vec<Arc<dyn PreEnqueuePlugin>>,
+    queue_sort: Option<Arc<dyn QueueSortPlugin>>,
     pre_filters: Vec<Arc<dyn PreFilterPlugin>>,
     filters: Vec<Arc<dyn FilterPlugin>>,
     pre_scores: Vec<Arc<dyn PreScorePlugin>>,
@@ -105,6 +119,20 @@ pub struct RegistryBuilder {
 }
 
 impl RegistryBuilder {
+    #[must_use]
+    pub fn with_pre_enqueue(mut self, p: Arc<dyn PreEnqueuePlugin>) -> Self {
+        self.pre_enqueues.push(p);
+        self
+    }
+
+    /// Set the (single) QueueSort plugin. Upstream allows exactly one enabled
+    /// QueueSort plugin per profile; a second call replaces the first.
+    #[must_use]
+    pub fn with_queue_sort(mut self, p: Arc<dyn QueueSortPlugin>) -> Self {
+        self.queue_sort = Some(p);
+        self
+    }
+
     #[must_use]
     pub fn with_pre_filter(mut self, p: Arc<dyn PreFilterPlugin>) -> Self {
         self.pre_filters.push(p);
@@ -168,6 +196,8 @@ impl RegistryBuilder {
     #[must_use]
     pub fn build(self) -> PluginRegistry {
         PluginRegistry {
+            pre_enqueues: self.pre_enqueues,
+            queue_sort: self.queue_sort,
             pre_filters: self.pre_filters,
             filters: self.filters,
             pre_scores: self.pre_scores,
@@ -257,5 +287,37 @@ mod tests {
         assert_eq!(reg.pre_scores().len(), 1);
         assert_eq!(reg.pre_filters()[0].name(), "NoopPreFilter");
         assert_eq!(reg.pre_scores()[0].name(), "NoopPreScore");
+    }
+
+    struct AdmitPreEnqueue;
+    impl super::super::PreEnqueuePlugin for AdmitPreEnqueue {
+        fn name(&self) -> &'static str {
+            "AdmitPreEnqueue"
+        }
+        fn pre_enqueue(&self, _: &Pod) -> Status {
+            Status::success()
+        }
+    }
+
+    struct PrioritySort;
+    impl super::super::QueueSortPlugin for PrioritySort {
+        fn name(&self) -> &'static str {
+            "PrioritySort"
+        }
+        fn less(&self, a: &Pod, b: &Pod) -> bool {
+            a.spec.priority > b.spec.priority
+        }
+    }
+
+    #[test]
+    fn registry_records_pre_enqueue_and_queue_sort_plugins() {
+        let reg = PluginRegistry::builder()
+            .with_pre_enqueue(Arc::new(AdmitPreEnqueue))
+            .with_queue_sort(Arc::new(PrioritySort))
+            .build();
+        assert_eq!(reg.pre_enqueues().len(), 1);
+        assert_eq!(reg.pre_enqueues()[0].name(), "AdmitPreEnqueue");
+        assert!(reg.queue_sort().is_some());
+        assert_eq!(reg.queue_sort().unwrap().name(), "PrioritySort");
     }
 }
