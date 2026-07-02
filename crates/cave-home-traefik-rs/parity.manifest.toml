@@ -37,6 +37,10 @@ spec_sources     = [
     "Traefik services — weighted round-robin & sticky sessions: https://doc.traefik.io/traefik/routing/services/",
     "Traefik middlewares — StripPrefix / AddPrefix / RedirectScheme / Headers: https://doc.traefik.io/traefik/middlewares/overview/",
     "Traefik dynamic configuration model (routers/services/middlewares by name): https://doc.traefik.io/traefik/providers/overview/",
+    "Traefik kubernetes-ingress provider — Ingress -> routers/services translation, pathType, ingressClassName, TLS, defaultBackend: https://doc.traefik.io/traefik/providers/kubernetes-ingress/",
+    "Kubernetes Ingress API (networking.k8s.io/v1) — rules/paths/pathType/backend/defaultBackend/tls/ingressClassName: https://kubernetes.io/docs/concepts/services-networking/ingress/",
+    "Traefik kubernetes-gateway provider — HTTPRoute -> routers/services, matches/backendRefs/weight: https://doc.traefik.io/traefik/providers/kubernetes-gateway/",
+    "Gateway API HTTPRoute (gateway.networking.k8s.io/v1) — hostnames/rules/matches (path/method/headers)/weighted backendRefs: https://gateway-api.sigs.k8s.io/api-types/httproute/",
     "RFC 9110 §5.1 (field names case-insensitive), §5.2 (multi-value header join)",
 ]
 ported_at        = "2026-05-29"
@@ -48,11 +52,11 @@ linux_min_kernel = "7.1"
 # runtimes). The decision core is implemented and tested in full; the
 # network/clock/crypto-bound remainder is all ADR-004 phase-1b, each
 # dispositioned below.
-fill_ratio              = 0.30
-fill_ratio_basis        = "rule parser+evaluator, router priority selection, service/load-balancer selection (WRR + sticky + health-skip), middleware-chain transforms, and validated dynamic-config — all implemented & tested; listener/ACME/providers/proxying/auth-crypto/ratelimit-runtime deferred"
+fill_ratio              = 0.40
+fill_ratio_basis        = "rule parser+evaluator, router priority selection, service/load-balancer selection (WRR + sticky + health-skip), middleware-chain transforms, validated dynamic-config, the Kubernetes Ingress -> routers/services translation (pathType, ingressClassName, TLS, defaultBackend), and the Gateway API HTTPRoute -> routers/weighted-services translation (hostnames, path/method/header matches, weighted backendRefs) — all implemented & tested; the provider *watch loops* + endpoint resolution, plus listener/ACME/proxying/auth-crypto/ratelimit-runtime, deferred"
 test_port_ratio         = 0.0   # tests designed from spec, not ported from upstream
 adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-004 phase disposition
-honest_ratio            = 1.00  # 0.30 / (0.30 + (1-0.30)*(1-1.00)) = 1.00
+honest_ratio            = 1.00  # 0.40 / (0.40 + (1-0.40)*(1-1.00)) = 1.00
 
 # ---- mapped (real, tested implementation present in this crate) ------------
 
@@ -100,6 +104,14 @@ ours = "src/config.rs::DynamicConfig::build"
 spec = "Request/response descriptor with RFC-9110 case-insensitive header handling"
 ours = "src/request.rs::{RequestDescriptor,ResponseDescriptor}"
 
+[[mapped]]
+spec = "Kubernetes Ingress (networking.k8s.io/v1) -> routers/services translation: per-(host,path) router rule, pathType (Exact->Path, Prefix/ImplementationSpecific->PathPrefix), <ns>-<service>-<port> service id, spec.tls host coverage (wildcard on empty hosts), lowest-priority defaultBackend catch-all, ingressClassName filtering, backend dedup + multi-ingress merge"
+ours = "src/ingress.rs::{Ingress::translate, translate_ingresses, Translation::into_config}"
+
+[[mapped]]
+spec = "Gateway API HTTPRoute (gateway.networking.k8s.io/v1) -> routers/services translation: per-(rule,match) router (path/method/headers AND-combined, matches OR per rule), hostnames -> multi-value Host(...) clause, path Exact->Path / PathPrefix->PathPrefix, empty-match catch-all, weighted backendRefs -> one weighted-round-robin service, multi-route merge"
+ours = "src/gateway.rs::{HttpRoute::translate, translate_routes, GatewayTranslation::into_config}"
+
 # ---- unmapped (NOT in this crate; ADR-004 phase disposition) ---------------
 
 [[unmapped]]
@@ -113,9 +125,9 @@ priority = "phase-1b"
 note     = "ADR-004: automatic certificate provisioning + renewal is network- and disk-bound and depends on the listener. The Router only carries a tls on/off flag here; cert acquisition is deferred."
 
 [[unmapped]]
-area     = "Dynamic provider watchers (file / Kubernetes CRD / Docker labels)"
+area     = "Dynamic provider watch loops + endpoint resolution (file / Kubernetes Ingress+CRD / Docker labels)"
 priority = "phase-1b"
-note     = "ADR-004: the providers that *produce* dynamic-config snapshots are I/O- and cluster-bound. This crate models + validates the snapshot they feed; the watch/parse loops land with the orchestration provider layer."
+note     = "ADR-004: the *pure translation* half of both the Kubernetes Ingress provider (src/ingress.rs) and the Gateway API HTTPRoute provider (src/gateway.rs) now lands (Ingress/HTTPRoute -> routers/services). What remains deferred is the I/O- and cluster-bound half: the watch loops that list/watch Ingress / HTTPRoute objects from the API server, the endpoint resolution that turns a backend Service+port into real server URLs ({Translation,GatewayTranslation}::into_config take a caller-supplied resolver so the translation stays std-only), and the other providers (file / Docker, plus GRPCRoute/TLSRoute/TCPRoute). These land with the orchestration provider layer."
 
 [[unmapped]]
 area     = "BasicAuth credential verification (htpasswd / constant-time hash compare)"
@@ -136,6 +148,11 @@ note     = "Charter §6 HONEST-port stance: this crate is a spec-based behaviour
 area     = "Additional matchers: HostRegexp / HeaderRegexp / Query / ClientIP / HostSNI(TCP)"
 priority = "phase-2"
 note     = "ADR-004: the implemented matcher set covers the common HTTP routing cases. Regexp matchers would reintroduce a regex engine (deliberately avoided in the parser per the no-regex constraint); TCP HostSNI belongs with the TCP listener. Added incrementally over the same parser/evaluator."
+
+[[unmapped]]
+area     = "Gateway API: HTTPRoute filters (RequestHeaderModifier / RequestRedirect / URLRewrite / mirror) and the GRPCRoute / TLSRoute / TCPRoute / UDPRoute kinds"
+priority = "phase-2"
+note     = "ADR-004: the HTTPRoute *match -> router* + weighted-backend translation lands now (src/gateway.rs). HTTPRoute filters map onto the existing middleware chain (RequestHeaderModifier -> Headers, RequestRedirect -> RedirectScheme, URLRewrite -> StripPrefix/AddPrefix) and are added incrementally over that machinery; the regexp path-match type maps to the deferred HostRegexp/HeaderRegexp matchers above. GRPCRoute is HTTPRoute-shaped; TLSRoute/TCPRoute/UDPRoute belong with the TCP/UDP listener (phase-1b)."
 
 # ---- spec_test (designed from public Traefik docs / RFC behaviour) ---------
 
@@ -166,3 +183,11 @@ ours         = "src/config.rs::tests"
 [[spec_test]]
 designed_for = "RFC-9110 case-insensitive header lookup + method/host/scheme normalisation"
 ours         = "src/request.rs::tests"
+
+[[spec_test]]
+designed_for = "Ingress translation: service id (numeric/named port), ingressClassName filtering, host+path/host-only/path-only rule construction, pathType -> matcher mapping, empty-rule/empty-service/zero-port/unparseable-rule rejection, multi-path distinct routers + backend dedup, spec.tls host/wildcard coverage, defaultBackend lowest-priority catch-all, translate_ingresses merge, into_config end-to-end routability + empty-endpoint rejection"
+ours         = "src/ingress.rs::tests"
+
+[[spec_test]]
+designed_for = "HTTPRoute translation: host+path/exact-path/multi-hostname/method+header rule construction, empty-match catch-all, host-only match, multiple matches -> multiple routers sharing one service, no-backend/empty-name/zero-port/unparseable-rule rejection, weighted-backendRef distribution via into_config, end-to-end routability, translate_routes merge"
+ours         = "src/gateway.rs::tests"
