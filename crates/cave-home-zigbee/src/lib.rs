@@ -18,6 +18,11 @@
 //! - [`coordinator`] — coordinator init / form-network entry point.
 //! - [`network`]    — NWK + APS layers + routing table.
 //! - [`zcl`]        — ZCL frame format + Foundation commands.
+//! - [`onoff`]      — OnOff cluster (0x0006) commands + state.
+//! - [`level_control`] — Level Control cluster (0x0008) dimming.
+//! - [`color_control`] — Color Control cluster (0x0300) colour/temperature.
+//! - [`ias_zone`]   — IAS Zone cluster (0x0500) security sensors.
+//! - [`occupancy_sensing`] — Occupancy Sensing cluster (0x0406) presence.
 //! - [`pairing`]    — network steering / InstallCode / Touchlink.
 //! - [`attribute_reporting`] — Configure / Read / Report attributes.
 //! - [`groups`]     — Groups cluster (0x0004).
@@ -33,13 +38,18 @@
 #![doc(html_root_url = "https://docs.rs/cave-home-zigbee")]
 
 pub mod attribute_reporting;
+pub mod color_control;
 pub mod coordinator;
 pub mod deconz;
 pub mod error;
 pub mod events;
 pub mod ezsp;
 pub mod groups;
+pub mod ias_zone;
+pub mod level_control;
 pub mod network;
+pub mod occupancy_sensing;
+pub mod onoff;
 pub mod ota;
 pub mod pairing;
 pub mod prelude;
