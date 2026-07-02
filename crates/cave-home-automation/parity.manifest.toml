@@ -34,6 +34,8 @@ port_method      = "line-by-line"
 # closer to 0.005; we deliberately report against the MVP slice per
 # Charter golden-rule 7 ("honest measured fill_ratio").
 fill_ratio       = 0.42
+adr_justified_ratio = 1.00  # measured: every [[unmapped]]/[[scope_cut]] entry carries both priority and note
+honest_ratio        = 1.00  # computed: fill / (fill + (1-fill)*(1-adr_justified))
 fill_ratio_basis = "vs MVP slice (state + bus + services + automation + scripts + scenes + templates + config_entries); whole-HA ratio is ~0.005"
 test_port_ratio  = 0.18
 

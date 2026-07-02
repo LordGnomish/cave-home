@@ -1,0 +1,41 @@
+# cave-home-jarvis — parity manifest.
+#
+# This crate is the OpenJarvis-class voice-assistant pipeline wrapped around
+# cave-home-voice: DTW wake-word matching, STT/TTS engine seams, an OWN Ollama
+# LLM tool-calling gateway (request/response codec + tool dispatch), the
+# NLU-vs-LLM dispatch decision, multi-room session routing, and d-vector
+# speaker identification. All engines are seam-injected so the pipeline is
+# fully unit-testable without audio hardware or a running Ollama.
+#
+# Port method: behavioural-reimplementation of the OpenJarvis/Rhasspy-class
+# pipeline shape; first-party clean-room, no upstream source copied.
+
+[crate]
+name             = "cave-home-jarvis"
+upstream_repo    = "OpenJarvis / Rhasspy-class voice-pipeline architecture + Ollama /api/chat tool-calling contract (behaviour reference only — first-party clean-room)"
+port_method      = "behavioural-reimplementation"
+upstream_license = "Apache-2.0"
+ported_at        = "2026-06-07"
+linux_min_kernel = "7.1"
+
+[ratios]
+fill_ratio          = 0.45
+fill_ratio_basis    = "wake-word DTW matcher, STT/TTS engine seams, Ollama chat + tool-calling codec and gateway, NLU-vs-LLM dispatch policy, multi-room session routing, speaker d-vector identification, family policy — implemented and covered by 79 tests (red→green TDD); real audio capture/playback and a live STT/TTS/LLM engine binding are runtime-bound"
+test_port_ratio     = 0.0   # tests designed from the pipeline contract
+adr_justified_ratio = 1.00  # measured: every [[unmapped]] entry carries both priority and note
+honest_ratio        = 1.00  # computed: fill / (fill + (1-fill)*(1-adr_justified)); every gap below is ADR-justified
+
+[[unmapped]]
+area     = "Real audio I/O (microphone capture, speaker playback)"
+priority = "phase-1b"
+note     = "The pipeline is seam-injected; binding ALSA/PipeWire capture and playback is OS-bound and lands with the node audio stack."
+
+[[unmapped]]
+area     = "Live STT/TTS engine bindings (whisper.cpp / piper)"
+priority = "phase-1b"
+note     = "Engine seams are defined and tested with mock engines; linking the real inference engines is a build/runtime concern (offline model assets), not a decision-core gap."
+
+[[unmapped]]
+area     = "Live Ollama round-trip test"
+priority = "deferred"
+note     = "The /api/chat tool-calling codec is tested against recorded request/response shapes; a live test needs a running Ollama with a pulled model and is not CI-runnable."

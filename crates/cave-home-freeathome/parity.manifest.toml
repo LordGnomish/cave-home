@@ -1,0 +1,36 @@
+# cave-home-freeathome — parity manifest.
+#
+# This crate is the REAL ABB/Busch-Jaeger free@home SysAP transport (the wire
+# layer the cave-home-free-home decision core deferred per ADR-011): fhapi v1
+# REST client (spec-compliant dotted datapoint/device paths, uuid-scoped),
+# WebSocket event stream with reconnect/backoff, SysAP discovery, and the
+# state cache the decision core reads. Verified end-to-end against wiremock
+# and an in-process WS server.
+#
+# Port method: spec-based, first-party clean-room over the published fhapi v1
+# OpenAPI surface. No upstream source was copied.
+
+[crate]
+name             = "cave-home-freeathome"
+upstream_repo    = "ABB free@home local fhapi v1 (developer.eu.mybuildings.abb.com OpenAPI spec — semantics only, first-party clean-room)"
+port_method      = "spec-based"
+upstream_license = "Apache-2.0"
+ported_at        = "2026-06-07"
+linux_min_kernel = "7.1"
+
+[ratios]
+fill_ratio          = 0.60
+fill_ratio_basis    = "fhapi v1 REST (configuration, devicelist, device/datapoint get+put with spec-compliant dotted paths), WS eventstream + reconnect/backoff, SysAP discovery, auth header handling, typed error mapping, state cache — implemented and covered by 97+ tests incl. wiremock + WS e2e; pairing/commissioning and the full parameter surface grow with the free-home decision core"
+test_port_ratio     = 0.0   # tests designed from the fhapi v1 spec
+adr_justified_ratio = 1.00  # measured: every [[unmapped]] entry carries both priority and note
+honest_ratio        = 1.00  # computed: fill / (fill + (1-fill)*(1-adr_justified)); every gap below is ADR-justified
+
+[[unmapped]]
+area     = "Device pairing / commissioning flows (fhapi virtual-device registration)"
+priority = "phase-2"
+note     = "Read/write/event transport is real and e2e-tested; commissioning is an additive REST surface consumed once the free-home decision core models it."
+
+[[unmapped]]
+area     = "Live-SysAP integration test (real hardware)"
+priority = "deferred"
+note     = "wiremock + in-process WS cover the wire contract; a hardware test needs a physical SysAP and is not CI-runnable."

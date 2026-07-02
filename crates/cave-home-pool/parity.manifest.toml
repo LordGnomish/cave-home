@@ -15,6 +15,8 @@ linux_min_kernel = "7.1"
 
 [ratios]
 fill_ratio              = 0.00
+adr_justified_ratio = 1.00  # measured: every [[unmapped]]/[[scope_cut]] entry carries both priority and note
+honest_ratio        = 0.00  # computed: fill / (fill + (1-fill)*(1-adr_justified))
 fill_ratio_basis        = "scaffold + manifest only (real port lands in phase 1)"
 fill_ratio_full_module  = 0.00
 test_port_ratio         = 0.00

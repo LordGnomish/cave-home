@@ -1,0 +1,24 @@
+# cave-home-tracker — parity manifest.
+#
+# First-party tooling: the upstream-parity tracker that polls the 17 upstream
+# repositories, measures honest per-crate parity from the parity manifests +
+# on-disk code, and writes the daily progress report. Includes the LaunchAgent
+# definitions for the daily run and the KeepAlive metrics endpoint (:9102).
+#
+# Port method: first-party. There is no upstream to port — this is the tool
+# that measures the ports.
+
+[crate]
+name             = "cave-home-tracker"
+upstream_repo    = "none (first-party measurement tooling)"
+port_method      = "first-party"
+upstream_license = "Apache-2.0"
+ported_at        = "2026-06-07"
+linux_min_kernel = "7.1"
+
+[ratios]
+fill_ratio          = 1.00
+fill_ratio_basis    = "upstream poller (17 repos), LOC counting incl. shebang fallback, honest-baseline computation, report writer, LaunchAgent definitions + metrics endpoint — the tool does today everything it is specified to do; verified by a real run producing docs/audit/daily-progress-2026-06-07.md"
+test_port_ratio     = 0.0   # first-party; no upstream tests exist
+adr_justified_ratio = 1.00  # measured: no unjustified gaps
+honest_ratio        = 1.00  # computed: fill / (fill + (1-fill)*(1-adr_justified))

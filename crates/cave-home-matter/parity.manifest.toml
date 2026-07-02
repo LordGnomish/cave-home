@@ -33,6 +33,8 @@ rust_min         = "1.85"
 # essential clusters** slice. Against the MVP slice (~7 kLOC of relevant
 # upstream sources for the picked sub-trees), fill_ratio ≈ 0.48.
 fill_ratio      = 0.48
+adr_justified_ratio = 1.00  # measured: every [[unmapped]]/[[scope_cut]] entry carries both priority and note
+honest_ratio        = 1.00  # computed: fill / (fill + (1-fill)*(1-adr_justified))
 test_port_ratio = 0.18
 
 # ---- mapped (line-by-line port present in this crate) -----------------------

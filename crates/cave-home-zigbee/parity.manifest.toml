@@ -38,6 +38,8 @@ linux_min_kernel = "7.1"
 # equivalent), the fill ratio is much smaller (~0.025) — Phase 1 is
 # deliberately the coordinator + ZCL foundation slice only.
 fill_ratio              = 0.45
+adr_justified_ratio = 1.00  # measured: every [[unmapped]]/[[scope_cut]] entry carries both priority and note
+honest_ratio        = 1.00  # computed: fill / (fill + (1-fill)*(1-adr_justified))
 fill_ratio_basis        = "phase-1 MVP scope (coordinator + transport + ZCL foundation + pairing/groups/scenes/OTA queue)"
 fill_ratio_full_stack   = 0.025
 test_port_ratio         = 0.0     # clean-room: tests are designed from spec, not ported

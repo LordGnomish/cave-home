@@ -47,6 +47,8 @@ license = "Apache-2.0"
 # integration glue excluding test_*.py and string assets). fill_ratio is
 # the headline production-port ratio.
 fill_ratio              = 0.50
+adr_justified_ratio = 1.00  # measured: every [[unmapped]]/[[scope_cut]] entry carries both priority and note
+honest_ratio        = 1.00  # computed: fill / (fill + (1-fill)*(1-adr_justified))
 fill_ratio_basis        = "phase-1 MVP: v1 lights/groups/scenes/sensors/config + v2 lights/scenes/devices/motion/buttons/rooms/zones/grouped_light + EventStream parser + bridge lifecycle"
 test_port_ratio         = 0.30
 

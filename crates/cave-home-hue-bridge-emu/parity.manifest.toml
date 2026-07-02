@@ -43,6 +43,8 @@ clip_schema    = "https://developers.meethue.com/develop/hue-api-v2/api-referenc
 # Against a *full* Hue Bridge feature parity baseline (~25 kLOC), the
 # fill ratio is ~0.07 — Phase 1 is deliberately the most-used surfaces.
 fill_ratio              = 0.50
+adr_justified_ratio = 1.00  # measured: every [[unmapped]]/[[scope_cut]] entry carries both priority and note
+honest_ratio        = 1.00  # computed: fill / (fill + (1-fill)*(1-adr_justified))
 fill_ratio_basis        = "phase-1 MVP scope (pairing + v1 lights/groups/scenes/sensors/config + v2 lights/scenes/rooms/zones/grouped_light/bridge + eventstream + UPnP SSDP + mDNS)"
 fill_ratio_full_stack   = 0.07
 test_port_ratio         = 0.0     # clean-room: tests are designed from spec, NOT ported

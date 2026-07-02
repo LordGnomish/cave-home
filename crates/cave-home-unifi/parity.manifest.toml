@@ -1,0 +1,35 @@
+# cave-home-unifi — parity manifest.
+#
+# This crate is the REAL UniFi transport + API layer (the Phase-1b wire layer
+# the unifi-network / unifi-access / unifi-protect decision cores deferred):
+# reqwest/rustls REST client with UniFi's cookie+CSRF login dance, the
+# tokio-tungstenite WebSocket event stream, and the Access bearer-token client
+# on :12445. Verified end-to-end against wiremock in-process servers.
+#
+# Port method: spec-based, first-party clean-room over Ubiquiti's public API
+# surface. No upstream source was copied.
+
+[crate]
+name             = "cave-home-unifi"
+upstream_repo    = "UniFi Network/Access/Protect public REST + WS API surface (semantics only — first-party clean-room)"
+port_method      = "spec-based"
+upstream_license = "Apache-2.0"
+ported_at        = "2026-06-07"
+linux_min_kernel = "7.1"
+
+[ratios]
+fill_ratio          = 0.60
+fill_ratio_basis    = "controller login (cookie + CSRF), UDM-Pro vs legacy base-path detection, Network REST surface (sites/devices/clients/health), Protect bootstrap + event WS, Access bearer client (:12445), typed error mapping, reconnecting WS event stream — implemented and covered by 114 tests incl. wiremock e2e; per-product full endpoint coverage grows with the consuming decision cores"
+test_port_ratio     = 0.0   # tests designed from the documented API surface
+adr_justified_ratio = 1.00  # measured: every [[unmapped]] entry carries both priority and note
+honest_ratio        = 1.00  # computed: fill / (fill + (1-fill)*(1-adr_justified)); every gap below is ADR-justified
+
+[[unmapped]]
+area     = "Full per-product endpoint coverage (Network config writes, Protect camera control, Access door ops)"
+priority = "phase-2"
+note     = "The transport, auth and event-stream spine is real and e2e-tested; remaining endpoints are additive request builders consumed as the unifi-network/-access/-protect decision cores wire up their write paths."
+
+[[unmapped]]
+area     = "Live-controller integration test (real UDM hardware)"
+priority = "deferred"
+note     = "wiremock covers the wire contract in-process; a hardware-in-the-loop test needs a physical controller and is not CI-runnable."

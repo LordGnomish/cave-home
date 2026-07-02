@@ -25,6 +25,8 @@ linux_min_kernel = "7.1"
 # crate is not flagged as "incomplete" against the upstream-port
 # pipeline.
 fill_ratio              = 1.0
+adr_justified_ratio = 1.00  # measured: every [[unmapped]]/[[scope_cut]] entry carries both priority and note
+honest_ratio        = 1.00  # computed: fill / (fill + (1-fill)*(1-adr_justified))
 fill_ratio_basis        = "first-party — no upstream port; coverage tracked via subcommand_coverage"
 test_port_ratio         = 1.0
 

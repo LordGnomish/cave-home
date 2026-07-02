@@ -51,6 +51,8 @@ linux_min_kernel = "7.1"
 # reconnect/backoff, flow-control Receive Maximum enforcement, topic
 # alias maps), substantial work remains — see [[unmapped]].
 fill_ratio              = 0.78
+adr_justified_ratio = 1.00  # measured: every [[unmapped]]/[[scope_cut]] entry carries both priority and note
+honest_ratio        = 1.00  # computed: fill / (fill + (1-fill)*(1-adr_justified))
 fill_ratio_basis        = "3.1.1+5.0 codec + routable broker core (QoS 0/1/2, retained, persistent sessions, LWT, ACL) + TCP/TLS/WS runtime + metrics/hooks/bridge-core"
 fill_ratio_full_spec    = 0.55
 test_port_ratio         = 0.0     # clean-room: tests are designed from spec, not ported
