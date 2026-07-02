@@ -12,10 +12,9 @@ use clap::{Arg, ArgAction, Command};
 
 use cave_home_cli::commands::{
     alarm, automation, calendar, camera, cover, destroy, device, display, doorbell, energy,
-    free_home, garden, history, household, hue, hvac, init, join, knx, lights, lock, matter, mobile,
-    music, notify, pool, room, scene, solar, status, top, unifi, vacuum, voice, water, wellness,
-    zigbee,
-    zwave,
+    free_home, garden, get, history, household, hue, hvac, init, join, knx, lights, lock, matter,
+    mobile, music, notify, pool, room, scene, solar, status, top, unifi, vacuum, voice, water,
+    wellness, zigbee, zwave,
 };
 
 fn build_cli() -> Command {
@@ -31,6 +30,7 @@ fn build_cli() -> Command {
                 .help("Show technical fields (paths, ids, pod names) — ADR-007 escape hatch")
                 .action(ArgAction::SetTrue),
         )
+        .subcommand(get::cmd())
         .subcommand(init::cmd())
         .subcommand(join::cmd())
         .subcommand(status::cmd())
@@ -88,6 +88,7 @@ where
     let verbose = matches.get_flag("verbose");
 
     match matches.subcommand() {
+        Some(("get", sub)) => get::run(sub, verbose),
         Some(("init", sub)) => init::run(sub, verbose),
         Some(("join", sub)) => join::run(sub, verbose),
         Some(("status", sub)) => status::run(sub, verbose),
@@ -100,7 +101,7 @@ where
         // Cross-agent stubs use the simpler signature.
         Some(("solar", _)) => solar::run(),
         Some(("energy", _)) => energy::run(),
-        Some(("unifi", _)) => unifi::run(),
+        Some(("unifi", sub)) => unifi::run_matched(sub, verbose),
         Some(("hue", _)) => hue::run(),
         Some(("knx", _)) => knx::run(),
         Some(("free-home", _)) => free_home::run(),

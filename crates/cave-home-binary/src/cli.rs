@@ -15,6 +15,9 @@ pub enum Command {
     /// Start the home (the long-running process). Carries the CLI-flag config
     /// layer so [`crate::config`] can merge it on top of file + env.
     Run { flags: Box<ConfigLayer> },
+    /// Boot the cluster runtime in a K3s-style role (`cmd/k3s server|agent|etcd`).
+    /// Carries the same CLI-flag config layer as [`Run`](Self::Run).
+    Serve { role: ServeRole, flags: Box<ConfigLayer> },
     /// Show a short summary of how the home is doing.
     Status,
     /// Check that the configuration is valid without starting anything.
@@ -33,6 +36,30 @@ pub enum Command {
     Version,
     /// Print help. `topic` is `None` for the top-level help.
     Help { topic: Option<String> },
+}
+
+/// The K3s-style cluster role a [`Command::Serve`] boots in (`cmd/k3s` has the
+/// matching `server`, `agent` and `etcd` subcommands).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServeRole {
+    /// A control-plane node: hosts the apiserver and every controller.
+    Server,
+    /// A worker node: runs the node-side components, joins a remote server.
+    Agent,
+    /// A dedicated datastore (etcd/kine) member.
+    Etcd,
+}
+
+impl ServeRole {
+    /// The lowercase subcommand token.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Server => "server",
+            Self::Agent => "agent",
+            Self::Etcd => "etcd",
+        }
+    }
 }
 
 /// Why a command line could not be parsed. No panics — every bad input maps
@@ -95,7 +122,10 @@ pub fn parse(argv: &[String]) -> Result<Command, ParseError> {
     }
 
     match head.as_str() {
-        "run" | "serve" => parse_run(rest),
+        "run" => parse_run(rest),
+        "server" | "serve" => parse_serve(ServeRole::Server, rest),
+        "agent" => parse_serve(ServeRole::Agent, rest),
+        "etcd" => parse_serve(ServeRole::Etcd, rest),
         "status" => no_args(rest, Command::Status),
         "version" => no_args(rest, Command::Version),
         "help" => Ok(Command::Help {
@@ -134,14 +164,35 @@ fn command_topic(cmd: &Command) -> Option<String> {
 }
 
 fn parse_run(rest: &[String]) -> Result<Command, ParseError> {
+    match parse_flags(rest, "run")? {
+        FlagParse::Help(topic) => Ok(Command::Help { topic: Some(topic) }),
+        FlagParse::Flags(flags) => Ok(Command::Run { flags: Box::new(flags) }),
+    }
+}
+
+fn parse_serve(role: ServeRole, rest: &[String]) -> Result<Command, ParseError> {
+    match parse_flags(rest, role.as_str())? {
+        FlagParse::Help(topic) => Ok(Command::Help { topic: Some(topic) }),
+        FlagParse::Flags(flags) => Ok(Command::Serve { role, flags: Box::new(flags) }),
+    }
+}
+
+/// The outcome of parsing a flag list: either a help request or the merged
+/// config layer.
+enum FlagParse {
+    Help(String),
+    Flags(ConfigLayer),
+}
+
+/// Parse the shared `--name/--role/--data-dir/--bind/--port/--log-level` flags
+/// used by both `run` and the K3s-style `server/agent/etcd` commands.
+fn parse_flags(rest: &[String], help_topic: &str) -> Result<FlagParse, ParseError> {
     let mut flags = ConfigLayer::empty(Layer::Flags);
     let mut it = rest.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "-h" | "--help" => {
-                return Ok(Command::Help {
-                    topic: Some("run".to_string()),
-                });
+                return Ok(FlagParse::Help(help_topic.to_string()));
             }
             "--name" => flags.node_name = Some(take(&mut it, arg)?),
             "--role" => {
@@ -176,9 +227,7 @@ fn parse_run(rest: &[String]) -> Result<Command, ParseError> {
             other => return Err(ParseError::UnexpectedArgument(other.to_string())),
         }
     }
-    Ok(Command::Run {
-        flags: Box::new(flags),
-    })
+    Ok(FlagParse::Flags(flags))
 }
 
 fn parse_config(rest: &[String]) -> Result<Command, ParseError> {
@@ -356,11 +405,47 @@ mod tests {
     }
 
     #[test]
-    fn serve_is_an_alias_for_run() {
+    fn server_boots_the_control_plane_role() {
+        assert!(matches!(
+            parse(&argv(&["server"])).unwrap(),
+            Command::Serve { role: ServeRole::Server, .. }
+        ));
+    }
+
+    #[test]
+    fn serve_is_an_alias_for_server() {
         assert!(matches!(
             parse(&argv(&["serve"])).unwrap(),
-            Command::Run { .. }
+            Command::Serve { role: ServeRole::Server, .. }
         ));
+    }
+
+    #[test]
+    fn agent_and_etcd_roles_parse() {
+        assert!(matches!(
+            parse(&argv(&["agent"])).unwrap(),
+            Command::Serve { role: ServeRole::Agent, .. }
+        ));
+        assert!(matches!(
+            parse(&argv(&["etcd"])).unwrap(),
+            Command::Serve { role: ServeRole::Etcd, .. }
+        ));
+    }
+
+    #[test]
+    fn server_accepts_the_shared_flags() {
+        let cmd = parse(&argv(&["server", "--port", "6443", "--bind", "0.0.0.0"])).expect("parses");
+        let Command::Serve { role, flags } = cmd else {
+            panic!("expected Serve");
+        };
+        assert_eq!(role, ServeRole::Server);
+        assert_eq!(flags.bind_port, Some(6443));
+        assert_eq!(flags.bind_addr.as_deref(), Some("0.0.0.0"));
+    }
+
+    #[test]
+    fn server_bad_port_errors() {
+        assert!(parse(&argv(&["server", "--port", "not-a-port"])).is_err());
     }
 
     #[test]

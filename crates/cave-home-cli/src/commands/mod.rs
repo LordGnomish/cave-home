@@ -19,6 +19,7 @@
 pub mod automation;
 pub mod destroy;
 pub mod device;
+pub mod get;
 pub mod init;
 pub mod join;
 pub mod room;

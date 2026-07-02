@@ -175,6 +175,12 @@ pub struct RegisteredKind {
     pub namespaced: bool,
 }
 
+/// One registered resource, exposed for API discovery (`/api/v1`,
+/// `/apis/{group}/{version}`): its plural name, CamelCase kind, and scope.
+/// Same table as [`RegisteredKind`]; this is the shape the single-binary
+/// transport layer consumes.
+pub type ResourceInfo = RegisteredKind;
+
 /// All registered built-in kinds (the static RESTMapper table). Used by the
 /// discovery surface to enumerate served groups/versions/resources.
 #[must_use]
@@ -191,6 +197,26 @@ pub fn registered() -> Vec<RegisteredKind> {
         .collect()
 }
 
+/// Every resource the decision core serves, in table order. The transport layer
+/// renders this as the `APIResourceList` discovery documents `kubectl` reads to
+/// map a CLI noun (`pods`) to its REST path.
+#[must_use]
+pub fn registered_resources() -> Vec<ResourceInfo> {
+    registered()
+}
+
+/// The distinct `group/version` pairs the core serves, in first-seen order.
+/// `kubectl` reads these from `/apis` to enumerate non-core API groups.
+#[must_use]
+pub fn registered_group_versions() -> Vec<(&'static str, &'static str)> {
+    let mut out: Vec<(&'static str, &'static str)> = Vec::new();
+    for e in KINDS {
+        if !out.contains(&(e.group, e.version)) {
+            out.push((e.group, e.version));
+        }
+    }
+    out
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,6 +249,29 @@ mod tests {
     fn kind_for_maps_pods_to_pod() {
         let gvr = GroupVersionResource::new("", "v1", "pods");
         assert_eq!(kind_for(&gvr), Some(GroupVersionKind::new("", "v1", "Pod")));
+    }
+
+    #[test]
+    fn registered_resources_includes_core_and_grouped() {
+        let all = registered_resources();
+        let pods = all.iter().find(|r| r.resource == "pods").expect("pods registered");
+        assert_eq!((pods.group, pods.version, pods.kind, pods.namespaced), ("", "v1", "Pod", true));
+        let nodes = all.iter().find(|r| r.resource == "nodes").expect("nodes registered");
+        assert!(!nodes.namespaced, "nodes are cluster-scoped");
+        assert!(all.iter().any(|r| r.group == "apps" && r.resource == "deployments"));
+    }
+
+    #[test]
+    fn registered_group_versions_are_distinct_and_ordered() {
+        let gvs = registered_group_versions();
+        assert_eq!(gvs.first(), Some(&("", "v1")), "core group first");
+        assert!(gvs.contains(&("apps", "v1")));
+        assert!(gvs.contains(&("batch", "v1")));
+        // distinct
+        let mut sorted = gvs.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), gvs.len(), "no duplicate group/versions");
     }
 
     #[test]

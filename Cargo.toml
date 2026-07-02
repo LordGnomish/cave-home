@@ -30,6 +30,7 @@ members = [
     "crates/cave-home-unifi-protect",
     "crates/cave-home-unifi-access",
     "crates/cave-home-unifi-talk",
+    "crates/cave-home-unifi",
     "crates/cave-home-hue",
     "crates/cave-home-hue-bridge-emu",
     "crates/cave-home-free-home",

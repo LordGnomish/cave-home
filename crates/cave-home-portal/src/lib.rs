@@ -58,11 +58,13 @@
 pub mod area;
 pub mod autogen;
 pub mod card;
+pub mod cluster;
 pub mod dashboard;
 pub mod energy;
 pub mod label;
 pub mod metrics;
 pub mod theme;
+pub mod unifi;
 pub mod view_mode;
 pub mod viewmodel;
 

@@ -9,12 +9,16 @@
 //! the process.
 
 use std::process::ExitCode;
+use std::time::Duration;
 
 use cave_home_binary::bootstrap::Plan;
-use cave_home_binary::cli::{self, Command};
+use cave_home_binary::cli::{self, Command, ServeRole};
 use cave_home_binary::config::{Config, ConfigLayer, Layer};
+use cave_home_binary::node::LocalNode;
+use cave_home_binary::server::{self, RuntimeConfig};
 use cave_home_binary::shutdown::ShutdownPlan;
 use cave_home_binary::version::BuildInfo;
+use cave_home_orchestration::role::NodeIntent;
 
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -54,6 +58,10 @@ fn dispatch(command: &Command) -> ExitCode {
         },
         Command::Run { flags } => match resolve(Some(flags)) {
             Ok(cfg) => report_plan(&cfg),
+            Err(code) => code,
+        },
+        Command::Serve { role, flags } => match resolve(Some(flags)) {
+            Ok(cfg) => boot(*role, &cfg),
             Err(code) => code,
         },
         // The following are real surfaces whose action is the deferred Phase 1b
@@ -96,6 +104,52 @@ fn show_config(cfg: &Config) {
         print!(" {}", c.friendly_name());
     }
     println!();
+}
+
+/// Boot the cluster runtime in the requested K3s-style role. Builds the tokio
+/// runtime, then blocks on [`server::run`] until a shutdown signal arrives.
+fn boot(role: ServeRole, cfg: &Config) -> ExitCode {
+    let intent = match role {
+        // A dedicated etcd member still hosts the datastore + apiserver locally;
+        // a fuller etcd-only topology is a follow-up (see the handoff doc).
+        ServeRole::Server | ServeRole::Etcd => NodeIntent::PrimaryHub,
+        ServeRole::Agent => NodeIntent::Worker,
+    };
+    // The node advertises a concrete address; a wildcard bind falls back to
+    // loopback until real interface discovery lands.
+    let internal_ip = match cfg.bind_addr.as_str() {
+        "0.0.0.0" | "::" | "" => "127.0.0.1".to_string(),
+        other => other.to_string(),
+    };
+    let rt_cfg = RuntimeConfig {
+        intent,
+        node: LocalNode::new(cfg.node_name.clone(), internal_ip),
+        bind_addr: cfg.bind_addr.clone(),
+        bind_port: cfg.bind_port,
+        // A snappy reconcile cadence so a freshly-applied pod is scheduled and
+        // run within a second or two rather than up to a tick later.
+        reconcile_interval: Duration::from_secs(1),
+        // TLS is opt-in via config (a follow-up CLI flag will populate this); the
+        // default boot serves plain HTTP exactly as before.
+        #[cfg(feature = "tls")]
+        tls: None,
+    };
+
+    let runtime = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("cave-home: could not start the runtime: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    println!("Starting your home as a {} node (Ctrl-C to stop)…", role.as_str());
+    match runtime.block_on(server::run(rt_cfg)) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("cave-home: {e}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 fn report_plan(cfg: &Config) -> ExitCode {

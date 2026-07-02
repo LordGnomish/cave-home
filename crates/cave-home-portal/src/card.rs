@@ -51,6 +51,15 @@ pub enum Card {
     /// Orchestration > Storage page: the local-path-provisioner PV/PVC table
     /// with on-node `hostPath` detail. Developer only.
     Storage,
+    /// The workloads (pods / deployments) running across the cluster, with phase
+    /// and the node each is bound to. Developer only.
+    WorkloadList,
+    /// The ingress routing table (Traefik routers → services). Developer only.
+    IngressRoutes,
+    /// Persistent-volume / local-path storage status. Developer only.
+    StorageStatus,
+    /// Secrets-encryption status (provider, key rotation). Developer only.
+    SecurityStatus,
 }
 
 impl Card {
@@ -66,6 +75,10 @@ impl Card {
                 | Self::ServiceLb
                 | Self::Logs { .. }
                 | Self::Storage
+                | Self::WorkloadList
+                | Self::IngressRoutes
+                | Self::StorageStatus
+                | Self::SecurityStatus
         )
     }
 

@@ -15,6 +15,16 @@
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 
+use std::time::Duration;
+
+use cave_home_unifi::access::{AccessClient, AccessConfig};
+use cave_home_unifi::console::Console;
+use cave_home_unifi::network::NetworkApi;
+use cave_home_unifi::protect::ProtectApi;
+use cave_home_unifi::render::{self, Lang, Section};
+use cave_home_unifi::transport::ReqwestTransport;
+use cave_home_unifi::{ConsoleClient, Credentials};
+
 /// Build the top-level `unifi` command.
 #[must_use]
 pub fn cmd() -> Command {
@@ -27,6 +37,31 @@ pub fn cmd() -> Command {
         .subcommand(protect_cmd())
         .subcommand(access_cmd())
         .subcommand(talk_cmd())
+        .subcommand(live_cmd())
+}
+
+/// `cavehomectl unifi live <target>` — connect to a real console (configured
+/// via environment) and print live data through the `cave-home-unifi` client.
+fn live_cmd() -> Command {
+    Command::new("live")
+        .about("Connect to a real UniFi console and show live data")
+        .long_about(
+            "Reads connection settings from the environment and talks to a real \
+             UniFi console via the cave-home-unifi client:\n\
+             \n  CAVEHOME_UNIFI_HOST      console host/IP (Network + Protect)\
+             \n  CAVEHOME_UNIFI_API_KEY   API key, or USER+PASS below\
+             \n  CAVEHOME_UNIFI_USER / CAVEHOME_UNIFI_PASS\
+             \n  CAVEHOME_UNIFI_KIND      unifios (default) | legacy\
+             \n  CAVEHOME_UNIFI_SITE      site name (default: default)\
+             \n  CAVEHOME_ACCESS_HOST / CAVEHOME_ACCESS_TOKEN  (for doors)",
+        )
+        .arg_required_else_help(true)
+        .arg(
+            Arg::new("target")
+                .required(true)
+                .value_parser(["devices", "clients", "cameras", "doors"])
+                .help("Which live view to fetch"),
+        )
 }
 
 fn network_cmd() -> Command {
@@ -153,8 +188,12 @@ pub fn run_matched(matches: &ArgMatches, verbose: bool) -> i32 {
         Some(("protect", sub)) => dispatch_protect(sub, verbose),
         Some(("access", sub)) => dispatch_access(sub, verbose),
         Some(("talk", sub)) => dispatch_talk(sub, verbose),
-        _ => {
-            eprintln!("unifi: pick a sub-pillar (network/protect/access/talk).");
+        Some(("live", sub)) => dispatch_live(sub, verbose),
+        // No sub-pillar: keep the cross-agent contract — print the summary and
+        // succeed (the same behaviour the bare `unifi::run()` gives).
+        None => run(),
+        Some((other, _)) => {
+            eprintln!("unifi: unknown sub-pillar '{other}'.");
             2
         }
     }
@@ -328,6 +367,174 @@ fn dispatch_talk(sub: &ArgMatches, verbose: bool) -> i32 {
     }
 }
 
+// ---------------------------------------------------------------------------
+// live — the real cave-home-unifi client path (4-track integration).
+// ---------------------------------------------------------------------------
+
+/// Connection settings for the live console, read from the environment.
+struct LiveConfig {
+    console: Console,
+    site: String,
+    creds: Credentials,
+    access: Option<(String, String)>,
+}
+
+impl LiveConfig {
+    /// Build from `CAVEHOME_UNIFI_*` / `CAVEHOME_ACCESS_*` environment.
+    fn from_env() -> Result<Self, String> {
+        let host = std::env::var("CAVEHOME_UNIFI_HOST")
+            .map_err(|_| "set CAVEHOME_UNIFI_HOST to your console IP/hostname".to_string())?;
+        let kind = std::env::var("CAVEHOME_UNIFI_KIND").unwrap_or_else(|_| "unifios".into());
+        let console = if kind.eq_ignore_ascii_case("legacy") {
+            Console::legacy(host)
+        } else {
+            Console::unifi_os(host)
+        };
+        let site = std::env::var("CAVEHOME_UNIFI_SITE").unwrap_or_else(|_| "default".into());
+        let creds = if let Ok(key) = std::env::var("CAVEHOME_UNIFI_API_KEY") {
+            Credentials::api_key(key)
+        } else {
+            let user = std::env::var("CAVEHOME_UNIFI_USER").map_err(|_| {
+                "set CAVEHOME_UNIFI_API_KEY, or CAVEHOME_UNIFI_USER + CAVEHOME_UNIFI_PASS"
+                    .to_string()
+            })?;
+            let pass = std::env::var("CAVEHOME_UNIFI_PASS")
+                .map_err(|_| "set CAVEHOME_UNIFI_PASS".to_string())?;
+            Credentials::password(user, pass)
+        };
+        let access = match (
+            std::env::var("CAVEHOME_ACCESS_HOST"),
+            std::env::var("CAVEHOME_ACCESS_TOKEN"),
+        ) {
+            (Ok(h), Ok(t)) => Some((h, t)),
+            _ => None,
+        };
+        Ok(Self {
+            console,
+            site,
+            creds,
+            access,
+        })
+    }
+}
+
+fn dispatch_live(sub: &ArgMatches, verbose: bool) -> i32 {
+    let target = sub
+        .get_one::<String>("target")
+        .map(String::as_str)
+        .unwrap_or("devices");
+    let cfg = match LiveConfig::from_env() {
+        Ok(cfg) => cfg,
+        Err(why) => {
+            eprintln!("unifi live: {why}");
+            return 2;
+        }
+    };
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("unifi live: could not start async runtime: {e}");
+            return 1;
+        }
+    };
+    runtime.block_on(run_live(&cfg, target, verbose))
+}
+
+async fn run_live(cfg: &LiveConfig, target: &str, verbose: bool) -> i32 {
+    let transport = match ReqwestTransport::new(Duration::from_secs(15)) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("unifi live: {e}");
+            return 1;
+        }
+    };
+    let client = ConsoleClient::new(cfg.console.clone(), transport, cfg.creds.clone());
+    if let Err(e) = client.login().await {
+        eprintln!("unifi live: login failed: {e}");
+        return 1;
+    }
+    let lang = Lang::Tr;
+    match target {
+        "devices" => {
+            match NetworkApi::new(&client).devices(&cfg.site).await {
+                Ok(devices) => {
+                    println!("{}", render::header(Section::Devices, lang));
+                    for d in &devices {
+                        println!("{}", render::device_line(d, lang));
+                    }
+                    if verbose {
+                        println!("  ({} devices on site {})", devices.len(), cfg.site);
+                    }
+                    0
+                }
+                Err(e) => {
+                    eprintln!("unifi live: {e}");
+                    1
+                }
+            }
+        }
+        "clients" => match NetworkApi::new(&client).clients(&cfg.site).await {
+            Ok(clients) => {
+                println!("{}", render::header(Section::Clients, lang));
+                for c in &clients {
+                    println!("{}", render::client_line(c, lang));
+                }
+                0
+            }
+            Err(e) => {
+                eprintln!("unifi live: {e}");
+                1
+            }
+        },
+        "cameras" => match ProtectApi::new(&client).cameras().await {
+            Ok(cameras) => {
+                println!("{}", render::header(Section::Cameras, lang));
+                for cam in &cameras {
+                    println!("{}", render::camera_line(cam, lang));
+                }
+                0
+            }
+            Err(e) => {
+                eprintln!("unifi live: {e}");
+                1
+            }
+        },
+        "doors" => {
+            let Some((host, token)) = &cfg.access else {
+                eprintln!("unifi live doors: set CAVEHOME_ACCESS_HOST + CAVEHOME_ACCESS_TOKEN");
+                return 2;
+            };
+            let access = AccessClient::new(
+                AccessConfig::new(host.clone(), token.clone()),
+                match ReqwestTransport::new(Duration::from_secs(15)) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        eprintln!("unifi live: {e}");
+                        return 1;
+                    }
+                },
+            );
+            match access.doors().await {
+                Ok(doors) => {
+                    println!("{}", render::header(Section::Doors, lang));
+                    for d in &doors {
+                        println!("{}", render::door_line(d, lang));
+                    }
+                    0
+                }
+                Err(e) => {
+                    eprintln!("unifi live: {e}");
+                    1
+                }
+            }
+        }
+        _ => 2,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -371,6 +578,40 @@ mod tests {
             .try_get_matches_from(["unlock", "front", "--minutes", "25"])
             .unwrap();
         assert_eq!(m.get_one::<u32>("minutes").copied(), Some(25));
+    }
+
+    #[test]
+    fn live_target_is_validated() {
+        let c = cmd();
+        let live = c.find_subcommand("live").unwrap();
+        assert!(
+            live.clone()
+                .try_get_matches_from(["live", "devices"])
+                .is_ok()
+        );
+        assert!(
+            live.clone()
+                .try_get_matches_from(["live", "cameras"])
+                .is_ok()
+        );
+        assert!(
+            live.clone()
+                .try_get_matches_from(["live", "teleport"])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn live_without_host_env_reports_config_error() {
+        // With no CAVEHOME_UNIFI_HOST set, the live path must fail cleanly (2),
+        // never panic — exercising the real cave-home-unifi link.
+        if std::env::var("CAVEHOME_UNIFI_HOST").is_err() {
+            let c = cmd();
+            let m = c
+                .try_get_matches_from(["unifi", "live", "devices"])
+                .unwrap();
+            assert_eq!(run_matched(&m, false), 2);
+        }
     }
 
     #[test]
