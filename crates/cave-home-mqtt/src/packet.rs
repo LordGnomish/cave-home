@@ -123,12 +123,47 @@ pub struct Publish {
     pub payload: Bytes,
 }
 
+/// MQTT 3.1.1 §3.4 PUBACK — QoS 1 publish acknowledgement (packet id only).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PubAck {
+    pub packet_id: u16,
+}
+
+/// MQTT 3.1.1 §3.5 PUBREC — QoS 2 publish received, part 1 (packet id only).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PubRec {
+    pub packet_id: u16,
+}
+
+/// MQTT 3.1.1 §3.6 PUBREL — QoS 2 publish release, part 2 (packet id only).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PubRel {
+    pub packet_id: u16,
+}
+
+/// MQTT 3.1.1 §3.7 PUBCOMP — QoS 2 publish complete, part 3 (packet id only).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PubComp {
+    pub packet_id: u16,
+}
+
 /// Top-level decoded/encoded MQTT packet (Phase 1 subset).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Packet {
     Connect(Connect),
     ConnAck(ConnAck),
     Publish(Publish),
+    PubAck(PubAck),
+    PubRec(PubRec),
+    PubRel(PubRel),
+    PubComp(PubComp),
+    Subscribe(Subscribe),
+    SubAck(SubAck),
+    Unsubscribe(Unsubscribe),
+    UnsubAck(UnsubAck),
+    PingReq,
+    PingResp,
+    Disconnect,
 }
 
 impl Packet {
@@ -137,6 +172,73 @@ impl Packet {
             Self::Connect(_) => PacketType::Connect,
             Self::ConnAck(_) => PacketType::ConnAck,
             Self::Publish(_) => PacketType::Publish,
+            Self::PubAck(_) => PacketType::PubAck,
+            Self::PubRec(_) => PacketType::PubRec,
+            Self::PubRel(_) => PacketType::PubRel,
+            Self::PubComp(_) => PacketType::PubComp,
+            Self::Subscribe(_) => PacketType::Subscribe,
+            Self::SubAck(_) => PacketType::SubAck,
+            Self::Unsubscribe(_) => PacketType::Unsubscribe,
+            Self::UnsubAck(_) => PacketType::UnsubAck,
+            Self::PingReq => PacketType::PingReq,
+            Self::PingResp => PacketType::PingResp,
+            Self::Disconnect => PacketType::Disconnect,
         }
     }
+}
+
+/// MQTT 3.1.1 §3.8.3 — one topic-filter subscription request.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Subscription {
+    pub topic_filter: String,
+    pub qos: QoS,
+}
+
+/// MQTT 3.1.1 §3.8 SUBSCRIBE.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Subscribe {
+    pub packet_id: u16,
+    pub subscriptions: Vec<Subscription>,
+}
+
+/// MQTT 3.1.1 §3.9.3 — SUBACK return code: granted max QoS, or failure.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SubAckReturnCode {
+    MaxQoS0 = 0x00,
+    MaxQoS1 = 0x01,
+    MaxQoS2 = 0x02,
+    Failure = 0x80,
+}
+
+impl SubAckReturnCode {
+    pub fn from_u8(b: u8) -> Option<Self> {
+        Some(match b {
+            0x00 => Self::MaxQoS0,
+            0x01 => Self::MaxQoS1,
+            0x02 => Self::MaxQoS2,
+            0x80 => Self::Failure,
+            _ => return None,
+        })
+    }
+}
+
+/// MQTT 3.1.1 §3.9 SUBACK.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SubAck {
+    pub packet_id: u16,
+    pub return_codes: Vec<SubAckReturnCode>,
+}
+
+/// MQTT 3.1.1 §3.10 UNSUBSCRIBE.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Unsubscribe {
+    pub packet_id: u16,
+    pub topic_filters: Vec<String>,
+}
+
+/// MQTT 3.1.1 §3.11 UNSUBACK — a packet identifier only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UnsubAck {
+    pub packet_id: u16,
 }
