@@ -3,10 +3,9 @@
 //!
 //! Every cave-home stack on a node compiles into this one binary. This entry
 //! point is intentionally thin: it parses the command line and dispatches into
-//! the tested pure-logic library ([`cave_home_binary`]). The async runtime, the
-//! real component launch, and signal handling are deferred Phase 1b work — until
-//! then `run` reports the bring-up *plan* it would execute rather than starting
-//! the process.
+//! the tested pure-logic library ([`cave_home_binary`]). `serve <role>` boots
+//! the real in-process runtime (tokio + apiserver + reconcile loop) via
+//! [`server::run`]; `run` prints the bring-up plan the boot executes.
 
 use std::process::ExitCode;
 use std::time::Duration;
@@ -64,8 +63,9 @@ fn dispatch(command: &Command) -> ExitCode {
             Ok(cfg) => boot(*role, &cfg),
             Err(code) => code,
         },
-        // The following are real surfaces whose action is the deferred Phase 1b
-        // wiring; the pure-logic core models them, the launcher executes them.
+        // The following surfaces are modelled in the pure-logic core but not
+        // yet wired to a *running* home (they need a client to the live
+        // apiserver rather than an in-process call).
         Command::Status => {
             println!("Status reporting needs a running home; start it with `cave-home run`.");
             ExitCode::SUCCESS
@@ -161,7 +161,7 @@ fn report_plan(cfg: &Config) -> ExitCode {
             }
             let down = ShutdownPlan::from_bootstrap(&plan);
             println!("(On stop it winds down in the reverse order: {} parts.)", down.len());
-            println!("Actually starting the home is the next milestone.");
+            println!("Start it for real with `cave-home serve server`.");
             ExitCode::SUCCESS
         }
         Err(e) => {

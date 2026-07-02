@@ -10,11 +10,12 @@
 # and honest build/version info. All of it is std-only and I/O-free so the
 # decisions are fully unit-tested before any of them actually happen.
 #
-# The execution half — the async runtime, the real process launch + OS signal
-# handling, the actual per-component start (which depends on sibling crates'
-# start APIs), and the install/upgrade/rollback mechanics — is network/OS-bound
-# and deferred to Phase 1b. Each is enumerated in [[unmapped]] with a phase
-# disposition. The core computes the plans those phases will execute.
+# The execution half is implemented in this crate too: src/server.rs boots the
+# async runtime, apiserver listener, and reconcile loop; src/supervisor.rs
+# restarts failed components and drives dependency-ordered graceful shutdown on
+# a real OS signal (Ctrl-C/SIGTERM). What remains open — config file/env
+# loaders, install/upgrade/rollback mechanics, live status/backup verbs — is
+# enumerated in [[unmapped]] with a phase disposition.
 #
 # Port method: first-party. There is no upstream source; the shape follows the
 # Charter (§5 single-binary, §6.3 grandma-friendly) and ADR-005 deployment
@@ -102,20 +103,17 @@ ours = "src/main.rs::main"
 
 # ---- unmapped (NOT in this crate; Phase 1b/2 disposition) ------------------
 
-[[unmapped]]
-area     = "Async runtime + actual process launch"
-priority = "phase-1b"
-note     = "The decision core computes the bring-up Plan; spinning up the async runtime and entering the long-running process loop is OS/runtime-bound and lands once the sibling pillars expose start APIs. No new planning logic — the plan is already computed and tested."
+[[mapped]]
+spec = "Async runtime + process launch: boot the control plane in-process, serve the apiserver, run the reconcile loop"
+ours = "src/server.rs::run"
 
-[[unmapped]]
-area     = "OS signal handling (SIGTERM/SIGINT → graceful shutdown)"
-priority = "phase-1b"
-note     = "ShutdownPlan is computed and tested here; wiring it to real OS signals is syscall-bound (Charter §6.2 modern-Linux) and deferred with the runtime."
+[[mapped]]
+spec = "OS signal handling (SIGTERM/SIGINT) -> dependency-ordered graceful shutdown"
+ours = "src/server.rs (signal trigger) + src/supervisor.rs (ordered wind-down)"
 
-[[unmapped]]
-area     = "Real per-component start/stop wiring"
-priority = "phase-1b"
-note     = "Component is modelled as an in-process identity enum to keep this crate std-only and testable. Mapping each Component to its owning crate's start/stop function is added as those crates' lifecycle APIs stabilise; it consumes this plan unchanged."
+[[mapped]]
+spec = "Per-component start/stop wiring with restart-on-failure + bounded restart budget"
+ours = "src/supervisor.rs + src/lifecycle.rs"
 
 [[unmapped]]
 area     = "Config-file + environment loaders (parse real files/env into ConfigLayer)"

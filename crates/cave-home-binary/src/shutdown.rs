@@ -4,7 +4,8 @@
 //! Shutdown is the bring-up plan reversed: the household-facing surfaces stop
 //! first (so nothing new arrives), then the pillars, then the core, the broker,
 //! and finally the orchestration layer that hosts them all. This is **pure
-//! planning** — the actual stop calls + signal handling are deferred Phase 1b.
+//! planning** — the actual stop calls + signal handling live in
+//! [`server`](crate::server) / [`supervisor`](crate::supervisor).
 
 use crate::bootstrap::Plan;
 use crate::Component;

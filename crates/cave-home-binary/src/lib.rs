@@ -23,13 +23,16 @@
 //! - [`version`] — honest build/version info (version, git sha *iff* the build
 //!   environment supplied one, build profile, supported-pillar list).
 //!
-//! # What is deferred (Phase 1b)
+//! # The runtime half
 //!
-//! The async runtime, the actual process launch, OS signal handling, the *real*
-//! component start sequence, and the install / upgrade / rollback mechanics are
-//! deferred and enumerated in `parity.manifest.toml` `[[unmapped]]`. This crate
-//! computes the plans those phases will execute; it deliberately performs no
-//! I/O so the decisions are fully unit-testable.
+//! The async runtime, real component launch, and OS signal handling live in
+//! [`server`] (with [`supervisor`], [`lifecycle`], [`http`], [`apirest`]):
+//! `cave-home serve <role>` boots the K3s-class control plane, the apiserver
+//! HTTP surface, and the reconcile loop in-process and shuts them down
+//! gracefully in reverse bring-up order. Still open — install / upgrade /
+//! rollback mechanics and the config file/env loaders — is enumerated in
+//! `parity.manifest.toml` `[[unmapped]]`. The planning modules above perform
+//! no I/O so the decisions stay fully unit-testable.
 //!
 //! # Single-binary invariant
 //!
@@ -66,8 +69,8 @@ pub use version::BuildInfo;
 /// Modelled as a closed enum on purpose: this pure-logic crate names the
 /// component identities rather than depending on every sibling crate, so the
 /// planner stays std-only and fully testable. The real wiring that maps a
-/// [`Component`] to its owning crate's start function is the deferred Phase 1b
-/// work (see `parity.manifest.toml`).
+/// [`Component`] to its owning crate's start function lives in [`server`] /
+/// [`supervisor`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Component {
     /// The native K3s-class orchestration layer (ADR-004). It hosts every other

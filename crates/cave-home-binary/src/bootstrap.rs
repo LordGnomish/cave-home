@@ -4,7 +4,7 @@
 //! Given a validated [`Config`](crate::Config), compute the ordered list of
 //! [`Component`]s to bring up, respecting their dependencies. This is **pure
 //! planning** — nothing is launched, no async runtime is touched, no I/O
-//! happens. The plan is what the deferred Phase 1b launcher will execute.
+//! happens. The plan is what [`server::run`](crate::server) executes.
 //!
 //! Ordering rules (Charter §5):
 //! - The orchestration layer hosts everything, so it starts first.
