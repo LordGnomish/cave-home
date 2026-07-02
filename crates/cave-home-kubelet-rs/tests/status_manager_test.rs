@@ -145,12 +145,18 @@ async fn always_failing_sink_keeps_status_pending() {
 async fn multiple_pods_are_independent() {
     let sink = Arc::new(MockStatusSink::new());
     let mgr = PodStatusManager::new(sink.clone());
-    mgr.set_pod_status(&PodUid::new("u1"), running_status(PodPhase::Running, "main"))
-        .await
-        .unwrap();
-    mgr.set_pod_status(&PodUid::new("u2"), running_status(PodPhase::Pending, "main"))
-        .await
-        .unwrap();
+    mgr.set_pod_status(
+        &PodUid::new("u1"),
+        running_status(PodPhase::Running, "main"),
+    )
+    .await
+    .unwrap();
+    mgr.set_pod_status(
+        &PodUid::new("u2"),
+        running_status(PodPhase::Pending, "main"),
+    )
+    .await
+    .unwrap();
     let n = mgr.sync_batch().await.unwrap();
     assert_eq!(n, 2);
     assert_eq!(sink.write_count(), 2);

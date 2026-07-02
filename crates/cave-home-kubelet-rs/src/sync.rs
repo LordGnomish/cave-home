@@ -204,7 +204,10 @@ mod tests {
         let actions = compute_actions(&s, &observed);
         assert_eq!(
             actions,
-            vec![SyncAction::Start("a".into()), SyncAction::Kill("ghost".into())]
+            vec![
+                SyncAction::Start("a".into()),
+                SyncAction::Kill("ghost".into())
+            ]
         );
     }
 }

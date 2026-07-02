@@ -22,6 +22,8 @@
 //!   * [`lifecycle`] — container/task lifecycle state machine.
 //!   * [`cri`]       — CRI PodSandbox/Container status, image-pull policy,
 //!     unused-image GC selection.
+//!   * [`snapshot`]  — overlayfs / native snapshotter mount assembly
+//!     (`lowerdir`/`upperdir`/`workdir` decision; bind-vs-overlay choice).
 //!
 //! # Example
 //!
@@ -43,3 +45,4 @@ pub mod digest;
 pub mod lifecycle;
 pub mod oci;
 pub mod reference;
+pub mod snapshot;

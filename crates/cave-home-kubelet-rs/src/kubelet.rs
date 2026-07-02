@@ -109,7 +109,8 @@ impl Kubelet {
         match work {
             WorkType::Sync => {
                 // 1. Register desired volumes & reconcile mounts.
-                self.desired_volumes.add_pod(uid.clone(), pod.spec.volumes.clone());
+                self.desired_volumes
+                    .add_pod(uid.clone(), pod.spec.volumes.clone());
                 self.reconciler.reconcile_once().await?;
 
                 // 2. Drive worker.

@@ -60,7 +60,10 @@ fn pod_phase_default_is_pending() {
 
 #[test]
 fn container_state_default_is_waiting() {
-    assert!(matches!(ContainerState::default(), ContainerState::Waiting(_)));
+    assert!(matches!(
+        ContainerState::default(),
+        ContainerState::Waiting(_)
+    ));
 }
 
 #[test]

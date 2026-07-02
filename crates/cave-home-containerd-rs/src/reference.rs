@@ -127,7 +127,12 @@ impl Reference {
             (None, None) => Some(DEFAULT_TAG.to_owned()),
         };
 
-        Ok(Self { registry, repository, tag, digest })
+        Ok(Self {
+            registry,
+            repository,
+            tag,
+            digest,
+        })
     }
 
     /// The normalised registry host (e.g. `docker.io`, `ghcr.io`).
@@ -263,10 +268,9 @@ fn validate_repository(repo: &str) -> Result<(), ReferenceError> {
         if !edge_ok(bytes[0]) || !edge_ok(bytes[bytes.len() - 1]) {
             return Err(ReferenceError::InvalidRepository(repo.to_owned()));
         }
-        if !bytes
-            .iter()
-            .all(|&b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-'))
-        {
+        if !bytes.iter().all(|&b| {
+            b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-')
+        }) {
             return Err(ReferenceError::InvalidRepository(repo.to_owned()));
         }
     }
@@ -397,6 +401,9 @@ mod tests {
     #[test]
     fn long_tag_is_rejected() {
         let s = format!("nginx:{}", "a".repeat(129));
-        assert!(matches!(Reference::parse(&s), Err(ReferenceError::InvalidTag(_))));
+        assert!(matches!(
+            Reference::parse(&s),
+            Err(ReferenceError::InvalidTag(_))
+        ));
     }
 }

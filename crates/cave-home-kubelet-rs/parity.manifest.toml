@@ -84,11 +84,11 @@ linux_min_kernel = "7.1"  # ADR-003: Linux-only deployment baseline.
 # lifecycle decision a node makes about a pod is implemented and exhaustively
 # tested here today; what remains is the runtime/syscall/server plumbing that
 # executes those decisions against the kernel.
-fill_ratio          = 0.25
-fill_ratio_basis    = "node-lifecycle decision core (phase + restart/backoff + probes + sync diff + eviction QoS ranking + admission/resource accounting) fully implemented & tested, plus the syncPod execution slice (CRI trait+mock, PLEG, PodWorker, emptyDir/hostPath volumes, status manager), plus (remote-cri feature) the real CRI v1 gRPC client to containerd — sandbox + container lifecycle + the FULL ImageService (pull/status/list/remove/fs-info) + Exec/Attach/PortForward URL negotiation AND the WebSocket v5.channel.k8s.io byte-streaming proxy (exec/attach stdio + single-port forward), all exercised end-to-end over a real Unix socket and an in-process WS streaming server. The +0.02 over the prior 0.23 reflects the streaming byte-transfer half (negotiate->dial->bridge) — previously the largest deferred CRI gap — now built & tested. Legacy SPDY dialer, stats/metrics/checkpoint RPCs, cgroup + eviction-manager syscalls, kubelet HTTP server, secret/configmap managers, image GC, device plugins, full volume manager deferred (ADR-004 phase-1b), all enumerated below"
+fill_ratio          = 0.27
+fill_ratio_basis    = "node-lifecycle decision core (phase + restart/backoff + probes + sync diff + eviction QoS ranking + admission/resource accounting) fully implemented & tested, plus the syncPod execution slice (CRI trait+mock, PLEG, PodWorker, emptyDir/hostPath volumes, status manager), the cgroup v2 resource-conversion + QoS cgroupfs-hierarchy decision (cpu.weight/cpu.max/memory.max + /kubepods tree), the dead-container GC selection (GCPolicy MinAge/MaxPerPodContainer/MaxContainers), plus (remote-cri feature) the real CRI v1 gRPC client to containerd — sandbox + container lifecycle + the FULL ImageService (pull/status/list/remove/fs-info) + Exec/Attach/PortForward URL negotiation AND the WebSocket v5.channel.k8s.io byte-streaming proxy (exec/attach stdio + single-port forward), all exercised end-to-end over a real Unix socket and an in-process WS streaming server. Legacy SPDY dialer, stats/metrics/checkpoint RPCs, cgroup sysfs actuation + eviction-manager syscalls, GC actuation (RemoveContainer/RemoveImage) + disk-pressure image GC, kubelet HTTP server, secret/configmap managers, device plugins, full volume manager deferred (ADR-004 phase-1b), all enumerated below"
 test_port_ratio     = 0.0   # tests are designed from the documented kubelet contract, not ported from upstream _test.go
 adr_justified_ratio = 1.00  # every [[unmapped]] gap below carries a justified priority + a note
-honest_ratio        = 1.00  # 0.25 / (0.25 + (1-0.25)*(1-1.00)) = 0.25/0.25 = 1.00
+honest_ratio        = 1.00  # 0.27 / (0.27 + (1-0.27)*(1-1.00)) = 0.27/0.27 = 1.00
 
 # ---- mapped (behavioural reference -> cave-home Rust path) ------------------
 # `upstream`/`spec` names the documented reference for each item, not a claim of
@@ -230,6 +230,18 @@ ours     = "src/status/manager.rs::PodStatusManager"
 upstream = "k8s.io/api/core/v1/types.go::{Pod, PodSpec, PodStatus, Volume, ContainerStatus, ContainerState, PodPhase, RestartPolicy}"
 ours     = "src/api/mod.rs"
 
+[[mapped]]
+upstream = "pkg/kubelet/cm/helpers_linux.go::{MilliCPUToShares, MilliCPUToQuota} + libcontainer/systemd cgroup-v2 cpu.weight conversion (1 + (shares-2)*9999/262142) + cgroup_manager_linux.go cpu.max/memory.max unified-hierarchy values"
+ours     = "src/cgroup.rs::{milli_cpu_to_shares, shares_to_cpu_weight, milli_cpu_to_cpu_weight, milli_cpu_to_quota_us, cpu_max, memory_max, CgroupV2Resources}"
+
+[[mapped]]
+upstream = "pkg/kubelet/cm/qos_container_manager_linux.go + pod_container_manager_linux.go (the /kubepods{,/burstable,/besteffort}/pod<uid> cgroupfs QoS hierarchy; Guaranteed under root, Burstable/BestEffort under their subtree)"
+ours     = "src/cgroup.rs::{CgroupHierarchy, qos_subpath, pod_path, container_path}"
+
+[[mapped]]
+upstream = "pkg/kubelet/kuberuntime/kuberuntime_gc.go::{evictableContainers, enforceMaxContainersPerEvictUnit, evictContainers} — dead-container GC selection under GCPolicy {MinAge, MaxPerPodContainer, MaxContainers}"
+ours     = "src/container_gc.rs::{select_containers_to_remove, GcPolicy, ContainerRecord}"
+
 # ---- unmapped (NOT in this crate; each carries an ADR-004 phase disposition)-
 
 [[unmapped]]
@@ -258,9 +270,9 @@ priority = "phase-1b"
 note     = "ADR-004: the QoS ranking + ordering decision is implemented & tested in src/eviction.rs; collecting live memory/disk pressure signals (cadvisor/summary API), evaluating eviction thresholds, and actually killing the ranked pods are deferred kernel-side work."
 
 [[unmapped]]
-area     = "pkg/kubelet/cm (cgroup v2 manager + per-pod cgroup creation)"
+area     = "pkg/kubelet/cm (cgroup v2 sysfs actuation + cpumanager/memorymanager/topologymanager)"
 priority = "phase-1b"
-note     = "ADR-004 + ADR-003: cgroup v2 manager, cpumanager, memorymanager, topologymanager — Linux 7.1+ syscalls that enforce the admitted resource accounting. cgroup v1 is permanently out per ADR-003."
+note     = "ADR-004 + ADR-003: the cgroup v2 *value + path decision* (milli-cpu -> cpu.weight/cpu.max, memory.max, the /kubepods QoS cgroupfs hierarchy) is now implemented & tested in src/cgroup.rs. What remains deferred is the sysfs actuation that consumes it — the mkdir of each cgroup dir, writing the control files, the cgroup.subtree_control delegation, plus cpumanager/memorymanager/topologymanager pinning. Linux 7.1+ syscalls; cgroup v1 is permanently out per ADR-003."
 
 [[unmapped]]
 area     = "pkg/kubelet/cm/devicemanager + pkg/kubelet/cm/dra"
@@ -273,9 +285,9 @@ priority = "phase-1b"
 note     = "ADR-004: the kubelet read-only HTTP/HTTPS surface and the streaming exec/attach/portforward server are an observability/operations surface, not pod-lifecycle decision logic."
 
 [[unmapped]]
-area     = "pkg/kubelet/images (ImageGCManager) + container/container_gc.go"
+area     = "pkg/kubelet/images (ImageGCManager disk-pressure image reaper) + the GC actuation (RemoveContainer/RemoveImage CRI calls)"
 priority = "phase-1b"
-note     = "Disk-pressure-driven image GC + dead-container reaper; pair with the eviction manager's disk-pressure signals."
+note     = "The dead-container GC *selection* decision (GCPolicy MinAge/MaxPerPodContainer/MaxContainers) is now implemented & tested in src/container_gc.rs. Still deferred: the disk-pressure-driven image GC reaper (pair with the eviction manager's disk-pressure signals + cadvisor fs stats) and the actuation that consumes the selection — the RemoveContainer / RemoveImage CRI calls."
 
 [[unmapped]]
 area     = "pkg/kubelet secret + configmap managers + pkg/volume/{configmap,secret,projected,csi,persistentvolumeclaim,downwardapi}"

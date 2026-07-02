@@ -125,7 +125,11 @@ mod tests {
     use super::*;
 
     fn ready_sandbox() -> PodSandbox {
-        PodSandbox { id: "s1".to_owned(), name: "pod".to_owned(), infra_alive: true }
+        PodSandbox {
+            id: "s1".to_owned(),
+            name: "pod".to_owned(),
+            infra_alive: true,
+        }
     }
 
     fn container(state: TaskState, sandbox_id: &str) -> Container {
