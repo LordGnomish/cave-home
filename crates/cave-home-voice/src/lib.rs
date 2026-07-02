@@ -22,6 +22,8 @@
 //! - [`intents`] — the built-in command set (lights, climate, covers, scenes,
 //!   state queries) with EN/DE/TR sentence sets.
 //! - [`route`] — map a matched intent to a typed [`route::IntentAction`].
+//! - [`policy`] — family-aware authorization: allow / confirm / deny an action
+//!   by the speaker's permission level (Charter §6.3 / ADR-007).
 //! - [`response`] — generate the localised spoken reply.
 //! - [`config`] — the wake-word + assistant configuration model (settings
 //!   only, validated).
@@ -61,6 +63,7 @@ pub mod intents;
 pub mod label;
 pub mod matcher;
 pub mod number_words;
+pub mod policy;
 pub mod response;
 pub mod route;
 pub mod slot;
@@ -69,6 +72,7 @@ pub mod template;
 pub use config::{AssistantConfig, ConfigError, WakeWord};
 pub use label::Lang;
 pub use matcher::{match_intent, CompiledIntent, IntentMatch, MatchOutcome};
+pub use policy::{authorize, sensitivity, Decision, PermissionLevel, Sensitivity};
 pub use route::{IntentAction, RoutedAction};
 pub use slot::{SlotKind, SlotValue, ValueList};
 pub use template::Template;

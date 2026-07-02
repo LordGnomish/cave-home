@@ -5,9 +5,10 @@
 # intent matcher with inline slot resolution, slot vocabularies with synonyms,
 # EN/DE/TR number-word parsing, the built-in multilingual command set (lights /
 # climate / covers / scenes / state queries), typed action routing, the
-# grandma-friendly localised reply generator, and the wake-word + assistant
-# configuration model. This is the brain the voice front-end consumes once
-# speech has been recognised.
+# grandma-friendly localised reply generator, the wake-word + assistant
+# configuration model, and a family-aware authorization policy (who may do
+# what). This is the brain the voice front-end consumes once speech has been
+# recognised.
 #
 # The audio/ML layers — speech-to-text, text-to-speech, wake-word *detection*,
 # the capture pipeline + VAD — are model- and hardware-bound and deferred to
@@ -40,11 +41,11 @@ spec_sources     = [
 # wiring. The intent/NLU engine is implemented and tested in full; the
 # audio/ML layers + core glue remain and are all ADR-024-justified Phase 1b
 # (or permanently out of scope for cloud STT/TTS).
-fill_ratio              = 0.30
-fill_ratio_basis        = "sentence-template grammar + backtracking matcher + slot vocabularies/synonyms + EN/DE/TR number words + built-in multilingual intent set + typed action routing + localised reply generator + assistant/wake-word config, fully implemented & tested; STT/TTS/wake-word/audio/profiles/core-wiring deferred"
+fill_ratio              = 0.32
+fill_ratio_basis        = "sentence-template grammar + backtracking matcher + slot vocabularies/synonyms + EN/DE/TR number words + built-in multilingual intent set + typed action routing + localised reply generator + assistant/wake-word config + family-aware authorization policy (permission levels x action sensitivity), fully implemented & tested; STT/TTS/wake-word/audio/profiles/core-wiring deferred"
 test_port_ratio         = 0.0   # tests designed from spec, not ported
 adr_justified_ratio     = 1.00  # every unfilled item below carries an ADR-024 phase disposition
-honest_ratio            = 1.00  # 0.30 / (0.30 + unjustified_gap=0)
+honest_ratio            = 1.00  # 0.32 / (0.32 + unjustified_gap=0)
 
 # ---- mapped (real implementation present in this crate) --------------------
 
@@ -95,6 +96,10 @@ ours = "src/matcher.rs::MatchOutcome + src/lib.rs::Understanding"
 [[mapped]]
 spec = "End-to-end understand(): utterance -> match -> route -> spoken reply"
 ours = "src/lib.rs::understand"
+
+[[mapped]]
+spec = "Family-aware authorization (Charter §6.3 / ADR-007): classify an action by sensitivity and authorize it against the speaker's permission level (allow / confirm / deny)"
+ours = "src/policy.rs::{PermissionLevel,Sensitivity,Decision,sensitivity,authorize}"
 
 # ---- unmapped (NOT in this crate; ADR-024 Phase 1b disposition) ------------
 
@@ -175,3 +180,7 @@ ours         = "src/response.rs::tests::ui_strings_carry_no_implementation_jargo
 [[spec_test]]
 designed_for = "Assistant/wake-word config validation (no enabled wake word, blank phrase, missing voice)"
 ours         = "src/config.rs::tests"
+
+[[spec_test]]
+designed_for = "Family-aware authorization: action sensitivity classification + permission-level policy table (everyone may do routine things; climate/covers gated by level; allow/confirm/deny)"
+ours         = "src/policy.rs::tests"
