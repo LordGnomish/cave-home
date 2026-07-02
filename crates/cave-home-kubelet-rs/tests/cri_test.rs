@@ -215,3 +215,61 @@ async fn cannot_start_container_in_unknown_state() {
     let err = cri.start_container("nope").await.unwrap_err();
     assert!(matches!(err, CriError::NotFound(_)));
 }
+
+#[tokio::test]
+async fn list_images_returns_pulled_images() {
+    let cri = MockCriClient::new();
+    assert!(cri.list_images(None).await.unwrap().is_empty());
+    cri.pull_image(ImageSpec {
+        image: "nginx:1.27".into(),
+    })
+    .await
+    .unwrap();
+    cri.pull_image(ImageSpec {
+        image: "redis:7".into(),
+    })
+    .await
+    .unwrap();
+    let all = cri.list_images(None).await.unwrap();
+    assert_eq!(all.len(), 2);
+
+    // Filtering by an image reference narrows the result.
+    let only = cri
+        .list_images(Some(ImageSpec {
+            image: "redis:7".into(),
+        }))
+        .await
+        .unwrap();
+    assert_eq!(only.len(), 1);
+    assert!(only[0].repo_tags.contains(&"redis:7".to_string()));
+}
+
+#[tokio::test]
+async fn remove_image_drops_it_from_status_and_list() {
+    let cri = MockCriClient::new();
+    let spec = ImageSpec {
+        image: "nginx:1.27".into(),
+    };
+    cri.pull_image(spec.clone()).await.unwrap();
+    assert!(cri.image_status(spec.clone()).await.unwrap().is_some());
+
+    cri.remove_image(spec.clone()).await.unwrap();
+    assert!(cri.image_status(spec.clone()).await.unwrap().is_none());
+    assert!(cri.list_images(None).await.unwrap().is_empty());
+
+    // Removing an absent image is idempotent (matches CRI semantics).
+    cri.remove_image(spec).await.unwrap();
+}
+
+#[tokio::test]
+async fn image_fs_info_reports_usage() {
+    let cri = MockCriClient::new();
+    cri.pull_image(ImageSpec {
+        image: "nginx:1.27".into(),
+    })
+    .await
+    .unwrap();
+    let fs = cri.image_fs_info().await.unwrap();
+    assert!(!fs.is_empty());
+    assert!(!fs[0].mountpoint.is_empty());
+}

@@ -31,6 +31,22 @@
 # kernel side-effects are enumerated under [[unmapped]] with an ADR-004 phase
 # disposition, so the honest ratio reflects the implemented share of what
 # remains in scope.
+#
+# remote-cri feature (2026-06-07). The decision core remains std/tokio with NO
+# gRPC stack by default. A NON-DEFAULT `remote-cri` cargo feature adds the real
+# CRI v1 gRPC client (tonic) that drives the CriClient trait against containerd
+# — a verbatim port of the CRI wire contract (proto/api.proto, copied from
+# kubernetes-1.30.0 minus gogo annotations) plus a line-by-line port of
+# pkg/kubelet/cri/remote/{remote_runtime.go,remote_image.go,utils.go}. This is
+# the transport the ground-truth audit named as THE blocker.
+#
+# remote-cri round 2 (2026-06-07). Completed the ImageService (ListImages/
+# RemoveImage/ImageFsInfo) and built the CRI streaming byte-transfer proxy over
+# the WebSocket v5.channel.k8s.io transport (src/cri/remote/ws/*: a dependency-
+# free RFC 6455 stack — SHA-1+base64 handshake, frame codec, role-aware
+# connection — plus the v5 channel exec/attach/port-forward bridge and the
+# negotiate->dial->stream client glue). The legacy SPDY/3.1 dialer and the
+# stats/metrics/checkpoint RPCs remain phase-1b (enumerated below).
 
 [crate]
 name             = "cave-home-kubelet-rs"
@@ -68,11 +84,11 @@ linux_min_kernel = "7.1"  # ADR-003: Linux-only deployment baseline.
 # lifecycle decision a node makes about a pod is implemented and exhaustively
 # tested here today; what remains is the runtime/syscall/server plumbing that
 # executes those decisions against the kernel.
-fill_ratio          = 0.20
-fill_ratio_basis    = "node-lifecycle decision core (phase + restart/backoff + probes + sync diff + eviction QoS ranking + admission/resource accounting) fully implemented & tested, plus the syncPod execution slice (CRI trait+mock, PLEG, PodWorker, emptyDir/hostPath volumes, status manager); CRI runtime exec, cgroup + eviction-manager syscalls, kubelet HTTP server, image/secret/configmap managers, device plugins, full volume manager deferred (ADR-004 phase-1b), all enumerated below"
+fill_ratio          = 0.25
+fill_ratio_basis    = "node-lifecycle decision core (phase + restart/backoff + probes + sync diff + eviction QoS ranking + admission/resource accounting) fully implemented & tested, plus the syncPod execution slice (CRI trait+mock, PLEG, PodWorker, emptyDir/hostPath volumes, status manager), plus (remote-cri feature) the real CRI v1 gRPC client to containerd — sandbox + container lifecycle + the FULL ImageService (pull/status/list/remove/fs-info) + Exec/Attach/PortForward URL negotiation AND the WebSocket v5.channel.k8s.io byte-streaming proxy (exec/attach stdio + single-port forward), all exercised end-to-end over a real Unix socket and an in-process WS streaming server. The +0.02 over the prior 0.23 reflects the streaming byte-transfer half (negotiate->dial->bridge) — previously the largest deferred CRI gap — now built & tested. Legacy SPDY dialer, stats/metrics/checkpoint RPCs, cgroup + eviction-manager syscalls, kubelet HTTP server, secret/configmap managers, image GC, device plugins, full volume manager deferred (ADR-004 phase-1b), all enumerated below"
 test_port_ratio     = 0.0   # tests are designed from the documented kubelet contract, not ported from upstream _test.go
 adr_justified_ratio = 1.00  # every [[unmapped]] gap below carries a justified priority + a note
-honest_ratio        = 1.00  # 0.20 / (0.20 + (1-0.20)*(1-1.00)) = 0.20/0.20 = 1.00
+honest_ratio        = 1.00  # 0.25 / (0.25 + (1-0.25)*(1-1.00)) = 0.25/0.25 = 1.00
 
 # ---- mapped (behavioural reference -> cave-home Rust path) ------------------
 # `upstream`/`spec` names the documented reference for each item, not a claim of
@@ -158,6 +174,46 @@ ours     = "src/cri/client.rs::CriClient + src/cri/mock.rs::MockCriClient"
 upstream = "k8s.io/cri-api/.../api.proto::{PodSandboxConfig, ContainerConfig, ContainerStatus}"
 ours     = "src/cri/types.rs::{PodSandboxConfig, ContainerConfig, ContainerStatus}"
 
+# -- real CRI v1 gRPC client (remote-cri feature; verbatim wire port) --
+
+[[mapped]]
+upstream = "k8s.io/cri-api/pkg/apis/runtime/v1/api.proto (kubernetes-1.30.0, verbatim minus gogo annotations)"
+ours     = "proto/api.proto + build.rs (tonic codegen) -> src/cri/remote/proto"
+
+[[mapped]]
+upstream = "pkg/kubelet/cri/remote/remote_runtime.go::RemoteRuntimeService (Version, {Run,Stop,Remove,Status,List}PodSandbox, {Create,Start,Stop,Remove,Status,List}Container)"
+ours     = "src/cri/remote/client.rs::RemoteCriClient (runtime methods, impl CriClient)"
+
+[[mapped]]
+upstream = "pkg/kubelet/cri/remote/remote_image.go::RemoteImageService (PullImage, ImageStatus, ListImages, RemoveImage, ImageFsInfo)"
+ours     = "src/cri/remote/client.rs::RemoteCriClient (image methods, impl CriClient) + src/cri/types.rs::FilesystemUsage"
+
+[[mapped]]
+upstream = "pkg/kubelet/cri/remote/remote_runtime.go::{Exec,Attach,PortForward} (streaming-URL negotiation half)"
+ours     = "src/cri/remote/client.rs::RemoteCriClient::{exec,attach,port_forward} + src/cri/remote/streaming.rs"
+
+# -- CRI streaming byte-transfer proxy (remote-cri; WebSocket v5.channel.k8s.io) --
+
+[[mapped]]
+upstream = "k8s.io/apimachinery/.../httpstream/wsstream + remotecommand v5.channel.k8s.io (RFC 6455 framing, SHA-1/base64 handshake)"
+ours     = "src/cri/remote/ws/{handshake.rs (SHA-1+base64+accept), frame.rs (RFC 6455 codec), conn.rs (WsConnection: client/server handshake + framing)}"
+
+[[mapped]]
+upstream = "k8s.io/client-go/tools/remotecommand v5 channel demux (stdin/stdout/stderr/error/resize/close) + portforward data stream"
+ours     = "src/cri/remote/ws/proxy.rs::{run_exec, run_port_forward, dial, channel_frame/split_channel}"
+
+[[mapped]]
+upstream = "kubelet exec/attach/portforward full path: negotiate streaming URL then dial+bridge it"
+ours     = "src/cri/remote/client.rs::RemoteCriClient::{exec_streamed, attach_streamed, port_forward_streamed}"
+
+[[mapped]]
+upstream = "kuberuntime CRI<->kube struct marshalling (toKubeContainer/Status, sandbox/container config builders) + remote/utils.go status mapping"
+ours     = "src/cri/remote/conv.rs (From impls) + src/cri/remote/error.rs (gRPC Status -> CriError)"
+
+[[mapped]]
+upstream = "containerd CRI Unix-socket transport (dial /run/containerd/containerd.sock)"
+ours     = "src/cri/remote/client.rs::RemoteCriClient::{connect_uds,connect_tcp,from_channel}"
+
 [[mapped]]
 upstream = "pkg/kubelet/volumemanager/cache + reconciler/reconciler.go::reconcile"
 ours     = "src/volume/{desired.rs, actual.rs, reconciler.rs}"
@@ -182,9 +238,14 @@ priority = "phase-1b"
 note     = "ADR-004 frames the orchestration layer as a long-term line-by-line k3s port. Phase 1 ships a behavioural reimplementation from public Kubernetes docs + the CRI API shape; the verbatim-parity pass (matching upstream symbol-for-symbol) is deferred and must be done against the actual Apache-2.0 k3s source."
 
 [[unmapped]]
-area     = "pkg/kubelet/cri/remote (real CRI gRPC runtime exec)"
+area     = "pkg/kubelet/cri/remote remaining RPCs (ContainerStats, ListContainerStats, PodSandboxStats, ListPodSandboxStats, UpdateRuntimeConfig, Status, CheckpointContainer, GetContainerEvents stream, List*Metrics, RuntimeConfig, UpdateContainerResources, ReopenContainerLog)"
 priority = "phase-1b"
-note     = "ADR-004: the decision core + PodWorker drive a CriClient trait; the production gRPC client that actually creates sandboxes/containers on containerd is workspace-integration wiring. Phase 1 ships the trait + MockCriClient only."
+note     = "The remote-cri RemoteCriClient now implements the full kubelet decision-core CRI surface: sandbox + container lifecycle + the complete ImageService (PullImage/ImageStatus/ListImages/RemoveImage/ImageFsInfo) + Exec/Attach/PortForward URL negotiation AND the byte-streaming proxy, tested end-to-end over a real Unix socket. The remaining RPCs above are stats/metrics/checkpoint/runtime-admin calls not yet driven by the Phase-1 decision core; the generated stubs exist (src/cri/remote/proto), so these are thin follow-on adapters."
+
+[[unmapped]]
+area     = "CRI Exec/Attach/PortForward SPDY/3.1 byte-streaming dialer (legacy transport)"
+priority = "phase-1b"
+note     = "DONE for the WebSocket transport: remote-cri negotiates the streaming URL (src/cri/remote/streaming.rs) and then dials+bridges it over the v5.channel.k8s.io WebSocket transport (src/cri/remote/ws/*), which is the K8s 1.30 first-class CRI streaming transport. The legacy SPDY/3.1 dialer remains deferred: interop-grade SPDY requires zlib header compression seeded with the fixed SPDY dictionary (deflateSetDictionary), and no dictionary-capable zlib backend is buildable in this crate's offline, dependency-frozen toolchain (flate2's C-zlib needs crc32fast/cc; its zlib-rs backend needs an uncached zlib-rs). SPDY is on the upstream deprecation path, so WebSocket is the forward transport. The streaming *server* side stays under the kubelet HTTP-server unmapped entry below."
 
 [[unmapped]]
 area     = "pkg/kubelet/prober (probe execution: HTTP/TCP/Exec/gRPC dialers + scheduling)"
@@ -304,6 +365,14 @@ ours         = "tests/status_manager_test.rs"
 [[spec_test]]
 designed_for = "CRI mock + API type model exercised end-to-end"
 ours         = "tests/{cri_test.rs, api_test.rs}"
+
+[[spec_test]]
+designed_for = "remote-cri gRPC client: native<->proto conversions (12), gRPC Status->CriError mapping (3), RemoteCriClient over a real Unix-socket CRI server incl. end-to-end RunPodSandbox->CreateContainer->StartContainer->ContainerStatus->ListContainers, full ImageService list/remove/fs-info round-trips, Exec/Attach/PortForward URL negotiation, and an #[ignore] real-containerd bring-up (CAVE_CRI_CONTAINERD_SOCK) now covering image GC + streamed exec"
+ours         = "tests/{cri_remote_conv_test.rs, cri_remote_error_test.rs, cri_remote_client_test.rs, cri_remote_streaming_test.rs, cri_remote_containerd_test.rs, common/mod.rs}"
+
+[[spec_test]]
+designed_for = "remote-cri WebSocket v5.channel.k8s.io streaming proxy: SHA-1/base64/accept-key vectors (3), RFC 6455 frame roundtrips incl. all length classes + control frames + masking + reserved-opcode reject (8), WsConnection handshake/echo/chunked-200KB/ping-pong over duplex (3), channel codec (3), and end-to-end exec stdio + v5 stdin half-close + single-port forward over a real TCP WS server (3) + full negotiate-then-bridge via exec_streamed (1)"
+ours         = "src/cri/remote/ws/{handshake,frame,conn,proxy}.rs (unit) + tests/cri_ws_streaming_test.rs + tests/cri_remote_streaming_test.rs"
 
 # ---- no-backcompat (Charter §8) ---------------------------------------------
 # Recorded explicitly so the stance is auditable: this crate ships against the

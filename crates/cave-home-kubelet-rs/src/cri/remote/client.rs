@@ -1,0 +1,481 @@
+// SPDX-License-Identifier: Apache-2.0
+//! [`RemoteCriClient`] — the gRPC implementation of [`CriClient`].
+//!
+//! Line-by-line analogue of `k8s.io/kubernetes/pkg/kubelet/cri/remote`
+//! (`remote_runtime.go` + `remote_image.go`): it holds a connected
+//! `RuntimeServiceClient` and `ImageServiceClient` and turns each [`CriClient`]
+//! call into a gRPC round-trip, marshalling via [`super::conv`] and mapping
+//! errors via [`super::error`].
+
+use std::path::Path;
+
+use async_trait::async_trait;
+use tonic::transport::{Channel, Endpoint, Uri};
+
+use tokio::io::{AsyncRead, AsyncWrite};
+
+use super::error::{status_to_cri_error, transport_to_cri_error};
+use super::proto;
+use super::streaming;
+use super::ws;
+use crate::cri::client::{CriClient, CriError, CriResult};
+use crate::cri::types as t;
+
+use proto::image_service_client::ImageServiceClient;
+use proto::runtime_service_client::RuntimeServiceClient;
+
+/// Kubelet CRI API version string sent in `Version` requests.
+const KUBE_RUNTIME_API_VERSION: &str = "v1";
+
+/// gRPC-backed CRI client. Cheap to clone (clones share the HTTP/2 channel).
+#[derive(Clone, Debug)]
+pub struct RemoteCriClient {
+    runtime: RuntimeServiceClient<Channel>,
+    image: ImageServiceClient<Channel>,
+}
+
+impl RemoteCriClient {
+    /// Wrap an already-connected channel (e.g. a custom-configured `Endpoint`).
+    #[must_use]
+    pub fn from_channel(channel: Channel) -> Self {
+        Self {
+            runtime: RuntimeServiceClient::new(channel.clone()),
+            image: ImageServiceClient::new(channel),
+        }
+    }
+
+    /// Connect over TCP to `endpoint` (e.g. `http://127.0.0.1:8080`).
+    ///
+    /// # Errors
+    /// Returns [`CriError::Transport`] if the endpoint is malformed or the
+    /// channel cannot be established.
+    pub async fn connect_tcp(endpoint: impl Into<String>) -> CriResult<Self> {
+        let channel = Endpoint::try_from(endpoint.into())
+            .map_err(|e| CriError::Transport(e.to_string()))?
+            .connect()
+            .await
+            .map_err(|e| transport_to_cri_error(&e))?;
+        Ok(Self::from_channel(channel))
+    }
+
+    /// Connect over a Unix-domain socket — the transport containerd's CRI
+    /// endpoint listens on (e.g. `/run/containerd/containerd.sock`).
+    ///
+    /// # Errors
+    /// Returns [`CriError::Transport`] if the socket cannot be dialed.
+    pub async fn connect_uds(path: impl AsRef<Path>) -> CriResult<Self> {
+        let path = path.as_ref().to_path_buf();
+        // The authority is unused by the custom connector but must parse.
+        let channel = Endpoint::try_from("http://[::]:50051")
+            .map_err(|e| CriError::Transport(e.to_string()))?
+            .connect_with_connector(tower::service_fn(move |_: Uri| {
+                let path = path.clone();
+                async move {
+                    let stream = tokio::net::UnixStream::connect(path).await?;
+                    Ok::<_, std::io::Error>(hyper_util::rt::TokioIo::new(stream))
+                }
+            }))
+            .await
+            .map_err(|e| transport_to_cri_error(&e))?;
+        Ok(Self::from_channel(channel))
+    }
+
+    /// Negotiate an `Exec` streaming endpoint, returning the URL the kubelet's
+    /// streaming client should dial. Byte streaming over that URL is deferred.
+    ///
+    /// # Errors
+    /// Returns a [`CriError`] mapped from the gRPC status on failure.
+    pub async fn exec(&self, req: streaming::ExecRequest) -> CriResult<String> {
+        let req = proto::ExecRequest {
+            container_id: req.container_id,
+            cmd: req.cmd,
+            tty: req.tty,
+            stdin: req.stdin,
+            stdout: req.stdout,
+            stderr: req.stderr,
+        };
+        let resp = self
+            .runtime
+            .clone()
+            .exec(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(resp.into_inner().url)
+    }
+
+    /// Negotiate an `Attach` streaming endpoint, returning the URL to dial.
+    ///
+    /// # Errors
+    /// Returns a [`CriError`] mapped from the gRPC status on failure.
+    pub async fn attach(&self, req: streaming::AttachRequest) -> CriResult<String> {
+        let req = proto::AttachRequest {
+            container_id: req.container_id,
+            stdin: req.stdin,
+            tty: req.tty,
+            stdout: req.stdout,
+            stderr: req.stderr,
+        };
+        let resp = self
+            .runtime
+            .clone()
+            .attach(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(resp.into_inner().url)
+    }
+
+    /// Negotiate a `PortForward` streaming endpoint, returning the URL to dial.
+    ///
+    /// # Errors
+    /// Returns a [`CriError`] mapped from the gRPC status on failure.
+    pub async fn port_forward(&self, req: streaming::PortForwardRequest) -> CriResult<String> {
+        let req = proto::PortForwardRequest {
+            pod_sandbox_id: req.pod_sandbox_id,
+            port: req.ports,
+        };
+        let resp = self
+            .runtime
+            .clone()
+            .port_forward(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(resp.into_inner().url)
+    }
+
+    // ---------- streaming proxy (negotiate -> dial -> bridge) ------------------
+
+    /// Full `Exec`: negotiate the streaming URL over gRPC, dial it over the
+    /// WebSocket `v5.channel.k8s.io` transport, and bridge `stdin`/`stdout`/
+    /// `stderr` to the container process.
+    ///
+    /// # Errors
+    /// Returns [`CriError`] for a failed negotiation, a non-dialable URL, or a
+    /// transport error mid-stream.
+    pub async fn exec_streamed<I, O, E>(
+        &self,
+        req: streaming::ExecRequest,
+        stdin: Option<I>,
+        stdout: O,
+        stderr: E,
+        term_size: Option<(u16, u16)>,
+    ) -> CriResult<ws::proxy::ExecOutcome>
+    where
+        I: AsyncRead + Unpin + Send,
+        O: AsyncWrite + Unpin + Send,
+        E: AsyncWrite + Unpin + Send,
+    {
+        let url = self.exec(req).await?;
+        let conn = ws::proxy::dial(&url, &[ws::conn::V5_CHANNEL_PROTOCOL])
+            .await
+            .map_err(|e| CriError::Transport(e.to_string()))?;
+        ws::proxy::run_exec(conn, stdin, stdout, stderr, term_size)
+            .await
+            .map_err(|e| CriError::Transport(e.to_string()))
+    }
+
+    /// Full `Attach`: negotiate + dial + bridge to a running container's
+    /// stdio (no command launched).
+    ///
+    /// # Errors
+    /// As [`Self::exec_streamed`].
+    pub async fn attach_streamed<I, O, E>(
+        &self,
+        req: streaming::AttachRequest,
+        stdin: Option<I>,
+        stdout: O,
+        stderr: E,
+        term_size: Option<(u16, u16)>,
+    ) -> CriResult<ws::proxy::ExecOutcome>
+    where
+        I: AsyncRead + Unpin + Send,
+        O: AsyncWrite + Unpin + Send,
+        E: AsyncWrite + Unpin + Send,
+    {
+        let url = self.attach(req).await?;
+        let conn = ws::proxy::dial(&url, &[ws::conn::V5_CHANNEL_PROTOCOL])
+            .await
+            .map_err(|e| CriError::Transport(e.to_string()))?;
+        ws::proxy::run_exec(conn, stdin, stdout, stderr, term_size)
+            .await
+            .map_err(|e| CriError::Transport(e.to_string()))
+    }
+
+    /// Full single-port `PortForward`: negotiate + dial + bridge a local
+    /// stream `io` to `port` inside `req.pod_sandbox_id`.
+    ///
+    /// # Errors
+    /// As [`Self::exec_streamed`].
+    pub async fn port_forward_streamed<IO>(
+        &self,
+        req: streaming::PortForwardRequest,
+        port: u16,
+        io: IO,
+    ) -> CriResult<()>
+    where
+        IO: AsyncRead + AsyncWrite + Unpin + Send,
+    {
+        let url = self.port_forward(req).await?;
+        let conn = ws::proxy::dial(&url, &[ws::conn::V5_CHANNEL_PROTOCOL])
+            .await
+            .map_err(|e| CriError::Transport(e.to_string()))?;
+        ws::proxy::run_port_forward(conn, port, io)
+            .await
+            .map_err(|e| CriError::Transport(e.to_string()))
+    }
+}
+
+#[async_trait]
+impl CriClient for RemoteCriClient {
+    async fn version(&self) -> CriResult<String> {
+        let req = proto::VersionRequest {
+            version: KUBE_RUNTIME_API_VERSION.to_owned(),
+        };
+        let resp = self
+            .runtime
+            .clone()
+            .version(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(resp.into_inner().runtime_version)
+    }
+
+    async fn run_pod_sandbox(&self, cfg: t::PodSandboxConfig) -> CriResult<String> {
+        let req = proto::RunPodSandboxRequest {
+            config: Some(cfg.into()),
+            runtime_handler: String::new(),
+        };
+        let resp = self
+            .runtime
+            .clone()
+            .run_pod_sandbox(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(resp.into_inner().pod_sandbox_id)
+    }
+
+    async fn stop_pod_sandbox(&self, sandbox_id: &str) -> CriResult<()> {
+        let req = proto::StopPodSandboxRequest {
+            pod_sandbox_id: sandbox_id.to_owned(),
+        };
+        self.runtime
+            .clone()
+            .stop_pod_sandbox(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(())
+    }
+
+    async fn remove_pod_sandbox(&self, sandbox_id: &str) -> CriResult<()> {
+        let req = proto::RemovePodSandboxRequest {
+            pod_sandbox_id: sandbox_id.to_owned(),
+        };
+        self.runtime
+            .clone()
+            .remove_pod_sandbox(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(())
+    }
+
+    async fn pod_sandbox_status(&self, sandbox_id: &str) -> CriResult<t::PodSandboxStatus> {
+        let req = proto::PodSandboxStatusRequest {
+            pod_sandbox_id: sandbox_id.to_owned(),
+            verbose: false,
+        };
+        let resp = self
+            .runtime
+            .clone()
+            .pod_sandbox_status(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        resp.into_inner()
+            .status
+            .map(Into::into)
+            .ok_or_else(|| CriError::NotFound(format!("pod sandbox {sandbox_id}")))
+    }
+
+    async fn list_pod_sandbox(
+        &self,
+        filter: Option<t::PodSandboxFilter>,
+    ) -> CriResult<Vec<t::PodSandbox>> {
+        let req = proto::ListPodSandboxRequest {
+            filter: filter.map(Into::into),
+        };
+        let resp = self
+            .runtime
+            .clone()
+            .list_pod_sandbox(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(resp
+            .into_inner()
+            .items
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    async fn create_container(
+        &self,
+        sandbox_id: &str,
+        cfg: t::ContainerConfig,
+        sandbox_cfg: t::PodSandboxConfig,
+    ) -> CriResult<String> {
+        let req = proto::CreateContainerRequest {
+            pod_sandbox_id: sandbox_id.to_owned(),
+            config: Some(cfg.into()),
+            sandbox_config: Some(sandbox_cfg.into()),
+        };
+        let resp = self
+            .runtime
+            .clone()
+            .create_container(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(resp.into_inner().container_id)
+    }
+
+    async fn start_container(&self, container_id: &str) -> CriResult<()> {
+        let req = proto::StartContainerRequest {
+            container_id: container_id.to_owned(),
+        };
+        self.runtime
+            .clone()
+            .start_container(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(())
+    }
+
+    async fn stop_container(&self, container_id: &str, timeout_seconds: i64) -> CriResult<()> {
+        let req = proto::StopContainerRequest {
+            container_id: container_id.to_owned(),
+            timeout: timeout_seconds,
+        };
+        self.runtime
+            .clone()
+            .stop_container(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(())
+    }
+
+    async fn remove_container(&self, container_id: &str) -> CriResult<()> {
+        let req = proto::RemoveContainerRequest {
+            container_id: container_id.to_owned(),
+        };
+        self.runtime
+            .clone()
+            .remove_container(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(())
+    }
+
+    async fn container_status(&self, container_id: &str) -> CriResult<t::ContainerStatus> {
+        let req = proto::ContainerStatusRequest {
+            container_id: container_id.to_owned(),
+            verbose: false,
+        };
+        let resp = self
+            .runtime
+            .clone()
+            .container_status(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        resp.into_inner()
+            .status
+            .map(Into::into)
+            .ok_or_else(|| CriError::NotFound(format!("container {container_id}")))
+    }
+
+    async fn list_containers(
+        &self,
+        filter: Option<t::ContainerFilter>,
+    ) -> CriResult<Vec<t::Container>> {
+        let req = proto::ListContainersRequest {
+            filter: filter.map(Into::into),
+        };
+        let resp = self
+            .runtime
+            .clone()
+            .list_containers(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(resp
+            .into_inner()
+            .containers
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    async fn pull_image(&self, image: t::ImageSpec) -> CriResult<String> {
+        let req = proto::PullImageRequest {
+            image: Some(image.into()),
+            auth: None,
+            sandbox_config: None,
+        };
+        let resp = self
+            .image
+            .clone()
+            .pull_image(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(resp.into_inner().image_ref)
+    }
+
+    async fn image_status(&self, image: t::ImageSpec) -> CriResult<Option<t::Image>> {
+        let req = proto::ImageStatusRequest {
+            image: Some(image.into()),
+            verbose: false,
+        };
+        let resp = self
+            .image
+            .clone()
+            .image_status(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(resp.into_inner().image.map(Into::into))
+    }
+
+    async fn list_images(&self, filter: Option<t::ImageSpec>) -> CriResult<Vec<t::Image>> {
+        let req = proto::ListImagesRequest {
+            filter: filter.map(Into::into),
+        };
+        let resp = self
+            .image
+            .clone()
+            .list_images(req)
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(resp.into_inner().images.into_iter().map(Into::into).collect())
+    }
+
+    async fn remove_image(&self, image: t::ImageSpec) -> CriResult<()> {
+        let req = proto::RemoveImageRequest {
+            image: Some(image.into()),
+        };
+        match self.image.clone().remove_image(req).await {
+            Ok(_) => Ok(()),
+            // RemoveImage is idempotent: a NOT_FOUND means it is already gone.
+            Err(s) if s.code() == tonic::Code::NotFound => Ok(()),
+            Err(s) => Err(status_to_cri_error(&s)),
+        }
+    }
+
+    async fn image_fs_info(&self) -> CriResult<Vec<t::FilesystemUsage>> {
+        let resp = self
+            .image
+            .clone()
+            .image_fs_info(proto::ImageFsInfoRequest {})
+            .await
+            .map_err(|s| status_to_cri_error(&s))?;
+        Ok(resp
+            .into_inner()
+            .image_filesystems
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+}

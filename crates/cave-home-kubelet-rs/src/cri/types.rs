@@ -168,6 +168,22 @@ pub struct Image {
     pub size_bytes: u64,
 }
 
+/// `FilesystemUsage` — one image-filesystem usage record from `ImageFsInfo`.
+///
+/// Flattens the wire's nested `FilesystemIdentifier` / `UInt64Value` wrappers
+/// (which only ever carry a single scalar) into plain fields.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct FilesystemUsage {
+    /// Nanosecond timestamp at which the figures were collected.
+    pub timestamp: i64,
+    /// Mountpoint of the filesystem (the `FilesystemIdentifier`).
+    pub mountpoint: String,
+    /// Bytes used by images on the filesystem.
+    pub used_bytes: u64,
+    /// Inodes used by images on the filesystem.
+    pub inodes_used: u64,
+}
+
 /// Filter passed to `ListContainers`.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ContainerFilter {
