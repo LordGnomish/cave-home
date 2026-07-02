@@ -50,7 +50,6 @@ linux_min_kernel = "7.1"
 [ratios]
 # fill_ratio is against the FULL flannel-CNI scope (decision core + datapath
 # programming + durable lease store + daemon watch loop + the non-VXLAN
-<<<<<<< HEAD
 # datapaths). The 2026-06-07 real-network port added the privileged datapath
 # the decision core only modelled before: the rtnetlink wire codec, the VXLAN
 # device + ARP/FDB/route programming, the host-gw RouteNetwork reconcile, the
@@ -63,17 +62,6 @@ fill_ratio_basis    = "decision core (CIDR/subnet/IPAM/backend-config/route-plan
 test_port_ratio     = 0.0   # tests designed from spec/RFC/kernel-ABI reference values, not ported from upstream Go tests
 adr_justified_ratio = 1.00  # every unfilled item below carries a phase disposition (priority + note)
 honest_ratio        = 1.00  # 0.72 / (0.72 + (1-0.72)*(1-1.00)) = 1.00
-=======
-# datapaths). The decision core — CIDR/subnet/IPAM/backend-config/routes/CNI-
-# result — is implemented and tested in full. The privileged netlink /
-# WireGuard / etcd / daemon machinery is the larger remaining surface and is
-# all ADR-008 Phase-1b, enumerated below. Honest measured share ~0.44.
-fill_ratio          = 0.44
-fill_ratio_basis    = "CIDR math (v4+v6) + per-node subnet leasing + pod IPAM + backend config model + route/FDB computation + ARP/NDP proxy-neighbor computation + v4/v6 dual-stack pairing (atomic dual lease + dual pod-IPAM) + CNI ADD/DEL result model, fully implemented & unit-tested; netlink datapath, WireGuard tunnel setup, durable lease store, daemon watch loop deferred"
-test_port_ratio     = 0.0   # tests designed from spec/RFC reference values, not ported from upstream Go tests
-adr_justified_ratio = 1.00  # every unfilled item below carries a phase disposition (priority + note)
-honest_ratio        = 1.00  # 0.44 / (0.44 + (1-0.44)*(1-1.00)) = 1.00
->>>>>>> claude/cave-home-k3s-flannel-2026-06-07
 
 # ---------------------------------------------------------------------------
 # Mapped — documented flannel/CNI behaviour → our Rust symbol.
@@ -147,7 +135,6 @@ ours = "src/cni.rs::{cni_add,cni_add_specific,CniResult,IpConfig,CniRoute}"
 spec = "CNI DEL: free pod IP; DEL is idempotent (deleting an unassigned addr is success)"
 ours = "src/cni.rs::cni_del"
 
-<<<<<<< HEAD
 # --- 2026-06-07 real-network port: the privileged datapath the core drives. ---
 
 [[mapped]]
@@ -193,11 +180,10 @@ ours = "src/subnet_env.rs::SubnetEnv::{render,parse}"
 [[mapped]]
 spec = "flannel CNI plugin: read subnet.env + netconf, build bridge+host-local delegate scoped to node subnet, ipMasq=false (flannel-io/cni-plugin)"
 ours = "src/cni_delegate.rs::DelegateConfig::{from_netconf,build} + src/bin/flannel.rs"
-=======
+
 [[mapped]]
 spec = "flannel dual-stack: parallel v4+v6 cluster pod CIDRs; each node leases both a v4 and a v6 per-node subnet (paired, atomic — never a half lease); each pod gets both a v4 and a v6 address; family-swapped config rejected"
 ours = "src/dualstack.rs::{DualStackSubnetManager,DualStackIpam,DualStackLease,DualStackAddr,DualStackError}"
->>>>>>> claude/cave-home-k3s-flannel-2026-06-07
 
 # ---------------------------------------------------------------------------
 # Unmapped — explicit backlog / permanent out-of-scope. Each carries a
@@ -205,15 +191,9 @@ ours = "src/dualstack.rs::{DualStackSubnetManager,DualStackIpam,DualStackLease,D
 # ---------------------------------------------------------------------------
 
 [[unmapped]]
-<<<<<<< HEAD
 area     = "WireGuard tunnel + peer setup (wg genetlink: key management, wg device, allowed-IPs)"
 priority = "phase-1b"
 note     = "WireguardConfig + NodeBackendData::Wireguard model the config/peer attrs and route_network installs the device route; programming the wg interface + peers uses the WireGuard *genetlink* family (not rtnetlink) and is the remaining privileged bit. Deferred."
-=======
-area     = "netlink route / FDB / neighbor programming (RTM_NEWROUTE, AF_BRIDGE RTM_NEWNEIGH, AF_INET/AF_INET6 RTM_NEWNEIGH)"
-priority = "phase-1b"
-note     = "ADR-008: the RoutePlan (src/routes.rs) and NeighborPlan (src/neigh.rs) are pure data; issuing the netlink messages that install those routes, FDB entries and ARP/NDP neighbors is the privileged datapath layer. Needs CAP_NET_ADMIN and a netlink dependency; deferred so the decision core stays std-only and host-independent."
->>>>>>> claude/cave-home-k3s-flannel-2026-06-07
 
 [[unmapped]]
 area     = "flannel daemon watch loop wiring (long-running: subscribe kine watch -> LeaseRegistry -> VxlanNetwork/RouteNetwork, periodic routeCheck)"
