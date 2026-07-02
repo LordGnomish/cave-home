@@ -84,6 +84,7 @@ pub mod bootstrap;
 pub mod bringup;
 pub mod component;
 pub mod config;
+pub mod metrics_server;
 pub mod role;
 pub mod shutdown;
 

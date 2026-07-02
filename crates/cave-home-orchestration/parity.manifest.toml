@@ -62,6 +62,9 @@ spec_sources     = [
     "Kubernetes control-plane bring-up contract — apiserver depends on datastore; scheduler/controller-manager/kubelet depend on apiserver; kube-proxy on the node agent (kubernetes.io component overview)",
     "cave-home Charter §5 — single unified Rust binary, server-class multi-node; ADR-004 — orchestration sits INSIDE the one binary (carve-out not taken)",
     "cave-home ADR-005 — deployment topology / multi-node bootstrap (primary hub + backup hub + worker); ADR-007 / Charter §6.3 — orchestration hidden from users",
+    "kubernetes-sigs/metrics-server — bundled resource-metrics pipeline: kubelet Summary scrape -> last-two-point storage -> CPU-rate (nanocores = Δcpu_ns·1e9/Δwall_ns) + working-set memory gauge -> metrics.k8s.io/v1beta1 NodeMetrics/PodMetrics via the aggregated APIService (github.com/kubernetes-sigs/metrics-server, latest release)",
+    "Kubernetes resource.Quantity canonical DecimalSI (CPU) / BinarySI (memory) suffix rules + kubectl `top` round-up display (k8s.io/apimachinery resource.Quantity)",
+    "Kubernetes aggregation layer — APIService (apiregistration.k8s.io/v1) `v1beta1.metrics.k8s.io` registration + groupPriorityMinimum/versionPriority (kubernetes.io/docs concepts/extend-kubernetes/api-extension/apiserver-aggregation)",
 ]
 ported_at        = "2026-05-29"
 linux_min_kernel = "7.1"
@@ -82,11 +85,11 @@ linux_min_kernel = "7.1"
 # against ~80 kLOC of K3s Go would read far lower) and defensible: a supervisor
 # could drive a correct, dependency-respecting, role-aware bring-up and
 # graceful tear-down today using only this crate's decisions.
-fill_ratio          = 0.30
-fill_ratio_basis    = "config model + Result validation, component dependency graph + deterministic topo bring-up order + cycle/missing detection + readiness gating + external-prereq support, bootstrap state machine + transient/fatal retry classification, single-binary invariant, multi-node role assignment, graceful shutdown order + safety predicate — all implemented & tested (61 unit tests + doctest); actual component supervision + datastore/TLS/join/container/CNI runtime deferred (ADR-004 phase-1b), all enumerated below"
-test_port_ratio     = 0.0   # tests designed from the documented K3s bootstrap contract, not ported from upstream _test.go
+fill_ratio          = 0.34
+fill_ratio_basis    = "control-plane bootstrap decision spine (config model + Result validation, component dependency graph + deterministic topo bring-up order + cycle/missing detection + readiness gating + external-prereq support, bootstrap state machine + transient/fatal retry classification, single-binary invariant, multi-node role assignment, graceful shutdown order + safety predicate) PLUS the bundled metrics-server resource-metrics pipeline decision core (resource.Quantity DecimalSI/BinarySI formatting, kubelet Summary decode -> MetricsPoint, in-memory ring-buffer storage + cumulative-counter CPU-rate with reset/zero-window guards, scrape scheduling + latency/error accounting, metrics.k8s.io/v1beta1 NodeMetrics/PodMetrics + aggregated APIService descriptor, observability snapshot) — all implemented & tested (96 unit + 39 integration tests + doctest); actual component supervision + datastore/TLS/join/container/CNI runtime AND the metrics-server kubelet HTTPS scrape transport + aggregation-layer serving deferred (ADR-004 phase-1b), all enumerated below"
+test_port_ratio     = 0.0   # tests designed from the documented K3s/metrics-server contract, not ported from upstream _test.go
 adr_justified_ratio = 1.00  # every [[unmapped]] gap below carries a justified priority + a note
-honest_ratio        = 1.00  # 0.30 / (0.30 + (1-0.30)*(1-1.00)) = 0.30/0.30 = 1.00
+honest_ratio        = 1.00  # 0.34 / (0.34 + (1-0.34)*(1-1.00)) = 0.34/0.34 = 1.00
 
 # ---- mapped (real implementation present in this crate) ---------------------
 
@@ -158,6 +161,32 @@ ours = "src/role.rs::{NodeIntent::components,NodeIntent::external_prerequisites}
 spec = "Graceful shutdown ordering = reverse of bring-up, with a tear-down safety predicate"
 ours = "src/shutdown.rs::{shutdown_order,shutdown_order_with_external,is_safe_shutdown}"
 
+# ---- mapped: bundled metrics-server resource-metrics pipeline (kubernetes-sigs/metrics-server) ----
+
+[[mapped]]
+spec = "Kubernetes resource.Quantity slice — CPU canonical DecimalSI (nano/micro/milli/core) + memory canonical BinarySI (Ki/Mi/Gi/…), kubectl `top` round-up milli/MiB display, ResourceList {cpu,memory} with additive (pod-aggregation) sum"
+ours = "src/metrics_server/quantity.rs::{Quantity,ResourceList}"
+
+[[mapped]]
+spec = "kubelet /stats/summary decode (decode.go) — node point + one point-per-container; a MetricsPoint pairs the cumulative usageCoreNanoSeconds counter with the workingSetBytes gauge; node/container missing either stat is skipped (no fabricated zero)"
+ours = "src/metrics_server/summary.rs::{Summary,NodeStats,PodStats,ContainerStats,MetricsPoint,NodeStats::point,PodStats::container_points}"
+
+[[mapped]]
+spec = "In-memory storage + CPU-rate (storage/point.go resourceUsage) — ring-buffer point store (capacity ≥2, evicts oldest, rate uses latest pair), nanocores = Δcpu_ns·1e9/Δwall_ns with counter-reset + non-monotonic-time + insufficient-data guards; memory is the latest gauge; per-node + per-pod-per-container rings"
+ours = "src/metrics_server/store.rs::{PointRing,Usage::between,Storage,RateError}"
+
+[[mapped]]
+spec = "Scrape scheduling + accounting (scraper.go + manager tick) — interval-gated due() decision, per-node ScrapeOutcome folding, scrape error rate + mean/last latency + timeout-budget predicate (the observability source)"
+ours = "src/metrics_server/scraper.rs::{ScrapeConfig,Scraper,ScrapeOutcome,ScrapeResult,ScrapeFailure}"
+
+[[mapped]]
+spec = "metrics.k8s.io/v1beta1 API objects (pkg/api) + aggregation-layer registration — NodeMetrics / per-container PodMetrics (with pod total = sum of containers) built from storage usage, list-from-storage skipping unrateable objects; APIService v1beta1.metrics.k8s.io descriptor (group/version, priorities, insecureSkipTLSVerify)"
+ours = "src/metrics_server/api.rs::{NodeMetrics,PodMetrics,ContainerMetrics,ApiService}"
+
+[[mapped]]
+spec = "Self-instrumentation — scrape latency / scrape error rate / storage memory-footprint metric names + a MetricsSnapshot folding the live Scraper + Storage (observability track)"
+ours = "src/metrics_server/observability.rs::{metric_names,MetricsSnapshot}"
+
 # ---- unmapped (NOT in this crate; ADR-004 phase-1b disposition) -------------
 
 [[unmapped]]
@@ -194,6 +223,21 @@ note     = "ADR-004: the optional embedded distributed registry mirror is a runt
 area     = "Multi-server (HA) embedded-etcd quorum + leader election among 3+ control-plane nodes"
 priority = "phase-1b"
 note     = "ADR-005: this crate models the role assignment (one cluster-init primary + joining backup servers); the embedded-etcd quorum / leader-election that HA control-plane members run is consensus-bound and is owned jointly by the datastore runtime and cave-home-cluster. cave-home targets a 1–3 node household cluster (Charter §5)."
+
+[[unmapped]]
+area     = "metrics-server kubelet scrape transport (HTTPS GET of /metrics/resource or /stats/summary + JSON/Prometheus deserialization + per-node concurrency/timeout enforcement)"
+priority = "phase-1b"
+note     = "ADR-004: the metrics_server module DECIDES which node is due to scrape, classifies each outcome, and decodes an already-deserialized Summary into MetricsPoints; the actual kubelet HTTPS client, the JSON/Prometheus parse, and the bounded-concurrency fan-out are network/runtime-bound and land with cave-home-kubelet-rs's stats endpoint + the in-process supervisor. The decision boundary is deliberately on this side."
+
+[[unmapped]]
+area     = "metrics-server aggregation-layer serving (HTTP handler for metrics.k8s.io/v1beta1 GET/LIST, the apiserver aggregation proxy, serving-cert TLS)"
+priority = "phase-1b"
+note     = "ADR-004: this crate builds the NodeMetrics/PodMetrics objects and the APIService registration descriptor; the actual HTTP serving of those objects and the apiserver's aggregation proxy + serving-cert TLS are network/crypto-bound and land with cave-home-apiserver-rs's aggregation path. No crypto is modelled here (token/cert SHAPE only, by mandate)."
+
+[[unmapped]]
+area     = "metrics-server pod-utilisation percentages vs Node allocatable / Pod requests (the CPU%/MEMORY% columns), and PodDisruption/HPA consumers of metrics.k8s.io"
+priority = "phase-2"
+note     = "the utilisation percent needs Node allocatable + Pod request data from the apiserver cache; the renderer (cavehomectl top, the Portal Metrics page) already carries the optional percent + an `<unknown>`/`—` placeholder, so this is a data-wiring gap, not a model gap. HPA/VPA consumers of the metrics API are out of cave-home's household scope (Charter §5)."
 
 [[unmapped]]
 area     = "Verbatim line-by-line transcription of k3s-io/k3s Go source"
@@ -240,6 +284,30 @@ ours         = "src/role.rs::tests"
 [[spec_test]]
 designed_for = "Shutdown = exact reverse of bring-up (kine torn down last; proxy before kubelet; apiserver before kine), safety predicate accepts the computed order and rejects a bad/wrong-membership order, agent shutdown with external apiserver"
 ours         = "src/shutdown.rs::tests"
+
+[[spec_test]]
+designed_for = "metrics-server resource.Quantity — canonical DecimalSI CPU (250m/1500m/2/1n/5u/0), BinarySI memory (128Mi/1536Mi/2Gi/4Ki/raw/0), kubectl round-up milli_cpu/mebibytes, ResourceList pairing + zero identity + saturating_add"
+ours         = "tests/metrics_server_quantity.rs + src/metrics_server/quantity.rs::tests"
+
+[[spec_test]]
+designed_for = "metrics-server Summary decode — node point pairs CPU counter + memory gauge; node/container missing cpu or memory yields no point; one point per complete container, order preserved"
+ours         = "tests/metrics_server_summary.rs + src/metrics_server/summary.rs::tests"
+
+[[spec_test]]
+designed_for = "metrics-server store — nanocores = Δcpu_ns·1e9/Δwall_ns rate (250m/1-core/500m/200m), counter-reset + non-monotonic-time + insufficient-data errors, ring eviction keeping last two, per-node + per-pod-container storage sorted, points_stored footprint"
+ours         = "tests/metrics_server_store.rs + src/metrics_server/store.rs::tests"
+
+[[spec_test]]
+designed_for = "metrics-server scraper — never-scraped-due + due-after-a-resolution scheduling, success/failure counters, error_rate, consecutive-error bump + reset-on-success, mean/last latency, timeout-budget predicate"
+ours         = "tests/metrics_server_scraper.rs + src/metrics_server/scraper.rs::tests"
+
+[[spec_test]]
+designed_for = "metrics-server API — NodeMetrics typemeta/window from Usage, PodMetrics per-container list + total sum (250m/128Mi) with min timestamp/window, ApiService v1beta1.metrics.k8s.io descriptor, list-from-Storage skipping single-sample objects"
+ours         = "tests/metrics_server_api.rs + src/metrics_server/api.rs::tests"
+
+[[spec_test]]
+designed_for = "metrics-server observability — namespaced+unique metric names (scrape_duration_seconds/scrape_errors_total/storage_memory_bytes) + MetricsSnapshot folding Scraper + Storage (scrapes/errors/error_rate/mean_latency/points/memory_bytes/node/pod counts), all-zero empty snapshot"
+ours         = "tests/metrics_server_observability.rs + src/metrics_server/observability.rs::tests"
 
 # ---- no-backcompat (Charter §8) ---------------------------------------------
 # Recorded explicitly so the stance is auditable: this crate models the current

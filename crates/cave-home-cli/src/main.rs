@@ -13,7 +13,8 @@ use clap::{Arg, ArgAction, Command};
 use cave_home_cli::commands::{
     alarm, automation, calendar, camera, cover, destroy, device, display, doorbell, free_home,
     garden, history, household, hue, hvac, init, join, knx, lights, lock, matter, mobile, music,
-    notify, pool, room, scene, solar, status, unifi, vacuum, voice, water, wellness, zigbee, zwave,
+    notify, pool, room, scene, solar, status, top, unifi, vacuum, voice, water, wellness, zigbee,
+    zwave,
 };
 
 fn build_cli() -> Command {
@@ -37,6 +38,7 @@ fn build_cli() -> Command {
         .subcommand(room::cmd())
         .subcommand(automation::cmd())
         .subcommand(scene::cmd())
+        .subcommand(top::cmd())
         // Cross-agent stubs — F1-F4 fill these:
         .subcommand(solar::cmd())
         .subcommand(unifi::cmd())
@@ -92,6 +94,7 @@ where
         Some(("room", sub)) => room::run(sub, verbose),
         Some(("automation", sub)) => automation::run(sub, verbose),
         Some(("scene", sub)) => scene::run(sub, verbose),
+        Some(("top", sub)) => top::run(sub, verbose),
         // Cross-agent stubs use the simpler signature.
         Some(("solar", _)) => solar::run(),
         Some(("unifi", _)) => unifi::run(),
@@ -138,12 +141,43 @@ mod tests {
         let cli = build_cli();
         let names: Vec<_> = cli.get_subcommands().map(|s| s.get_name()).collect();
         for required in [
-            "init", "join", "status", "destroy", "device", "room", "automation", "scene",
-            "solar", "unifi", "hue", "knx", "free-home",
+            "init",
+            "join",
+            "status",
+            "destroy",
+            "device",
+            "room",
+            "automation",
+            "scene",
+            "solar",
+            "unifi",
+            "hue",
+            "knx",
+            "free-home",
             // G8 stubs:
-            "lights", "cover", "lock", "vacuum", "hvac", "camera", "doorbell", "alarm",
-            "water", "garden", "pool", "voice", "music", "notify", "display", "history",
-            "wellness", "calendar", "household", "matter", "zigbee", "zwave", "mobile",
+            "lights",
+            "cover",
+            "lock",
+            "vacuum",
+            "hvac",
+            "camera",
+            "doorbell",
+            "alarm",
+            "water",
+            "garden",
+            "pool",
+            "voice",
+            "music",
+            "notify",
+            "display",
+            "history",
+            "wellness",
+            "calendar",
+            "household",
+            "matter",
+            "zigbee",
+            "zwave",
+            "mobile",
         ] {
             assert!(
                 names.iter().any(|n| *n == required),
@@ -174,7 +208,11 @@ mod tests {
         // clap will exit non-zero on parse error; we don't try to
         // intercept that here — instead, confirm a known-good path
         // returns 0.
-        let code = run_with_args(["cavehomectl", "device", "list"].iter().map(|s| s.to_string()));
+        let code = run_with_args(
+            ["cavehomectl", "device", "list"]
+                .iter()
+                .map(|s| s.to_string()),
+        );
         assert_eq!(code, 0);
     }
 
