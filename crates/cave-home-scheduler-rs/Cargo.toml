@@ -31,6 +31,11 @@ tracing     = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "test-util"] }
+# Integration-test-only: proves the scheduler's SchedulerSource/Sink seam wires
+# to the real cave-home-apiserver-rs Registry (read unscheduled Pods + Nodes,
+# write the binding back). Kept out of [dependencies] so the library stays
+# transport-agnostic — the wire lives entirely in tests/apiserver_integration.rs.
+cave-home-apiserver-rs = { path = "../cave-home-apiserver-rs" }
 
 [lints]
 workspace = true

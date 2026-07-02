@@ -5,19 +5,61 @@
 //!         pkg/scheduler/framework/plugins/noderesources/fit.go::Filter
 
 use crate::cache::NodeInfo;
-use crate::framework::{CycleState, FilterPlugin, Status};
+use crate::framework::{CycleState, FilterPlugin, PreFilterPlugin, PreFilterResult, Status};
 use crate::types::{Pod, ResourceName};
 
 pub struct NodeResourcesFit;
+
+/// `CycleState` key under which [`NodeResourcesFit::pre_filter`] caches the
+/// pod's aggregated requests so the per-node `filter` need not recompute them.
+/// Upstream: `noderesources.preFilterStateKey`.
+pub const PRE_FILTER_FIT_KEY: &str = "PreFilter-NodeResourcesFit";
+
+/// Upstream: `noderesources.preFilterState` — the pod's summed resource
+/// requests, computed once in `PreFilter`.
+#[derive(Debug, Clone, Copy)]
+pub struct PreFilterFitState {
+    pub cpu: i64,
+    pub memory: i64,
+}
+
+impl PreFilterFitState {
+    const fn request(&self, resource: ResourceName) -> i64 {
+        match resource {
+            ResourceName::Cpu => self.cpu,
+            ResourceName::Memory => self.memory,
+        }
+    }
+}
+
+impl PreFilterPlugin for NodeResourcesFit {
+    fn name(&self) -> &'static str {
+        "NodeResourcesFit"
+    }
+
+    fn pre_filter(&self, state: &mut CycleState, pod: &Pod) -> (Option<PreFilterResult>, Status) {
+        let computed = PreFilterFitState {
+            cpu: pod.sum_requests(ResourceName::Cpu).value(),
+            memory: pod.sum_requests(ResourceName::Memory).value(),
+        };
+        state.write(PRE_FILTER_FIT_KEY, computed);
+        // NodeResourcesFit never restricts which nodes are considered.
+        (None, Status::success())
+    }
+}
 
 impl FilterPlugin for NodeResourcesFit {
     fn name(&self) -> &'static str {
         "NodeResourcesFit"
     }
 
-    fn filter(&self, _state: &mut CycleState, pod: &Pod, node: &NodeInfo) -> Status {
+    fn filter(&self, state: &mut CycleState, pod: &Pod, node: &NodeInfo) -> Status {
+        // Reuse the request totals computed in PreFilter when present, else
+        // fall back to computing inline (e.g. a registry without the PreFilter).
+        let precomputed = state.read::<PreFilterFitState>(PRE_FILTER_FIT_KEY).copied();
         for resource in [ResourceName::Cpu, ResourceName::Memory] {
-            let request = pod.sum_requests(resource).value();
+            let request = precomputed
+                .map_or_else(|| pod.sum_requests(resource).value(), |s| s.request(resource));
             if request == 0 {
                 continue;
             }
@@ -26,11 +68,8 @@ impl FilterPlugin for NodeResourcesFit {
             let free = allocatable.saturating_sub(already);
             if request > free {
                 return Status::unschedulable(
-                    self.name(),
-                    format!(
-                        "Insufficient {:?}: requested {request}, free {free}",
-                        resource
-                    ),
+                    FilterPlugin::name(self),
+                    format!("Insufficient {resource:?}: requested {request}, free {free}"),
                 );
             }
         }
@@ -106,6 +145,35 @@ mod tests {
         let info = NodeInfo::new(node(0, 0));
         let p = Pod::default();
         let mut s = CycleState::new();
+        assert!(NodeResourcesFit.filter(&mut s, &p, &info).is_success());
+    }
+
+    #[test]
+    fn prefilter_precomputes_pod_requests_into_state() {
+        use crate::framework::PreFilterPlugin;
+        let p = pod(500, 1024);
+        let mut s = CycleState::new();
+        let (res, status) = NodeResourcesFit.pre_filter(&mut s, &p);
+        assert!(status.is_success());
+        // NodeResourcesFit does not restrict the node set.
+        assert!(res.is_none_or(|r| r.node_names.is_none()));
+        // The aggregated request is cached for the Filter phase to reuse.
+        let cached = s
+            .read::<PreFilterFitState>(PRE_FILTER_FIT_KEY)
+            .expect("pre-filter state recorded");
+        assert_eq!(cached.cpu, 500);
+        assert_eq!(cached.memory, 1024);
+    }
+
+    #[test]
+    fn filter_uses_precomputed_prefilter_state_when_present() {
+        use crate::framework::PreFilterPlugin;
+        let info = NodeInfo::new(node(1000, 4096));
+        let p = pod(600, 0);
+        let mut s = CycleState::new();
+        // Precompute once...
+        NodeResourcesFit.pre_filter(&mut s, &p);
+        // ...then Filter reuses it and still fits.
         assert!(NodeResourcesFit.filter(&mut s, &p, &info).is_success());
     }
 }

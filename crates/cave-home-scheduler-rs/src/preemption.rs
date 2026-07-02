@@ -11,11 +11,7 @@
 
 use crate::cache::NodeInfo;
 use crate::framework::{
-    CycleState, FilterFailureMap, FilterPlugin, MAX_NODE_SCORE, PostFilterPlugin, Status,
-};
-use crate::plugins::{
-    NodeAffinityFilter, NodeName, NodePorts, NodeResourcesFit, NodeUnschedulable, TaintToleration,
-    VolumeRestrictions,
+    CycleState, FilterFailureMap, PluginRegistry, PostFilterPlugin, Status,
 };
 use crate::types::Pod;
 
@@ -29,28 +25,129 @@ impl DefaultPreemption {
         Self
     }
 
-    /// Returns true if `pod` would fit on `info` once `victims` were removed.
-    fn fits_after_eviction(pod: &Pod, info: &NodeInfo, victims: &[Pod]) -> bool {
-        // Build a synthetic NodeInfo where victims are gone.
-        let mut hypo = info.clone();
-        for v in victims {
-            hypo.remove_pod(v);
+    /// Registry-driven preemption (upstream `DefaultPreemption.PostFilter` →
+    /// `FindCandidates` → `SelectVictimsOnNode`).
+    ///
+    /// Honours the caller's actual [`PluginRegistry`]: it runs every `PreFilter`
+    /// plugin once to seed [`CycleState`], then — as it removes victim pods from
+    /// a candidate node — drives each plugin's
+    /// [`PreFilterExtensions::remove_pod`](crate::framework::PreFilterExtensions::remove_pod)
+    /// hook so plugins that cached pod-level state stay consistent, before
+    /// re-running the registry's `Filter` plugins on the hypothetical node. This
+    /// is the spec-faithful interaction between preemption and the
+    /// `PreFilterExtensions` extension point. The [`PostFilterPlugin`] trait impl
+    /// delegates straight here.
+    #[must_use]
+    pub fn post_filter_with_registry(
+        &self,
+        pod: &Pod,
+        nodes: &[NodeInfo],
+        registry: &PluginRegistry,
+    ) -> (Option<String>, Status) {
+        let candidate_priority = pod.spec.priority;
+        // `best` tracks the lowest-cost candidate so far; cost = victim count.
+        let mut best: Option<(String, usize)> = None;
+
+        for info in nodes {
+            // Eviction candidates: strictly-lower-priority pods, cheapest first.
+            let mut victims: Vec<Pod> = info
+                .pods()
+                .iter()
+                .filter(|p| p.spec.priority < candidate_priority)
+                .cloned()
+                .collect();
+            victims.sort_by_key(|p| p.spec.priority);
+
+            // Greedily remove victims until the pod fits, replaying RemovePod
+            // into a fresh cycle state seeded by PreFilter each time so the
+            // hypothetical reflects exactly the removed set.
+            let mut chosen: Vec<Pod> = Vec::new();
+            let mut fits = Self::fits_with_registry(pod, info, &chosen, registry);
+            for v in victims {
+                if fits {
+                    break;
+                }
+                chosen.push(v);
+                fits = Self::fits_with_registry(pod, info, &chosen, registry);
+            }
+
+            if chosen.is_empty() || !fits {
+                continue;
+            }
+            let cost = chosen.len();
+            let better = match &best {
+                None => true,
+                Some((_, prev)) => cost < *prev,
+            };
+            if better {
+                best = Some((info.node().metadata.name.clone(), cost));
+            }
         }
+
+        match best {
+            Some((name, _)) => {
+                let reasons = vec![format!("nominated node {name} after preemption")];
+                (
+                    Some(name),
+                    Status {
+                        code: crate::framework::Code::Success,
+                        plugin: self.name().into(),
+                        reasons,
+                    },
+                )
+            }
+            None => (
+                None,
+                Status::unschedulable(self.name(), "preemption found no candidate node"),
+            ),
+        }
+    }
+
+    /// Hypothetical feasibility of `pod` on `info` once `victims` are removed,
+    /// evaluated through the registry's `PreFilter` (+ `RemovePod` extensions)
+    /// and `Filter` plugins. The cycle state is seeded once by `PreFilter`, then
+    /// each victim removal is replayed via every plugin's `RemovePod` hook so
+    /// cached pod-level state stays consistent before `Filter` runs on the
+    /// mutated node.
+    fn fits_with_registry(
+        pod: &Pod,
+        info: &NodeInfo,
+        victims: &[Pod],
+        registry: &PluginRegistry,
+    ) -> bool {
         let mut state = CycleState::new();
-        // Re-run the cheap filters that respect mutated NodeInfo state.
-        let filters: Vec<Box<dyn FilterPlugin>> = vec![
-            Box::new(NodeUnschedulable),
-            Box::new(NodeName),
-            Box::new(NodeResourcesFit),
-            Box::new(NodePorts),
-            Box::new(VolumeRestrictions),
-            Box::new(TaintToleration),
-            Box::new(NodeAffinityFilter),
-        ];
-        filters
+
+        // PreFilter seeds pod-level cycle state. A non-success PreFilter means
+        // the pod can never fit here regardless of eviction.
+        for plugin in registry.pre_filters() {
+            let (_, status) = plugin.pre_filter(&mut state, pod);
+            if !status.is_success() {
+                return false;
+            }
+        }
+
+        // Hypothetically remove each victim, driving the RemovePod extension so
+        // PreFilter plugins update their cached state for the mutated node.
+        let mut hypo = info.clone();
+        for victim in victims {
+            for plugin in registry.pre_filters() {
+                if let Some(ext) = plugin.pre_filter_extensions() {
+                    let status = ext.remove_pod(&mut state, pod, victim, &hypo);
+                    if !status.is_success() {
+                        return false;
+                    }
+                }
+            }
+            hypo.remove_pod(victim);
+        }
+
+        // Re-run the registry's Filter plugins on the hypothetical node.
+        registry
+            .filters()
             .iter()
             .all(|f| f.filter(&mut state, pod, &hypo).is_success())
     }
+
 }
 
 impl PostFilterPlugin for DefaultPreemption {
@@ -64,67 +161,14 @@ impl PostFilterPlugin for DefaultPreemption {
         pod: &Pod,
         nodes: &[NodeInfo],
         _filter_failures: &FilterFailureMap,
+        registry: &PluginRegistry,
     ) -> (Option<String>, Status) {
-        // 1. Pods with priority < pod.priority on a node are candidates.
-        // 2. For each node, evict the lowest-priority pods until the pod fits.
-        // 3. Return the first node where the eviction set is non-empty.
-        let candidate_priority = pod.spec.priority;
-        let mut best: Option<(String, i64)> = None;
-
-        for info in nodes {
-            // Order victims by ascending priority so we evict the cheapest ones first.
-            let mut victims: Vec<Pod> = info
-                .pods()
-                .iter()
-                .filter(|p| p.spec.priority < candidate_priority)
-                .cloned()
-                .collect();
-            victims.sort_by_key(|p| p.spec.priority);
-
-            let mut chosen: Vec<Pod> = Vec::new();
-            for v in victims {
-                if Self::fits_after_eviction(pod, info, &chosen) {
-                    break;
-                }
-                chosen.push(v);
-            }
-
-            if chosen.is_empty() {
-                continue;
-            }
-            if !Self::fits_after_eviction(pod, info, &chosen) {
-                continue;
-            }
-            // Lower cost = better candidate; cost = (#victims, max victim priority).
-            let cost = chosen.len() as i64;
-            let better = match &best {
-                None => true,
-                Some((_, prev)) => cost < *prev,
-            };
-            if better {
-                best = Some((info.node().metadata.name.clone(), cost));
-            }
-        }
-
-        match best {
-            Some((name, _)) => (
-                Some(name.clone()),
-                Status {
-                    code: crate::framework::Code::Success,
-                    plugin: self.name().into(),
-                    reasons: vec![format!("nominated node {name} after preemption")],
-                },
-            ),
-            None => (
-                None,
-                Status::unschedulable(self.name(), "preemption found no candidate node"),
-            ),
-        }
+        // Delegate to the registry-driven path: it runs the profile's real
+        // PreFilter (+ PreFilterExtensions) and Filter plugins while greedily
+        // evicting the cheapest lower-priority victims until the pod fits.
+        self.post_filter_with_registry(pod, nodes, registry)
     }
 }
-
-// Re-export MAX_NODE_SCORE so the `_ = MAX_NODE_SCORE` is not dead.
-const _: i64 = MAX_NODE_SCORE;
 
 #[cfg(test)]
 mod tests {
@@ -166,11 +210,13 @@ mod tests {
         info.add_pod(victim);
         let incoming = pod("important", 100, 500);
         let mut s = CycleState::new();
+        let reg = crate::plugins::default_registry();
         let (nominee, status) = DefaultPreemption::new().post_filter(
             &mut s,
             &incoming,
             &[info],
             &FilterFailureMap::new(),
+            &reg,
         );
         assert!(status.is_success(), "{:?}", status);
         assert_eq!(nominee.as_deref(), Some("n1"));
@@ -183,26 +229,146 @@ mod tests {
         info.add_pod(stayer);
         let incoming = pod("important", 100, 500);
         let mut s = CycleState::new();
+        let reg = crate::plugins::default_registry();
         let (nominee, status) = DefaultPreemption::new().post_filter(
             &mut s,
             &incoming,
             &[info],
             &FilterFailureMap::new(),
+            &reg,
         );
+        assert!(nominee.is_none());
+        assert!(!status.is_success());
+    }
+
+    // ---------- PreFilterExtensions (AddPod/RemovePod) during preemption ----
+
+    use crate::framework::{
+        FilterPlugin, PluginRegistry, PreFilterExtensions, PreFilterPlugin, PreFilterResult, Status,
+    };
+    use std::sync::Arc;
+
+    /// A PreFilter plugin that caches, in cycle state, how many *blocking* pods
+    /// sit on each node (here: pods named "victim"). Its Filter rejects any node
+    /// whose cached blocking-count is non-zero. The count is only ever brought
+    /// down by the RemovePod extension — so the node becomes feasible *only* if
+    /// preemption drives RemovePod for the victim. A naive re-filter that
+    /// rebuilt state from scratch would never consult this hook and would keep
+    /// the node infeasible, so this isolates the extension path.
+    #[derive(Default)]
+    struct BlockingCount;
+
+    const BLOCK_KEY: &str = "BlockingCount";
+
+    impl PreFilterPlugin for BlockingCount {
+        fn name(&self) -> &'static str {
+            "BlockingCount"
+        }
+        fn pre_filter(
+            &self,
+            state: &mut CycleState,
+            _: &Pod,
+        ) -> (Option<PreFilterResult>, Status) {
+            // Seed: assume one blocking pod is present (the victim).
+            state.write(BLOCK_KEY, 1_i64);
+            (None, Status::success())
+        }
+        fn pre_filter_extensions(&self) -> Option<&dyn PreFilterExtensions> {
+            Some(self)
+        }
+    }
+
+    impl PreFilterExtensions for BlockingCount {
+        fn add_pod(&self, state: &mut CycleState, _: &Pod, _: &Pod, _: &NodeInfo) -> Status {
+            let n = state.read::<i64>(BLOCK_KEY).copied().unwrap_or(0);
+            state.write(BLOCK_KEY, n + 1);
+            Status::success()
+        }
+        fn remove_pod(
+            &self,
+            state: &mut CycleState,
+            _: &Pod,
+            pod_to_remove: &Pod,
+            _: &NodeInfo,
+        ) -> Status {
+            if pod_to_remove.metadata.name == "victim" {
+                let n = state.read::<i64>(BLOCK_KEY).copied().unwrap_or(0);
+                state.write(BLOCK_KEY, n - 1);
+            }
+            Status::success()
+        }
+    }
+
+    impl FilterPlugin for BlockingCount {
+        fn name(&self) -> &'static str {
+            "BlockingCount"
+        }
+        fn filter(&self, state: &mut CycleState, _: &Pod, _: &NodeInfo) -> Status {
+            let n = state.read::<i64>(BLOCK_KEY).copied().unwrap_or(0);
+            if n > 0 {
+                Status::unschedulable("BlockingCount", "blocking pods present")
+            } else {
+                Status::success()
+            }
+        }
+    }
+
+    #[test]
+    fn preemption_drives_remove_pod_extension_to_make_node_feasible() {
+        // n1 has plenty of CPU, but the BlockingCount PreFilter makes it
+        // infeasible until the victim is removed *via the RemovePod extension*.
+        let mut info = node("n1", 10_000);
+        let victim = pod("victim", 0, 100);
+        info.add_pod(victim);
+        let incoming = pod("important", 100, 100);
+
+        let reg = PluginRegistry::builder()
+            .with_pre_filter(Arc::new(BlockingCount))
+            .with_filter(Arc::new(BlockingCount))
+            .build();
+
+        let (nominee, status) =
+            DefaultPreemption::new().post_filter_with_registry(&incoming, &[info], &reg);
+        assert!(status.is_success(), "{status:?}");
+        assert_eq!(nominee.as_deref(), Some("n1"));
+    }
+
+    #[test]
+    fn preemption_via_registry_fails_when_no_victim_unblocks_node() {
+        // Same gate, but the only pod is a *higher*-priority stayer that is not
+        // an eviction candidate, so RemovePod never runs and the node stays
+        // infeasible.
+        let mut info = node("n1", 10_000);
+        let stayer = pod("stayer", 500, 100); // priority 500 > incoming 100
+        info.add_pod(stayer);
+        let incoming = pod("important", 100, 100);
+
+        let reg = PluginRegistry::builder()
+            .with_pre_filter(Arc::new(BlockingCount))
+            .with_filter(Arc::new(BlockingCount))
+            .build();
+
+        let (nominee, status) =
+            DefaultPreemption::new().post_filter_with_registry(&incoming, &[info], &reg);
         assert!(nominee.is_none());
         assert!(!status.is_success());
     }
 
     #[test]
     fn preemption_skips_nodes_where_eviction_still_does_not_fit() {
-        let info = node("n1", 100);
+        // n1 caps at 100m CPU; a low-priority victim holds 50m. Even after
+        // evicting it the 9000m incoming pod cannot fit, so no nomination.
+        let mut info = node("n1", 100);
+        info.add_pod(pod("victim", 0, 50));
         let incoming = pod("important", 100, 9000);
         let mut s = CycleState::new();
+        let reg = crate::plugins::default_registry();
         let (nominee, _) = DefaultPreemption::new().post_filter(
             &mut s,
             &incoming,
             &[info],
             &FilterFailureMap::new(),
+            &reg,
         );
         assert!(nominee.is_none());
     }

@@ -32,6 +32,18 @@ pub enum PodEvent {
 /// here serialises the same callbacks for a single subscriber.
 pub type EventStream = mpsc::UnboundedReceiver<PodEvent>;
 
+/// Upstream: the Node informer's `Add/Update/Delete` handlers
+/// (`pkg/scheduler/eventhandlers.go::addNodeToCache` et al.).
+#[derive(Debug, Clone)]
+pub enum NodeEvent {
+    Add(Node),
+    Update { old: Node, new: Node },
+    Delete(Node),
+}
+
+/// Concrete stream type used by [`SchedulerSource::watch_nodes`].
+pub type NodeEventStream = mpsc::UnboundedReceiver<NodeEvent>;
+
 /// Errors surfaced by source / sink implementations.
 #[derive(Debug, thiserror::Error)]
 pub enum SourceSinkError {
@@ -56,6 +68,9 @@ pub trait SchedulerSource: Send + Sync {
     async fn list_nodes(&self) -> Result<Vec<Node>>;
     /// Streaming pod events (Add / Update / Delete).
     async fn watch_pods(&self) -> Result<EventStream>;
+    /// Streaming node events (Add / Update / Delete). The event loop folds
+    /// these into the cache and wakes pods waiting on node changes.
+    async fn watch_nodes(&self) -> Result<NodeEventStream>;
 }
 
 /// Sink for scheduling decisions.
@@ -85,6 +100,8 @@ struct InMemorySourceInner {
     nodes: Vec<Node>,
     pending: VecDeque<PodEvent>,
     subscribers: Vec<mpsc::UnboundedSender<PodEvent>>,
+    node_pending: VecDeque<NodeEvent>,
+    node_subscribers: Vec<mpsc::UnboundedSender<NodeEvent>>,
 }
 
 impl InMemorySource {
@@ -102,7 +119,21 @@ impl InMemorySource {
     }
 
     pub fn add_node(&self, node: Node) {
-        self.inner.lock().nodes.push(node);
+        let mut g = self.inner.lock();
+        g.nodes.push(node.clone());
+        let ev = NodeEvent::Add(node);
+        g.node_pending.push_back(ev.clone());
+        g.node_subscribers.retain(|s| s.send(ev.clone()).is_ok());
+    }
+
+    pub fn delete_node(&self, name: &str) {
+        let mut g = self.inner.lock();
+        if let Some(idx) = g.nodes.iter().position(|n| n.metadata.name == name) {
+            let n = g.nodes.remove(idx);
+            let ev = NodeEvent::Delete(n);
+            g.node_pending.push_back(ev.clone());
+            g.node_subscribers.retain(|s| s.send(ev.clone()).is_ok());
+        }
     }
 
     pub fn update_pod(&self, new: Pod) {
@@ -159,6 +190,19 @@ impl SchedulerSource for InMemorySource {
         for ev in backlog {
             // Bounded by current backlog; UnboundedSender::send only fails if
             // the receiver was dropped, which cannot happen yet.
+            let _ = tx.send(ev);
+        }
+        Ok(rx)
+    }
+
+    async fn watch_nodes(&self) -> Result<NodeEventStream> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let backlog: Vec<NodeEvent> = {
+            let mut g = self.inner.lock();
+            g.node_subscribers.push(tx.clone());
+            g.node_pending.iter().cloned().collect()
+        };
+        for ev in backlog {
             let _ = tx.send(ev);
         }
         Ok(rx)

@@ -6,10 +6,17 @@
 
 use std::sync::Arc;
 
+use std::sync::Mutex;
+use std::time::Duration;
+
+use tokio::sync::Notify;
+
+use cave_home_scheduler_rs::plugins::NodeResourcesFit;
 use cave_home_scheduler_rs::{
-    Container, InMemorySink, InMemorySource, Node, NodeSelector, NodeSelectorOperator,
-    NodeSelectorRequirement, NodeSelectorTerm, ObjectMeta, Pod, PodSpec, Quantity, ResourceName,
-    Scheduler, SchedulingQueue, Taint, TaintEffect, Toleration, TolerationOperator,
+    Container, CycleState, InMemorySink, InMemorySource, Node, NodeSelector, NodeSelectorOperator,
+    NodeSelectorRequirement, NodeSelectorTerm, ObjectMeta, PluginRegistry, Pod, PodSpec,
+    PostBindPlugin, Quantity, ReservePlugin, ResourceName, Scheduler, SchedulingQueue, Status,
+    Taint, TaintEffect, Toleration, TolerationOperator,
 };
 
 fn node(name: &str, cpu_m: i64, mem_b: i64) -> Node {
@@ -240,6 +247,122 @@ async fn end_to_end_backoff_flush_requeues_unschedulable_pod() {
     let outcome = sched.run_once().await.unwrap();
     assert!(outcome.is_some(), "flushed pod should be popped and retried");
     assert_eq!(outcome.unwrap().pod_full_name, "default/huge");
+}
+
+// ---------- Event-driven Scheduler::run loop (informer-driven e2e) ----------
+
+/// Poll `cond` until it holds or `budget` elapses. Used to await the live
+/// `run()` loop's asynchronous bind without a fixed sleep.
+async fn wait_until(cond: impl Fn() -> bool, budget: Duration) -> bool {
+    let start = std::time::Instant::now();
+    while start.elapsed() < budget {
+        if cond() {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    cond()
+}
+
+/// Records each `reserve` call so a test can confirm the binding cycle ran.
+struct RecReserve(Arc<Mutex<Vec<String>>>);
+impl ReservePlugin for RecReserve {
+    fn name(&self) -> &'static str {
+        "RecReserve"
+    }
+    fn reserve(&self, _: &mut CycleState, pod: &Pod, node: &str) -> Status {
+        self.0
+            .lock()
+            .unwrap()
+            .push(format!("reserve:{}:{node}", pod.metadata.name));
+        Status::success()
+    }
+    fn unreserve(&self, _: &mut CycleState, _: &Pod, _: &str) {}
+}
+
+/// Records each `post_bind` call so a test can confirm the cycle completed.
+struct RecPostBind(Arc<Mutex<Vec<String>>>);
+impl PostBindPlugin for RecPostBind {
+    fn name(&self) -> &'static str {
+        "RecPostBind"
+    }
+    fn post_bind(&self, _: &mut CycleState, pod: &Pod, node: &str) {
+        self.0
+            .lock()
+            .unwrap()
+            .push(format!("postbind:{}:{node}", pod.metadata.name));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn run_loop_binds_pod_via_pod_informer_and_full_binding_cycle() {
+    // Drive the *real* event loop end to end: a pod arrives purely through the
+    // pod-watch stream, is popped by the run() loop, scheduled, and driven all
+    // the way through Reserve → … → Bind → PostBind onto a preloaded node.
+    let src = Arc::new(InMemorySource::new());
+    let sink = Arc::new(InMemorySink::new());
+    let log = Arc::new(Mutex::new(Vec::<String>::new()));
+    let reg = PluginRegistry::builder()
+        .with_filter(Arc::new(NodeResourcesFit))
+        .with_reserve(Arc::new(RecReserve(log.clone())))
+        .with_post_bind(Arc::new(RecPostBind(log.clone())))
+        .build();
+    let sched = Arc::new(Scheduler::new(src.clone(), sink.clone()).with_registry(reg));
+    // Node present up front so the first scheduling attempt fits deterministically.
+    sched.cache.add_node(node("n1", 1000, 4096));
+    // Pod enters only via the watch stream (the pod informer).
+    src.add_pod(pod("live", 100, 256));
+
+    let cancel = Arc::new(Notify::new());
+    let handle = tokio::spawn(sched.clone().run(cancel.clone()));
+    let bound = wait_until(|| !sink.binds().is_empty(), Duration::from_secs(5)).await;
+    cancel.notify_one();
+    let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+
+    assert!(bound, "pod was not bound through the run() loop");
+    assert_eq!(sink.binds(), vec![("default/live".into(), "n1".into())]);
+    let log = log.lock().unwrap().clone();
+    assert!(
+        log.contains(&"reserve:live:n1".to_string()),
+        "Reserve must run in the live binding cycle: {log:?}"
+    );
+    assert!(
+        log.contains(&"postbind:live:n1".to_string()),
+        "PostBind must run after the live bind: {log:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn run_loop_node_informer_unblocks_pending_pod() {
+    // A pod arrives before any node exists: the run() loop finds it
+    // unschedulable and parks it. When a node later appears through the *node*
+    // informer, MoveAllToActiveOrBackoffQueue + the backoff flush must wake the
+    // pod and bind it — with no further input.
+    let src = Arc::new(InMemorySource::new());
+    let sink = Arc::new(InMemorySink::new());
+    let sched = Arc::new(Scheduler::new(src.clone(), sink.clone()));
+    src.add_pod(pod("waiter", 100, 256));
+
+    let cancel = Arc::new(Notify::new());
+    let handle = tokio::spawn(sched.clone().run(cancel.clone()));
+    // Let the loop process the pod and park it as unschedulable.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(
+        sink.binds().is_empty(),
+        "pod must not bind while no node exists"
+    );
+
+    // The node informer event re-activates the pending pod.
+    src.add_node(node("late-node", 1000, 4096));
+    let bound = wait_until(|| !sink.binds().is_empty(), Duration::from_secs(5)).await;
+    cancel.notify_one();
+    let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+
+    assert!(bound, "node informer did not unblock the pending pod");
+    assert_eq!(
+        sink.binds(),
+        vec![("default/waiter".into(), "late-node".into())]
+    );
 }
 
 #[tokio::test]

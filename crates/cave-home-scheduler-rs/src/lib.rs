@@ -13,18 +13,36 @@
 //! * Score plugins  — `NodeResourcesBalancedAllocation`, `LeastRequested`,
 //!   `ImageLocality`.
 //! * `DefaultPreemption` PostFilter plugin (priority-based).
-//! * Priority `SchedulingQueue` with active + backoff sub-queues.
+//! * Priority `SchedulingQueue` with active + backoff sub-queues, an
+//!   `unschedulablePods` set, event-driven `MoveAllToActiveOrBackoffQueue`
+//!   (driven by `ClusterEvent`s), leftover flush, and a blocking `pop_wait`.
 //! * `SchedulerCache` + `NodeInfo` aggregation + assumed-pod tracking.
-//! * `scheduleOne` cycle plus a top-level `Scheduler` struct that wires
-//!   it to `SchedulerSource` / `SchedulerSink` traits.
+//! * The full framework extension chain (all 9 points) — `PreFilter → Filter →
+//!   PostFilter → PreScore → Score(+`NormalizeScore`)` (scheduling) and
+//!   `Reserve → Permit → PreBind → Bind → PostBind` with `Unreserve` rollback
+//!   (binding). `Bind` is a real extension point: registered `BindPlugin`s run
+//!   in order, the first non-`Skip` owns the bind, else the built-in
+//!   `DefaultBinder` (the `SchedulerSink` Binding POST) handles it.
+//! * Event-driven `Scheduler::run` loop with pod/node informers over the
+//!   `SchedulerSource` watch streams and a periodic backoff/leftover flush,
+//!   plus the legacy `sync`/`run_once` poll driver (which now also drives the
+//!   full binding cycle).
+//! * `SchedulerConfig` — `percentageOfNodesToScore` + adaptive
+//!   `numFeasibleNodesToFind`.
+//!
+//! The framework chain is complete across both cycles, including the queue's
+//! `PreEnqueue` admission gate, the single-profile `QueueSort` (`Less`)
+//! ordering plugin, `PreFilterExtensions` (`AddPod`/`RemovePod`) driven by
+//! preemption, and the timed `Permit` `Wait` disposition with its
+//! allow/reject/timeout `WaitingPod` gate.
 //!
 //! Phase 2b deferred (see `parity.manifest.toml`): `PodTopologySpread`,
-//! inter-pod affinity, preferred node affinity, custom plugin registry,
-//! multiple profiles, `Reserve`/`Permit`/`PreBind` extension points,
-//! image-size weighted `ImageLocality`, lower-priority victim
+//! inter-pod affinity, preferred node affinity, multiple profiles,
+//! `QueueingHints`, image-size weighted `ImageLocality`, lower-priority victim
 //! minimisation in `DefaultPreemption`.
 
 pub mod cache;
+pub mod config;
 pub mod framework;
 pub mod plugins;
 pub mod preemption;
@@ -35,15 +53,21 @@ pub mod source_sink;
 pub mod types;
 
 pub use cache::{NodeInfo, SchedulerCache};
-pub use framework::{CycleState, PluginRegistry, RegistryBuilder, Status};
-pub use plugins::default_registry;
+pub use framework::{
+    ActionType, BindPlugin, ClusterEvent, Code, CycleState, FilterPlugin, Gvk, NodeScore,
+    PermitDecision, PermitPlugin, PluginRegistry, PostBindPlugin, PostFilterPlugin, PreBindPlugin,
+    PreEnqueuePlugin, PreFilterExtensions, PreFilterPlugin, PreFilterResult, PreScorePlugin,
+    QueueSortPlugin, RegistryBuilder, ReservePlugin, ScorePlugin, Status, WaitingPod,
+};
+pub use plugins::{default_registry, PrioritySort};
 pub use preemption::DefaultPreemption;
 pub use queue::{PriorityQueue, QueuedPodInfo, SchedulingQueue};
-pub use schedule_one::{schedule_one, ScheduleResult};
+pub use config::SchedulerConfig;
+pub use schedule_one::{schedule_one, schedule_one_limited, ScheduleResult};
 pub use scheduler::{CycleOutcome, Scheduler};
 pub use source_sink::{
-    EventStream, InMemorySink, InMemorySource, PodEvent, SchedulerSink, SchedulerSource,
-    SourceSinkError,
+    EventStream, InMemorySink, InMemorySource, NodeEvent, NodeEventStream, PodEvent, SchedulerSink,
+    SchedulerSource, SourceSinkError,
 };
 pub use types::{
     Affinity, Container, ContainerPort, HostPathSource, Node, NodeAffinity, NodeSelector,
