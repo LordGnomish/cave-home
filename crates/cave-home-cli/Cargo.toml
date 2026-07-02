@@ -25,7 +25,9 @@ cave-home-tesla = { path = "../cave-home-tesla" }
 # Pure model/colour/scene types only — the CLI does not link the async
 # transport, so `runtime` is off (keeps reqwest out of the cavehomectl build).
 cave-home-hue = { path = "../cave-home-hue", default-features = false }
+cave-home-jarvis = { path = "../cave-home-jarvis" }
 cave-home-unifi = { path = "../cave-home-unifi" }
+cave-home-voice = { path = "../cave-home-voice" }
 tokio = { version = "1", features = ["rt-multi-thread"] }
 
 [dev-dependencies]

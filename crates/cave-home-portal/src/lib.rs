@@ -62,6 +62,7 @@ pub mod cluster;
 pub mod dashboard;
 pub mod energy;
 pub mod hue;
+pub mod jarvis;
 pub mod label;
 pub mod metrics;
 pub mod theme;
@@ -78,6 +79,7 @@ pub use energy::{
     ModeOption, SocBar,
 };
 pub use hue::{HueBridgeStatus, HueLightRow, HuePage, HueSceneChip};
+pub use jarvis::{Interaction, JarvisPage, MicStatus, UnderstoodBy};
 pub use label::{Lang, Phrase};
 pub use metrics::{MetricsPage, NodeUsageTile, WorkloadUsageTile};
 pub use theme::{Breakpoint, Mode, Theme, ThemeError};

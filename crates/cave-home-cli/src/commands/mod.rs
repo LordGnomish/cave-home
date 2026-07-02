@@ -29,6 +29,7 @@ pub mod status;
 pub mod energy;
 pub mod free_home;
 pub mod hue;
+pub mod jarvis;
 pub mod knx;
 pub mod solar;
 pub mod unifi;

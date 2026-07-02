@@ -10,6 +10,7 @@ members = [
     "crates/cave-home-integrations",
     "crates/cave-home-camera",
     "crates/cave-home-voice",
+    "crates/cave-home-jarvis",
     "crates/cave-home-portal",
     "crates/cave-home-orchestration",
     "crates/cave-home-containerd-rs",

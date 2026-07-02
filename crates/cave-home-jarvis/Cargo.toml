@@ -1,0 +1,39 @@
+[package]
+name              = "cave-home-jarvis"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-jarvis — local-first voice-assistant pipeline (OpenJarvis-class, clean-room): wake-word spotting (DTW keyword matcher), STT/TTS engine seams (whisper.cpp / piper-class), a self-contained local-LLM gateway (Ollama chat + tool-calling), intent dispatch into cave-home services, multi-room device context, and per-speaker voice profiles. All decisions are first-party and tested through injected audio / transport mocks; the ML model bindings are the only Phase-1b seam."
+
+[package.metadata.cave-home]
+upstream    = "OpenJarvis (github.com/Maximilianvictor/OpenJarvis) pipeline shape + openWakeWord (Apache-2.0) keyword-spotting approach + whisper.cpp / piper engine surfaces + Ollama /api/chat tool-calling protocol"
+port-method = "spec-based (first-party clean-room from the documented pipeline + protocol shapes)"
+adr         = "ADR-024"
+
+# Reference upstreams — no commit is pinned and no source was copied. cave-home
+# ships Apache-2.0 only; the wake/STT/LLM/TTS pipeline mirrors OpenJarvis's
+# *documented* stage graph and openWakeWord's *approach*, but every line here is
+# a first-party clean-room implementation (Charter §6.1, ADR-002, ADR-024).
+[package.metadata.upstream.openjarvis]
+repo    = "github.com/OpenJarvis (pipeline architecture)"
+release = "voice-assistant stage graph"
+subpath = "wake -> stt -> dispatch -> tts"
+
+[dependencies]
+cave-home-voice = { path = "../cave-home-voice" }
+async-trait = "0.1"
+parking_lot = "0.12"
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+thiserror   = "2"
+tokio       = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
+tracing     = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "test-util"] }
+
+[lints]
+workspace = true

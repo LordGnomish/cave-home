@@ -12,9 +12,9 @@ use clap::{Arg, ArgAction, Command};
 
 use cave_home_cli::commands::{
     alarm, automation, calendar, camera, cover, destroy, device, display, doorbell, energy,
-    free_home, garden, get, history, household, hue, hvac, init, join, knx, lights, lock, matter,
-    mobile, music, notify, pool, room, scene, solar, status, top, unifi, vacuum, voice, water,
-    wellness, zigbee, zwave,
+    free_home, garden, get, history, household, hue, hvac, init, jarvis, join, knx, lights, lock,
+    matter, mobile, music, notify, pool, room, scene, solar, status, top, unifi, vacuum, voice,
+    water, wellness, zigbee, zwave,
 };
 
 fn build_cli() -> Command {
@@ -60,6 +60,7 @@ fn build_cli() -> Command {
         .subcommand(garden::cmd())
         .subcommand(pool::cmd())
         .subcommand(voice::cmd())
+        .subcommand(jarvis::cmd())
         .subcommand(music::cmd())
         .subcommand(notify::cmd())
         .subcommand(display::cmd())
@@ -118,6 +119,7 @@ where
         Some(("garden", _)) => garden::run(),
         Some(("pool", _)) => pool::run(),
         Some(("voice", _)) => voice::run(),
+        Some(("jarvis", _)) => jarvis::run(),
         Some(("music", _)) => music::run(),
         Some(("notify", _)) => notify::run(),
         Some(("display", _)) => display::run(),
@@ -172,6 +174,7 @@ mod tests {
             "garden",
             "pool",
             "voice",
+            "jarvis",
             "music",
             "notify",
             "display",
