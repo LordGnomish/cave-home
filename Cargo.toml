@@ -61,6 +61,7 @@ members = [
     "crates/cave-home-solar-sunspec",
     "crates/cave-home-solar-hoymiles",
     "crates/cave-home-solar-forecast",
+    "crates/cave-home-tesla",
     "crates/cave-home-cli",
     "crates/cave-home-binary",
 ]

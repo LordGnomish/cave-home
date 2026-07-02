@@ -11,9 +11,10 @@
 use clap::{Arg, ArgAction, Command};
 
 use cave_home_cli::commands::{
-    alarm, automation, calendar, camera, cover, destroy, device, display, doorbell, free_home,
-    garden, history, household, hue, hvac, init, join, knx, lights, lock, matter, mobile, music,
-    notify, pool, room, scene, solar, status, top, unifi, vacuum, voice, water, wellness, zigbee,
+    alarm, automation, calendar, camera, cover, destroy, device, display, doorbell, energy,
+    free_home, garden, history, household, hue, hvac, init, join, knx, lights, lock, matter, mobile,
+    music, notify, pool, room, scene, solar, status, top, unifi, vacuum, voice, water, wellness,
+    zigbee,
     zwave,
 };
 
@@ -41,6 +42,7 @@ fn build_cli() -> Command {
         .subcommand(top::cmd())
         // Cross-agent stubs — F1-F4 fill these:
         .subcommand(solar::cmd())
+        .subcommand(energy::cmd())
         .subcommand(unifi::cmd())
         .subcommand(hue::cmd())
         .subcommand(knx::cmd())
@@ -97,6 +99,7 @@ where
         Some(("top", sub)) => top::run(sub, verbose),
         // Cross-agent stubs use the simpler signature.
         Some(("solar", _)) => solar::run(),
+        Some(("energy", _)) => energy::run(),
         Some(("unifi", _)) => unifi::run(),
         Some(("hue", _)) => hue::run(),
         Some(("knx", _)) => knx::run(),
@@ -150,6 +153,7 @@ mod tests {
             "automation",
             "scene",
             "solar",
+            "energy",
             "unifi",
             "hue",
             "knx",

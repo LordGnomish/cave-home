@@ -13,5 +13,37 @@ upstream    = "k3s-io/kine"
 port-method = "spec-based (behavioural reimplementation of etcd-MVCC + kine semantics; NOT verbatim line-by-line)"
 phase       = "orchestration-phase-3"
 
+[features]
+# The pure decision core has no deps; storage backends and the gRPC transport
+# are opt-in so the default build (and the single binary) stays lean. SQLite is
+# k3s's default datastore, so it is on by default.
+default  = ["sqlite"]
+sqlite   = ["dep:rusqlite"]
+# The etcd gRPC transport (tonic). Needs a backend to serve; defaults to SQLite.
+grpc     = ["dep:tonic", "dep:prost", "dep:tokio", "dep:tokio-stream", "dep:async-trait", "dep:async-stream", "dep:tonic-build", "sqlite"]
+# External-datastore drivers: the real Postgres / MySQL backends kine offers as
+# an alternative to embedded SQLite. Live tests are gated on KINE_PG_DSN /
+# KINE_MYSQL_DSN (kine's own CI matrix needs a running server too).
+postgres = ["dep:tokio-postgres", "dep:tokio"]
+mysql    = ["dep:mysql_async", "dep:tokio"]
+
+[dependencies]
+# Embedded, bundled SQLite — compiled into the binary, no server, one file.
+rusqlite     = { version = "0.32", features = ["bundled"], optional = true }
+# etcd gRPC transport stack (all cached; pure-Rust, single-binary friendly).
+tonic        = { version = "0.12", optional = true }
+prost        = { version = "0.13", optional = true }
+tokio        = { version = "1", features = ["rt-multi-thread", "sync", "macros", "net", "time"], optional = true }
+tokio-stream = { version = "0.1", features = ["net"], optional = true }
+async-trait  = { version = "0.1", optional = true }
+async-stream = { version = "0.3", optional = true }
+# External SQL datastore drivers (pure-Rust, cached). No TLS feature pulled in —
+# kine talks to a local/sidecar database over a trusted link.
+tokio-postgres = { version = "0.7", optional = true }
+mysql_async    = { version = "0.34", optional = true, default-features = false, features = ["minimal"] }
+
+[build-dependencies]
+tonic-build = { version = "0.12", optional = true }
+
 [lints]
 workspace = true

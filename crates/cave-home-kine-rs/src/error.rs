@@ -51,6 +51,11 @@ pub enum KineError {
     InvalidLeaseId,
     /// A non-positive TTL was supplied when granting a lease.
     InvalidTtl { ttl_seconds: i64 },
+    /// The storage backend (SQL driver / connection / query) failed. Carries
+    /// the driver's message. This variant only arises once a real backend is
+    /// wired in — a pure decision-core operation never produces it; the
+    /// apiserver maps it onto an etcd `Internal` gRPC status.
+    Backend { message: String },
 }
 
 impl core::fmt::Display for KineError {
@@ -86,6 +91,7 @@ impl core::fmt::Display for KineError {
             Self::InvalidTtl { ttl_seconds } => {
                 write!(f, "lease TTL {ttl_seconds}s must be positive")
             }
+            Self::Backend { message } => write!(f, "etcdserver: backend: {message}"),
         }
     }
 }

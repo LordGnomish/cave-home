@@ -202,6 +202,74 @@ mod tests {
     }
 
     #[test]
+    fn compaction_keeps_only_the_latest_generation_after_a_recreate() {
+        // A key's full life-cycle: created, deleted (tombstone), recreated.
+        // Compacting at the recreate revision must drop BOTH the superseded
+        // first value and its tombstone, leaving only the live new generation.
+        let mut s = Store::new();
+        s.create(b"k", b"v1", 0).unwrap(); // rev 1  PUT (gen 1)
+        s.delete(b"k").unwrap(); //           rev 2  DELETE (tombstone)
+        s.create(b"k", b"v2", 0).unwrap(); // rev 3  PUT (gen 2, the live one)
+        let report = compact(&mut s, 3).unwrap();
+        // Only the rev-3 live row survives; rev 1 and rev 2 are gone.
+        assert_eq!(report.remaining, 1);
+        assert_eq!(report.removed, 2);
+        let resp = execute(&s, &RangeRequest::key(b"k")).unwrap();
+        assert_eq!(resp.kvs.len(), 1);
+        assert_eq!(resp.kvs[0].value, b"v2");
+        assert_eq!(resp.kvs[0].create_revision, 3, "the new generation's create rev");
+    }
+
+    #[test]
+    fn compaction_report_revision_equals_the_target() {
+        let mut s = Store::new();
+        s.create(b"k", b"v1", 0).unwrap();
+        s.update(b"k", b"v2", 0).unwrap();
+        s.update(b"k", b"v3", 0).unwrap();
+        let report = compact(&mut s, 2).unwrap();
+        assert_eq!(report.compacted, 2, "compact returns the floor it set");
+    }
+
+    #[test]
+    fn re_compaction_at_the_same_revision_is_idempotently_rejected() {
+        // etcd treats a second compact at (or below) the floor as ErrCompacted:
+        // the work is already done, so the call is rejected rather than redone.
+        let mut s = Store::new();
+        s.create(b"k", b"v1", 0).unwrap();
+        s.update(b"k", b"v2", 0).unwrap();
+        s.update(b"k", b"v3", 0).unwrap();
+        let first = compact(&mut s, 2).unwrap();
+        assert_eq!(first.compacted, 2);
+        let removed_first = first.removed;
+        // A repeat at the same revision is rejected and removes nothing more.
+        assert_eq!(
+            compact(&mut s, 2),
+            Err(KineError::CompactionNotForward { requested: 2, current: 2 })
+        );
+        // And the surviving state is untouched by the rejected second call.
+        assert!(removed_first >= 1);
+        assert_eq!(execute(&s, &RangeRequest::key(b"k")).unwrap().kvs[0].value, b"v3");
+    }
+
+    #[test]
+    fn compaction_below_the_existing_floor_is_rejected() {
+        let mut s = Store::new();
+        for v in [b"v1", b"v2", b"v3", b"v4"] {
+            if v == b"v1" {
+                s.create(b"k", v, 0).unwrap();
+            } else {
+                s.update(b"k", v, 0).unwrap();
+            }
+        } // revs 1..=4
+        compact(&mut s, 3).unwrap();
+        // A compact to rev 2, now below the floor of 3, is rejected (not forward).
+        assert_eq!(
+            compact(&mut s, 2),
+            Err(KineError::CompactionNotForward { requested: 2, current: 3 })
+        );
+    }
+
+    #[test]
     fn current_revision_is_unaffected_by_compaction() {
         let mut s = Store::new();
         s.create(b"k", b"v", 0).unwrap();

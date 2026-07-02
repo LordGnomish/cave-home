@@ -40,6 +40,12 @@ pub struct WatchEvent {
     pub key: Vec<u8>,
     /// The new value (empty for a `Delete`).
     pub value: Vec<u8>,
+    /// The value the key held *before* this change — etcd's `prev_kv` value.
+    /// Empty for a brand-new create (there is no previous). Only the SQL backend
+    /// (which carries the `old_value` column) populates this; the pure in-memory
+    /// model leaves it empty, as `prev_kv` is a transport concern, not a
+    /// semantic one.
+    pub prev_value: Vec<u8>,
     /// The revision at which the change occurred (`mod_revision`).
     pub revision: Revision,
     /// The generation's create revision, so a consumer can detect re-creates.
@@ -81,6 +87,9 @@ pub fn watch(store: &Store, filter: &RangeRequest, start_revision: Revision) -> 
             kind: if r.deleted { EventKind::Delete } else { EventKind::Put },
             key: r.key.clone(),
             value: r.value.clone(),
+            // The pure model does not track old_value; prev_kv is filled by the
+            // SQL backend's after-query (see `SqliteStore::watch_after`).
+            prev_value: Vec::new(),
             revision: r.mod_revision,
             create_revision: r.create_revision,
         })

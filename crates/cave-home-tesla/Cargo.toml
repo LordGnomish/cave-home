@@ -1,0 +1,38 @@
+[package]
+name              = "cave-home-tesla"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-tesla — Tesla Fleet API + Powerwall local-gateway energy adapter (OAuth2 PKCE auth, rate-limited client, energy_sites surface, EnergyProvider domain model); first-party clean-room implementation from Tesla's public Fleet API spec + community Powerwall gateway docs"
+
+[package.metadata.cave-home]
+upstream    = "Tesla Fleet API public spec (developer.tesla.com) + Tesla Owner API community docs (teslaapi.io) + Powerwall local Gateway API (community reverse-engineered, public) + pyPowerwall/TeslaPy semantics"
+port-method = "spec-based (first-party clean-room from public API shape)"
+
+# Reference upstreams — no commit is pinned. cave-home ships Apache-2.0 only;
+# the energy semantics mirror Tesla's *documented* Fleet API and the public
+# Powerwall gateway surface, but every line here is a first-party clean-room
+# implementation. No upstream source (Python SDKs are variously licensed) was
+# copied (Charter §6.1, ADR-002).
+[package.metadata.upstream.fleet-api]
+repo    = "developer.tesla.com/docs/fleet-api"
+release = "energy endpoints (2026 surface)"
+subpath = "endpoints/energy"
+
+[dependencies]
+async-trait = "0.1"
+parking_lot = "0.12"
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+thiserror   = "2"
+tokio       = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
+tracing     = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "test-util"] }
+
+[lints]
+workspace = true
