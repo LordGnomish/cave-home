@@ -56,6 +56,17 @@ pub enum KineError {
     /// wired in — a pure decision-core operation never produces it; the
     /// apiserver maps it onto an etcd `Internal` gRPC status.
     Backend { message: String },
+    /// A Txn `Compare` paired an operand whose kind does not match its target:
+    /// a byte-value operand against a numeric target (`create_revision` /
+    /// `version` / `mod_revision` / `lease`) or a numeric operand against the
+    /// `value` target. etcd validates `Compare.target_union` against
+    /// `Compare.target`; a mismatch is a malformed request.
+    TxnCompareTypeMismatch,
+    /// A Txn branch wrote the same key more than once (two puts, two deletes,
+    /// or a put and a delete of one key). etcd rejects this as
+    /// `"etcdserver: duplicate key given in txn request"` — the ops in a branch
+    /// must touch disjoint keys so their relative order cannot matter.
+    TxnDuplicateKey,
 }
 
 impl core::fmt::Display for KineError {
@@ -92,6 +103,12 @@ impl core::fmt::Display for KineError {
                 write!(f, "lease TTL {ttl_seconds}s must be positive")
             }
             Self::Backend { message } => write!(f, "etcdserver: backend: {message}"),
+            Self::TxnCompareTypeMismatch => {
+                f.write_str("etcdserver: compare operand does not match its target")
+            }
+            Self::TxnDuplicateKey => {
+                f.write_str("etcdserver: duplicate key given in txn request")
+            }
         }
     }
 }
