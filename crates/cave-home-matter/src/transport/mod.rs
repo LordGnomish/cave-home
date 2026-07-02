@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Matter transports — UDP (operational) + BLE (commissioning).
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/transport/raw/
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/transport/raw/
 
 pub mod ble;
 pub mod udp;

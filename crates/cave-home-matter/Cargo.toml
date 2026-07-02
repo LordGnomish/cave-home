@@ -13,11 +13,13 @@ upstream    = "project-chip/connectedhomeip"
 port-method = "line-by-line"
 phase       = "matter-phase-1"
 
-# Upstream release tag is recorded for reference; no commit SHA is pinned in
-# this manifest (a prior pinned SHA was unverified and was removed).
+# Commit SHA is the verified resolution of the v1.3.0.0 release tag
+# (confirmed against the upstream GitHub release page). A prior pinned SHA
+# (5af45c5c…) was fabricated — it did not match the tag — and is corrected.
 [package.metadata.upstream]
 repo    = "project-chip/connectedhomeip"
 release = "v1.3.0.0"
+commit  = "5bb5c9e23d532cea40476fc0bd1d3008522792ba"
 subpath = "src/"
 
 [dependencies]

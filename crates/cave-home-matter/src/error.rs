@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Error type for cave-home-matter.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/lib/core/CHIPError.h
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/lib/core/CHIPError.h
 //!
 //! Upstream uses a single `CHIP_ERROR` integer with thousands of
 //! `CHIP_ERROR_FOO` constants. We adopt a Rust enum that splits by

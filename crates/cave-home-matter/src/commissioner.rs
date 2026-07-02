@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! DeviceCommissioner — the commissioner-side state machine.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/controller/CHIPDeviceController.cpp
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/controller/CHIPDeviceController.cpp
 //!
 //! The commissioner walks a paired device through:
 //! 1. Setup payload decode (QR or manual code).

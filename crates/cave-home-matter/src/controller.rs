@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Top-level `Controller` composition — the Phase 1 cave-home Matter entry point.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/controller/CHIPDeviceControllerFactory.cpp
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/controller/CHIPDeviceControllerFactory.cpp
 //!
 //! The Controller bundles the long-lived pieces of state a commissioner
 //! needs (FabricTable, AccessControl, GroupDataProvider,
@@ -19,7 +19,7 @@
 //! - Drive `pair` / `unpair` through the embedded `Commissioner`.
 //! - List paired devices (read-through to `Commissioner::paired`).
 //! - Provide handles to the cluster clients (OnOff, Level, Color,
-//!   Thermostat, DoorLock, NetworkCommissioning) for callers that want
+//!   Thermostat, DoorLock, WindowCovering, NetworkCommissioning) for callers that want
 //!   to invoke operational commands.
 //!
 //! Out of Phase 1: subscription engine, mDNS discovery, OTA-provider
@@ -35,6 +35,7 @@ use crate::clusters::level_control::LevelControlClient;
 use crate::clusters::network_commissioning::NetworkCommissioningClient;
 use crate::clusters::on_off::OnOffClient;
 use crate::clusters::thermostat::ThermostatClient;
+use crate::clusters::window_covering::WindowCoveringClient;
 use crate::commissioner::{Commissioner, CommissionerConfig, PairedDevice};
 use crate::error::Result;
 use crate::fabric::FabricTable;
@@ -154,6 +155,12 @@ impl Controller {
     pub fn door_lock_client(&self) -> DoorLockClient {
         DoorLockClient::new()
     }
+
+    /// Build a fresh WindowCovering cluster client (roller shutters / blinds).
+    #[must_use]
+    pub fn window_covering_client(&self) -> WindowCoveringClient {
+        WindowCoveringClient::new()
+    }
 }
 
 #[cfg(test)]
@@ -200,6 +207,7 @@ mod tests {
         let _color = c.color_control_client();
         let _t = c.thermostat_client();
         let _d = c.door_lock_client();
+        let _w = c.window_covering_client();
         // Smoke — clients are independently constructible.
     }
 }

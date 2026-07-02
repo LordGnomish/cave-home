@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! UDP transport.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/transport/raw/UDP.cpp
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/transport/raw/UDP.cpp
 //!
 //! Phase 1 wraps `tokio::net::UdpSocket` and exposes the chip-side
 //! Send/Receive surface verbatim. The Matter framing (message header

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Matter onboarding payload — QR code + manual pairing code parser.
 //!
-//! # Upstream: project-chip/connectedhomeip@5af45c5c:src/setup_payload/
+//! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/setup_payload/
 //!
 //! Hand-port of:
 //! - `SetupPayload.cpp` / `SetupPayload.h`
