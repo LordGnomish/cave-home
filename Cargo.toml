@@ -38,6 +38,7 @@ members = [
     "crates/cave-home-free-home",
     "crates/cave-home-freeathome",
     "crates/cave-home-knx",
+    "crates/cave-home-esphome",
     "crates/cave-home-hvac",
     "crates/cave-home-water",
     "crates/cave-home-lighting-wled",

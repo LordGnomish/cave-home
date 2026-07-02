@@ -27,6 +27,7 @@ pub mod scene;
 pub mod status;
 
 pub mod energy;
+pub mod esphome;
 pub mod free_home;
 pub mod hue;
 pub mod jarvis;

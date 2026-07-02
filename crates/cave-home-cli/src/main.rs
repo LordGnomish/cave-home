@@ -12,9 +12,9 @@ use clap::{Arg, ArgAction, Command};
 
 use cave_home_cli::commands::{
     alarm, automation, calendar, camera, cover, destroy, device, display, doorbell, energy,
-    free_home, garden, get, history, household, hue, hvac, init, jarvis, join, knx, lights, lock,
-    matter, mobile, music, notify, pool, room, scene, solar, status, top, unifi, vacuum, voice,
-    water, wellness, zigbee, zwave,
+    esphome, free_home, garden, get, history, household, hue, hvac, init, jarvis, join, knx,
+    lights, lock, matter, mobile, music, notify, pool, room, scene, solar, status, top, unifi,
+    vacuum, voice, water, wellness, zigbee, zwave,
 };
 
 fn build_cli() -> Command {
@@ -46,6 +46,7 @@ fn build_cli() -> Command {
         .subcommand(unifi::cmd())
         .subcommand(hue::cmd())
         .subcommand(knx::cmd())
+        .subcommand(esphome::cmd())
         .subcommand(free_home::cmd())
         // G8 stubs (Phase 1 4-track completeness) — backend not yet attached.
         .subcommand(lights::cmd())
@@ -105,6 +106,7 @@ where
         Some(("unifi", sub)) => unifi::run_matched(sub, verbose),
         Some(("hue", _)) => hue::run(),
         Some(("knx", _)) => knx::run(),
+        Some(("esphome", _)) => esphome::run(),
         Some(("free-home", _)) => free_home::run(),
         // G8 stubs (Phase 1 4-track completeness) — see commands/*.rs.
         Some(("lights", _)) => lights::run(),
@@ -160,6 +162,7 @@ mod tests {
             "unifi",
             "hue",
             "knx",
+            "esphome",
             "free-home",
             // G8 stubs:
             "lights",
