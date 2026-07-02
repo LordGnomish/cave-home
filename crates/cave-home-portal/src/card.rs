@@ -45,6 +45,9 @@ pub enum Card {
     ClusterMetrics,
     /// Live log tail for an add-on. Developer only.
     Logs { entity_id: String },
+    /// Orchestration > Storage page: the local-path-provisioner PV/PVC table
+    /// with on-node `hostPath` detail. Developer only.
+    Storage,
 }
 
 impl Card {
@@ -58,6 +61,7 @@ impl Card {
                 | Self::ClusterTopology
                 | Self::ClusterMetrics
                 | Self::Logs { .. }
+                | Self::Storage
         )
     }
 

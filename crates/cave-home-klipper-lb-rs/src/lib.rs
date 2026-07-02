@@ -72,6 +72,7 @@
 //! assert_eq!(ingress, vec![internal]);
 //! ```
 
+pub mod controller;
 pub mod daemonset;
 pub mod node;
 pub mod port_alloc;
