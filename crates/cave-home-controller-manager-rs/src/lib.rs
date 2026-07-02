@@ -4,32 +4,45 @@
 //!
 //! This is **infrastructure**: it is hidden from end users (Charter §6.3), so
 //! it carries no user-facing strings and no i18n — correctness is the only
-//! product. It is a `std`-only, I/O-free, panic-free library: every function
-//! is a pure decision over data the caller supplies, including the clock
-//! (a monotonic `now`). The actual informer/client-go watch loop, the
-//! apiserver client, leader election, and the full upstream controller set are
-//! **deferred** (see `parity.manifest.toml` `[[unmapped]]`).
+//! product. It is a `std`-only, panic-free library: every decision is pure over
+//! data the caller supplies, including the clock (a monotonic `now`), and all
+//! state lives in an **in-memory apiserver** ([`apis::Cluster`]) the
+//! controllers read and write — the client-go `fake.Clientset`/`ObjectTracker`
+//! analogue, not a stub. The core workload controllers are implemented as real
+//! reconcilers ([`controllers`]), driven by a [`manager`] run loop over
+//! per-controller work queues, with lease-based [`leaderelection`]. Only the
+//! *networked* transport (the REST clientset + watch reflector that would back
+//! the cache over the wire) and the secondary controllers (`EndpointSlice`, HPA,
+//! quota, volumes, certificates, cloud) remain **deferred** (see
+//! `parity.manifest.toml` `[[unmapped]]`).
 //!
 //! ## Port method (honest)
 //!
 //! This is a **behavioural reimplementation** of the *documented* contracts of
 //! the Kubernetes controller machinery — the client-go work queue + rate
 //! limiter, the controller-runtime reconcile `Result`, the `tools/cache`
-//! `Store`/`DeltaFIFO`, and three concrete controllers (garbage collector,
-//! node lifecycle, TTL/namespace cleanup). It is **not** a verbatim
-//! line-by-line transcription of unread Go source; the manifest names the
-//! behavioural reference for each item, not a byte-for-byte claim.
+//! `Store`/`DeltaFIFO`, the core workload controllers, the manager run loop, and
+//! lease-based leader election. It is **not** a verbatim line-by-line
+//! transcription of unread Go source; the manifest names the behavioural
+//! reference for each item, not a byte-for-byte claim.
 //!
 //! ## Modules
 //!
 //! - [`types`] — the minimal object model ([`types::ObjectMeta`],
 //!   [`types::OwnerReference`], the [`types::Object`] trait).
+//! - [`apis`] — the typed workload object model + the in-memory apiserver
+//!   ([`apis::Cluster`], [`apis::Api`]).
 //! - [`workqueue`] — rate-limited delaying work queue: dedup, per-key
 //!   exponential backoff, max-retries-drop, `add_after`.
 //! - [`reconcile`] — the [`reconcile::Reconciler`] trait, its
 //!   [`reconcile::Outcome`], and the pure loop decision.
 //! - [`informer`] — [`informer::Store`] indexer + [`informer::DeltaFifo`].
-//! - [`controllers`] — concrete pure controllers (GC, node lifecycle, cleanup).
+//! - [`controllers`] — the concrete controllers: workload reconcilers
+//!   (`ReplicaSet`, `Deployment`, `StatefulSet`, `DaemonSet`, `Job`, `CronJob`,
+//!   `Namespace`, `ServiceAccount`, `Endpoints`) plus the pure GC /
+//!   node-lifecycle / cleanup decision functions.
+//! - [`manager`] — the run loop wiring controllers to work queues.
+//! - [`leaderelection`] — lease-based single-active-manager election.
 //!
 //! ## Example
 //!
@@ -52,8 +65,12 @@
 //! assert_eq!(outcome, AddOutcome::Requeued { failures: 1, delay: 10 });
 //! ```
 
+pub mod apis;
 pub mod controllers;
 pub mod informer;
+pub mod leaderelection;
+pub mod manager;
 pub mod reconcile;
+pub mod schedule;
 pub mod types;
 pub mod workqueue;
