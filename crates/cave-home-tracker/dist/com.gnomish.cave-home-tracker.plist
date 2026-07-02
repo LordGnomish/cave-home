@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  cave-home-tracker daily run.
+
+  Install:
+    cp crates/cave-home-tracker/dist/com.gnomish.cave-home-tracker.plist \
+       ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.gnomish.cave-home-tracker.plist
+
+  Runs every day at 06:00: poll all upstreams, measure a snapshot, render the
+  daily markdown report. Adjust the absolute paths below if your checkout or the
+  release binary live elsewhere.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.gnomish.cave-home-tracker</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <string>cd /Users/gnomish/Code/cave-home &amp;&amp; ./target/release/cave-home-tracker --config tracker.yaml poll &amp;&amp; ./target/release/cave-home-tracker --config tracker.yaml measure &amp;&amp; ./target/release/cave-home-tracker --config tracker.yaml report</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>6</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/gnomish/Code/cave-home</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/gnomish/Library/Logs/cave-home-tracker.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/gnomish/Library/Logs/cave-home-tracker.err.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

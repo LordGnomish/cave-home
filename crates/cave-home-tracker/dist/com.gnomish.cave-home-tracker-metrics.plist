@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  cave-home-tracker — persistent Prometheus metrics endpoint (companion to
+  com.gnomish.cave-home-tracker, the daily poll/measure/report job).
+
+  Serves the latest snapshot as Prometheus metrics on
+  http://127.0.0.1:9102/metrics. The snapshot is re-read per request, so the
+  endpoint always reflects the newest daily snapshot without a restart.
+
+  Install:
+    cp crates/cave-home-tracker/dist/com.gnomish.cave-home-tracker-metrics.plist \
+       ~/Library/LaunchAgents/
+    launchctl load -w ~/Library/LaunchAgents/com.gnomish.cave-home-tracker-metrics.plist
+
+  Adjust the absolute paths below if your checkout or the release binary live
+  elsewhere.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.gnomish.cave-home-tracker-metrics</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/gnomish/Code/cave-home/target/release/cave-home-tracker</string>
+        <string>--config</string>
+        <string>/Users/gnomish/Code/cave-home/tracker.yaml</string>
+        <string>dashboard</string>
+        <string>--addr</string>
+        <string>127.0.0.1:9102</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/gnomish/Code/cave-home</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/gnomish/Library/Logs/cave-home-tracker-metrics.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/gnomish/Library/Logs/cave-home-tracker-metrics.err.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

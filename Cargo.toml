@@ -68,6 +68,7 @@ members = [
     "crates/cave-home-tesla",
     "crates/cave-home-cli",
     "crates/cave-home-binary",
+    "crates/cave-home-tracker",
 ]
 
 # cave-home — Cargo workspace root.
