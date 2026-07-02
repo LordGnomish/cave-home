@@ -10,7 +10,7 @@ description = "cave-home-orchestration — the in-process K3s-orchestration boot
 
 [package.metadata.cave-home]
 upstream    = "k3s-io/k3s"
-port-method = "behavioural reimplementation (spec/contract-based; not verbatim line-by-line)"
+port-method = "behavioural reimplementation (spec/contract-based; ADR-034 records the divergence from ADR-004's line-by-line target + the module-by-module convergence plan)"
 role        = "decision-core"
 
 [dependencies]
