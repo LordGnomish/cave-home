@@ -61,6 +61,7 @@ pub mod card;
 pub mod cluster;
 pub mod dashboard;
 pub mod energy;
+pub mod hue;
 pub mod label;
 pub mod metrics;
 pub mod theme;
@@ -76,6 +77,7 @@ pub use energy::{
     BackupToggle, EnergyFlowView, EnergyMode, EnergyPage, FlowEdge, FlowNode, HistoryGraph,
     ModeOption, SocBar,
 };
+pub use hue::{HueBridgeStatus, HueLightRow, HuePage, HueSceneChip};
 pub use label::{Lang, Phrase};
 pub use metrics::{MetricsPage, NodeUsageTile, WorkloadUsageTile};
 pub use theme::{Breakpoint, Mode, Theme, ThemeError};

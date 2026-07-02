@@ -25,6 +25,13 @@ repo    = "home-assistant-libs/aiohue"
 release = "4.8.1"
 subpath = "aiohue"
 
+[features]
+default = ["runtime"]
+# `runtime` pulls in the real async HTTP(S) + SSE transport (reqwest/rustls).
+# Disable it (`--no-default-features`) for a pure, dependency-light core that is
+# tested entirely against in-process stubs.
+runtime = ["dep:reqwest"]
+
 [dependencies]
 async-trait = "0.1"
 futures     = "0.3"
@@ -35,8 +42,18 @@ thiserror   = "2"
 tokio       = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "io-util"] }
 tracing     = "0.1"
 
+# Real CLIP-v2 transport (HTTPS REST + Server-Sent Events). The Hue bridge
+# serves a self-signed cert on the LAN, so the default client accepts it; a
+# pinned-CA path is also provided. rustls keeps the build pure-Rust + offline.
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+    "stream",
+    "json",
+    "http2",
+], optional = true }
+
 [dev-dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "io-util", "test-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "io-util", "test-util", "net"] }
 
 [lints]
 workspace = true
