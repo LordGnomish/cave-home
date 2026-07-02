@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
-// Source: home-assistant-libs/aiohue@394aa9394838841bbd5358d78edc140766db127c aiohue/v2/__init__.py
+// Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v2/__init__.py
 //! Philips Hue v2 (CLIP) API client. Ports `aiohue.v2` line-by-line.
 //!
 //! The v2 surface is a flat CLIP REST API + a persistent Server-Sent Events

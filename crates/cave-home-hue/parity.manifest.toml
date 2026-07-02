@@ -3,13 +3,15 @@
 # Two Apache-2.0 upstreams are line-by-line-ported here:
 #
 #   - `home-assistant/core` v2026.5.2
-#     (SHA 456202325ac48549bd3c895dc3e69ecd3e2ba6a4)
 #     subpath `homeassistant/components/hue/` — the HA "hue" integration
 #     glue (bridge lifecycle, errors, migration).
 #
 #   - `home-assistant-libs/aiohue` v4.8.1
-#     (SHA 394aa9394838841bbd5358d78edc140766db127c)
 #     — the underlying Hue API client (v1 REST + v2 CLIP + SSE).
+#
+# Upstreams are pinned by release tag only — the previously recorded commit
+# SHAs were unverified (one hash had been reused across unrelated upstreams)
+# and have been removed.
 #
 # Honest scoping: upstream HA hue + aiohue together total ~12 kLOC of
 # production Python (excluding tests + JSON strings). Phase 1 MVP ports
@@ -30,14 +32,12 @@ adr              = "ADR-010"
 [[upstream]]
 repo    = "home-assistant/core"
 release = "2026.5.2"
-sha     = "456202325ac48549bd3c895dc3e69ecd3e2ba6a4"
 subpath = "homeassistant/components/hue"
 license = "Apache-2.0"
 
 [[upstream]]
 repo    = "home-assistant-libs/aiohue"
 release = "4.8.1"
-sha     = "394aa9394838841bbd5358d78edc140766db127c"
 subpath = "aiohue"
 license = "Apache-2.0"
 
@@ -46,10 +46,10 @@ license = "Apache-2.0"
 # Combined upstream production LOC: ~5.4 kLOC (aiohue main + HA hue
 # integration glue excluding test_*.py and string assets). fill_ratio is
 # the headline production-port ratio.
-fill_ratio              = 0.50
+fill_ratio              = 0.53
+fill_ratio_basis        = "phase-1 MVP: v1 lights/groups/scenes/sensors/config + v2 models (lights/scenes/devices/motion/buttons/rooms/zones/grouped_light) + EventStream parser + bridge lifecycle + v2 controllers (lights, scenes, grouped_light, motion, button)"
 adr_justified_ratio = 1.00  # measured: every [[unmapped]]/[[scope_cut]] entry carries both priority and note
 honest_ratio        = 1.00  # computed: fill / (fill + (1-fill)*(1-adr_justified))
-fill_ratio_basis        = "phase-1 MVP: v1 lights/groups/scenes/sensors/config + v2 lights/scenes/devices/motion/buttons/rooms/zones/grouped_light + EventStream parser + bridge lifecycle"
 test_port_ratio         = 0.30
 
 # ---- mapped (line-by-line port present in this crate) -----------------------
@@ -195,6 +195,18 @@ upstream = "home-assistant-libs/aiohue/aiohue/v2/controllers/scenes.py::ScenesCo
 ours     = "src/v2/controllers/scenes.rs::ScenesController"
 
 [[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v2/controllers/groups.py::GroupedLightController (set_state/set_on/set_brightness)"
+ours     = "src/v2/controllers/grouped_light.rs::GroupedLightController"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v2/controllers/sensors.py::MotionController (update/set_enabled/apply_event)"
+ours     = "src/v2/controllers/motion.rs::MotionController"
+
+[[mapped]]
+upstream = "home-assistant-libs/aiohue/aiohue/v2/controllers/sensors.py::ButtonController (update/last_event/apply_event)"
+ours     = "src/v2/controllers/button.rs::ButtonController"
+
+[[mapped]]
 upstream = "home-assistant-libs/aiohue/aiohue/v2/controllers/events.py::EventStream + EventType + HueEvent + SSE parser"
 ours     = "src/v2/events.rs::EventStreamParser + EventType + HueEvent"
 
@@ -214,9 +226,9 @@ priority = "phase-2"
 note     = "v2 entertainment_configuration + the realtime DTLS stream is a separate sub-protocol; ADR-010 §Open questions §1."
 
 [[unmapped]]
-area     = "v2 controllers: devices, groups (rooms/zones), sensors, config"
+area     = "v2 controllers: devices, rooms/zones, config; central EventStream dispatch router"
 priority = "phase-1b"
-note     = "Models are in place; the controllers wiring + EventStream dispatch are Phase 1b."
+note     = "grouped_light + motion + button controllers now landed (room/zone-level grouped on/off/brightness, motion set_enabled, and apply_event ingest of live SSE state on all three). Remaining: Device/Room/Zone/Config controllers and the central EventStream->controller dispatch that routes each HueEvent to the owning controller's apply_event/remove."
 
 [[unmapped]]
 area     = "v1 rule engine + schedules + resourcelinks"

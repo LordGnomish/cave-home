@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
-// Source: home-assistant-libs/aiohue@394aa9394838841bbd5358d78edc140766db127c aiohue/discovery.py
+// Source: home-assistant-libs/aiohue@v4.8.1 aiohue/discovery.py
 //! Hue bridge discovery. Ports `aiohue.discovery` line-by-line.
 //!
 //! Three discovery paths, all of which the upstream supports:

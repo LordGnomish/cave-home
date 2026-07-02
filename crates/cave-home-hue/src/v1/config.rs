@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
-// Source: home-assistant-libs/aiohue@394aa9394838841bbd5358d78edc140766db127c aiohue/v1/config.py
+// Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v1/config.py
 //! v1 bridge config. Ports `aiohue.v1.config` line-by-line.
 //!
 //! Reference: <https://developers.meethue.com/documentation/configuration-api#72_get_configuration>.

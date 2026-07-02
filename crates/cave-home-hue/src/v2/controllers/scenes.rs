@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
-// Source: home-assistant-libs/aiohue@394aa9394838841bbd5358d78edc140766db127c aiohue/v2/controllers/scenes.py
+// Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v2/controllers/scenes.py
 //! v2 scenes controller. Mirrors `aiohue.v2.controllers.scenes`.
 
 use crate::errors::HueResult;

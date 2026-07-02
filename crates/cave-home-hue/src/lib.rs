@@ -4,15 +4,18 @@
 //!
 //! Line-by-line port of the Apache-2.0 upstreams:
 //!
-//! - `home-assistant/core` v2026.5.2 (SHA `456202325ac48549bd3c895dc3e69ecd3e2ba6a4`)
-//!   subpath `homeassistant/components/hue/` — the HA "hue" integration glue
+//! - `home-assistant/core` v2026.5.2, subpath
+//!   `homeassistant/components/hue/` — the HA "hue" integration glue
 //!   (bridge lifecycle, config flow, errors, migration), and
-//! - `home-assistant-libs/aiohue` v4.8.1 (SHA `394aa9394838841bbd5358d78edc140766db127c`)
-//!   — the underlying Hue API client (v1 REST + v2 CLIP / EventStream).
+//! - `home-assistant-libs/aiohue` v4.8.1 — the underlying Hue API client
+//!   (v1 REST + v2 CLIP / EventStream).
 //!
-//! Both upstreams are Apache-2.0, so the port is line-by-line per ADR-002.
+//! Upstreams are pinned by release tag, not commit SHA: the previously
+//! recorded SHAs were unverified (one hash had been copied across unrelated
+//! upstreams) and have been removed. Both upstreams are Apache-2.0, so the
+//! port is line-by-line per ADR-002.
 //! Each `.rs` file carries a `// Source:` banner naming the upstream file +
-//! SHA that was ported. Wherever upstream Python idioms map to Rust traits +
+//! release tag that was ported. Wherever upstream Python idioms map to Rust traits +
 //! async patterns the original API shape is preserved (method names, default
 //! values, return shapes) so reviewers can do a line-pair diff.
 //!

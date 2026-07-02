@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
-// Source: home-assistant-libs/aiohue@394aa9394838841bbd5358d78edc140766db127c aiohue/v2/__init__.py
+// Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v2/__init__.py
 //! High-level v2 bridge wrapper. Mirrors `aiohue.v2.HueBridgeV2`.
 
 use crate::errors::HueResult;
 use crate::v2::controllers::base::V2Request;
+use crate::v2::controllers::button::ButtonController;
+use crate::v2::controllers::grouped_light::GroupedLightController;
 use crate::v2::controllers::lights::LightsController;
+use crate::v2::controllers::motion::MotionController;
 use crate::v2::controllers::scenes::ScenesController;
 use std::sync::Arc;
 
@@ -16,6 +19,9 @@ pub struct HueBridgeV2 {
     pub request: Arc<dyn V2Request>,
     pub lights: LightsController,
     pub scenes: ScenesController,
+    pub grouped_lights: GroupedLightController,
+    pub motion: MotionController,
+    pub buttons: ButtonController,
 }
 
 impl HueBridgeV2 {
@@ -28,6 +34,9 @@ impl HueBridgeV2 {
             request,
             lights: LightsController::new(),
             scenes: ScenesController::new(),
+            grouped_lights: GroupedLightController::new(),
+            motion: MotionController::new(),
+            buttons: ButtonController::new(),
         }
     }
 
@@ -35,6 +44,9 @@ impl HueBridgeV2 {
     pub async fn initialize(&mut self) -> HueResult<()> {
         self.lights.update(self.request.as_ref()).await?;
         self.scenes.update(self.request.as_ref()).await?;
+        self.grouped_lights.update(self.request.as_ref()).await?;
+        self.motion.update(self.request.as_ref()).await?;
+        self.buttons.update(self.request.as_ref()).await?;
         Ok(())
     }
 }
@@ -95,5 +107,56 @@ mod tests {
         br.initialize().await.unwrap();
         assert_eq!(br.lights.len(), 1);
         assert_eq!(br.scenes.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn initialize_pulls_all_resource_controllers() {
+        let mk = |data| V2Envelope { errors: vec![], data };
+        // pop() yields the last element first; initialize() pulls in order
+        // lights, scenes, grouped_light, motion, button — so push in reverse.
+        let req = Arc::new(StubReq {
+            gets: Mutex::new(vec![
+                mk(vec![json!({
+                    "id": "btn-1",
+                    "owner": {"rid": "d1", "rtype": "device"},
+                    "metadata": {"control_id": 1},
+                    "button": {},
+                    "type": "button"
+                })]),
+                mk(vec![json!({
+                    "id": "motion-1",
+                    "owner": {"rid": "d1", "rtype": "device"},
+                    "enabled": true,
+                    "motion": {"motion_valid": false, "motion_report": null},
+                    "type": "motion"
+                })]),
+                mk(vec![json!({
+                    "id": "gl-1",
+                    "owner": {"rid": "r1", "rtype": "room"},
+                    "on": {"on": true},
+                    "type": "grouped_light"
+                })]),
+                mk(vec![json!({
+                    "id": "s1",
+                    "metadata": {"name": "Aksam"},
+                    "group": {"rid": "r1", "rtype": "room"},
+                    "actions": []
+                })]),
+                mk(vec![json!({
+                    "id": "l1",
+                    "owner": {"rid": "d1", "rtype": "device"},
+                    "on": {"on": true},
+                    "mode": "normal",
+                    "type": "light"
+                })]),
+            ]),
+        });
+        let mut br = HueBridgeV2::new("10.0.0.1".into(), "appkey".into(), req);
+        br.initialize().await.unwrap();
+        assert_eq!(br.lights.len(), 1);
+        assert_eq!(br.scenes.len(), 1);
+        assert_eq!(br.grouped_lights.len(), 1);
+        assert_eq!(br.motion.len(), 1);
+        assert_eq!(br.buttons.len(), 1);
     }
 }

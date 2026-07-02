@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
-// Source: home-assistant-libs/aiohue@394aa9394838841bbd5358d78edc140766db127c aiohue/v1/__init__.py
+// Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v1/__init__.py
 //! v1 bridge — top-level wrapper that ties the v1 controllers to a host + key.
 //!
 //! Mirrors `aiohue.v1.HueBridgeV1` — owns the request callable and exposes

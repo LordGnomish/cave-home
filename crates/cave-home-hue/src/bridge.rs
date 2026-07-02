@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
-// Source: home-assistant/core@456202325ac48549bd3c895dc3e69ecd3e2ba6a4 homeassistant/components/hue/bridge.py
+// Source: home-assistant/core@2026.5.2 homeassistant/components/hue/bridge.py
 //! `HueBridge` — the high-level wrapper that ties either a v1 or a v2 bridge
 //! into the cave-home runtime. Mirrors `homeassistant.components.hue.bridge.HueBridge`.
 //!

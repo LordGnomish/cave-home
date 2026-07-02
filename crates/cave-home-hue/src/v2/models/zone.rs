@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
-// Source: home-assistant-libs/aiohue@394aa9394838841bbd5358d78edc140766db127c aiohue/v2/models/zone.py
+// Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v2/models/zone.py
 //! v2 Zone resource. Mirrors `aiohue.v2.models.zone`.
 //!
 //! A Zone groups light *services* (not devices) so a single light service
