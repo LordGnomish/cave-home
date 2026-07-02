@@ -1,0 +1,31 @@
+{
+  "_comment": "cave-home-coredns-rs Grafana panels — the embedded cluster-DNS (K3s in-process CoreDNS). Metric names match the counters the decision core already tracks (builtins::Metrics: queries by type, responses by rcode) which the deferred Prometheus exposition will publish as cave_home_coredns_rs_*. Domain: cluster DNS / service discovery (infra, hidden from the homeowner per Charter §6.3).",
+  "_planned_panels": [
+    {
+      "title": "coredns-rs — query rate by type",
+      "expr": "sum by (type) (rate(cave_home_coredns_rs_dns_requests_total[1m]))"
+    },
+    {
+      "title": "coredns-rs — response rate by rcode",
+      "expr": "sum by (rcode) (rate(cave_home_coredns_rs_dns_responses_total[1m]))"
+    },
+    {
+      "title": "coredns-rs — cache hit ratio (5m)",
+      "expr": "rate(cave_home_coredns_rs_cache_hits_total[5m]) / clamp_min(rate(cave_home_coredns_rs_cache_hits_total[5m]) + rate(cave_home_coredns_rs_cache_misses_total[5m]), 1)"
+    },
+    {
+      "title": "coredns-rs — NXDOMAIN / SERVFAIL rate (5m)",
+      "expr": "sum(rate(cave_home_coredns_rs_dns_responses_total{rcode=~\"NXDOMAIN|SERVFAIL\"}[5m]))"
+    },
+    {
+      "title": "coredns-rs — forward upstream health (healthy/total)",
+      "expr": "cave_home_coredns_rs_forward_healthy_upstreams / clamp_min(cave_home_coredns_rs_forward_total_upstreams, 1)"
+    },
+    {
+      "title": "coredns-rs — request latency p50/p95/p99",
+      "expr": "histogram_quantile(0.99, sum by (le) (rate(cave_home_coredns_rs_request_seconds_bucket[5m])))"
+    }
+  ],
+  "_charter_track": "observability",
+  "_grandma_friendly": null
+}
