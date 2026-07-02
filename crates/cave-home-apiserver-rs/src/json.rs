@@ -515,7 +515,7 @@ pub enum ParseError {
     InvalidEscape,
     /// Non-whitespace bytes followed a complete top-level value.
     TrailingData(usize),
-    /// Nesting exceeded [`Parser::MAX_DEPTH`] (a depth guard against hostile
+    /// Nesting exceeded [`ValueParser::MAX_DEPTH`] (a depth guard against hostile
     /// deeply-nested input).
     TooDeep,
 }
@@ -548,7 +548,7 @@ impl Value {
     /// A [`ParseError`] pinpointing the first malformed token, trailing data,
     /// or excessive nesting.
     pub fn parse(input: &str) -> Result<Self, ParseError> {
-        let mut p = Parser::new(input);
+        let mut p = ValueParser::new(input);
         p.skip_ws();
         let value = p.parse_value(0)?;
         p.skip_ws();
@@ -561,12 +561,12 @@ impl Value {
 
 /// Cursor over the input bytes. JSON structural characters are all ASCII, so we
 /// scan bytes and only decode UTF-8 for string contents.
-struct Parser<'a> {
+struct ValueParser<'a> {
     bytes: &'a [u8],
     pos: usize,
 }
 
-impl<'a> Parser<'a> {
+impl<'a> ValueParser<'a> {
     /// Maximum container nesting depth — bounds recursion on hostile input.
     const MAX_DEPTH: usize = 128;
 
