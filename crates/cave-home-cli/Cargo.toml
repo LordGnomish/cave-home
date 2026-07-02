@@ -26,6 +26,7 @@ cave-home-tesla = { path = "../cave-home-tesla" }
 # transport, so `runtime` is off (keeps reqwest out of the cavehomectl build).
 cave-home-hue = { path = "../cave-home-hue", default-features = false }
 cave-home-jarvis = { path = "../cave-home-jarvis" }
+cave-home-orchestration = { path = "../cave-home-orchestration" }
 cave-home-unifi = { path = "../cave-home-unifi" }
 cave-home-voice = { path = "../cave-home-voice" }
 tokio = { version = "1", features = ["rt-multi-thread"] }

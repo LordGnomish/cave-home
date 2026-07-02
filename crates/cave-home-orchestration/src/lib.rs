@@ -27,19 +27,30 @@
 //!   independent of `cave-home-cluster` — [`role`].
 //! - **Graceful shutdown** — the bring-up order, reversed, with a safety
 //!   predicate — [`shutdown`].
+//! - **Secrets encryption-at-rest** — the K3s / Kubernetes envelope-encryption
+//!   decision core with a post-quantum envelope (ML-KEM-768 + AES-256-GCM): the
+//!   write-key/read-keys keyring + rotation lifecycle, the in-process KMS
+//!   provider, the prefixed stored-value transformer + identity fallback, the
+//!   encryption-configuration model, and the status/observability contracts —
+//!   [`secrets_encryption`] (ADR-033).
 //!
 //! # Scope (honest)
 //!
-//! This crate is **std-only, pure logic**: no process supervision, no network,
-//! no clock (the caller drives the state machine), no crypto. It models the
-//! *decisions* K3s's server/agent bootstrap makes — the order, the gating, the
-//! role split, the failure classification — reimplemented from the public K3s
-//! architecture documentation, **not** transcribed verbatim from Go source.
+//! This crate is **pure logic**: no process supervision, no network, no clock
+//! (the caller drives the state machine). It is std-and-crypto-only — the one
+//! crypto exception is [`secrets_encryption`], whose at-rest envelope genuinely
+//! does ML-KEM-768 + AES-256-GCM (ADR-033 PQC-ready mandate); the rest of the
+//! crate touches no crypto. It models the *decisions* K3s's server/agent
+//! bootstrap makes — the order, the gating, the role split, the failure
+//! classification — reimplemented from the public K3s architecture
+//! documentation, **not** transcribed verbatim from Go source.
 //! The actual in-process component supervision, the kine/etcd datastore
 //! runtime, TLS bootstrap + cert rotation, the node-join handshake transport,
-//! the containerd/CNI runtime, and the embedded registry are all network /
-//! runtime-bound and are ADR-004 phase-1b — every one is enumerated in
-//! `parity.manifest.toml` `[[unmapped]]`.
+//! the containerd/CNI runtime, the embedded registry, and the live apiserver
+//! storage wiring + gRPC KMS-plugin transport that would feed
+//! [`secrets_encryption`] a running keyring are all network / runtime-bound and
+//! are ADR-004 phase-1b — every one is enumerated in `parity.manifest.toml`
+//! `[[unmapped]]`.
 //!
 //! This is **infrastructure**, hidden from end users (Charter §6.3, ADR-007):
 //! it surfaces no user-facing strings and carries no i18n.
@@ -87,6 +98,7 @@ pub mod config;
 pub mod local_path_provisioner;
 pub mod metrics_server;
 pub mod role;
+pub mod secrets_encryption;
 pub mod shutdown;
 
 pub use bootstrap::{Bootstrap, FailureKind, Phase, Transition};

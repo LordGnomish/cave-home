@@ -6,12 +6,24 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace   = true
-description = "cave-home-orchestration — the in-process K3s-orchestration bootstrap + component-coordination decision core (ADR-004). The control-plane wiring DECISIONS — node-role config, component dependency topo bring-up order, the bootstrap state machine, single-binary invariant, shutdown ordering — that bring apiserver/scheduler/controller-manager/kine/kubelet/proxy/cni up inside ONE binary (Charter §5). std-only, pure logic; actual process supervision + runtime wiring are ADR-004 phase-1b."
+description = "cave-home-orchestration — the in-process K3s-orchestration bootstrap + component-coordination decision core (ADR-004). The control-plane wiring DECISIONS — node-role config, component dependency topo bring-up order, the bootstrap state machine, single-binary invariant, shutdown ordering — that bring apiserver/scheduler/controller-manager/kine/kubelet/proxy/cni up inside ONE binary (Charter §5). Pure logic; actual process supervision + runtime wiring are ADR-004 phase-1b. The secrets_encryption module adds the one crypto exception: a post-quantum (ML-KEM-768 + AES-256-GCM) secrets encryption-at-rest envelope (ADR-033)."
 
 [package.metadata.cave-home]
 upstream    = "k3s-io/k3s"
 port-method = "behavioural reimplementation (spec/contract-based; not verbatim line-by-line)"
 role        = "decision-core"
+
+[dependencies]
+# secrets_encryption only. The rest of the crate is std-only pure logic; these
+# pull in NO async / network / OS-service surface — just the PQC envelope
+# primitives. cave-home keeps its own crypto deps (no cave-runtime cave-core
+# dependency — strict cave-runtime ↔ cave-home isolation, ADR-033).
+aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"] }
+hkdf    = "0.12"
+ml-kem  = { version = "0.3", default-features = false, features = ["zeroize"] }
+rand    = "0.8"
+sha2    = "0.10"
+zeroize = { version = "1", features = ["derive"] }
 
 [lints]
 workspace = true

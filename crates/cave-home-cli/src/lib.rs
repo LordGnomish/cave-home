@@ -9,6 +9,7 @@ pub mod controller_manager;
 pub mod kubelet;
 pub mod proxy;
 pub mod scheduler;
+pub mod secrets_encryption;
 pub mod servicelb;
 pub mod storage;
 pub mod top;

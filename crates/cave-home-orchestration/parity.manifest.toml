@@ -86,10 +86,10 @@ linux_min_kernel = "7.1"
 # could drive a correct, dependency-respecting, role-aware bring-up and
 # graceful tear-down today using only this crate's decisions.
 fill_ratio          = 0.34
-fill_ratio_basis    = "control-plane bootstrap decision spine (config model + Result validation, component dependency graph + deterministic topo bring-up order + cycle/missing detection + readiness gating + external-prereq support, bootstrap state machine + transient/fatal retry classification, single-binary invariant, multi-node role assignment, graceful shutdown order + safety predicate) PLUS the bundled metrics-server resource-metrics pipeline decision core (resource.Quantity DecimalSI/BinarySI formatting, kubelet Summary decode -> MetricsPoint, in-memory ring-buffer storage + cumulative-counter CPU-rate with reset/zero-window guards, scrape scheduling + latency/error accounting, metrics.k8s.io/v1beta1 NodeMetrics/PodMetrics + aggregated APIService descriptor, observability snapshot) — all implemented & tested (96 unit + 39 integration tests + doctest); actual component supervision + datastore/TLS/join/container/CNI runtime AND the metrics-server kubelet HTTPS scrape transport + aggregation-layer serving deferred (ADR-004 phase-1b), all enumerated below"
-test_port_ratio     = 0.0   # tests designed from the documented K3s/metrics-server contract, not ported from upstream _test.go
+fill_ratio_basis    = "control-plane bootstrap decision spine (config model + Result validation, component dependency graph + deterministic topo bring-up order + cycle/missing detection + readiness gating + external-prereq support, bootstrap state machine + transient/fatal retry classification, single-binary invariant, multi-node role assignment, graceful shutdown order + safety predicate) PLUS the bundled metrics-server resource-metrics pipeline decision core (resource.Quantity DecimalSI/BinarySI formatting, kubelet Summary decode -> MetricsPoint, in-memory ring-buffer storage + cumulative-counter CPU-rate with reset/zero-window guards, scrape scheduling + latency/error accounting, metrics.k8s.io/v1beta1 NodeMetrics/PodMetrics + aggregated APIService descriptor, observability snapshot) PLUS the local-path-provisioner storage decision core PLUS the secrets encryption-at-rest decision core — post-quantum envelope (ML-KEM-768 + AES-256-GCM), write/read keyring + rotation lifecycle, in-process KMS provider, prefixed transformer + identity fallback, encryption-config model, status + observability — all implemented & tested; actual component supervision + datastore/TLS/join/container/CNI runtime, the metrics-server kubelet HTTPS scrape transport + aggregation-layer serving, and the live apiserver-storage/gRPC-KMS wiring deferred (ADR-004 phase-1b), all enumerated below"
+test_port_ratio     = 0.0   # tests designed from the documented K3s/k8s contract, not ported from upstream _test.go
 adr_justified_ratio = 1.00  # every [[unmapped]] gap below carries a justified priority + a note
-honest_ratio        = 1.00  # 0.34 / (0.34 + (1-0.34)*(1-1.00)) = 0.34/0.34 = 1.00
+honest_ratio        = 1.00  # every mapped row is real, tested logic; no stubs/todos/fabrication
 
 # ---- mapped (real implementation present in this crate) ---------------------
 
@@ -187,6 +187,32 @@ ours = "src/metrics_server/api.rs::{NodeMetrics,PodMetrics,ContainerMetrics,ApiS
 spec = "Self-instrumentation — scrape latency / scrape error rate / storage memory-footprint metric names + a MetricsSnapshot folding the live Scraper + Storage (observability track)"
 ours = "src/metrics_server/observability.rs::{metric_names,MetricsSnapshot}"
 
+# ---- secrets encryption-at-rest (ADR-033) -----------------------------------
+
+[[mapped]]
+spec = "k8s envelope encryption-at-rest: a per-object data key (DEK) encrypts the value; a KEK wraps the DEK (apiserver/pkg/storage/value/encrypt/envelope). cave-home uses a POST-QUANTUM envelope: AES-256-GCM DEK + ML-KEM-768 (FIPS 203) KEK wrap via HKDF-SHA256 (ADR-033 PQC-ready mandate)"
+ours = "src/secrets_encryption/envelope.rs::{seal,open,KekKeypair,KekPublic,SealRandomness}"
+
+[[mapped]]
+spec = "k3s secrets-encrypt key-rotation lifecycle: write-key vs read-keys, prepare (append read-only) -> rotate (promote to write) -> reencrypt -> prune (drop stale), as an explicit phase machine (pkg/secretsencrypt)"
+ours = "src/secrets_encryption/keyring.rs::{Keyring,KeyState,RotationPhase,KeyId}"
+
+[[mapped]]
+spec = "k8s KMS provider interface (EnvelopeService Encrypt/Decrypt/Status) — object-safe so it can be in-process or a gRPC plugin; in-process impl over the keyring; KMS-v2 EncryptedObject (key id + ciphertext)"
+ours = "src/secrets_encryption/provider.rs::{KmsProvider,LocalKmsProvider,EncryptedObject,ProviderStatus}"
+
+[[mapped]]
+spec = "k8s stored-value transformer prefix scheme (k8s:enc:<provider>:<ver>:…) routing read values to the writing provider, plus the identity (no-op) read fallback for enabling/disabling encryption without data loss"
+ours = "src/secrets_encryption/transformer.rs::{Transformer,WriteMode,ENC_PREFIX,IDENTITY_PREFIX}"
+
+[[mapped]]
+spec = "k8s EncryptionConfiguration: resources -> ordered providers; first provider of first matching rule is the write provider; shape validation"
+ours = "src/secrets_encryption/encryption_config.rs::{EncryptionConfiguration,ResourceEncryption,ProviderKind}"
+
+[[mapped]]
+spec = "Encryption status reporting (cavectl status + Portal Security>Encryption: key versions, algorithm, rotation phase) and observability (op latency, decryption error rate, key age) — Prometheus text exposition"
+ours = "src/secrets_encryption/{status.rs::EncryptionStatus,metrics.rs::{EncryptionMetrics,KeyAge}}"
+
 # ---- unmapped (NOT in this crate; ADR-004 phase-1b disposition) -------------
 
 [[unmapped]]
@@ -202,7 +228,22 @@ note     = "ADR-004 Phase 3: kine is the etcd-shim that fronts SQLite/SQL. This 
 [[unmapped]]
 area     = "TLS bootstrap + certificate generation/rotation (cluster CA, apiserver/kubelet serving + client certs)"
 priority = "phase-1b"
-note     = "ADR-004: cave-home models the token SHAPE only (no crypto, by mandate). The real cluster-CA issuance, the join-token -> bootstrap-credential exchange, and cert rotation are crypto/security-bound and are deferred; they consume the validated Token + ServerConfig this crate produces."
+note     = "ADR-004: cave-home models the token SHAPE only (no crypto, by mandate). The real cluster-CA issuance, the join-token -> bootstrap-credential exchange, and cert rotation are crypto/security-bound and are deferred; they consume the validated Token + ServerConfig this crate produces. NOTE: the secrets ENCRYPTION-AT-REST envelope (a distinct concern from transport TLS) is now IMPLEMENTED under src/secrets_encryption (ADR-033) — only its live wiring (below) is deferred."
+
+[[unmapped]]
+area     = "Live apiserver storage wiring for secrets encryption-at-rest (hooking the Transformer into the read/write path so stored Secrets are actually transformed)"
+priority = "phase-1b"
+note     = "ADR-033: src/secrets_encryption DECIDES (envelope crypto, keyring/rotation, provider, transformer, config); the storage-layer interception that runs every stored value through the Transformer is runtime-bound and lands with the kine/apiserver storage path (cave-home-kine-rs / cave-home-apiserver-rs)."
+
+[[unmapped]]
+area     = "gRPC KMS-plugin transport (out-of-process KMS provider over the k8s KMS v2 gRPC contract)"
+priority = "phase-1b"
+note     = "ADR-033: KmsProvider is the object-safe seam; an in-process provider is implemented. The optional gRPC transport to an external KMS plugin is network-bound and deferred. cave-home is a self-hosted single binary with no external KMS, so the in-process ML-KEM-768 provider is the default and the gRPC path is opt-in."
+
+[[unmapped]]
+area     = "Keyring persistence to the datastore + the cluster-wide re-encrypt controller (k3s secrets-encrypt reencrypt across nodes)"
+priority = "phase-1b"
+note     = "ADR-033: the keyring rotation lifecycle (prepare/rotate/prune) is modelled and tested in-memory. Persisting the keyring (sealed) to the datastore and the controller that walks every Secret to re-encrypt under a new write key before prune are storage/coordination-bound and land with the storage runtime."
 
 [[unmapped]]
 area     = "Node-join handshake transport (agent -> server registration over the wire)"
@@ -308,6 +349,26 @@ ours         = "tests/metrics_server_api.rs + src/metrics_server/api.rs::tests"
 [[spec_test]]
 designed_for = "metrics-server observability — namespaced+unique metric names (scrape_duration_seconds/scrape_errors_total/storage_memory_bytes) + MetricsSnapshot folding Scraper + Storage (scrapes/errors/error_rate/mean_latency/points/memory_bytes/node/pod counts), all-zero empty snapshot"
 ours         = "tests/metrics_server_observability.rs + src/metrics_server/observability.rs::tests"
+
+[[spec_test]]
+designed_for = "PQC envelope: seal/open round-trip (incl. empty), determinism given fixed randomness, distinct DEK ⇒ distinct ciphertext, PQC magic + header size, and rejection of wrong KEK / wrong AAD / bad magic / truncation / tampered ciphertext / tampered wrapped-DEK; public-key + seed (de)serialization"
+ours         = "src/secrets_encryption/envelope.rs::tests"
+
+[[spec_test]]
+designed_for = "Keyring + rotation: KeyId validation, Steady single write key, prepare appends read-only / rejects duplicate + second-prepare, rotate promotes (exactly one write key at index 0), prune returns to Steady, find routing, rotate_keys one-shot, full lifecycle"
+ours         = "src/secrets_encryption/keyring.rs::tests"
+
+[[spec_test]]
+designed_for = "KMS provider: encrypt/decrypt round-trip, write-key tagging, UnknownKey + tampered-blob rejection, status v2/health/keyid/algorithm, deterministic encrypt_with, rotation keeps old values readable, &dyn object-safety"
+ours         = "src/secrets_encryption/provider.rs::tests"
+
+[[spec_test]]
+designed_for = "Transformer + config: prefixed round-trip with readable key-id, identity passthrough, cross-mode reads (enable/disable migration), unknown-prefix/malformed/tamper rejection, rotation updates prefix; config write-mode resolution + first-rule-wins + validation"
+ours         = "src/secrets_encryption/{transformer.rs::tests,encryption_config.rs::tests}"
+
+[[spec_test]]
+designed_for = "Status + metrics: status snapshot (steady/rotated/disabled) + summary line; metric counters, decrypt error rate (0 with no attempts), latency histogram count/sum, Prometheus exposition with cumulative buckets + key-age gauges + HELP/TYPE"
+ours         = "src/secrets_encryption/{status.rs::tests,metrics.rs::tests}"
 
 # ---- no-backcompat (Charter §8) ---------------------------------------------
 # Recorded explicitly so the stance is auditable: this crate models the current
