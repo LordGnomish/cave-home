@@ -21,8 +21,12 @@
 //!   and the per-node backend data peers advertise (VTEP MAC + public IP).
 //! - [`routes`] — compute the routes and FDB entries a node must program to
 //!   reach every peer subnet, given the node→subnet map and the backend.
+//! - [`neigh`] — compute the permanent ARP/NDP proxy-neighbor entries the
+//!   VXLAN overlay device needs to resolve each peer VTEP IP to its MAC.
 //! - [`cni`] — model a CNI ADD (allocate + build result) and DEL (free)
 //!   decision, returning the CNI result schema (IP, gateway, routes, DNS).
+//! - [`dualstack`] — pair the v4 and v6 subnet managers / pod IPAMs so a node
+//!   leases both families and a pod gets both addresses, atomically.
 //!
 //! # What is deferred
 //! # The real network backend
@@ -81,9 +85,11 @@ pub mod cni;
 pub mod cni_delegate;
 pub mod datapath;
 pub mod device;
+pub mod dualstack;
 pub mod hostgw;
 pub mod ipam;
 pub mod mac;
+pub mod neigh;
 pub mod netlink;
 pub mod netlink_socket;
 pub mod route_network;
