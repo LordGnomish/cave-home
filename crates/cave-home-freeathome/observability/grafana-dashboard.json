@@ -1,0 +1,98 @@
+{
+  "__comment": "cave-home-freeathome — Busch-Jaeger free@home SysAP client dashboard. Import into Grafana with a Prometheus datasource scraping the hub /metrics endpoint.",
+  "title": "cave-home · free@home (Busch-Jaeger SysAP)",
+  "uid": "cave-home-freeathome",
+  "tags": ["cave-home", "freeathome", "busch-jaeger"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "SysAP connection",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "options": { "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "Offline", "color": "red" } } },
+            { "type": "value", "options": { "1": { "text": "Online", "color": "green" } } }
+          ]
+        }
+      },
+      "targets": [
+        { "refId": "A", "expr": "freeathome_connected" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Device state changes / s",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 9, "x": 6, "y": 0 },
+      "targets": [
+        { "refId": "A", "expr": "rate(freeathome_device_state_changes_total[5m])", "legendFormat": "state changes/s" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "REST request rate",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 9, "x": 15, "y": 0 },
+      "targets": [
+        { "refId": "A", "expr": "rate(freeathome_api_requests_total[5m])", "legendFormat": "requests/s" },
+        { "refId": "B", "expr": "rate(freeathome_api_errors_total[5m])", "legendFormat": "errors/s" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Average REST latency (ms)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(freeathome_api_request_duration_ms_sum[5m]) / clamp_min(rate(freeathome_api_request_duration_ms_count[5m]), 1)",
+          "legendFormat": "avg latency"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "WebSocket reconnects / 15m",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 6 },
+      "targets": [
+        { "refId": "A", "expr": "increase(freeathome_ws_reconnects_total[15m])", "legendFormat": "reconnects" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Authentication failures / 15m",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 6 },
+      "targets": [
+        { "refId": "A", "expr": "increase(freeathome_auth_failures_total[15m])", "legendFormat": "auth failures" }
+      ]
+    }
+  ]
+}

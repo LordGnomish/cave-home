@@ -1,0 +1,69 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 cave-home contributors
+//! `cave-home-freeathome` — Busch-Jaeger free@home System Access Point (SysAP)
+//! Local API client (ADR-011, Phase 1b transport layer).
+//!
+//! [`cave_home_free_home`] is the **brain**: it models the free@home topology,
+//! decodes datapoint values and projects channels onto grandma-friendly device
+//! kinds — but it is pure logic and deliberately speaks no network. This crate
+//! is the **nervous system**: it talks to a real SysAP over its documented
+//! local HTTPS API and feeds the brain.
+//!
+//! ```text
+//!   SysAP  ──HTTPS REST───▶  rest + model   ─┐
+//!     │                                       ├─▶  state cache  ─▶  core / mqtt bridge
+//!     └────WSS push────────▶  event parser  ──┘
+//! ```
+//!
+//! # Modules
+//! - [`error`] — the crate error type and `Result` alias.
+//! - [`auth`] — HTTP Basic credentials (and the seam for later client-cert / mTLS).
+//! - [`config`] — connection configuration and SysAP URL derivation.
+//!
+//! All domain types (ids, datapoint value codec, pairings, device kinds) are
+//! re-used from [`cave_home_free_home`] — this crate never re-implements them.
+
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::must_use_candidate)]
+// Tests lean on expect/unwrap/assert for clarity (workspace convention).
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used, clippy::panic))]
+// This crate's docs are dense with protocol acronyms (SysAP, HTTPS, WSS, mTLS,
+// fhapi); backticking every one hurts readability more than it helps.
+#![allow(clippy::doc_markdown)]
+
+pub mod auth;
+pub mod cli;
+pub mod client;
+pub mod config;
+pub mod core_bridge;
+pub mod device;
+pub mod discovery;
+pub mod error;
+pub mod event;
+pub mod metrics;
+pub mod model;
+pub mod mqtt_bridge;
+pub mod portal;
+pub mod reconnect;
+pub mod rest;
+pub mod state;
+
+pub use auth::{AuthMethod, ClientCertConfig, Credentials};
+pub use cli::{CliError, FreeAtHomeCommand, parse as parse_cli, to_rest_request};
+pub use client::{FreeAtHomeClient, run_event_loop};
+pub use config::ClientConfig;
+pub use core_bridge::{entity_id, on_off_state, register};
+pub use device::{Device, FreeAtHomeDevice, writable_pairings};
+pub use discovery::discover;
+pub use error::{FreeAtHomeError, Result};
+pub use event::{DatapointUpdate, FreeAtHomeEvent, parse_datapoint_address, parse_ws_frame};
+pub use metrics::Metrics;
+pub use model::{
+    ChannelDto, ConfigurationResponse, DatapointDto, DeviceDto, DeviceListResponse, SysApConfig,
+};
+pub use mqtt_bridge::{availability_topic, state_payload, state_topic};
+pub use portal::{Control, DeviceDetailView, DeviceTile};
+pub use reconnect::Backoff;
+pub use rest::{HttpMethod, RestRequest};
+pub use state::StateCache;
