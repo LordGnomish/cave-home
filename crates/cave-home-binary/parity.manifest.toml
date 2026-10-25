@@ -17,6 +17,33 @@
 # loaders, install/upgrade/rollback mechanics, live status/backup verbs — is
 # enumerated in [[unmapped]] with a phase disposition.
 #
+# SECURITY POSTURE of the shipped listener (2026-10-25, review findings K1/Y1-Y3):
+#   - Binds 127.0.0.1 by default. Any other address is refused (config
+#     validation, before bind, and on the bound address) unless TLS
+#     (--tls-cert/--tls-key) AND explicit credentials (--token-file and/or
+#     --client-ca) are configured.
+#   - HTTPS by default (`tls` is a default feature): with no certificate given,
+#     the boot generates a local CA (reused) + serving cert and a 0600 admin
+#     token + kubeconfig in the data dir, as k3s does. kubectl will not send
+#     credentials over plain HTTP, so a --no-default-features build is usable
+#     only by clients that send bearer tokens over loopback HTTP.
+#   - Every request: Host check (DNS rebinding; 421) -> authentication via the
+#     cave-home-apiserver-rs AuthenticatorChain with anonymous DISABLED (static
+#     tokens in the upstream CSV format, generated admin token, verified client
+#     certificates CN->user/O->groups; wire X-Remote-* never trusted) -> RBAC
+#     (cluster-admin for system:masters, discovery for system:authenticated)
+#     -> admission on writes -> audit (writes + denials logged). Only
+#     /healthz, /livez, /readyz are unauthenticated.
+#   - Writes need a JSON media type (415); the URL is authoritative (no
+#     retargeting via body name/namespace or PATCH); subresources act on
+#     themselves only.
+#   - Per-connection bounds: 64 KiB head (431), 3 MiB body refused from
+#     Content-Length (413), read/handshake/write timeouts, whole-request
+#     deadline, connection cap, non-fatal accept() errors.
+#   Not yet: RBAC objects stored in the registry do not feed the authorizer
+#   (the policy is the built-in one above); tokens are revoked by editing the
+#   token file and restarting; no rate limiting; audit goes to stdout only.
+#
 # Port method: first-party. There is no upstream source; the shape follows the
 # Charter (§5 single-binary, §6.3 grandma-friendly) and ADR-005 deployment
 # topology. No GPL/AGPL source was read; nothing is ported line-by-line.
@@ -108,6 +135,26 @@ spec = "Async runtime + process launch: boot the control plane in-process, serve
 ours = "src/server.rs::run"
 
 [[mapped]]
+spec = "Listener exposure rule: loopback by default; non-loopback only with TLS + explicitly configured credentials"
+ours = "src/access.rs::{is_loopback_host,check_exposure}; src/config.rs::Config::validate (ExposedWithoutTls/ExposedWithoutAuth); src/server.rs::{run_until,run_until_on_listener}"
+
+[[mapped]]
+spec = "kube-apiserver request chain for the binary: Host validation, authentication (anonymous off; token file CSV; x509 client certs), RBAC, admission, audit"
+ours = "src/access.rs::{Gate,HostPolicy,parse_token_file,default_authorizer,LogAuditSink}; src/apirest.rs::handle_decoded (admission); reuses cave-home-apiserver-rs authn/rbac/admission/audit"
+
+[[mapped]]
+spec = "k3s-style first-boot credentials: generated admin token + kubeconfig (0600), local CA + serving certificate (HTTPS by default)"
+ours = "src/access.rs::ensure_bootstrap_admin; src/tls.rs::ensure_self_signed; src/server.rs::{bootstrap_tls,build_gate}"
+
+[[mapped]]
+spec = "Bounded HTTP listener: head/body caps, read/handshake/write timeouts, request deadline, connection cap, non-fatal accept errors, body decoded before the registry lock"
+ours = "src/server.rs::{serve,serve_conn,handle_conn,read_request,reject_unreadable}; limits shared with cave-home-apiserver-rs::server::Limits"
+
+[[mapped]]
+spec = "URL-authoritative writes + subresource semantics + JSON media types on write verbs"
+ours = "src/apirest.rs::{decode_write_body,create,replace,patch,remove} via cave-home-apiserver-rs::handler::{check_write_body,check_patched_identity}"
+
+[[mapped]]
 spec = "OS signal handling (SIGTERM/SIGINT) -> dependency-ordered graceful shutdown"
 ours = "src/server.rs (signal trigger) + src/supervisor.rs (ordered wind-down)"
 
@@ -129,6 +176,11 @@ note     = "ADR-005: the binary is the unit of install/upgrade/rollback. The ato
 area     = "Live `status` / `node list` / `backup` / `restore` execution"
 priority = "phase-1b"
 note     = "These verbs parse to typed Commands today; their action needs a running home (state to read, nodes to enumerate, snapshots to take). The command surface is complete; the execution is deferred with the runtime."
+
+[[unmapped]]
+area     = "RBAC objects from the store, token rotation/revocation, rate limiting, audit file/webhook backends"
+priority = "phase-1b"
+note     = "The listener authorizes with the built-in policy (cluster-admin -> system:masters, discovery -> system:authenticated); Role/ClusterRole/*Binding objects created through the API are stored but do not feed the authorizer yet. Tokens come from the token file (or the generated admin token) and change on restart. There is no per-client rate limit beyond the connection cap and timeouts, and audit lines go to stdout only."
 
 [[unmapped]]
 area     = "Pre-7.1-kernel / 32-bit / legacy compatibility shims"
@@ -164,6 +216,18 @@ ours         = "src/health.rs::tests (all_up_is_up_and_ready, all_down_is_down, 
 [[spec_test]]
 designed_for = "Build/version info never fabricates a git sha (env or \"unknown\")"
 ours         = "src/version.rs::tests (absent_sha_reports_unknown_not_fabricated, current_does_not_fabricate_a_sha)"
+
+[[spec_test]]
+designed_for = "Listener security: exposure rule, Host/DNS-rebinding, no anonymous access, RBAC, spoofed identity headers, audit, token file, bootstrap credentials"
+ours         = "src/access.rs::tests; src/config.rs::tests (default_bind_is_loopback_only, exposed_bind_*, half_configured_tls_is_refused); src/server.rs::tests (requests_without_credentials_are_401_over_the_wire, rebinding_host_is_421_over_the_wire, run_until_refuses_*); tests/tls_serving.rs; tests/write_path_e2e.rs"
+
+[[spec_test]]
+designed_for = "Hostile-client bounds: 413/431, idle and slow-drip clients, EMFILE accept errors, connection cap"
+ours         = "src/server.rs::tests (oversized_body_is_413_before_it_is_sent, oversized_head_is_431, idle_connection_is_closed_after_the_read_timeout, slow_drip_request_is_cut_off_at_the_deadline, accept_errors_do_not_stop_the_listener, connections_beyond_the_cap_are_closed_until_a_slot_frees)"
+
+[[spec_test]]
+designed_for = "Write-path integrity: body/PATCH cannot retarget, subresources act on themselves, JSON media types, admission"
+ours         = "src/apirest.rs::tests (put_whose_body_names_*, merge_patch_cannot_rename_the_target, *_on_status_persists_only_status, delete_on_a_subresource_is_405_*, *content_type*, *admission*)"
 
 [[spec_test]]
 designed_for = "Grandma-friendly text carries no implementation jargon (Charter §6.3)"

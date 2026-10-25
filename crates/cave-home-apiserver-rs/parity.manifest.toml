@@ -32,6 +32,21 @@
 # the verbatim-mapping language have been removed and replaced with this honest
 # spec-based provenance.
 #
+# SECURITY POSTURE (2026-10-25): ApiServer::new()/Default are secure by
+# default — no authenticators, anonymous disabled (401) and an RBAC authorizer
+# with no bindings (403) until the embedder configures credentials and grants;
+# the permissive anonymous + AlwaysAllow pair is only ApiServer::insecure_for_tests().
+# PATCH cannot rename/move the target (check_patched_identity, 400) and
+# subresources execute as subresources (status writes persist only .status,
+# DELETE on status 405, anything else 404). Both JSON parsers decode strings in
+# linear time and cap nesting at 128. The std socket loops (server.rs, tls.rs)
+# bound every connection (64 KiB head -> 431, 3 MiB body -> 413 before reading,
+# chunked/malformed framing -> 501/400, read/handshake/write timeouts, request
+# deadline, connection cap), serve each connection on its own thread, survive
+# accept() errors, and decode the body before taking the server lock. The
+# shipped cave-home binary reuses this chain (authn/RBAC/admission/audit,
+# check_write_body/check_patched_identity, Limits) in its own tokio front end.
+#
 # Charter §6.3: this is INFRASTRUCTURE, hidden from end-users. It produces no
 # user-facing strings and carries no grandma-friendly / i18n labels by design.
 # Charter §8 no-backcompat + ADR-003 Linux-only baseline apply.
@@ -180,7 +195,7 @@ spec = "Authentication contract: an ordered authenticator chain; bearer-token (t
 ours = "src/authn.rs::{Authenticator, AuthenticatorChain, TokenAuthenticator, AnonymousAuthenticator}; src/status.rs::StatusReason::Unauthorized"
 
 [[mapped]]
-spec = "The apiserver handler chain: authentication -> authorization -> admission -> storage -> audit; HTTP-method+path-scope -> REST verb resolution; the metav1.Status / <Kind>List / object response encoders; create=201, get/list/update/patch/delete=200; content-type-driven patch-strategy dispatch (merge vs json-patch); the /status subresource write path; authorization modes (AlwaysAllow / AlwaysDeny / RBAC)"
+spec = "The apiserver handler chain: authentication -> authorization -> admission -> storage -> audit; HTTP-method+path-scope -> REST verb resolution; the metav1.Status / <Kind>List / object response encoders; create=201, get/list/update/patch/delete=200; content-type-driven patch-strategy dispatch (merge vs json-patch); the /status subresource read/write path (status-only persistence for PUT and PATCH; unknown subresources 404); URL-authoritative PATCH; authorization modes (AlwaysAllow / AlwaysDeny / RBAC), secure by default (no anonymous, RBAC with no bindings)"
 ours = "src/handler.rs::{ApiServer, Authorization, status_object, success_status, list_object, object_response, status_response}"
 
 [[mapped]]
@@ -204,8 +219,8 @@ spec = "Storage backend seam to the etcd-compatible kine datastore: conditional 
 ours = "src/storage.rs::{Backend, KineBackend, registry_key} over cave_home_kine_rs::Store"
 
 [[mapped]]
-spec = "The HTTP/1.1 socket loop: read one complete request (Content-Length de-framing), dispatch under a shared lock, write the response (incl. chunked), Connection: close; std TcpListener server generic over any Read+Write so TLS slots in front"
-ours = "src/server.rs::{Server, serve_stream, read_request}"
+spec = "The HTTP/1.1 socket loop: read one complete request (Content-Length de-framing), dispatch under a shared lock, write the response (incl. chunked), Connection: close; std TcpListener server generic over any Read+Write so TLS slots in front; thread per connection under a connection cap, head/body size limits (431/413), read/write timeouts + request deadline, non-fatal accept() errors"
+ours = "src/server.rs::{Server, serve_stream, read_request, read_request_bounded, Limits, ConnectionLimiter, serve_incoming}"
 
 # ---------------------------------------------------------------------------
 # [[unmapped]] — deferred / out-of-scope, each with an ADR-004 disposition
