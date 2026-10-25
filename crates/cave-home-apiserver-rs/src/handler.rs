@@ -66,18 +66,18 @@ impl Default for ApiServer {
 }
 
 impl ApiServer {
-    /// A server with an empty registry, anonymous-allowed authentication, and
-    /// `AlwaysAllow` authorization — the most permissive default, suitable for a
-    /// single-node bootstrap. Harden via [`ApiServer::with_authn`] /
-    /// [`ApiServer::with_authz`].
+    /// A server with an empty registry that is **secure by default**: no
+    /// authenticators and anonymous access disabled (every resource request is
+    /// `401` until credentials are configured via [`ApiServer::with_authn`]),
+    /// and an RBAC authorizer with no bindings (every authenticated request is
+    /// `403` until grants are configured via [`ApiServer::with_authz`]). Only
+    /// the unauthenticated health probes answer out of the box.
     #[must_use]
     pub fn new() -> Self {
         Self {
             registry: Registry::new(),
-            authn: AuthenticatorChain::new()
-                .with(Box::new(AnonymousAuthenticator))
-                .allow_anonymous(true),
-            authz: Authorization::AlwaysAllow,
+            authn: AuthenticatorChain::new().allow_anonymous(false),
+            authz: Authorization::Rbac(RbacAuthorizer::new()),
             admission: AdmissionChain::new(),
             audit: None,
             metrics: Arc::new(Metrics::new()),
@@ -102,11 +102,6 @@ impl ApiServer {
         }
     }
 
-    /// Run the pipeline for a request whose body was already decoded by
-    /// [`preparse_body`] (so the caller can decode outside any lock it holds).
-    pub fn handle_preparsed(&mut self, req: &Request, _body: PreparsedBody) -> Response {
-        self.handle(req)
-    }
 
     /// Attach an audit sink (builder style).
     #[must_use]
@@ -159,8 +154,17 @@ impl ApiServer {
     /// any stage are rendered as a `metav1.Status` body with the matching HTTP
     /// code, so this method never fails.
     pub fn handle(&mut self, req: &Request) -> Response {
+        let body = preparse_body(req);
+        self.handle_preparsed(req, body)
+    }
+
+    /// Run the pipeline for a request whose body was already decoded by
+    /// [`preparse_body`]. Socket loops decode before taking the lock that
+    /// serializes access to the server, so a large body never stalls other
+    /// requests while it is parsed; `req.body` is not read again.
+    pub fn handle_preparsed(&mut self, req: &Request, body: PreparsedBody) -> Response {
         let mut event = AuditEvent::started(req.method.as_str(), &req.target);
-        let resp = match self.route(req, &mut event) {
+        let resp = match self.route(req, body, &mut event) {
             Ok(resp) => resp,
             Err(s) => status_response(&s),
         };
@@ -172,7 +176,7 @@ impl ApiServer {
         resp
     }
 
-    fn route(&mut self, req: &Request, event: &mut AuditEvent) -> Result<Response> {
+    fn route(&mut self, req: &Request, body: PreparsedBody, event: &mut AuditEvent) -> Result<Response> {
         // 0. Unauthenticated liveness/health probes (kubelet + load balancers hit
         //    these without credentials).
         if let Some(resp) = health_endpoint(req.path()) {
@@ -208,37 +212,11 @@ impl ApiServer {
         self.authorize(&user, &rp, verb)?;
 
         // 4. Dispatch to storage.
-        self.dispatch(verb, &gvr, &rp, req)
+        self.dispatch(verb, &gvr, &rp, req, body)
     }
 
     fn authorize(&self, user: &UserInfo, rp: &ResourcePath, verb: &str) -> Result<()> {
-        match &self.authz {
-            Authorization::AlwaysAllow => Ok(()),
-            Authorization::AlwaysDeny => {
-                Err(Status::forbidden(format!("{} is not allowed", user.name)))
-            }
-            Authorization::Rbac(authorizer) => {
-                let mut attrs = Attributes::resource(
-                    user.clone(),
-                    verb,
-                    rp.group.clone(),
-                    rp.resource.clone(),
-                    rp.namespace.clone(),
-                    rp.name.clone(),
-                );
-                if !rp.subresource.is_empty() {
-                    attrs = attrs.with_subresource(rp.subresource.clone());
-                }
-                if authorizer.authorize(&attrs) == Decision::Allow {
-                    Ok(())
-                } else {
-                    Err(Status::forbidden(format!(
-                        "{} cannot {verb} resource \"{}\" in API group \"{}\"",
-                        user.name, rp.resource, rp.group
-                    )))
-                }
-            }
-        }
+        self.authz.authorize_resource(user, rp, verb)
     }
 
     fn dispatch(
@@ -247,7 +225,9 @@ impl ApiServer {
         gvr: &GroupVersionResource,
         rp: &ResourcePath,
         req: &Request,
+        body: PreparsedBody,
     ) -> Result<Response> {
+        check_subresource(verb, rp)?;
         match verb {
             "get" => {
                 let o = self.registry.get(gvr, &rp.namespace, &rp.name)?;
@@ -284,7 +264,7 @@ impl ApiServer {
                 Ok(Response::chunked_json(body))
             }
             "create" => {
-                let body = decode_body(req, gvr, rp)?;
+                let body = check_write_body(body.into_json()?, gvr, rp)?;
                 let admitted = self.admit(Operation::Create, gvr, &rp.namespace, Some(body), None)?;
                 let object = admitted
                     .object
@@ -293,40 +273,37 @@ impl ApiServer {
                 Ok(object_response(201, &created))
             }
             "update" => {
-                let body = decode_body(req, gvr, rp)?;
-                if rp.subresource == "status" {
-                    let updated = self.registry.update_status(gvr, body)?;
-                    return Ok(object_response(200, &updated));
-                }
+                let body = check_write_body(body.into_json()?, gvr, rp)?;
                 let old = self.registry.get(gvr, &rp.namespace, &rp.name).ok();
                 let admitted = self.admit(Operation::Update, gvr, &rp.namespace, Some(body), old)?;
                 let object = admitted
                     .object
                     .ok_or_else(|| Status::invalid("admission removed the object"))?;
-                let updated = self.registry.update(gvr, object)?;
-                Ok(object_response(200, &updated))
+                self.store_update(gvr, rp, object)
             }
             "patch" => {
                 // get → apply patch → admit(Update) → update, so admission and
                 // generation/concurrency semantics match a plain update.
                 let existing = self.registry.get(gvr, &rp.namespace, &rp.name)?;
                 let ctype = req.headers.get("content-type").unwrap_or_default();
-                let body = parse_body(req)?;
+                let doc = body.into_json()?;
                 let patched = if ctype.starts_with("application/json-patch+json") {
-                    let ops = crate::patch::ops_from_json(&body)?;
+                    let ops = crate::patch::ops_from_json(&doc)?;
                     crate::patch::apply_json_patch(&existing, &ops)?
                 } else {
                     // merge-patch+json and strategic-merge-patch+json (the latter
                     // approximated by merge) and the default.
-                    crate::patch::apply_merge_patch(&existing, &body)
+                    crate::patch::apply_merge_patch(&existing, &doc)
                 };
+                // A patch edits the object the URL names; it can never rename
+                // it, move it, or make it address a different stored object.
+                check_patched_identity(&patched, rp)?;
                 let admitted =
                     self.admit(Operation::Update, gvr, &rp.namespace, Some(patched), Some(existing))?;
                 let object = admitted
                     .object
                     .ok_or_else(|| Status::invalid("admission removed the object"))?;
-                let updated = self.registry.update(gvr, object)?;
-                Ok(object_response(200, &updated))
+                self.store_update(gvr, rp, object)
             }
             "delete" => {
                 let existing = self.registry.get(gvr, &rp.namespace, &rp.name)?;
@@ -340,6 +317,122 @@ impl ApiServer {
             )),
         }
     }
+
+    /// Persist an admitted update: through the `/status` subresource (only
+    /// `.status` survives) when the URL names it, else as a full replace.
+    fn store_update(&mut self, gvr: &GroupVersionResource, rp: &ResourcePath, object: Value) -> Result<Response> {
+        let updated = if rp.subresource == "status" {
+            self.registry.update_status(gvr, object)?
+        } else {
+            self.registry.update(gvr, object)?
+        };
+        Ok(object_response(200, &updated))
+    }
+}
+
+impl Authorization {
+    /// Authorize a resource request (`verb` on `rp`, including its subresource)
+    /// for `user`.
+    ///
+    /// # Errors
+    /// `403 Forbidden` when the mode or the RBAC policy denies the request.
+    pub fn authorize_resource(&self, user: &UserInfo, rp: &ResourcePath, verb: &str) -> Result<()> {
+        match self {
+            Self::AlwaysAllow => Ok(()),
+            Self::AlwaysDeny => Err(Status::forbidden(format!("{} is not allowed", user.name))),
+            Self::Rbac(authorizer) => {
+                let mut attrs = Attributes::resource(
+                    user.clone(),
+                    verb,
+                    rp.group.clone(),
+                    rp.resource.clone(),
+                    rp.namespace.clone(),
+                    rp.name.clone(),
+                );
+                if !rp.subresource.is_empty() {
+                    attrs = attrs.with_subresource(rp.subresource.clone());
+                }
+                if authorizer.authorize(&attrs) == Decision::Allow {
+                    Ok(())
+                } else {
+                    let resource = if rp.subresource.is_empty() {
+                        rp.resource.clone()
+                    } else {
+                        format!("{}/{}", rp.resource, rp.subresource)
+                    };
+                    Err(Status::forbidden(format!(
+                        "{} cannot {verb} resource \"{resource}\" in API group \"{}\"",
+                        user.name, rp.group
+                    )))
+                }
+            }
+        }
+    }
+
+    /// Authorize a non-resource request (`verb` on the URL `path`, e.g. `get`
+    /// on `/version`) for `user`.
+    ///
+    /// # Errors
+    /// `403 Forbidden` when the mode or the RBAC policy denies the request.
+    pub fn authorize_non_resource(&self, user: &UserInfo, path: &str, verb: &str) -> Result<()> {
+        match self {
+            Self::AlwaysAllow => Ok(()),
+            Self::AlwaysDeny => Err(Status::forbidden(format!("{} is not allowed", user.name))),
+            Self::Rbac(authorizer) => {
+                let attrs = Attributes::non_resource(user.clone(), verb, path);
+                if authorizer.authorize(&attrs) == Decision::Allow {
+                    Ok(())
+                } else {
+                    Err(Status::forbidden(format!("{} cannot {verb} path \"{path}\"", user.name)))
+                }
+            }
+        }
+    }
+}
+
+/// The subresources this handler implements.
+///
+/// `status` is readable and writable (writes persist only `.status`) but cannot
+/// be deleted; any other
+/// subresource (`scale`, `binding`, `exec`, …) is not served, so it answers
+/// `404` instead of silently acting on the whole object.
+fn check_subresource(verb: &str, rp: &ResourcePath) -> Result<()> {
+    match (rp.subresource.as_str(), verb) {
+        ("", _) | ("status", "get" | "update" | "patch") => Ok(()),
+        ("status", _) => Err(Status::new(
+            crate::status::StatusReason::MethodNotAllowed,
+            format!("{verb} is not supported on {}/status", rp.resource),
+        )),
+        (other, _) => Err(Status::not_found(format!(
+            "the server could not find the requested resource ({}/{other})",
+            rp.resource
+        ))),
+    }
+}
+
+/// Verify a patched object still names the object the URL addresses.
+///
+/// A patch may change content but never `metadata.name` / `metadata.namespace`
+/// (including by deleting them), which would otherwise let it overwrite a
+/// different stored object.
+///
+/// # Errors
+/// `400 BadRequest` when the patched name or namespace differs from the URL.
+pub fn check_patched_identity(patched: &Value, rp: &ResourcePath) -> Result<()> {
+    let m = meta::read_meta(patched);
+    if m.name != rp.name {
+        return Err(Status::bad_request(format!(
+            "the name of the patched object ({}) does not match the name on the URL ({})",
+            m.name, rp.name
+        )));
+    }
+    if m.namespace != rp.namespace {
+        return Err(Status::bad_request(format!(
+            "the namespace of the patched object ({}) does not match the namespace on the URL ({})",
+            m.namespace, rp.namespace
+        )));
+    }
+    Ok(())
 }
 
 /// A request body decoded ahead of the handler. Produced by [`preparse_body`]
@@ -353,6 +446,18 @@ pub enum PreparsedBody {
     Json(Value),
     /// The body could not be decoded; the handler answers with this status.
     Invalid(Status),
+}
+
+impl PreparsedBody {
+    /// The decoded body of a write verb, or the status explaining why there
+    /// is none.
+    fn into_json(self) -> Result<Value> {
+        match self {
+            Self::Json(v) => Ok(v),
+            Self::Invalid(s) => Err(s),
+            Self::None => Err(Status::bad_request("this request requires a JSON body")),
+        }
+    }
 }
 
 /// Decode the request body for the write verbs that read one (POST, PUT, PATCH).
@@ -369,7 +474,10 @@ pub fn preparse_body(req: &Request) -> PreparsedBody {
 
 /// Resolve the REST verb from the HTTP method + path scope (named vs collection)
 /// + the `watch` flag. Returns `MethodNotAllowed` for unsupported combinations.
-fn resolve_verb(method: &Method, rp: &ResourcePath, watch: bool) -> Result<&'static str> {
+///
+/// # Errors
+/// `405 MethodNotAllowed` for a method the path scope does not support.
+pub fn resolve_verb(method: &Method, rp: &ResourcePath, watch: bool) -> Result<&'static str> {
     let named = rp.is_named();
     let verb = match (method, named) {
         (Method::Get, false) if watch => "watch",
@@ -419,7 +527,8 @@ fn parse_body(req: &Request) -> Result<Value> {
     json::parse(text).map_err(|e| Status::bad_request(format!("invalid JSON body: {e}")))
 }
 
-/// Decode a write-verb request body into the typed object the endpoint serves.
+/// Validate a decoded write-verb body (create / update) against the endpoint
+/// it was sent to, before it reaches admission or storage.
 ///
 /// Enforces the same body↔request consistency checks upstream applies before
 /// the object reaches storage:
@@ -437,8 +546,10 @@ fn parse_body(req: &Request) -> Result<Value> {
 ///
 /// On success the (validated) object is returned with the URL namespace stamped
 /// onto its metadata, so storage always sees the authoritative namespace.
-fn decode_body(req: &Request, gvr: &GroupVersionResource, rp: &ResourcePath) -> Result<Value> {
-    let mut body = parse_body(req)?;
+///
+/// # Errors
+/// `400 BadRequest` for a non-object body or any of the mismatches above.
+pub fn check_write_body(mut body: Value, gvr: &GroupVersionResource, rp: &ResourcePath) -> Result<Value> {
     if body.as_object().is_none() {
         return Err(Status::bad_request("request body must be a JSON object"));
     }

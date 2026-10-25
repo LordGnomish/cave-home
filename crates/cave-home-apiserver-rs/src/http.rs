@@ -359,9 +359,13 @@ pub fn reason_phrase(code: u16) -> &'static str {
         404 => "Not Found",
         405 => "Method Not Allowed",
         409 => "Conflict",
+        413 => "Content Too Large",
         415 => "Unsupported Media Type",
+        421 => "Misdirected Request",
         422 => "Unprocessable Entity",
+        431 => "Request Header Fields Too Large",
         500 => "Internal Server Error",
+        501 => "Not Implemented",
         503 => "Service Unavailable",
         _ => match code / 100 {
             2 => "OK",

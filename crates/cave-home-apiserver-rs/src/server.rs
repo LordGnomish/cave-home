@@ -4,24 +4,30 @@
 //!
 //! Behavioural reference: the HTTP/1.1 connection lifecycle (read one request,
 //! dispatch, write one response, close). This is a std-only,
-//! thread-per-connection server: no async runtime and no external HTTP/TLS
-//! crate. The connection handler ([`serve_stream`]) is generic over any
-//! `Read + Write`, so a rustls `StreamOwned` (TLS termination) or an h2 framer
-//! slots in front of it without touching the handler chain — TLS itself is
-//! deferred (see `parity.manifest.toml`). HTTP keep-alive is also deferred: each
-//! connection serves exactly one request and then closes (`Connection: close`).
+//! thread-per-connection server: no async runtime and no external HTTP crate.
+//! The connection handler ([`serve_stream`]) is generic over any
+//! `Read + Write`, so the rustls `StreamOwned` in [`crate::tls`] (or an h2
+//! framer) slots in front of it without touching the handler chain. HTTP
+//! keep-alive is deferred: each connection serves exactly one request and then
+//! closes (`Connection: close`).
+//!
+//! Every connection is bounded by [`Limits`]: a capped request head (`431`) and
+//! body (`413`, refused from `Content-Length` before any body byte is read),
+//! socket read/write timeouts plus a whole-request deadline (slow clients are
+//! dropped), and a cap on concurrent connections. A failed `accept()` (e.g.
+//! `EMFILE` under fd exhaustion) backs off and keeps accepting instead of
+//! ending the loop, and each connection is served on its own thread so one
+//! client never blocks the accept loop. The request body is JSON-decoded
+//! before the [`ApiServer`] lock is taken.
 
 use std::io::{self, Read, Write};
-use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
-use crate::handler::ApiServer;
-use crate::http::Request;
-
-fn to_io<E: std::fmt::Display>(e: E) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, e.to_string())
-}
+use crate::handler::{preparse_body, status_response, ApiServer};
+use crate::http::{Request, Response};
+use crate::status::{Status, StatusReason};
 
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() || haystack.len() < needle.len() {
@@ -30,56 +36,21 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|w| w == needle)
 }
 
-fn content_length(req: &Request) -> usize {
-    req.headers
-        .get("content-length")
-        .and_then(|v| v.trim().parse::<usize>().ok())
-        .unwrap_or(0)
-}
-
-/// Read one complete HTTP/1.1 request from `stream`: the header block (to the
-/// blank line) and then exactly `Content-Length` body bytes. Returns `Ok(None)`
-/// on a clean EOF before any bytes arrive (peer closed without a request).
+/// Read one complete HTTP/1.1 request from `stream` under the default [`Limits`].
+///
+/// Reads the header block (to the blank line) and then exactly
+/// `Content-Length` body bytes. Returns `Ok(None)` on a clean EOF before any
+/// bytes arrive (peer closed without a request).
 ///
 /// # Errors
-/// `UnexpectedEof` if the stream ends mid-message, or `InvalidData` if the bytes
-/// do not parse as a request.
+/// `UnexpectedEof` if the stream ends mid-message, `TimedOut` if it stalls,
+/// or `InvalidData` if the bytes do not parse as a request or exceed a bound.
 pub fn read_request<R: Read>(stream: &mut R) -> io::Result<Option<Request>> {
-    let mut buf: Vec<u8> = Vec::new();
-    let mut tmp = [0u8; 2048];
-
-    let header_end = loop {
-        if let Some(p) = find_subsequence(&buf, b"\r\n\r\n") {
-            break p + 4;
-        }
-        let n = stream.read(&mut tmp)?;
-        if n == 0 {
-            if buf.is_empty() {
-                return Ok(None);
-            }
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "connection closed before request headers completed",
-            ));
-        }
-        buf.extend_from_slice(&tmp[..n]);
-    };
-
-    // Parse the head to learn the body length, then read the rest of the body.
-    let head = Request::parse(&buf[..header_end]).map_err(to_io)?;
-    let want = header_end + content_length(&head);
-    while buf.len() < want {
-        let n = stream.read(&mut tmp)?;
-        if n == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "connection closed before request body completed",
-            ));
-        }
-        buf.extend_from_slice(&tmp[..n]);
-    }
-
-    Ok(Some(Request::parse(&buf[..want]).map_err(to_io)?))
+    read_request_bounded(stream, &Limits::default()).map_err(|e| match e {
+        RequestReadError::Io(e) => e,
+        RequestReadError::TimedOut => io::Error::new(io::ErrorKind::TimedOut, e.to_string()),
+        other => io::Error::new(io::ErrorKind::InvalidData, other.to_string()),
+    })
 }
 
 /// Per-connection resource bounds for the socket loop.
@@ -126,7 +97,7 @@ pub enum RequestReadError {
     BadRequest(String),
     /// The request used a framing this server does not implement (`501`).
     NotImplemented(String),
-    /// The request did not arrive within [`Limits::request_deadline`].
+    /// The request did not arrive within the read timeout / request deadline.
     TimedOut,
     /// The underlying stream failed.
     Io(io::Error),
@@ -147,103 +118,317 @@ impl std::fmt::Display for RequestReadError {
 
 impl std::error::Error for RequestReadError {}
 
+/// One `read` into `tmp`, mapping a socket timeout onto
+/// [`RequestReadError::TimedOut`] and enforcing the whole-request deadline.
+fn read_chunk<R: Read>(
+    stream: &mut R,
+    tmp: &mut [u8],
+    started: Instant,
+    limits: &Limits,
+) -> Result<usize, RequestReadError> {
+    if started.elapsed() > limits.request_deadline {
+        return Err(RequestReadError::TimedOut);
+    }
+    match stream.read(tmp) {
+        Ok(n) => Ok(n),
+        Err(e) if matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut) => {
+            Err(RequestReadError::TimedOut)
+        }
+        Err(e) => Err(RequestReadError::Io(e)),
+    }
+}
+
+/// The declared body length: absent → 0; present → one parseable value (a
+/// repeated header must agree). Chunked request bodies are not implemented.
+fn declared_body_len(head: &Request) -> Result<usize, RequestReadError> {
+    if head.headers.get("transfer-encoding").is_some() {
+        return Err(RequestReadError::NotImplemented(
+            "transfer-encoding request bodies are not supported; send Content-Length".to_string(),
+        ));
+    }
+    let values = head.headers.get_all("content-length");
+    let Some(first) = values.first() else {
+        return Ok(0);
+    };
+    if values.iter().any(|v| v.trim() != first.trim()) {
+        return Err(RequestReadError::BadRequest("conflicting Content-Length headers".to_string()));
+    }
+    first
+        .trim()
+        .parse::<usize>()
+        .map_err(|_| RequestReadError::BadRequest(format!("invalid Content-Length {first:?}")))
+}
+
 /// Read one request like [`read_request`], enforcing `limits`.
+///
+/// The head may not exceed [`Limits::max_head_bytes`], a `Content-Length` above
+/// [`Limits::max_body_bytes`] is refused before any body byte is read, and the
+/// whole request must arrive within [`Limits::request_deadline`].
 ///
 /// # Errors
 /// A [`RequestReadError`] naming the violated bound or the I/O failure.
-pub fn read_request_bounded<R: Read>(stream: &mut R, _limits: &Limits) -> Result<Option<Request>, RequestReadError> {
-    read_request(stream).map_err(RequestReadError::Io)
+pub fn read_request_bounded<R: Read>(stream: &mut R, limits: &Limits) -> Result<Option<Request>, RequestReadError> {
+    let started = Instant::now();
+    let mut buf: Vec<u8> = Vec::new();
+    let mut tmp = [0u8; 4096];
+
+    let header_end = loop {
+        if let Some(p) = find_subsequence(&buf, b"\r\n\r\n") {
+            break p + 4;
+        }
+        if buf.len() > limits.max_head_bytes {
+            return Err(RequestReadError::HeadTooLarge);
+        }
+        let n = read_chunk(stream, &mut tmp, started, limits)?;
+        if n == 0 {
+            if buf.is_empty() {
+                return Ok(None);
+            }
+            return Err(RequestReadError::Io(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "connection closed before request headers completed",
+            )));
+        }
+        buf.extend_from_slice(&tmp[..n]);
+    };
+    if header_end > limits.max_head_bytes {
+        return Err(RequestReadError::HeadTooLarge);
+    }
+
+    // Parse the head to learn the body length, then read the rest of the body.
+    let head = Request::parse(&buf[..header_end]).map_err(|e| RequestReadError::BadRequest(e.to_string()))?;
+    let body_len = declared_body_len(&head)?;
+    if body_len > limits.max_body_bytes {
+        return Err(RequestReadError::BodyTooLarge(body_len));
+    }
+    let want = header_end + body_len;
+    while buf.len() < want {
+        let n = read_chunk(stream, &mut tmp, started, limits)?;
+        if n == 0 {
+            return Err(RequestReadError::Io(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "connection closed before request body completed",
+            )));
+        }
+        buf.extend_from_slice(&tmp[..n]);
+    }
+
+    Request::parse(&buf[..want])
+        .map(Some)
+        .map_err(|e| RequestReadError::BadRequest(e.to_string()))
+}
+
+/// Shared in-flight count behind a [`ConnectionLimiter`].
+#[derive(Debug, Default)]
+struct LimiterState {
+    active: Mutex<usize>,
+    idle: Condvar,
 }
 
 /// Counts in-flight connections against [`Limits::max_connections`].
 #[derive(Clone, Debug)]
 pub struct ConnectionLimiter {
     max: usize,
+    state: Arc<LimiterState>,
 }
 
 /// One admitted connection; dropping it frees the slot.
 #[derive(Debug)]
 pub struct ConnectionPermit {
-    _limiter: ConnectionLimiter,
+    state: Arc<LimiterState>,
 }
 
 impl ConnectionLimiter {
     /// A limiter admitting at most `max` concurrent connections.
     #[must_use]
     pub fn new(max: usize) -> Self {
-        Self { max }
+        Self { max, state: Arc::new(LimiterState::default()) }
     }
 
     /// Admit one more connection, or `None` when at capacity.
     #[must_use]
     pub fn try_acquire(&self) -> Option<ConnectionPermit> {
-        let _ = self.max;
-        Some(ConnectionPermit { _limiter: self.clone() })
+        let mut active = self.state.active.lock().unwrap_or_else(PoisonError::into_inner);
+        if *active >= self.max {
+            return None;
+        }
+        *active += 1;
+        drop(active);
+        Some(ConnectionPermit { state: Arc::clone(&self.state) })
+    }
+
+    /// Block until every admitted connection has finished.
+    pub fn wait_idle(&self) {
+        let mut active = self.state.active.lock().unwrap_or_else(PoisonError::into_inner);
+        while *active > 0 {
+            active = self.state.idle.wait(active).unwrap_or_else(PoisonError::into_inner);
+        }
     }
 }
 
-/// Drive an accept stream: serve each connection on its own thread (bounded by
-/// [`Limits::max_connections`]) and survive transient `accept()` failures.
+impl Drop for ConnectionPermit {
+    fn drop(&mut self) {
+        let mut active = self.state.active.lock().unwrap_or_else(PoisonError::into_inner);
+        *active = active.saturating_sub(1);
+        let idle = *active == 0;
+        drop(active);
+        if idle {
+            self.state.idle.notify_all();
+        }
+    }
+}
+
+/// Drive an accept stream, one thread per connection, surviving accept errors.
+///
+/// Concurrency is bounded by [`Limits::max_connections`] (a connection over the
+/// cap is closed at once), and transient `accept()` failures — `EMFILE`/`ENFILE` under fd
+/// exhaustion, `ECONNABORTED`, … — by backing off for
+/// [`Limits::accept_backoff`] and accepting again. Returns once `incoming` is
+/// exhausted and every in-flight connection has finished.
 ///
 /// # Errors
-/// An accept error.
-pub fn serve_incoming<I, S, F>(incoming: I, _limits: &Limits, serve: F) -> io::Result<()>
+/// None today: accept failures are absorbed. The `Result` is kept so a future
+/// fatal condition (e.g. a closed listener) can be surfaced.
+pub fn serve_incoming<I, S, F>(incoming: I, limits: &Limits, serve: F) -> io::Result<()>
 where
     I: IntoIterator<Item = io::Result<S>>,
     S: Send + 'static,
     F: Fn(S) -> io::Result<()> + Send + Sync + 'static,
 {
+    let limiter = ConnectionLimiter::new(limits.max_connections);
+    let serve = Arc::new(serve);
     for conn in incoming {
-        let _ = serve(conn?);
+        let Ok(conn) = conn else {
+            if !limits.accept_backoff.is_zero() {
+                std::thread::sleep(limits.accept_backoff);
+            }
+            continue;
+        };
+        // Over capacity: dropping the connection closes it immediately.
+        let Some(permit) = limiter.try_acquire() else {
+            continue;
+        };
+        let serve = Arc::clone(&serve);
+        // If the thread cannot be created the closure — connection and permit
+        // included — is dropped, which closes the connection and frees the slot.
+        let _ = std::thread::Builder::new()
+            .name("apiserver-conn".to_string())
+            .spawn(move || {
+                let _permit = permit;
+                // Per-connection failures (bad client, reset) never stop the server.
+                let _ = serve(conn);
+            });
     }
+    limiter.wait_idle();
     Ok(())
 }
 
-/// Serve exactly one request on `stream`: read it, run the handler under the
-/// shared lock, write the response (with `Connection: close`), and flush. A
-/// peer that closes without sending a request is a no-op.
+/// Apply the read/write timeouts in `limits` to an accepted socket.
 ///
 /// # Errors
-/// I/O errors from the underlying stream.
-pub fn serve_stream<S: Read + Write>(stream: &mut S, app: &Mutex<ApiServer>) -> io::Result<()> {
-    let Some(req) = read_request(stream)? else {
-        return Ok(());
-    };
-    let mut resp = {
-        // A poisoned lock still holds a valid server; recover and continue.
-        let mut guard = app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        guard.handle(&req)
+/// If the OS rejects the socket option.
+pub fn apply_timeouts(stream: &TcpStream, limits: &Limits) -> io::Result<()> {
+    let nonzero = |d: Duration| (!d.is_zero()).then_some(d);
+    stream.set_read_timeout(nonzero(limits.read_timeout))?;
+    stream.set_write_timeout(nonzero(limits.write_timeout))
+}
+
+/// Answer a request that could not be read with the matching status. Stalled or
+/// broken connections get no answer: the error is returned instead.
+pub(crate) fn reject_unreadable<W: Write>(stream: &mut W, err: RequestReadError) -> io::Result<()> {
+    let mut resp = match err {
+        RequestReadError::HeadTooLarge => {
+            Response::new(431).with_body("text/plain; charset=utf-8", b"request head too large".to_vec())
+        }
+        RequestReadError::BodyTooLarge(n) => status_response(&Status::new(
+            StatusReason::RequestEntityTooLarge,
+            format!("request body of {n} bytes exceeds the limit"),
+        )),
+        RequestReadError::BadRequest(m) => status_response(&Status::bad_request(m)),
+        RequestReadError::NotImplemented(m) => {
+            Response::new(501).with_body("text/plain; charset=utf-8", m.into_bytes())
+        }
+        RequestReadError::TimedOut => {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "request not received in time"))
+        }
+        RequestReadError::Io(e) => return Err(e),
     };
     resp.headers.insert("connection", "close");
     stream.write_all(&resp.to_bytes())?;
     stream.flush()
 }
 
+/// Run one already-read request through the apiserver and write the response.
+/// The body is JSON-decoded *before* the lock is taken, so a large body never
+/// stalls the other connections waiting on the server.
+pub(crate) fn respond<W: Write>(stream: &mut W, app: &Mutex<ApiServer>, req: &Request) -> io::Result<()> {
+    let body = preparse_body(req);
+    let mut resp = {
+        // A poisoned lock still holds a valid server; recover and continue.
+        let mut guard = app.lock().unwrap_or_else(PoisonError::into_inner);
+        guard.handle_preparsed(req, body)
+    };
+    resp.headers.insert("connection", "close");
+    stream.write_all(&resp.to_bytes())?;
+    stream.flush()
+}
+
+/// Serve exactly one request on `stream` under the default [`Limits`].
+///
+/// Reads it, runs the handler under the shared lock, writes the response (with
+/// `Connection: close`), and flushes. A peer that closes without sending a
+/// request is a no-op; an oversized or malformed request is answered with
+/// `413`/`431`/`400`/`501`.
+///
+/// # Errors
+/// I/O errors from the underlying stream, or a timeout.
+pub fn serve_stream<S: Read + Write>(stream: &mut S, app: &Mutex<ApiServer>) -> io::Result<()> {
+    serve_stream_with_limits(stream, app, &Limits::default())
+}
+
+/// [`serve_stream`] with explicit [`Limits`].
+///
+/// # Errors
+/// I/O errors from the underlying stream, or a timeout.
+pub fn serve_stream_with_limits<S: Read + Write>(
+    stream: &mut S,
+    app: &Mutex<ApiServer>,
+    limits: &Limits,
+) -> io::Result<()> {
+    match read_request_bounded(stream, limits) {
+        Ok(Some(req)) => respond(stream, app, &req),
+        Ok(None) => Ok(()),
+        Err(e) => reject_unreadable(stream, e),
+    }
+}
+
 /// A blocking, thread-per-connection HTTP server bound to a TCP port.
 pub struct Server {
     listener: TcpListener,
     app: Arc<Mutex<ApiServer>>,
+    limits: Limits,
 }
 
 impl Server {
     /// Bind to `addr` (use port `0` for an ephemeral port) wrapping a shared
-    /// [`ApiServer`].
+    /// [`ApiServer`], with the default [`Limits`].
     ///
     /// # Errors
     /// Any bind error from the OS.
     pub fn bind(addr: impl ToSocketAddrs, app: Arc<Mutex<ApiServer>>) -> io::Result<Self> {
-        Ok(Self {
-            listener: TcpListener::bind(addr)?,
-            app,
-        })
+        Self::bind_with_limits(addr, app, Limits::default())
     }
 
     /// Like [`Server::bind`] with explicit per-connection [`Limits`].
     ///
     /// # Errors
     /// Any bind error from the OS.
-    pub fn bind_with_limits(addr: impl ToSocketAddrs, app: Arc<Mutex<ApiServer>>, _limits: Limits) -> io::Result<Self> {
-        Self::bind(addr, app)
+    pub fn bind_with_limits(addr: impl ToSocketAddrs, app: Arc<Mutex<ApiServer>>, limits: Limits) -> io::Result<Self> {
+        Ok(Self {
+            listener: TcpListener::bind(addr)?,
+            app,
+            limits,
+        })
     }
 
     /// The bound local address (resolves the ephemeral port).
@@ -254,32 +439,31 @@ impl Server {
         self.listener.local_addr()
     }
 
-    /// Accept and fully serve a single connection (one request). Used by tests
-    /// and by callers that drive their own accept cadence.
+    /// Accept and fully serve a single connection (one request) on the calling
+    /// thread. Used by tests and by callers that drive their own accept cadence.
     ///
     /// # Errors
-    /// Accept or per-connection I/O errors.
+    /// Accept, timeout, or per-connection I/O errors.
     pub fn serve_once(&self) -> io::Result<()> {
         let (mut stream, _peer) = self.listener.accept()?;
-        serve_stream(&mut stream, &self.app)
+        apply_timeouts(&stream, &self.limits)?;
+        serve_stream_with_limits(&mut stream, &self.app, &self.limits)
     }
 
-    /// Run the accept loop forever, serving each connection on the calling
-    /// thread. Per-connection errors are swallowed so one bad client cannot stop
-    /// the server.
+    /// Run the accept loop forever via [`serve_incoming`]: each connection is
+    /// served on its own thread under the configured [`Limits`], per-connection
+    /// errors are swallowed so one bad client cannot stop the server, and a
+    /// failed `accept()` backs off instead of ending the loop.
     ///
     /// # Errors
-    /// A fatal accept error.
+    /// None in practice; see [`serve_incoming`].
     pub fn run(&self) -> io::Result<()> {
-        for conn in self.listener.incoming() {
-            match conn {
-                Ok(mut stream) => {
-                    let _ = serve_stream(&mut stream, &self.app);
-                }
-                Err(e) => return Err(e),
-            }
-        }
-        Ok(())
+        let app = Arc::clone(&self.app);
+        let limits = self.limits.clone();
+        serve_incoming(self.listener.incoming(), &self.limits, move |mut stream: TcpStream| {
+            apply_timeouts(&stream, &limits)?;
+            serve_stream_with_limits(&mut stream, &app, &limits)
+        })
     }
 }
 

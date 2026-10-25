@@ -244,8 +244,10 @@ impl std::error::Error for JsonError {}
 /// string, trailing garbage, empty input, …).
 pub fn parse(input: &str) -> std::result::Result<Value, JsonError> {
     let mut p = Parser {
+        src: input,
         bytes: input.as_bytes(),
         pos: 0,
+        depth: 0,
     };
     p.skip_ws();
     let v = p.parse_value()?;
@@ -256,9 +258,25 @@ pub fn parse(input: &str) -> std::result::Result<Value, JsonError> {
     Ok(v)
 }
 
+/// Maximum container nesting depth either parser accepts — bounds recursion
+/// (and so stack use) on hostile, deeply nested request bodies.
+pub const MAX_NESTING_DEPTH: usize = 128;
+
+/// End of the run of string-content bytes starting at `pos` that can be copied
+/// verbatim: up to the next byte matching `stop`. Every `stop` byte is ASCII,
+/// so the run always ends on a UTF-8 scalar boundary of the `&str` input.
+fn plain_run_end(bytes: &[u8], pos: usize, stop: impl Fn(u8) -> bool) -> usize {
+    bytes
+        .get(pos..)
+        .and_then(|rest| rest.iter().position(|&b| stop(b)))
+        .map_or(bytes.len(), |i| pos + i)
+}
+
 struct Parser<'a> {
+    src: &'a str,
     bytes: &'a [u8],
     pos: usize,
+    depth: usize,
 }
 
 impl Parser<'_> {
@@ -285,14 +303,28 @@ impl Parser<'_> {
 
     fn parse_value(&mut self) -> std::result::Result<Value, JsonError> {
         match self.peek() {
-            Some(b'{') => self.parse_object(),
-            Some(b'[') => self.parse_array(),
+            Some(b'{') => self.nested(Self::parse_object),
+            Some(b'[') => self.nested(Self::parse_array),
             Some(b'"') => Ok(Value::String(self.parse_string()?)),
             Some(b't' | b'f') => self.parse_bool(),
             Some(b'n') => self.parse_null(),
             Some(b'-' | b'0'..=b'9') => self.parse_number(),
             _ => Err(self.err("expected a JSON value")),
         }
+    }
+
+    /// Parse one container, refusing to nest deeper than [`MAX_NESTING_DEPTH`].
+    fn nested(
+        &mut self,
+        container: fn(&mut Self) -> std::result::Result<Value, JsonError>,
+    ) -> std::result::Result<Value, JsonError> {
+        if self.depth >= MAX_NESTING_DEPTH {
+            return Err(self.err("JSON nesting too deep"));
+        }
+        self.depth += 1;
+        let value = container(self);
+        self.depth -= 1;
+        value
     }
 
     fn expect_lit(&mut self, lit: &str, value: Value) -> std::result::Result<Value, JsonError> {
@@ -386,12 +418,13 @@ impl Parser<'_> {
                     self.pos += 1;
                 }
                 Some(_) => {
-                    // Copy one UTF-8 scalar starting at pos.
-                    let rest = &self.bytes[self.pos..];
-                    let s = std::str::from_utf8(rest).map_err(|_| self.err("invalid UTF-8"))?;
-                    let ch = s.chars().next().ok_or_else(|| self.err("invalid UTF-8"))?;
-                    out.push(ch);
-                    self.pos += ch.len_utf8();
+                    // Copy the whole unescaped run at once: the input is already
+                    // a `&str`, so this is a plain slice copy (no re-validation
+                    // of the remaining input per character).
+                    let end = plain_run_end(self.bytes, self.pos, |b| b == b'"' || b == b'\\');
+                    let run = self.src.get(self.pos..end).ok_or_else(|| self.err("invalid UTF-8"))?;
+                    out.push_str(run);
+                    self.pos = end;
                 }
             }
         }
@@ -562,16 +595,17 @@ impl Value {
 /// Cursor over the input bytes. JSON structural characters are all ASCII, so we
 /// scan bytes and only decode UTF-8 for string contents.
 struct ValueParser<'a> {
+    src: &'a str,
     bytes: &'a [u8],
     pos: usize,
 }
 
 impl<'a> ValueParser<'a> {
     /// Maximum container nesting depth — bounds recursion on hostile input.
-    const MAX_DEPTH: usize = 128;
+    const MAX_DEPTH: usize = MAX_NESTING_DEPTH;
 
     const fn new(input: &'a str) -> Self {
-        Self { bytes: input.as_bytes(), pos: 0 }
+        Self { src: input, bytes: input.as_bytes(), pos: 0 }
     }
 
     fn peek(&self) -> Option<u8> {
@@ -644,11 +678,12 @@ impl<'a> ValueParser<'a> {
                 // A raw control char (< 0x20) is illegal in a JSON string.
                 0x00..=0x1F => return Err(ParseError::Unexpected { pos: self.pos, found: b as char }),
                 _ => {
-                    // Decode one UTF-8 scalar from the remaining bytes.
-                    let rest = std::str::from_utf8(&self.bytes[self.pos..]).map_err(|_| ParseError::InvalidEscape)?;
-                    let ch = rest.chars().next().ok_or(ParseError::UnexpectedEof)?;
-                    out.push(ch);
-                    self.pos += ch.len_utf8();
+                    // Copy the whole run up to the next quote, escape or control
+                    // byte as one slice of the (already valid UTF-8) input.
+                    let end = plain_run_end(self.bytes, self.pos, |b| b == b'"' || b == b'\\' || b < 0x20);
+                    let run = self.src.get(self.pos..end).ok_or(ParseError::InvalidEscape)?;
+                    out.push_str(run);
+                    self.pos = end;
                 }
             }
         }
@@ -986,5 +1021,12 @@ mod tests {
         let err = parse(&format!("{}1{}", "{\"a\":".repeat(200), "}".repeat(200)))
             .expect_err("200 nested objects exceed the limit");
         assert!(err.message.contains("deep"), "{err}");
+    }
+
+    #[test]
+    fn pathological_nesting_is_an_error_not_a_stack_overflow() {
+        let hostile = "[".repeat(1_000_000);
+        assert!(parse(&hostile).is_err());
+        assert_eq!(Value::parse(&hostile), Err(ParseError::TooDeep));
     }
 }

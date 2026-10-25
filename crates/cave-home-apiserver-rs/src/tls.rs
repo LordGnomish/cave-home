@@ -19,8 +19,8 @@
 //! The crypto provider is pinned to `ring`, so the build needs no C toolchain.
 
 use std::io::{self, BufReader, Read, Write};
-use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
+use std::sync::{Arc, Mutex};
 
 use rustls::crypto::CryptoProvider;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
@@ -29,7 +29,7 @@ use rustls::{RootCertStore, ServerConfig, ServerConnection, StreamOwned};
 
 use crate::handler::ApiServer;
 use crate::http::Request;
-use crate::server::{read_request, Limits};
+use crate::server::{apply_timeouts, read_request_bounded, reject_unreadable, respond, serve_incoming, Limits};
 
 fn to_io<E: std::fmt::Display>(e: E) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, e.to_string())
@@ -123,8 +123,9 @@ fn inject_client_identity(req: &mut Request, peer: Option<&[CertificateDer<'_>]>
     }
 }
 
-/// Terminate TLS on `tcp`, then serve exactly one request through the apiserver
-/// over the encrypted stream (mirroring [`crate::server::serve_stream`]). A
+/// Terminate TLS on `tcp`, then serve exactly one request over it.
+///
+/// Mirrors [`crate::server::serve_stream`] under the default [`Limits`]. A
 /// verified client certificate is turned into the front-proxy identity headers.
 ///
 /// # Errors
@@ -134,23 +135,33 @@ pub fn serve_tls_stream<S: Read + Write>(
     config: &Arc<ServerConfig>,
     app: &Mutex<ApiServer>,
 ) -> io::Result<()> {
+    serve_tls_stream_with_limits(tcp, config, app, &Limits::default())
+}
+
+/// [`serve_tls_stream`] with explicit [`Limits`]. The read timeout must already
+/// be set on the socket (see [`apply_timeouts`]) so a client that never
+/// completes the handshake cannot pin the connection.
+///
+/// # Errors
+/// Handshake, timeout or per-connection I/O errors.
+pub fn serve_tls_stream_with_limits<S: Read + Write>(
+    tcp: S,
+    config: &Arc<ServerConfig>,
+    app: &Mutex<ApiServer>,
+    limits: &Limits,
+) -> io::Result<()> {
     let conn = ServerConnection::new(config.clone()).map_err(to_io)?;
     let mut tls = StreamOwned::new(conn, tcp);
 
-    // read_request drives the handshake (rustls reads transparently), so the
-    // peer certificate is available immediately afterwards.
-    let Some(mut req) = read_request(&mut tls)? else {
-        return Ok(());
+    // The bounded read drives the handshake (rustls reads transparently), so
+    // the peer certificate is available immediately afterwards.
+    let mut req = match read_request_bounded(&mut tls, limits) {
+        Ok(Some(req)) => req,
+        Ok(None) => return Ok(()),
+        Err(e) => return reject_unreadable(&mut tls, e),
     };
     inject_client_identity(&mut req, tls.conn.peer_certificates());
-
-    let mut resp = {
-        let mut guard = app.lock().unwrap_or_else(PoisonError::into_inner);
-        guard.handle(&req)
-    };
-    resp.headers.insert("connection", "close");
-    tls.write_all(&resp.to_bytes())?;
-    tls.flush()
+    respond(&mut tls, app, &req)
 }
 
 /// A blocking, thread-per-connection HTTPS server: the TLS-terminating sibling
@@ -159,6 +170,7 @@ pub struct TlsServer {
     listener: TcpListener,
     app: Arc<Mutex<ApiServer>>,
     config: Arc<ServerConfig>,
+    limits: Limits,
 }
 
 impl TlsServer {
@@ -172,7 +184,7 @@ impl TlsServer {
         app: Arc<Mutex<ApiServer>>,
         config: Arc<ServerConfig>,
     ) -> io::Result<Self> {
-        Ok(Self { listener: TcpListener::bind(addr)?, app, config })
+        Self::bind_with_limits(addr, app, config, Limits::default())
     }
 
     /// Like [`TlsServer::bind`] with explicit per-connection [`Limits`].
@@ -183,9 +195,9 @@ impl TlsServer {
         addr: impl ToSocketAddrs,
         app: Arc<Mutex<ApiServer>>,
         config: Arc<ServerConfig>,
-        _limits: Limits,
+        limits: Limits,
     ) -> io::Result<Self> {
-        Self::bind(addr, app, config)
+        Ok(Self { listener: TcpListener::bind(addr)?, app, config, limits })
     }
 
     /// The bound local address (resolves the ephemeral port).
@@ -202,25 +214,27 @@ impl TlsServer {
     /// Accept, handshake, or per-connection I/O errors.
     pub fn serve_once(&self) -> io::Result<()> {
         let (tcp, _peer) = self.listener.accept()?;
-        serve_tls_stream(tcp, &self.config, &self.app)
+        apply_timeouts(&tcp, &self.limits)?;
+        serve_tls_stream_with_limits(tcp, &self.config, &self.app, &self.limits)
     }
 
-    /// Run the accept loop forever. Per-connection errors (including handshake
-    /// failures, e.g. a client that presents no certificate to an mTLS server)
-    /// are swallowed so one bad client cannot stop the server.
+    /// Run the accept loop forever via [`serve_incoming`]: each connection is
+    /// handshaken and served on its own thread under the configured [`Limits`].
+    /// Per-connection errors (including handshake failures, e.g. a client that
+    /// presents no certificate to an mTLS server, or one that never speaks
+    /// TLS) are swallowed, and a failed `accept()` backs off instead of ending
+    /// the loop.
     ///
     /// # Errors
-    /// A fatal accept error.
+    /// None in practice; see [`serve_incoming`].
     pub fn run(&self) -> io::Result<()> {
-        for conn in self.listener.incoming() {
-            match conn {
-                Ok(tcp) => {
-                    let _ = serve_tls_stream(tcp, &self.config, &self.app);
-                }
-                Err(e) => return Err(e),
-            }
-        }
-        Ok(())
+        let app = Arc::clone(&self.app);
+        let config = Arc::clone(&self.config);
+        let limits = self.limits.clone();
+        serve_incoming(self.listener.incoming(), &self.limits, move |tcp: TcpStream| {
+            apply_timeouts(&tcp, &limits)?;
+            serve_tls_stream_with_limits(tcp, &config, &app, &limits)
+        })
     }
 }
 

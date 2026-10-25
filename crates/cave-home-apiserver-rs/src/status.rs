@@ -30,6 +30,10 @@ pub enum StatusReason {
     Forbidden,
     /// 405 — the verb is not supported on this resource.
     MethodNotAllowed,
+    /// 413 — the request body exceeds the server's limit.
+    RequestEntityTooLarge,
+    /// 415 — the request body's `Content-Type` is not accepted for this verb.
+    UnsupportedMediaType,
     /// 500 — an unexpected internal error.
     InternalError,
 }
@@ -44,6 +48,8 @@ impl StatusReason {
             StatusReason::Forbidden => 403,
             StatusReason::NotFound => 404,
             StatusReason::MethodNotAllowed => 405,
+            StatusReason::RequestEntityTooLarge => 413,
+            StatusReason::UnsupportedMediaType => 415,
             StatusReason::AlreadyExists | StatusReason::Conflict => 409,
             StatusReason::Invalid => 422,
             StatusReason::InternalError => 500,
@@ -62,6 +68,8 @@ impl StatusReason {
             StatusReason::Unauthorized => "Unauthorized",
             StatusReason::Forbidden => "Forbidden",
             StatusReason::MethodNotAllowed => "MethodNotAllowed",
+            StatusReason::RequestEntityTooLarge => "RequestEntityTooLarge",
+            StatusReason::UnsupportedMediaType => "UnsupportedMediaType",
             StatusReason::InternalError => "InternalError",
         }
     }
@@ -157,6 +165,8 @@ mod tests {
         assert_eq!(StatusReason::Invalid.code(), 422);
         assert_eq!(StatusReason::BadRequest.code(), 400);
         assert_eq!(StatusReason::MethodNotAllowed.code(), 405);
+        assert_eq!(StatusReason::RequestEntityTooLarge.code(), 413);
+        assert_eq!(StatusReason::UnsupportedMediaType.code(), 415);
         assert_eq!(StatusReason::InternalError.code(), 500);
     }
 
