@@ -14,13 +14,13 @@
 //! [`handle`] is pure (`&mut Registry` in, [`HttpResponse`] out), so the whole
 //! routing/serialization contract is unit-testable without a socket.
 
+use cave_home_apiserver_rs::admission::{AdmissionChain, AdmissionRequest, Operation};
 use cave_home_apiserver_rs::gvk;
+use cave_home_apiserver_rs::handler::{check_patched_identity, check_write_body};
 use cave_home_apiserver_rs::json::{self, Value};
 use cave_home_apiserver_rs::path;
 use cave_home_apiserver_rs::registry::{ListOptions, ListResult, Registry};
 use cave_home_apiserver_rs::status::{Status, StatusReason};
-
-use cave_home_apiserver_rs::admission::AdmissionChain;
 
 use crate::http::{HttpRequest, HttpResponse};
 use crate::version::BuildInfo;
@@ -28,30 +28,133 @@ use crate::version::BuildInfo;
 /// Whether `path` is one of the non-resource endpoints this surface serves
 /// (probes, `/version`, `/metrics`, discovery, `OpenAPI`), as opposed to a
 /// resource path parsed by [`path::parse`].
+///
+/// The access gate authorizes by this same classification, and [`handle`]
+/// never routes a path it covers into the resource verbs, so the two cannot
+/// disagree about which policy applies.
 #[must_use]
-pub const fn is_non_resource_path(_path: &str) -> bool {
-    false
+pub fn is_non_resource_path(path: &str) -> bool {
+    let segments = |rest: &str| rest.split('/').filter(|s| !s.is_empty()).count();
+    match path {
+        "/healthz" | "/readyz" | "/livez" | "/version" | "/metrics" | "/api" | "/apis" | "/openapi" => true,
+        _ if path.starts_with("/openapi/") => true,
+        _ => path.strip_prefix("/api/").is_some_and(|rest| segments(rest) == 1)
+            || path.strip_prefix("/apis/").is_some_and(|rest| segments(rest) == 2),
+    }
+}
+
+/// The media type of the request body (`Content-Type` without parameters).
+fn media_type(req: &HttpRequest) -> Option<String> {
+    req.header("content-type")
+        .map(|v| v.split(';').next().unwrap_or_default().trim().to_ascii_lowercase())
+}
+
+/// The patch formats a PATCH body may use (strategic merge is approximated by
+/// a JSON merge patch for the flat objects this surface serves).
+const PATCH_MEDIA_TYPES: &[&str] = &[
+    "application/merge-patch+json",
+    "application/strategic-merge-patch+json",
+    "application/json-patch+json",
+];
+
+fn unsupported_media_type(found: Option<&str>, accepted: &str) -> HttpResponse {
+    status_response(&Status::new(
+        StatusReason::UnsupportedMediaType,
+        format!(
+            "the body of the request was in an unsupported format ({}); accepted: {accepted}",
+            found.unwrap_or("no Content-Type")
+        ),
+    ))
 }
 
 /// Decode the JSON body of a write verb before any lock is taken.
 ///
+/// POST and PUT bodies must be `application/json` objects; PATCH bodies must
+/// use one of the patch media types. Requiring a JSON media type means a
+/// browser cannot forge a write with a "simple" cross-site form post. Other
+/// methods carry no body this surface reads (`Ok(None)`).
+///
 /// # Errors
-/// The response to send instead (`400`, `415`).
-pub const fn decode_write_body(_req: &HttpRequest) -> Result<Option<Value>, HttpResponse> {
-    Ok(None)
+/// The response to send instead: `415` for a missing/foreign media type,
+/// `400` for a body that is not valid JSON (or not an object where required).
+pub fn decode_write_body(req: &HttpRequest) -> Result<Option<Value>, HttpResponse> {
+    let mtype = media_type(req);
+    let must_be_object = match req.method.as_str() {
+        "POST" | "PUT" => {
+            if mtype.as_deref() != Some("application/json") {
+                return Err(unsupported_media_type(mtype.as_deref(), "application/json"));
+            }
+            true
+        }
+        "PATCH" => {
+            if !mtype.as_deref().is_some_and(|m| PATCH_MEDIA_TYPES.contains(&m)) {
+                return Err(unsupported_media_type(mtype.as_deref(), &PATCH_MEDIA_TYPES.join(", ")));
+            }
+            false
+        }
+        _ => return Ok(None),
+    };
+    let text = std::str::from_utf8(&req.body)
+        .map_err(|_| HttpResponse::json(400, bad_request_body("request body is not valid UTF-8")))?;
+    let value = Value::parse(text)
+        .map_err(|e| HttpResponse::json(400, bad_request_body(&format!("malformed JSON body: {e}"))))?;
+    if must_be_object && value.as_object().is_none() {
+        return Err(HttpResponse::json(400, bad_request_body("request body must be a JSON object")));
+    }
+    Ok(Some(value))
+}
+
+/// Route and serve one request against the registry, decoding its body first
+/// and admitting writes through an empty admission chain.
+///
+/// This is the routing/serialization contract only: it performs **no**
+/// authentication or authorization. The socket path goes through
+/// [`crate::access::Gate`] and then [`handle_decoded`].
+#[must_use]
+pub fn handle(reg: &mut Registry, req: &HttpRequest) -> HttpResponse {
+    match decode_write_body(req) {
+        Ok(body) => handle_decoded(reg, req, body, &AdmissionChain::new()),
+        Err(resp) => resp,
+    }
 }
 
 /// Serve one request whose body [`decode_write_body`] already decoded, running
 /// write verbs through `admission` before they reach the registry.
 #[must_use]
-pub fn handle_decoded(reg: &mut Registry, req: &HttpRequest, _body: Option<Value>, _admission: &AdmissionChain) -> HttpResponse {
-    handle(reg, req)
+pub fn handle_decoded(reg: &mut Registry, req: &HttpRequest, body: Option<Value>, admission: &AdmissionChain) -> HttpResponse {
+    if is_non_resource_path(&req.path) {
+        return non_resource_response(reg, req);
+    }
+
+    // Everything else is a resource path, dispatched by verb.
+    let rp = match path::parse(&req.path) {
+        Ok(rp) => rp,
+        Err(s) => return status_response(&s),
+    };
+    let gvr = rp.gvr();
+
+    let result = match req.method.as_str() {
+        "GET" => Ok(get_or_list(reg, &rp, &gvr, req.header("accept"))),
+        "POST" => create(reg, &rp, &gvr, body, admission),
+        "PUT" => replace(reg, &rp, &gvr, body, admission),
+        "PATCH" => patch(reg, &rp, &gvr, req, body, admission),
+        "DELETE" => remove(reg, &rp, &gvr, admission),
+        other => Err(Status::new(
+            StatusReason::MethodNotAllowed,
+            format!("{other} is not supported on {}", req.path),
+        )),
+    };
+    result.unwrap_or_else(|s| status_response(&s))
 }
 
-/// Route and serve one request against the registry.
-#[must_use]
-pub fn handle(reg: &mut Registry, req: &HttpRequest) -> HttpResponse {
-    // Non-resource endpoints (liveness/readiness/version/metrics/discovery).
+/// The non-resource surface: probes, version, metrics, discovery, `OpenAPI`.
+fn non_resource_response(reg: &Registry, req: &HttpRequest) -> HttpResponse {
+    if !matches!(req.method.as_str(), "GET" | "HEAD") {
+        return status_response(&Status::new(
+            StatusReason::MethodNotAllowed,
+            format!("{} is not supported on {}", req.method, req.path),
+        ));
+    }
     match req.path.as_str() {
         "/healthz" | "/readyz" | "/livez" => return HttpResponse::text(200, "ok"),
         "/version" => return version_response(),
@@ -82,25 +185,40 @@ pub fn handle(reg: &mut Registry, req: &HttpRequest) -> HttpResponse {
     if req.path.starts_with("/openapi") {
         return status_response(&Status::not_found("openapi schema is not served"));
     }
+    status_response(&Status::not_found(format!("no resources for {}", req.path)))
+}
 
-    // Everything else is a resource path, dispatched by verb.
-    let rp = match path::parse(&req.path) {
-        Ok(rp) => rp,
-        Err(s) => return status_response(&s),
-    };
-    let gvr = rp.gvr();
+/// `404` for a subresource this surface does not implement.
+fn unknown_subresource(rp: &path::ResourcePath) -> Status {
+    Status::not_found(format!(
+        "the server could not find the requested resource ({}/{})",
+        rp.resource, rp.subresource
+    ))
+}
 
-    match req.method.as_str() {
-        "GET" => get_or_list(reg, &rp, &gvr, req.header("accept")),
-        "POST" => create(reg, &rp, &gvr, req),
-        "PUT" => replace(reg, &gvr, req),
-        "PATCH" => patch(reg, &rp, &gvr, req),
-        "DELETE" => remove(reg, &rp, &gvr),
-        other => status_response(&Status::new(
-            StatusReason::MethodNotAllowed,
-            format!("{other} is not supported on {}", req.path),
-        )),
-    }
+/// Run one operation through the admission chain, returning the admitted
+/// object (`None` for a delete).
+fn admit(
+    admission: &AdmissionChain,
+    operation: Operation,
+    gvr: &gvk::GroupVersionResource,
+    rp: &path::ResourcePath,
+    object: Option<Value>,
+    old_object: Option<Value>,
+) -> Result<Option<Value>, Status> {
+    let admitted = admission.run(AdmissionRequest {
+        gvr: gvr.clone(),
+        operation,
+        namespace: rp.namespace.clone(),
+        object,
+        old_object,
+    })?;
+    Ok(admitted.object)
+}
+
+/// The decoded body of a write verb (always present after [`decode_write_body`]).
+fn required_body(body: Option<Value>) -> Result<Value, Status> {
+    body.ok_or_else(|| Status::bad_request("this request requires a JSON body"))
 }
 
 /// GET: a single named object, or a (optionally namespace-scoped) collection.
@@ -109,8 +227,10 @@ pub fn handle(reg: &mut Registry, req: &HttpRequest) -> HttpResponse {
 /// sends), the result is rendered as a `meta.k8s.io/v1` Table so kubectl prints
 /// the kind's native columns; otherwise the raw object / `{Kind}List` is returned.
 fn get_or_list(reg: &Registry, rp: &path::ResourcePath, gvr: &gvk::GroupVersionResource, accept: Option<&str>) -> HttpResponse {
-    if rp.is_named() && rp.subresource == "log" {
-        return pod_log_response(reg, rp, gvr);
+    match rp.subresource.as_str() {
+        "" | "status" => {}
+        "log" if rp.resource == "pods" => return pod_log_response(reg, rp, gvr),
+        _ => return status_response(&unknown_subresource(rp)),
     }
     let as_table = crate::table::wants_table(accept);
     if rp.is_named() {
@@ -150,75 +270,123 @@ fn list_envelope(gvr: &gvk::GroupVersionResource, list: &ListResult) -> Value {
 }
 
 /// POST: create an object from the request body on a collection path.
-fn create(reg: &mut Registry, rp: &path::ResourcePath, gvr: &gvk::GroupVersionResource, req: &HttpRequest) -> HttpResponse {
+///
+/// The body must match the endpoint (kind/apiVersion) and may not name a
+/// namespace other than the URL's (`400`); the URL namespace is stamped on.
+fn create(
+    reg: &mut Registry,
+    rp: &path::ResourcePath,
+    gvr: &gvk::GroupVersionResource,
+    body: Option<Value>,
+    admission: &AdmissionChain,
+) -> Result<HttpResponse, Status> {
     if rp.is_named() {
-        return status_response(&Status::new(
+        return Err(Status::new(
             StatusReason::MethodNotAllowed,
             "POST is not supported on an individual object path; create posts to the collection",
         ));
     }
-    let mut object = match parse_object_body(req) {
-        Ok(v) => v,
-        Err(resp) => return resp,
-    };
-    // The path namespace is authoritative for namespaced resources.
-    if !rp.namespace.is_empty() {
-        inject_namespace(&mut object, &rp.namespace);
-    }
+    let mut object = check_write_body(required_body(body)?, gvr, rp)?;
     // Stamp a server-side creation time so the Age column is real (the registry,
     // being clock-free, preserves but never sets this).
     stamp_creation_timestamp(&mut object);
-    match reg.create(gvr, object) {
-        Ok(obj) => HttpResponse::json(201, obj.to_json_string()),
-        Err(s) => status_response(&s),
-    }
+    let object = admit(admission, Operation::Create, gvr, rp, Some(object), None)?
+        .ok_or_else(|| Status::invalid("admission removed the object"))?;
+    let created = reg.create(gvr, object)?;
+    Ok(HttpResponse::json(201, created.to_json_string()))
 }
 
-/// PUT: replace an existing object with the request body.
-fn replace(reg: &mut Registry, gvr: &gvk::GroupVersionResource, req: &HttpRequest) -> HttpResponse {
-    let object = match parse_object_body(req) {
-        Ok(v) => v,
-        Err(resp) => return resp,
-    };
-    match reg.update(gvr, object) {
-        Ok(obj) => HttpResponse::json(200, obj.to_json_string()),
-        Err(s) => status_response(&s),
-    }
-}
-
-/// PATCH: apply a merge patch (RFC 7396) to a named object. Strategic-merge is
-/// treated as a merge patch for the flat objects this surface serves; JSON Patch
-/// (`application/json-patch+json`) is not yet wired over the wire.
-fn patch(reg: &mut Registry, rp: &path::ResourcePath, gvr: &gvk::GroupVersionResource, req: &HttpRequest) -> HttpResponse {
+/// PUT: replace the object the URL names with the request body.
+///
+/// The body may not name a different object or namespace (`400`). On the
+/// `status` subresource only `.status` is persisted; other subresources are
+/// not served (`404`).
+fn replace(
+    reg: &mut Registry,
+    rp: &path::ResourcePath,
+    gvr: &gvk::GroupVersionResource,
+    body: Option<Value>,
+    admission: &AdmissionChain,
+) -> Result<HttpResponse, Status> {
     if !rp.is_named() {
-        return status_response(&Status::bad_request("PATCH requires a named object"));
+        return Err(Status::new(StatusReason::MethodNotAllowed, "PUT requires a named object"));
     }
-    let ctype = req.header("content-type").unwrap_or("application/merge-patch+json");
-    if ctype.contains("json-patch") {
-        return status_response(&Status::new(
+    if !matches!(rp.subresource.as_str(), "" | "status") {
+        return Err(unknown_subresource(rp));
+    }
+    let object = check_write_body(required_body(body)?, gvr, rp)?;
+    let old = reg.get(gvr, &rp.namespace, &rp.name).ok();
+    let object = admit(admission, Operation::Update, gvr, rp, Some(object), old)?
+        .ok_or_else(|| Status::invalid("admission removed the object"))?;
+    let updated = if rp.subresource == "status" {
+        reg.update_status(gvr, object)?
+    } else {
+        reg.update(gvr, object)?
+    };
+    Ok(HttpResponse::json(200, updated.to_json_string()))
+}
+
+/// PATCH: apply a merge patch (RFC 7396; strategic merge is treated as a merge
+/// patch for the flat objects this surface serves) or a JSON Patch (RFC 6902)
+/// to the object the URL names.
+///
+/// The patched object must still carry the URL's name and namespace (`400`),
+/// so a patch cannot redirect the write to another stored object. On the
+/// `status` subresource only `.status` is persisted.
+fn patch(
+    reg: &mut Registry,
+    rp: &path::ResourcePath,
+    gvr: &gvk::GroupVersionResource,
+    req: &HttpRequest,
+    body: Option<Value>,
+    admission: &AdmissionChain,
+) -> Result<HttpResponse, Status> {
+    if !rp.is_named() {
+        return Err(Status::bad_request("PATCH requires a named object"));
+    }
+    if !matches!(rp.subresource.as_str(), "" | "status") {
+        return Err(unknown_subresource(rp));
+    }
+    let doc = required_body(body)?;
+    let existing = reg.get(gvr, &rp.namespace, &rp.name)?;
+    let patched = if media_type(req).as_deref() == Some("application/json-patch+json") {
+        let ops = cave_home_apiserver_rs::patch::ops_from_json(&doc)?;
+        cave_home_apiserver_rs::patch::apply_json_patch(&existing, &ops)?
+    } else {
+        cave_home_apiserver_rs::patch::apply_merge_patch(&existing, &doc)
+    };
+    check_patched_identity(&patched, rp)?;
+    let object = admit(admission, Operation::Update, gvr, rp, Some(patched), Some(existing))?
+        .ok_or_else(|| Status::invalid("admission removed the object"))?;
+    let updated = if rp.subresource == "status" {
+        reg.update_status(gvr, object)?
+    } else {
+        reg.update(gvr, object)?
+    };
+    Ok(HttpResponse::json(200, updated.to_json_string()))
+}
+
+/// DELETE: remove a named object, returning the deleted object. A subresource
+/// cannot be deleted (`405`) — the object it belongs to is left alone.
+fn remove(
+    reg: &mut Registry,
+    rp: &path::ResourcePath,
+    gvr: &gvk::GroupVersionResource,
+    admission: &AdmissionChain,
+) -> Result<HttpResponse, Status> {
+    if !rp.is_named() {
+        return Err(Status::bad_request("DELETE requires a named object"));
+    }
+    if !rp.subresource.is_empty() {
+        return Err(Status::new(
             StatusReason::MethodNotAllowed,
-            "application/json-patch+json is not supported; use a merge patch",
+            format!("DELETE is not supported on {}/{}", rp.resource, rp.subresource),
         ));
     }
-    let patch_doc = match parse_object_body(req) {
-        Ok(v) => v,
-        Err(resp) => return resp,
-    };
-    match reg.patch_merge(gvr, &rp.namespace, &rp.name, &patch_doc) {
-        Ok(obj) => HttpResponse::json(200, obj.to_json_string()),
-        Err(s) => status_response(&s),
-    }
-}
-
-/// DELETE: remove a named object, returning the deleted object.
-fn remove(reg: &mut Registry, rp: &path::ResourcePath, gvr: &gvk::GroupVersionResource) -> HttpResponse {
-    if !rp.is_named() {
-        return status_response(&Status::bad_request("DELETE requires a named object"));
-    }
-    match reg.delete(gvr, &rp.namespace, &rp.name) {
-        Ok((obj, _removed)) => HttpResponse::json(200, obj.to_json_string()),
-        Err(s) => status_response(&s),
-    }
+    let existing = reg.get(gvr, &rp.namespace, &rp.name)?;
+    admit(admission, Operation::Delete, gvr, rp, None, Some(existing))?;
+    let (deleted, _removed) = reg.delete(gvr, &rp.namespace, &rp.name)?;
+    Ok(HttpResponse::json(200, deleted.to_json_string()))
 }
 
 /// `GET .../pods/{name}/log` → the container logs. The in-process mock CRI does
@@ -248,35 +416,10 @@ fn pod_log_response(reg: &Registry, rp: &path::ResourcePath, gvr: &gvk::GroupVer
     HttpResponse::text(200, out)
 }
 
-/// Parse a request body into a JSON object `Value`, mapping failures onto the
-/// HTTP responses a client expects (`400` for bad bytes/JSON, `400` for a
-/// non-object top-level value).
-fn parse_object_body(req: &HttpRequest) -> Result<Value, HttpResponse> {
-    let text = std::str::from_utf8(&req.body)
-        .map_err(|_| HttpResponse::json(400, bad_request_body("request body is not valid UTF-8")))?;
-    let value = Value::parse(text)
-        .map_err(|e| HttpResponse::json(400, bad_request_body(&format!("malformed JSON body: {e}"))))?;
-    if value.as_object().is_none() {
-        return Err(HttpResponse::json(400, bad_request_body("request body must be a JSON object")));
-    }
-    Ok(value)
-}
-
 /// Render a `BadRequest` Status body (used for transport-level parse failures
 /// before a `Registry` verb is ever reached).
 fn bad_request_body(message: &str) -> String {
     status_body(&Status::bad_request(message))
-}
-
-/// Force `metadata.namespace` to the path-derived namespace, creating the
-/// `metadata` object if the body omitted it.
-fn inject_namespace(object: &mut Value, namespace: &str) {
-    if let Value::Object(map) = object {
-        let meta = map.entry("metadata".to_string()).or_insert_with(Value::object);
-        if let Value::Object(m) = meta {
-            m.insert("namespace".to_string(), Value::from(namespace));
-        }
-    }
 }
 
 /// Set `metadata.creationTimestamp` to now if the body did not carry one.
@@ -512,7 +655,7 @@ fn status_body(status: &Status) -> String {
 }
 
 /// Render a `Status` failure object as its HTTP response.
-fn status_response(status: &Status) -> HttpResponse {
+pub(crate) fn status_response(status: &Status) -> HttpResponse {
     HttpResponse::json(status.code, status_body(status))
 }
 
@@ -904,7 +1047,7 @@ mod tests {
     fn put_on_status_persists_only_status() {
         let mut reg = two_pods();
         let a = stored_json(&reg, "a").replace(r#""owner":"a""#, r#""owner":"escalated""#);
-        let with_status = a.trim_end_matches('}').to_string() + r#","status":{"phase":"Running"}}"#;
+        let with_status = a.strip_suffix('}').expect("a JSON object").to_string() + r#","status":{"phase":"Running"}}"#;
         let resp = handle(&mut reg, &req_body("PUT", "/api/v1/namespaces/default/pods/a/status", "application/json", &with_status));
         assert_eq!(resp.status, 200, "{}", String::from_utf8_lossy(&resp.body));
         let stored = reg.get(&pods(), "default", "a").expect("a");

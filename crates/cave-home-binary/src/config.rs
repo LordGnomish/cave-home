@@ -174,7 +174,9 @@ impl ConfigLayer {
             role: Some(NodeRole::Hub),
             components: None,
             data_dir: Some("/var/lib/cave-home".to_string()),
-            bind_addr: Some("0.0.0.0".to_string()),
+            // Loopback only: reaching the control plane from other machines is
+            // an explicit choice that also requires TLS + credentials.
+            bind_addr: Some("127.0.0.1".to_string()),
             bind_port: Some(8123),
             log_level: Some(LogLevel::Info),
             tls_cert: None,
@@ -435,6 +437,27 @@ impl Config {
         }
         if self.role == NodeRole::Ml && !self.components.contains(&Component::Cameras) {
             return Err(ConfigError::MlNodeWithoutCameras);
+        }
+        self.validate_exposure()
+    }
+
+    /// TLS material must be complete and supported by this build, and a bind
+    /// beyond loopback needs TLS plus a configured credential source.
+    fn validate_exposure(&self) -> Result<(), ConfigError> {
+        let has_cert = self.tls_cert.is_some();
+        if has_cert != self.tls_key.is_some() || (self.client_ca.is_some() && !has_cert) {
+            return Err(ConfigError::TlsIncomplete);
+        }
+        if has_cert && !cfg!(feature = "tls") {
+            return Err(ConfigError::TlsUnavailable);
+        }
+        if !crate::access::is_loopback_host(&self.bind_addr) {
+            if !has_cert {
+                return Err(ConfigError::ExposedWithoutTls(self.bind_addr.clone()));
+            }
+            if self.token_file.is_none() && self.client_ca.is_none() {
+                return Err(ConfigError::ExposedWithoutAuth(self.bind_addr.clone()));
+            }
         }
         Ok(())
     }

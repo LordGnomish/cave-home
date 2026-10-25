@@ -166,14 +166,14 @@ fn command_topic(cmd: &Command) -> Option<String> {
 fn parse_run(rest: &[String]) -> Result<Command, ParseError> {
     match parse_flags(rest, "run")? {
         FlagParse::Help(topic) => Ok(Command::Help { topic: Some(topic) }),
-        FlagParse::Flags(flags) => Ok(Command::Run { flags: Box::new(flags) }),
+        FlagParse::Flags(flags) => Ok(Command::Run { flags }),
     }
 }
 
 fn parse_serve(role: ServeRole, rest: &[String]) -> Result<Command, ParseError> {
     match parse_flags(rest, role.as_str())? {
         FlagParse::Help(topic) => Ok(Command::Help { topic: Some(topic) }),
-        FlagParse::Flags(flags) => Ok(Command::Serve { role, flags: Box::new(flags) }),
+        FlagParse::Flags(flags) => Ok(Command::Serve { role, flags }),
     }
 }
 
@@ -181,11 +181,12 @@ fn parse_serve(role: ServeRole, rest: &[String]) -> Result<Command, ParseError> 
 /// config layer.
 enum FlagParse {
     Help(String),
-    Flags(ConfigLayer),
+    Flags(Box<ConfigLayer>),
 }
 
-/// Parse the shared `--name/--role/--data-dir/--bind/--port/--log-level` flags
-/// used by both `run` and the K3s-style `server/agent/etcd` commands.
+/// Parse the shared `--name/--role/--data-dir/--bind/--port/--log-level` and
+/// TLS/credential flags used by both `run` and the K3s-style
+/// `server/agent/etcd` commands.
 fn parse_flags(rest: &[String], help_topic: &str) -> Result<FlagParse, ParseError> {
     let mut flags = ConfigLayer::empty(Layer::Flags);
     let mut it = rest.iter();
@@ -205,6 +206,14 @@ fn parse_flags(rest: &[String], help_topic: &str) -> Result<FlagParse, ParseErro
             }
             "--data-dir" => flags.data_dir = Some(take(&mut it, arg)?),
             "--bind" => flags.bind_addr = Some(take(&mut it, arg)?),
+            "--tls-cert" => flags.tls_cert = Some(take(&mut it, arg)?),
+            "--tls-key" => flags.tls_key = Some(take(&mut it, arg)?),
+            "--client-ca" => flags.client_ca = Some(take(&mut it, arg)?),
+            "--token-file" => flags.token_file = Some(take(&mut it, arg)?),
+            "--tls-san" => {
+                let name = take(&mut it, arg)?;
+                flags.tls_sans.get_or_insert_with(Vec::new).push(name);
+            }
             "--port" => {
                 let v = take(&mut it, arg)?;
                 let port = v.parse::<u16>().map_err(|_| ParseError::BadValue {
@@ -227,7 +236,7 @@ fn parse_flags(rest: &[String], help_topic: &str) -> Result<FlagParse, ParseErro
             other => return Err(ParseError::UnexpectedArgument(other.to_string())),
         }
     }
-    Ok(FlagParse::Flags(flags))
+    Ok(FlagParse::Flags(Box::new(flags)))
 }
 
 fn parse_config(rest: &[String]) -> Result<Command, ParseError> {
@@ -318,9 +327,19 @@ cave-home run — start your home
     --name <name>        a friendly name for this home (letters, numbers, dashes)
     --role <role>        hub, secondary, or ml (the kind of node this is)
     --data-dir <path>    where to keep your home's data
-    --bind <address>     the network address to listen on
+    --bind <address>     the network address to listen on (this computer only
+                         by default; other addresses need the options below)
     --port <number>      the network port to listen on
     --log-level <level>  how much detail to record (error, warn, info, debug, trace)
+
+  Letting other devices connect:
+    --tls-cert <file>    the security certificate other devices check
+    --tls-key <file>     the private key that goes with that certificate
+    --tls-san <name>     another name or address this home answers to (repeatable)
+    --token-file <file>  a list of sign-in keys for the people and apps allowed in
+    --client-ca <file>   accept devices carrying a certificate signed by this file
+
+  A key for this computer is created in the data folder on first start.
 "
         .to_string(),
         Some("status") => "\

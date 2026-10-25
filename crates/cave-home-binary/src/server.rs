@@ -10,8 +10,13 @@
 //!    [`tokio::sync::Mutex`];
 //! 2. computes the dependency-ordered bring-up plan with the real
 //!    [`orchestration`](cave_home_orchestration) planner;
-//! 3. binds a real TCP listener (`:6443`) and serves the apiserver read path
-//!    ([`crate::apirest`]) over [`crate::http`];
+//! 3. binds a real TCP listener — loopback by default; any other address only
+//!    with TLS **and** configured credentials ([`crate::access::check_exposure`])
+//!    — and puts every request through [`crate::access::Gate`]: `Host` check
+//!    (DNS rebinding), authentication (bearer tokens / verified client
+//!    certificates, never anonymous), RBAC, audit; writes then pass admission;
+//!    every connection is bounded by [`Limits`] (head/body caps, timeouts, a
+//!    connection cap, non-fatal `accept()` errors);
 //! 4. spawns one concurrent supervised task per control-plane component, each
 //!    driving its real decision core on an interval, restarting it on failure
 //!    (with backoff + a crash-loop budget) via [`crate::supervisor`];
@@ -34,17 +39,18 @@ use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{watch, Mutex};
+use tokio::sync::{watch, Mutex, Semaphore};
 
 use cave_home_apiserver_rs::gvk::GroupVersionResource;
 use cave_home_apiserver_rs::rbac::UserInfo;
 use cave_home_apiserver_rs::registry::Registry;
+use cave_home_apiserver_rs::server::RequestReadError;
 pub use cave_home_apiserver_rs::server::Limits;
 use cave_home_orchestration::bringup::BringUpPlan;
 use cave_home_orchestration::component::Component;
 use cave_home_orchestration::role::NodeIntent;
 
-use crate::access::Gate;
+use crate::access::{ExposureError, Gate};
 use crate::node::LocalNode;
 use crate::{apirest, http};
 
@@ -98,7 +104,7 @@ impl RuntimeConfig {
         Self {
             intent: NodeIntent::PrimaryHub,
             node,
-            bind_addr: "0.0.0.0".to_string(),
+            bind_addr: "127.0.0.1".to_string(),
             bind_port: 6443,
             reconcile_interval: Duration::from_secs(1),
             #[cfg(feature = "tls")]
@@ -110,7 +116,7 @@ impl RuntimeConfig {
 }
 
 /// A source of accepted connections (a [`TcpListener`], or a test double).
-trait Accept: Send + 'static {
+trait Accept: Send + Sync + 'static {
     fn poll_accept(&self, cx: &mut Context<'_>) -> Poll<std::io::Result<(TcpStream, SocketAddr)>>;
 }
 
@@ -184,11 +190,21 @@ pub fn planned_order(intent: NodeIntent) -> Result<Vec<Component>, cave_home_orc
 /// signal in [`run`], a oneshot in tests).
 ///
 /// # Errors
-/// I/O errors from binding or accepting on the listen socket.
+/// A non-loopback bind without TLS + configured credentials (refused before
+/// the socket is bound), and I/O errors from binding or accepting.
 pub async fn run_until<S>(cfg: RuntimeConfig, shutdown: S) -> std::io::Result<()>
 where
     S: std::future::Future<Output = ()> + Send + 'static,
 {
+    // Refuse an exposed, unprotected bind before it ever touches the network;
+    // `run_until_on_listener` re-checks the address actually bound.
+    if !crate::access::is_loopback_host(&cfg.bind_addr) {
+        match protection(&cfg) {
+            (false, _) => return Err(exposure_error(ExposureError::NoTls)),
+            (true, false) => return Err(exposure_error(ExposureError::NoAuthentication)),
+            (true, true) => {}
+        }
+    }
     let listener = TcpListener::bind((cfg.bind_addr.as_str(), cfg.bind_port)).await?;
     run_until_on_listener(cfg, listener, shutdown).await
 }
@@ -201,12 +217,29 @@ where
 /// launcher needs. The bring-up plan, supervised components, graceful drain and
 /// ordered teardown are identical to [`run_until`].
 ///
+/// Before anything starts, the listener's address is checked against the
+/// exposure rule ([`crate::access::check_exposure`]) and the access gate is
+/// assembled: configured tokens, the token file, verified client certificates,
+/// and — unless a token file is configured — the generated admin credential
+/// in [`AccessConfig::bootstrap_dir`]. A boot with no way to authenticate is
+/// refused.
+///
 /// # Errors
-/// I/O errors from accepting on the listen socket.
+/// An exposure-rule violation, unusable TLS or credential configuration, and
+/// I/O errors from the listen socket.
 pub async fn run_until_on_listener<S>(cfg: RuntimeConfig, listener: TcpListener, shutdown: S) -> std::io::Result<()>
 where
     S: std::future::Future<Output = ()> + Send + 'static,
 {
+    // Build the TLS terminator up front (when configured) so a bad cert/key is a
+    // boot failure, not a per-connection surprise. With TLS the listener serves
+    // HTTPS (and verifies client certificates when a client CA is set).
+    let tls_listener = build_tls_listener(&cfg)?;
+    let local = listener.local_addr()?;
+    let (_, explicit_auth) = protection(&cfg);
+    crate::access::check_exposure(local, tls_listener.is_some(), explicit_auth).map_err(exposure_error)?;
+    let gate = Arc::new(build_gate(&cfg, local, tls_listener.is_some())?);
+
     let registry = seeded_registry(&cfg.node);
 
     let order = planned_order(cfg.intent).map_err(|e| {
@@ -216,14 +249,8 @@ where
         "bring-up order: {}",
         order.iter().map(|c| c.id()).collect::<Vec<_>>().join(" → ")
     ));
-
-    // Build the TLS terminator up front (when configured) so a bad cert/key is a
-    // boot failure, not a per-connection surprise. With TLS the listener serves
-    // HTTPS (and mTLS when a client CA is set); without it, plain HTTP as before.
-    let tls_listener = build_tls_listener(&cfg)?;
     log_line(&format!(
-        "apiserver listening on {} ({})",
-        listener.local_addr()?,
+        "apiserver listening on {local} ({}; anonymous access disabled)",
         if tls_listener.is_some() { "https" } else { "http" }
     ));
 
@@ -247,7 +274,6 @@ where
 
     // Serve until the top-level shutdown flag flips — the listener drains first,
     // so no new requests are accepted while components wind down.
-    let gate = Arc::new(Gate::new(cfg.access.tokens.clone(), crate::access::HostPolicy::new(cfg.access.extra_hosts.clone())));
     serve(listener, registry.clone(), rx.clone(), tls_listener, gate, cfg.limits.clone()).await?;
     log_line("apiserver drained; stopping components in reverse dependency order");
 
@@ -263,6 +289,78 @@ where
     let _ = shutdown_task.await;
     log_line("home stopped cleanly");
     Ok(())
+}
+
+/// `(TLS configured, explicitly configured credentials)` for the exposure
+/// rule. The generated bootstrap credential does not count: it exists for
+/// local administration, not as a deliberate decision to expose the API.
+fn protection(cfg: &RuntimeConfig) -> (bool, bool) {
+    #[cfg(feature = "tls")]
+    let tls = cfg.tls.is_some();
+    #[cfg(not(feature = "tls"))]
+    let tls = false;
+    let tokens = cfg.access.token_file.is_some() || !cfg.access.tokens.is_empty();
+    (tls, tokens || client_ca_configured(cfg))
+}
+
+/// Whether the listener verifies client certificates (a client CA is set).
+#[cfg(feature = "tls")]
+fn client_ca_configured(cfg: &RuntimeConfig) -> bool {
+    cfg.tls.as_ref().is_some_and(crate::tls::TlsConfig::is_mutual)
+}
+
+/// Without the `tls` feature there are never client certificates.
+#[cfg(not(feature = "tls"))]
+const fn client_ca_configured(_cfg: &RuntimeConfig) -> bool {
+    false
+}
+
+fn exposure_error(e: ExposureError) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::PermissionDenied, e.to_string())
+}
+
+/// The URL clients of this listener use (what the generated kubeconfig names).
+fn server_url(local: SocketAddr, tls: bool) -> String {
+    let scheme = if tls { "https" } else { "http" };
+    let ip = if local.ip().is_unspecified() {
+        std::net::IpAddr::from([127, 0, 0, 1])
+    } else {
+        local.ip()
+    };
+    format!("{scheme}://{}", SocketAddr::new(ip, local.port()))
+}
+
+/// Assemble the access gate from the configured credential sources.
+fn build_gate(cfg: &RuntimeConfig, local: SocketAddr, tls: bool) -> std::io::Result<Gate> {
+    let mut tokens = cfg.access.tokens.clone();
+    if let Some(path) = &cfg.access.token_file {
+        let loaded = crate::access::load_token_file(path)
+            .map_err(|e| std::io::Error::new(e.kind(), format!("token file {}: {e}", path.display())))?;
+        log_line(&format!("loaded {} sign-in token(s) from {}", loaded.len(), path.display()));
+        tokens.extend(loaded);
+    } else if let Some(dir) = &cfg.access.bootstrap_dir {
+        #[cfg(feature = "tls")]
+        let ca = cfg.tls.as_ref().filter(|_| tls).map(|t| t.cert.as_path());
+        #[cfg(not(feature = "tls"))]
+        let ca: Option<&std::path::Path> = None;
+        let admin = crate::access::ensure_bootstrap_admin(dir, &server_url(local, tls), ca)
+            .map_err(|e| std::io::Error::new(e.kind(), format!("writing admin credentials to {}: {e}", dir.display())))?;
+        log_line(&format!("admin kubeconfig: {}", admin.kubeconfig_path.display()));
+        tokens.push((
+            admin.token,
+            UserInfo::new(crate::access::ADMIN_USER).with_groups(&[crate::access::ADMIN_GROUP]),
+        ));
+    }
+    if tokens.is_empty() && !client_ca_configured(cfg) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "no way to authenticate API clients: configure a token file, a client CA, or a bootstrap directory",
+        ));
+    }
+
+    let mut hosts = vec![cfg.node.name.clone(), cfg.node.internal_ip.clone(), cfg.bind_addr.clone()];
+    hosts.extend(cfg.access.extra_hosts.iter().cloned());
+    Ok(Gate::new(tokens, crate::access::HostPolicy::new(hosts)).with_audit(Arc::new(crate::access::LogAuditSink)))
 }
 
 /// Launch with the real OS signal (Ctrl-C / SIGTERM) as the shutdown trigger.
@@ -314,15 +412,26 @@ async fn wait_for_shutdown_signal() {
     }
 }
 
+/// Pause before re-accepting after `failures` consecutive `accept()` errors:
+/// `base` doubling per failure, capped at one second.
+fn accept_backoff(base: Duration, failures: u32) -> Duration {
+    base.saturating_mul(1_u32 << failures.saturating_sub(1).min(5)).min(Duration::from_secs(1))
+}
+
 /// The apiserver accept loop. Serves each connection then closes it
 /// (`Connection: close`); exits when the shutdown flag flips.
 ///
 /// When `tls` is `Some`, each accepted TCP connection is completed through the
-/// rustls handshake (terminating TLS, and enforcing the client certificate when
+/// rustls handshake (terminating TLS, and verifying any client certificate when
 /// the acceptor was built for mutual TLS) before the HTTP handler sees any
 /// bytes; when `None`, the connection is served as plain HTTP. The handshake
 /// runs on the per-connection task so a slow or hostile client never blocks the
 /// accept loop.
+///
+/// Bounded by `limits`: at most [`Limits::max_connections`] connections are
+/// served at once (further ones are closed on accept), and a failed `accept()`
+/// — e.g. `EMFILE` when file descriptors run out — backs off and retries
+/// instead of ending the loop.
 // The per-connection `tls.clone()` is a real clone of a `TlsAcceptor` under the
 // `tls` feature; with the feature off the placeholder type is `Copy`, which
 // would otherwise trip `clone_on_copy`.
@@ -332,19 +441,44 @@ async fn serve<L: Accept>(
     registry: SharedRegistry,
     mut shutdown: watch::Receiver<bool>,
     tls: Option<TlsListener>,
-    _gate: Arc<Gate>,
-    _limits: Limits,
+    gate: Arc<Gate>,
+    limits: Limits,
 ) -> std::io::Result<()> {
+    let slots = Arc::new(Semaphore::new(limits.max_connections));
+    let limits = Arc::new(limits);
+    let mut failures: u32 = 0;
     loop {
         tokio::select! {
             accepted = std::future::poll_fn(|cx| listener.poll_accept(cx)) => {
-                let (stream, _peer) = accepted?;
+                let stream = match accepted {
+                    Ok((stream, _peer)) => {
+                        failures = 0;
+                        stream
+                    }
+                    Err(e) => {
+                        failures = failures.saturating_add(1);
+                        if failures == 1 {
+                            log_line(&format!("accept failed ({e}); backing off and retrying"));
+                        }
+                        tokio::time::sleep(accept_backoff(limits.accept_backoff, failures)).await;
+                        continue;
+                    }
+                };
+                // At capacity: dropping the stream closes it at once.
+                let Ok(permit) = Arc::clone(&slots).try_acquire_owned() else {
+                    continue;
+                };
                 let reg = registry.clone();
                 let conn_shutdown = shutdown.clone();
                 let tls = tls.clone();
+                let gate = Arc::clone(&gate);
+                let limits = Arc::clone(&limits);
                 tokio::spawn(async move {
-                    if let Err(e) = serve_conn(stream, reg, conn_shutdown, tls).await {
-                        log_line(&format!("connection error: {e}"));
+                    let _permit = permit;
+                    if let Err(e) = serve_conn(stream, reg, conn_shutdown, tls, &gate, &limits).await {
+                        if e.kind() != std::io::ErrorKind::TimedOut {
+                            log_line(&format!("connection error: {e}"));
+                        }
                     }
                 });
             }
@@ -389,73 +523,233 @@ const fn build_tls_listener(_cfg: &RuntimeConfig) -> std::io::Result<Option<TlsL
 }
 
 /// Serve one accepted TCP connection, terminating TLS first when configured.
+/// The handshake must finish within [`Limits::read_timeout`].
 async fn serve_conn(
     stream: TcpStream,
     registry: SharedRegistry,
     shutdown: watch::Receiver<bool>,
     tls: Option<TlsListener>,
+    gate: &Gate,
+    limits: &Limits,
 ) -> std::io::Result<()> {
     match tls {
         #[cfg(feature = "tls")]
         Some(acceptor) => {
-            // Complete the TLS handshake (and client-cert check under mTLS); a
-            // failed handshake is a connection-level error, not a fatal one.
-            let tls_stream = acceptor.accept(stream).await?;
-            handle_conn(tls_stream, registry, shutdown).await
+            // Complete the TLS handshake (verifying any client certificate under
+            // mTLS); a failed or stalled handshake is a connection-level error.
+            let tls_stream = tokio::time::timeout(limits.read_timeout, acceptor.accept(stream))
+                .await
+                .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "TLS handshake timed out"))??;
+            let peer = crate::tls::peer_identity(&tls_stream);
+            handle_conn(tls_stream, registry, shutdown, gate, limits, peer.as_ref()).await
         }
         // No TLS configured: serve the raw TCP stream as plain HTTP.
-        _ => handle_conn(stream, registry, shutdown).await,
+        _ => handle_conn(stream, registry, shutdown, gate, limits, None).await,
     }
 }
 
-/// Read one HTTP request, serve it against the registry, write the response.
+/// Read one HTTP request, pass it through the access gate, serve it against
+/// the registry, write the response.
 ///
-/// A `?watch=true` GET is upgraded to a streaming watch ([`serve_watch`]) that
-/// holds the connection open and emits change events until the client leaves or
-/// the server shuts down; every other request is a one-shot response.
+/// `peer` is the identity of the client certificate the TLS handshake
+/// verified, if any. The JSON body is decoded before the registry lock is
+/// taken. A `?watch=true` GET is upgraded to a streaming watch
+/// ([`serve_watch`]) that holds the connection open and emits change events
+/// until the client leaves or the server shuts down; every other request is a
+/// one-shot response.
 async fn handle_conn<S>(
     mut stream: S,
     registry: SharedRegistry,
     shutdown: watch::Receiver<bool>,
+    gate: &Gate,
+    limits: &Limits,
+    peer: Option<&UserInfo>,
 ) -> std::io::Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let mut buf = Vec::new();
-    let mut tmp = [0u8; 4096];
-    loop {
-        if let Some(end) = http::head_end(&buf) {
-            // Parse just the head to learn the declared body length.
-            let need = http::HttpRequest::parse(&buf[..end])
-                .ok()
-                .and_then(|r| r.content_length().ok().flatten())
-                .unwrap_or(0);
-            if buf.len() >= end + need {
-                break;
-            }
-        }
-        let n = stream.read(&mut tmp).await?;
-        if n == 0 {
-            break; // peer closed before a full request arrived
-        }
-        buf.extend_from_slice(&tmp[..n]);
-    }
+    let req = match read_request(&mut stream, limits).await {
+        Ok(Some(req)) => req,
+        Ok(None) => return Ok(()), // peer closed before sending a request
+        Err(e) => return reject_unreadable(stream, e, limits).await,
+    };
 
-    let Ok(req) = http::HttpRequest::parse(&buf) else {
-        stream.write_all(&http::HttpResponse::text(400, "bad request").to_bytes()).await?;
-        return stream.flush().await;
+    let admitted = match gate.check(&req, peer) {
+        Ok(admitted) => admitted,
+        Err(resp) => return write_response(&mut stream, &resp, limits).await,
     };
 
     if is_watch_request(&req) {
-        return serve_watch(stream, &registry, &req, shutdown).await;
+        gate.finish(admitted, 200);
+        return serve_watch(stream, &registry, &req, shutdown, limits).await;
     }
 
+    let body = match apirest::decode_write_body(&req) {
+        Ok(body) => body,
+        Err(resp) => {
+            gate.finish(admitted, resp.status);
+            return write_response(&mut stream, &resp, limits).await;
+        }
+    };
     let response = {
         let mut reg = registry.lock().await;
-        apirest::handle(&mut reg, &req)
+        apirest::handle_decoded(&mut reg, &req, body, gate.admission())
     };
-    stream.write_all(&response.to_bytes()).await?;
-    stream.flush().await
+    gate.finish(admitted, response.status);
+    write_response(&mut stream, &response, limits).await
+}
+
+/// One read into `tmp`, bounded by the per-read timeout and the request
+/// deadline.
+async fn read_some<S: AsyncRead + Unpin>(
+    stream: &mut S,
+    tmp: &mut [u8],
+    deadline: tokio::time::Instant,
+    limits: &Limits,
+) -> Result<usize, RequestReadError> {
+    let until = if limits.read_timeout.is_zero() {
+        deadline
+    } else {
+        deadline.min(tokio::time::Instant::now() + limits.read_timeout)
+    };
+    match tokio::time::timeout_at(until, stream.read(tmp)).await {
+        Ok(Ok(n)) => Ok(n),
+        Ok(Err(e)) => Err(RequestReadError::Io(e)),
+        Err(_) => Err(RequestReadError::TimedOut),
+    }
+}
+
+/// The declared body length: `Content-Length` (repeats must agree), `0` when
+/// absent; chunked request bodies are not implemented.
+fn declared_body_len(head: &http::HttpRequest) -> Result<usize, RequestReadError> {
+    if head.header("transfer-encoding").is_some() {
+        return Err(RequestReadError::NotImplemented(
+            "transfer-encoding request bodies are not supported; send Content-Length".to_string(),
+        ));
+    }
+    let mut lengths = head.headers.iter().filter(|(k, _)| k == "content-length").map(|(_, v)| v.as_str());
+    let Some(first) = lengths.next() else {
+        return Ok(0);
+    };
+    if lengths.any(|v| v != first) {
+        return Err(RequestReadError::BadRequest("conflicting Content-Length headers".to_string()));
+    }
+    first
+        .parse::<usize>()
+        .map_err(|_| RequestReadError::BadRequest(format!("invalid Content-Length {first:?}")))
+}
+
+/// Read one request under `limits`: the head may not exceed
+/// [`Limits::max_head_bytes`], a `Content-Length` above
+/// [`Limits::max_body_bytes`] is refused before any body byte is read, each
+/// read must make progress within [`Limits::read_timeout`], and the whole
+/// request must arrive within [`Limits::request_deadline`].
+async fn read_request<S: AsyncRead + Unpin>(stream: &mut S, limits: &Limits) -> Result<Option<http::HttpRequest>, RequestReadError> {
+    let deadline = tokio::time::Instant::now() + limits.request_deadline;
+    let mut buf = Vec::new();
+    let mut tmp = [0u8; 4096];
+    let head_end = loop {
+        if let Some(end) = http::head_end(&buf) {
+            break end;
+        }
+        if buf.len() > limits.max_head_bytes {
+            return Err(RequestReadError::HeadTooLarge);
+        }
+        let n = read_some(stream, &mut tmp, deadline, limits).await?;
+        if n == 0 {
+            if buf.is_empty() {
+                return Ok(None);
+            }
+            return Err(RequestReadError::Io(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "connection closed before the request head completed",
+            )));
+        }
+        buf.extend_from_slice(&tmp[..n]);
+    };
+    if head_end > limits.max_head_bytes {
+        return Err(RequestReadError::HeadTooLarge);
+    }
+    let head = http::HttpRequest::parse(&buf[..head_end]).map_err(|e| RequestReadError::BadRequest(e.to_string()))?;
+    let body_len = declared_body_len(&head)?;
+    if body_len > limits.max_body_bytes {
+        return Err(RequestReadError::BodyTooLarge(body_len));
+    }
+    let want = head_end + body_len;
+    while buf.len() < want {
+        let n = read_some(stream, &mut tmp, deadline, limits).await?;
+        if n == 0 {
+            return Err(RequestReadError::Io(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "connection closed before the request body completed",
+            )));
+        }
+        buf.extend_from_slice(&tmp[..n]);
+    }
+    buf.truncate(want);
+    http::HttpRequest::parse(&buf)
+        .map(Some)
+        .map_err(|e| RequestReadError::BadRequest(e.to_string()))
+}
+
+/// Answer a request that could not be read (`431`/`413`/`400`/`501`), then
+/// close gracefully. A stalled client gets no answer — the connection is
+/// simply dropped.
+async fn reject_unreadable<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, err: RequestReadError, limits: &Limits) -> std::io::Result<()> {
+    use cave_home_apiserver_rs::status::{Status, StatusReason};
+    let resp = match err {
+        RequestReadError::HeadTooLarge => http::HttpResponse::text(431, "request head too large"),
+        RequestReadError::BodyTooLarge(n) => apirest::status_response(&Status::new(
+            StatusReason::RequestEntityTooLarge,
+            format!("request body of {n} bytes exceeds the {} byte limit", limits.max_body_bytes),
+        )),
+        RequestReadError::BadRequest(m) => http::HttpResponse::text(400, format!("bad request: {m}")),
+        RequestReadError::NotImplemented(m) => http::HttpResponse::text(501, m),
+        RequestReadError::TimedOut => return Ok(()),
+        RequestReadError::Io(e) => return Err(e),
+    };
+    write_response(&mut stream, &resp, limits).await?;
+    linger_close(stream).await;
+    Ok(())
+}
+
+/// Half-close and briefly discard what the client is still sending, so the
+/// error response is not lost to a TCP reset caused by unread input.
+async fn linger_close<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S) {
+    let _ = stream.shutdown().await;
+    let mut sink = [0u8; 4096];
+    let _ = tokio::time::timeout(Duration::from_secs(1), async {
+        let mut drained = 0usize;
+        while drained < 256 * 1024 {
+            match stream.read(&mut sink).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => drained += n,
+            }
+        }
+    })
+    .await;
+}
+
+/// Write a whole response within [`Limits::write_timeout`].
+async fn write_response<S: AsyncWrite + Unpin>(stream: &mut S, resp: &http::HttpResponse, limits: &Limits) -> std::io::Result<()> {
+    with_write_timeout(limits, async {
+        stream.write_all(&resp.to_bytes()).await?;
+        stream.flush().await
+    })
+    .await
+}
+
+/// Bound a write so a client that stops reading cannot pin the connection.
+async fn with_write_timeout<F>(limits: &Limits, write: F) -> std::io::Result<()>
+where
+    F: std::future::Future<Output = std::io::Result<()>>,
+{
+    if limits.write_timeout.is_zero() {
+        return write.await;
+    }
+    tokio::time::timeout(limits.write_timeout, write)
+        .await
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "client stopped reading"))?
 }
 
 /// True for a `GET ...?watch=true` (or `watch=1`) request.
@@ -479,23 +773,28 @@ fn query_param<'a>(query: &'a str, key: &str) -> Option<&'a str> {
 /// `watch.Event` envelope). Events are sourced from the registry's own
 /// per-resource history via `watch_since`, starting at the client's
 /// `resourceVersion`, and filtered to the path's namespace/name scope.
+///
+/// The client sends nothing after its request, so EOF on the read half means
+/// it has gone: the watch then ends at once and frees its connection slot,
+/// even when no event would have revealed the dead peer through a failed write.
 async fn serve_watch<S>(
-    mut stream: S,
+    stream: S,
     registry: &SharedRegistry,
     req: &http::HttpRequest,
     mut shutdown: watch::Receiver<bool>,
+    limits: &Limits,
 ) -> std::io::Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     use cave_home_apiserver_rs::path;
 
+    let (mut reader, mut stream) = tokio::io::split(stream);
     let rp = match path::parse(&req.path) {
         Ok(rp) => rp,
         Err(s) => {
             let body = format!("watch rejected: {}", s.message);
-            stream.write_all(&http::HttpResponse::text(s.code, body).to_bytes()).await?;
-            return stream.flush().await;
+            return write_response(&mut stream, &http::HttpResponse::text(s.code, body), limits).await;
         }
     };
     let gvr = rp.gvr();
@@ -506,11 +805,15 @@ where
     let name_filter = rp.is_named().then(|| rp.name.clone());
 
     // Streaming response head — no Content-Length; frames are chunk-encoded.
-    stream
-        .write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-cache\r\nTransfer-Encoding: chunked\r\n\r\n")
-        .await?;
-    stream.flush().await?;
+    with_write_timeout(limits, async {
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-cache\r\nTransfer-Encoding: chunked\r\n\r\n")
+            .await?;
+        stream.flush().await
+    })
+    .await?;
 
+    let mut probe = [0u8; 64];
     loop {
         let events = {
             let reg = registry.lock().await;
@@ -529,8 +832,8 @@ where
                 }
             }
             let frame = watch_event_frame(&ev);
-            // A write error means the client hung up — end the watch quietly.
-            if write_chunk(&mut stream, frame.as_bytes()).await.is_err() {
+            // A write error (or a client that stopped reading) ends the watch.
+            if with_write_timeout(limits, write_chunk(&mut stream, frame.as_bytes())).await.is_err() {
                 return Ok(());
             }
         }
@@ -541,12 +844,21 @@ where
                     break;
                 }
             }
+            read = reader.read(&mut probe) => {
+                // EOF or a reset: the client left. (Extra bytes are ignored.)
+                if matches!(read, Ok(0) | Err(_)) {
+                    return Ok(());
+                }
+            }
         }
     }
 
     // Terminating zero-length chunk (best-effort; the peer may already be gone).
-    let _ = stream.write_all(b"0\r\n\r\n").await;
-    let _ = stream.flush().await;
+    let _ = with_write_timeout(limits, async {
+        stream.write_all(b"0\r\n\r\n").await?;
+        stream.flush().await
+    })
+    .await;
     Ok(())
 }
 

@@ -13,15 +13,21 @@
 //! validation against DNS rebinding.
 
 use std::collections::BTreeSet;
-use std::net::SocketAddr;
+use std::fmt::Write as _;
+use std::io::{Read as _, Write as _};
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use cave_home_apiserver_rs::admission::AdmissionChain;
 use cave_home_apiserver_rs::audit::{AuditEvent, AuditSink};
-use cave_home_apiserver_rs::handler::Authorization;
-use cave_home_apiserver_rs::rbac::{RbacAuthorizer, UserInfo};
+use cave_home_apiserver_rs::authn::{AnonymousAuthenticator, AuthenticatorChain, RequestHeaderAuthenticator, TokenAuthenticator};
+use cave_home_apiserver_rs::handler::{resolve_verb, Authorization};
+use cave_home_apiserver_rs::http::{Headers, Method, Request};
+use cave_home_apiserver_rs::path;
+use cave_home_apiserver_rs::rbac::{ClusterRole, ClusterRoleBinding, PolicyRule, RbacAuthorizer, RoleRef, Subject, UserInfo};
 
+use crate::apirest;
 use crate::http::{HttpRequest, HttpResponse};
 
 /// The identity the generated bootstrap credential authenticates as.
@@ -33,8 +39,10 @@ pub const ADMIN_GROUP: &str = "system:masters";
 /// `localhost`, any `127.0.0.0/8` address, or `::1` (bracketed or not).
 /// Wildcards (`0.0.0.0`, `::`) and every other address are not.
 #[must_use]
-pub fn is_loopback_host(_addr: &str) -> bool {
-    true
+pub fn is_loopback_host(addr: &str) -> bool {
+    let addr = addr.trim();
+    let bare = addr.strip_prefix('[').and_then(|a| a.strip_suffix(']')).unwrap_or(addr);
+    bare.eq_ignore_ascii_case("localhost") || bare.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
 }
 
 /// Why a listener may not be exposed beyond loopback as configured.
@@ -68,34 +76,71 @@ impl std::error::Error for ExposureError {}
 ///
 /// # Errors
 /// The first missing requirement for a non-loopback `local` address.
-pub const fn check_exposure(_local: SocketAddr, _tls: bool, _explicit_auth: bool) -> Result<(), ExposureError> {
-    Ok(())
+pub const fn check_exposure(local: SocketAddr, tls: bool, explicit_auth: bool) -> Result<(), ExposureError> {
+    if local.ip().is_loopback() {
+        Ok(())
+    } else if !tls {
+        Err(ExposureError::NoTls)
+    } else if !explicit_auth {
+        Err(ExposureError::NoAuthentication)
+    } else {
+        Ok(())
+    }
 }
 
-/// The `Host` header values the listener answers to (DNS-rebinding defence:
-/// a page on an attacker's domain that resolves to this host still sends its
-/// own name as `Host`, and is refused).
+/// The `Host` header values the listener answers to (DNS-rebinding defence).
+///
+/// A page on an attacker's domain that resolves to this host still sends its
+/// own name as `Host`, and is refused. IP-literal hosts are always accepted:
+/// a client that addressed the machine by IP was not redirected by DNS.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostPolicy {
     names: BTreeSet<String>,
 }
 
+/// Lower-case a host name and drop IPv6 brackets.
+fn normalize_host(host: &str) -> String {
+    let host = host.trim();
+    host.strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host)
+        .to_ascii_lowercase()
+}
+
+/// The host part of a `Host` header value (`name`, `name:port`, `[v6]:port`).
+fn host_without_port(header: &str) -> &str {
+    let header = header.trim();
+    if let Some(rest) = header.strip_prefix('[') {
+        return rest.split_once(']').map_or(rest, |(ip, _)| ip);
+    }
+    match header.rsplit_once(':') {
+        Some((host, port)) if !host.contains(':') && port.bytes().all(|b| b.is_ascii_digit()) => host,
+        _ => header,
+    }
+}
+
 impl HostPolicy {
-    /// Allow the loopback names plus `extra` (node name, bind/advertise
-    /// address, `--tls-san` names). Names compare case-insensitively.
+    /// Allow `localhost` plus `extra` (node name, bind/advertise address,
+    /// `--tls-san` names). Names compare case-insensitively.
     #[must_use]
     pub fn new<I, S>(extra: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        Self { names: extra.into_iter().map(Into::into).collect() }
+        let mut names: BTreeSet<String> = BTreeSet::from(["localhost".to_string()]);
+        names.extend(extra.into_iter().map(|n| normalize_host(&n.into())).filter(|n| !n.is_empty()));
+        Self { names }
     }
 
     /// Whether a request carrying this `Host` header (port ignored) is for us.
     #[must_use]
-    pub const fn allows(&self, _host_header: Option<&str>) -> bool {
-        true
+    pub fn allows(&self, host_header: Option<&str>) -> bool {
+        let Some(header) = host_header else {
+            return false;
+        };
+        let host = host_without_port(header);
+        !host.is_empty() && (host.parse::<IpAddr>().is_ok() || self.names.contains(&host.to_ascii_lowercase()))
     }
 }
 
@@ -122,8 +167,65 @@ impl std::error::Error for TokenFileError {}
 ///
 /// # Errors
 /// The first malformed line.
-pub const fn parse_token_file(_text: &str) -> Result<Vec<(String, UserInfo)>, TokenFileError> {
-    Ok(Vec::new())
+pub fn parse_token_file(text: &str) -> Result<Vec<(String, UserInfo)>, TokenFileError> {
+    let mut tokens = Vec::new();
+    for (index, raw) in text.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let err = |reason: &str| TokenFileError { line: index + 1, reason: reason.to_string() };
+        let fields = split_csv_line(line).map_err(err)?;
+        if fields.len() < 3 {
+            return Err(err("expected token,user,uid[,\"group1,group2\"]"));
+        }
+        if fields.len() > 4 {
+            return Err(err("too many fields (quote a group list that contains commas)"));
+        }
+        let token = fields[0].trim();
+        let user = fields[1].trim();
+        if token.is_empty() {
+            return Err(err("empty token"));
+        }
+        if user.is_empty() {
+            return Err(err("empty user name"));
+        }
+        let groups = fields
+            .get(3)
+            .map(|g| g.split(',').map(str::trim).filter(|g| !g.is_empty()).map(str::to_string).collect())
+            .unwrap_or_default();
+        tokens.push((token.to_string(), UserInfo { name: user.to_string(), groups }));
+    }
+    Ok(tokens)
+}
+
+/// Split one CSV line into fields: `"..."` quotes a field (with `""` for a
+/// literal quote), so a quoted group list may contain commas.
+fn split_csv_line(line: &str) -> Result<Vec<String>, &'static str> {
+    let mut fields = Vec::new();
+    let mut field = String::new();
+    let mut chars = line.chars().peekable();
+    let mut quoted = false;
+    while let Some(c) = chars.next() {
+        match (c, quoted) {
+            ('"', false) if field.trim().is_empty() => {
+                field.clear();
+                quoted = true;
+            }
+            ('"', true) if chars.peek() == Some(&'"') => {
+                chars.next();
+                field.push('"');
+            }
+            ('"', true) => quoted = false,
+            (',', false) => fields.push(std::mem::take(&mut field)),
+            (c, _) => field.push(c),
+        }
+    }
+    if quoted {
+        return Err("unterminated quoted field");
+    }
+    fields.push(field);
+    Ok(fields)
 }
 
 /// Read and parse a static token file from disk.
@@ -152,12 +254,103 @@ pub struct BootstrapAdmin {
 ///
 /// # Errors
 /// I/O failures creating or reading the files, or no OS randomness source.
-pub fn ensure_bootstrap_admin(dir: &Path, _server_url: &str, _ca_file: Option<&Path>) -> std::io::Result<BootstrapAdmin> {
-    Ok(BootstrapAdmin {
-        token: String::new(),
-        token_path: dir.join("admin.token"),
-        kubeconfig_path: dir.join("kubeconfig.yaml"),
-    })
+pub fn ensure_bootstrap_admin(dir: &Path, server_url: &str, ca_file: Option<&Path>) -> std::io::Result<BootstrapAdmin> {
+    std::fs::create_dir_all(dir)?;
+    let token_path = dir.join("admin.token");
+    let token = match std::fs::read_to_string(&token_path) {
+        Ok(existing) if is_admin_token(existing.trim()) => existing.trim().to_string(),
+        Ok(_) => new_admin_token(&token_path)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => new_admin_token(&token_path)?,
+        Err(e) => return Err(e),
+    };
+    let kubeconfig_path = dir.join("kubeconfig.yaml");
+    write_private(&kubeconfig_path, kubeconfig(server_url, &token, ca_file).as_bytes())?;
+    Ok(BootstrapAdmin { token, token_path, kubeconfig_path })
+}
+
+/// A well-formed generated token: 256 bits as lowercase hex.
+fn is_admin_token(t: &str) -> bool {
+    t.len() == 64 && t.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Mint a fresh token from the OS randomness source and store it.
+fn new_admin_token(path: &Path) -> std::io::Result<String> {
+    let mut bytes = [0u8; 32];
+    random_bytes(&mut bytes)?;
+    let token = bytes.iter().fold(String::with_capacity(64), |mut hex, b| {
+        let _ = write!(hex, "{b:02x}");
+        hex
+    });
+    write_private(path, format!("{token}\n").as_bytes())?;
+    Ok(token)
+}
+
+#[cfg(unix)]
+fn random_bytes(buf: &mut [u8]) -> std::io::Result<()> {
+    std::fs::File::open("/dev/urandom")?.read_exact(buf)
+}
+
+#[cfg(not(unix))]
+fn random_bytes(_buf: &mut [u8]) -> std::io::Result<()> {
+    Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "no OS randomness source for the admin token"))
+}
+
+/// Write `bytes` to `path`, readable by the owner only. The file is created
+/// `0600` (no window where it is world-readable) and an existing file is
+/// tightened before it is overwritten.
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        opts.mode(0o600);
+    }
+    let mut file = opts.open(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+    file.write_all(bytes)?;
+    file.sync_all()
+}
+
+/// A YAML scalar: plain when it is unambiguous, JSON-quoted otherwise.
+fn yaml_scalar(s: &str) -> String {
+    let plain = !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"/._-:".contains(&b)) && !s.starts_with([':', '-']);
+    if plain {
+        s.to_string()
+    } else {
+        cave_home_apiserver_rs::json::Value::from(s).to_json_string()
+    }
+}
+
+/// A kubeconfig for this listener, authenticating with the admin token.
+fn kubeconfig(server_url: &str, token: &str, ca_file: Option<&Path>) -> String {
+    let ca = ca_file.map_or_else(String::new, |ca| {
+        format!("    certificate-authority: {}\n", yaml_scalar(&ca.to_string_lossy()))
+    });
+    format!(
+        "apiVersion: v1\n\
+         kind: Config\n\
+         clusters:\n\
+         - name: cave-home\n  \
+           cluster:\n    \
+             server: {server}\n\
+         {ca}\
+         users:\n\
+         - name: cave-home-admin\n  \
+           user:\n    \
+             token: {token}\n\
+         contexts:\n\
+         - name: cave-home\n  \
+           context:\n    \
+             cluster: cave-home\n    \
+             user: cave-home-admin\n\
+         current-context: cave-home\n",
+        server = yaml_scalar(server_url),
+    )
 }
 
 /// The built-in RBAC policy: `cluster-admin` (everything) bound to
@@ -165,7 +358,33 @@ pub fn ensure_bootstrap_admin(dir: &Path, _server_url: &str, _ca_file: Option<&P
 /// `OpenAPI` documents) bound to every authenticated user.
 #[must_use]
 pub fn default_authorizer() -> RbacAuthorizer {
+    let cluster_admin = ClusterRole {
+        name: "cluster-admin".to_string(),
+        rules: vec![
+            PolicyRule::resource_rule(&["*"], &["*"], &["*"]),
+            PolicyRule::non_resource_rule(&["*"], &["*"]),
+        ],
+    };
+    let discovery = ClusterRole {
+        name: "system:discovery".to_string(),
+        rules: vec![PolicyRule::non_resource_rule(
+            &["/api", "/api/*", "/apis", "/apis/*", "/version", "/openapi", "/openapi/*", "/healthz", "/livez", "/readyz"],
+            &["get"],
+        )],
+    };
     RbacAuthorizer::new()
+        .with_cluster_role(cluster_admin)
+        .with_cluster_role(discovery)
+        .with_cluster_role_binding(ClusterRoleBinding {
+            name: "cluster-admin".to_string(),
+            subjects: vec![Subject::group(ADMIN_GROUP)],
+            role_ref: RoleRef::cluster_role("cluster-admin"),
+        })
+        .with_cluster_role_binding(ClusterRoleBinding {
+            name: "system:discovery".to_string(),
+            subjects: vec![Subject::group(cave_home_apiserver_rs::authn::SYSTEM_AUTHENTICATED)],
+            role_ref: RoleRef::cluster_role("system:discovery"),
+        })
 }
 
 /// A request that passed the gate, carrying its audit record until the
@@ -179,11 +398,13 @@ pub struct Admitted {
     event: AuditEvent,
 }
 
-/// The binary's request gate: `Host` check, then authentication, then
-/// authorization, with every outcome audited. Admission runs later, inside the
-/// write path ([`crate::apirest::handle_decoded`]), with [`Gate::admission`].
+/// The binary's request gate: `Host` check, authentication, authorization.
+///
+/// Every outcome is audited. Admission runs later, inside the write path
+/// ([`crate::apirest::handle_decoded`]), with [`Gate::admission`].
 pub struct Gate {
     hosts: HostPolicy,
+    authn: AuthenticatorChain,
     authz: Authorization,
     admission: AdmissionChain,
     audit: Option<Arc<dyn AuditSink>>,
@@ -193,9 +414,19 @@ impl Gate {
     /// A gate that accepts `tokens` and verified client-certificate identities,
     /// never anonymous requests, and authorizes with [`default_authorizer`].
     #[must_use]
-    pub fn new(_tokens: Vec<(String, UserInfo)>, hosts: HostPolicy) -> Self {
+    pub fn new(tokens: Vec<(String, UserInfo)>, hosts: HostPolicy) -> Self {
+        let tokens = tokens
+            .into_iter()
+            .fold(TokenAuthenticator::new(), |auth, (token, user)| auth.with_token(token, user));
+        // The front-proxy authenticator only ever sees identity headers the gate
+        // itself injected from a verified client certificate (see `to_api_request`).
+        let authn = AuthenticatorChain::new()
+            .with(Box::new(RequestHeaderAuthenticator::new()))
+            .with(Box::new(tokens))
+            .allow_anonymous(false);
         Self {
             hosts,
+            authn,
             authz: Authorization::Rbac(default_authorizer()),
             admission: AdmissionChain::new(),
             audit: None,
@@ -235,13 +466,71 @@ impl Gate {
     ///
     /// # Errors
     /// The response to send instead: `400`/`421` (Host), `401`, `403`, `405`.
-    pub fn check(&self, req: &HttpRequest, _peer: Option<&UserInfo>) -> Result<Admitted, HttpResponse> {
-        let _ = (&self.hosts, &self.authz, &self.audit);
-        Ok(Admitted {
-            user: cave_home_apiserver_rs::authn::AnonymousAuthenticator::identity(),
-            verb: req.method.to_ascii_lowercase(),
-            event: AuditEvent::started(&req.method, &req.path),
-        })
+    pub fn check(&self, req: &HttpRequest, peer: Option<&UserInfo>) -> Result<Admitted, HttpResponse> {
+        let target = if req.query.is_empty() { req.path.clone() } else { format!("{}?{}", req.path, req.query) };
+        let mut event = AuditEvent::started(&req.method, &target);
+
+        // 1. Is this request for us at all? (DNS rebinding defence.)
+        match req.header("host") {
+            None => return Err(self.deny(event, HttpResponse::text(400, "missing Host header"))),
+            Some(host) if !self.hosts.allows(Some(host)) => {
+                let msg = format!("this server does not answer to host {host:?}");
+                return Err(self.deny(event, HttpResponse::text(421, msg)));
+            }
+            Some(_) => {}
+        }
+
+        // 2. Liveness/readiness probes are the only unauthenticated surface.
+        if matches!(req.path.as_str(), "/healthz" | "/livez" | "/readyz") && matches!(req.method.as_str(), "GET" | "HEAD") {
+            let user = AnonymousAuthenticator::identity();
+            event.user.clone_from(&user.name);
+            event.verb = "get".to_string();
+            return Ok(Admitted { user, verb: event.verb.clone(), event });
+        }
+
+        // 3. Authentication: tokens, or the verified client certificate.
+        let user = match self.authn.authenticate(&to_api_request(req, peer)) {
+            Ok(user) => user,
+            Err(s) => return Err(self.deny(event, apirest::status_response(&s))),
+        };
+        event.user.clone_from(&user.name);
+
+        // 4. Authorization (RBAC), as a non-resource or a resource request.
+        if apirest::is_non_resource_path(&req.path) {
+            let verb = if matches!(req.method.as_str(), "GET" | "HEAD") { "get".to_string() } else { req.method.to_ascii_lowercase() };
+            event.verb.clone_from(&verb);
+            if let Err(s) = self.authz.authorize_non_resource(&user, &req.path, &verb) {
+                return Err(self.deny(event, apirest::status_response(&s)));
+            }
+            return Ok(Admitted { user, verb, event });
+        }
+        let rp = match path::parse(&req.path) {
+            Ok(rp) => rp,
+            Err(s) => return Err(self.deny(event, apirest::status_response(&s))),
+        };
+        event.set_resource(&rp);
+        let verb = if req.method == "GET" && is_watch(req) {
+            "watch"
+        } else {
+            match resolve_verb(&Method::parse(&req.method), &rp, false) {
+                Ok(v) => v,
+                Err(s) => return Err(self.deny(event, apirest::status_response(&s))),
+            }
+        };
+        event.verb = verb.to_string();
+        if let Err(s) = self.authz.authorize_resource(&user, &rp, verb) {
+            return Err(self.deny(event, apirest::status_response(&s)));
+        }
+        Ok(Admitted { user, verb: verb.to_string(), event })
+    }
+
+    /// Audit a refused request and hand back the response to send.
+    fn deny(&self, mut event: AuditEvent, resp: HttpResponse) -> HttpResponse {
+        event.response_code = resp.status;
+        if let Some(sink) = &self.audit {
+            sink.record(&event);
+        }
+        resp
     }
 
     /// Record the final response code for an admitted request.
@@ -254,11 +543,50 @@ impl Gate {
     }
 }
 
+/// True for `?watch=true` / `?watch=1`.
+fn is_watch(req: &HttpRequest) -> bool {
+    req.query
+        .split('&')
+        .any(|kv| matches!(kv.split_once('='), Some(("watch", "true" | "1"))))
+}
+
+/// The view of `req` the shared authenticator chain sees: only its bearer
+/// credential plus — when the TLS handshake verified a client certificate —
+/// the front-proxy identity headers derived from it. Identity headers sent by
+/// the client are never copied, so they cannot be spoofed.
+fn to_api_request(req: &HttpRequest, peer: Option<&UserInfo>) -> Request {
+    let mut headers = Headers::new();
+    if let Some(auth) = req.header("authorization") {
+        headers.insert("authorization", auth);
+    }
+    if let Some(identity) = peer {
+        headers.insert("x-remote-user", identity.name.clone());
+        for group in &identity.groups {
+            headers.insert("x-remote-group", group.clone());
+        }
+    }
+    Request {
+        method: Method::parse(&req.method),
+        target: req.path.clone(),
+        version: "HTTP/1.1".to_string(),
+        headers,
+        body: Vec::new(),
+    }
+}
+
 /// The one-line stdout audit record for `event`, or `None` for routine reads:
 /// every write verb and every authentication/authorization denial is logged.
 #[must_use]
-pub const fn audit_line(_event: &AuditEvent) -> Option<String> {
-    None
+pub fn audit_line(event: &AuditEvent) -> Option<String> {
+    let write = matches!(event.verb.as_str(), "create" | "update" | "patch" | "delete" | "deletecollection");
+    let denied = matches!(event.response_code, 401 | 403);
+    (write || denied).then(|| {
+        let user = if event.user.is_empty() { "-" } else { event.user.as_str() };
+        format!(
+            "cave-home: audit user={user:?} verb={} uri={:?} code={}",
+            event.verb, event.request_uri, event.response_code
+        )
+    })
 }
 
 /// Audit sink that prints [`audit_line`]s to stdout.

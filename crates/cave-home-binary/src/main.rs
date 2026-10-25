@@ -7,6 +7,7 @@
 //! the real in-process runtime (tokio + apiserver + reconcile loop) via
 //! [`server::run`]; `run` prints the bring-up plan the boot executes.
 
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -98,6 +99,19 @@ fn show_config(cfg: &Config) {
     println!("Node kind:   {}", cfg.role.as_str());
     println!("Data folder: {}", cfg.data_dir);
     println!("Network:     {}:{}", cfg.bind_addr, cfg.bind_port);
+    println!(
+        "Security:    {}",
+        if cfg.tls_cert.is_some() { "encrypted with your certificate" } else { "this computer only, not encrypted" }
+    );
+    println!(
+        "Sign-in:     {}",
+        match (&cfg.token_file, &cfg.client_ca) {
+            (Some(_), Some(_)) => "sign-in keys and device certificates",
+            (Some(_), None) => "sign-in keys from your list",
+            (None, Some(_)) => "device certificates (plus this computer's own key)",
+            (None, None) => "this computer's own key (in the data folder)",
+        }
+    );
     println!("Detail:      {}", cfg.log_level.as_str());
     print!("Features:   ");
     for c in &cfg.components {
@@ -129,11 +143,18 @@ fn boot(role: ServeRole, cfg: &Config) -> ExitCode {
         // A snappy reconcile cadence so a freshly-applied pod is scheduled and
         // run within a second or two rather than up to a tick later.
         reconcile_interval: Duration::from_secs(1),
-        // TLS is opt-in via config (a follow-up CLI flag will populate this); the
-        // default boot serves plain HTTP exactly as before.
+        // TLS from --tls-cert/--tls-key (+ --client-ca for client certificates).
+        // Config validation already refused a non-loopback bind without it.
         #[cfg(feature = "tls")]
-        tls: None,
-        access: server::AccessConfig::default(),
+        tls: tls_config(cfg),
+        access: server::AccessConfig {
+            token_file: cfg.token_file.as_ref().map(PathBuf::from),
+            tokens: Vec::new(),
+            // Without a token file, an admin key + kubeconfig is generated (and
+            // reused) in the data folder, as k3s writes k3s.yaml.
+            bootstrap_dir: Some(PathBuf::from(&cfg.data_dir)),
+            extra_hosts: cfg.tls_sans.clone(),
+        },
         limits: server::Limits::default(),
     };
 
@@ -152,6 +173,18 @@ fn boot(role: ServeRole, cfg: &Config) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// The listener's TLS material from the resolved config (validation guarantees
+/// the certificate and key come together).
+#[cfg(feature = "tls")]
+fn tls_config(cfg: &Config) -> Option<cave_home_binary::tls::TlsConfig> {
+    let (cert, key) = (cfg.tls_cert.as_ref()?, cfg.tls_key.as_ref()?);
+    let tls = cave_home_binary::tls::TlsConfig::new(cert, key);
+    Some(match &cfg.client_ca {
+        Some(ca) => tls.with_client_ca(ca),
+        None => tls,
+    })
 }
 
 fn report_plan(cfg: &Config) -> ExitCode {

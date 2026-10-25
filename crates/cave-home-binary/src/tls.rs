@@ -2,11 +2,17 @@
 //! TLS termination for the apiserver listener (`tls` feature).
 //!
 //! Behavioural reference: the K3s/Kubernetes apiserver serves on `:6443` over
-//! TLS, and authenticates clients by their certificate (mTLS) when a client CA
-//! is configured. This module loads a PEM server certificate + key (and an
-//! optional client-CA bundle) into a rustls [`ServerConfig`], from which
-//! [`crate::server`] builds a [`tokio_rustls::TlsAcceptor`] and wraps each
-//! accepted TCP connection before the HTTP handler ever sees bytes.
+//! TLS, and authenticates clients by their certificate when a client CA is
+//! configured (`--client-ca-file`). This module loads a PEM server certificate
+//! and key (and an optional client-CA bundle) into a rustls [`ServerConfig`],
+//! from which [`crate::server`] builds a [`tokio_rustls::TlsAcceptor`] and wraps
+//! each accepted TCP connection before the HTTP handler ever sees bytes.
+//!
+//! As upstream, a client CA makes client certificates *optional but verified*:
+//! a presented certificate must chain to the CA (or the handshake fails) and
+//! then authenticates as its subject ([`peer_identity`]: CN → user, O →
+//! groups); a client without one must still present a bearer token. TLS never
+//! authenticates on its own.
 //!
 //! The crypto provider is `ring` (the offline-buildable backend
 //! cave-home-unifi already uses), installed explicitly so this works regardless
@@ -27,8 +33,9 @@ use tokio_rustls::TlsAcceptor;
 
 /// Where to find the apiserver's TLS material on disk.
 ///
-/// `client_ca` is optional: present → the listener requires and verifies a
-/// client certificate (mTLS); absent → server-auth TLS only.
+/// `client_ca` is optional: present → the listener verifies any client
+/// certificate offered against it (mTLS identities); absent → server-auth TLS
+/// only.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TlsConfig {
     /// PEM file with the server certificate chain (leaf first).
@@ -36,7 +43,8 @@ pub struct TlsConfig {
     /// PEM file with the server private key (PKCS#8, PKCS#1 or SEC1).
     pub key: PathBuf,
     /// Optional PEM bundle of CAs that client certificates must chain to. Its
-    /// presence switches the listener into mutual-TLS mode.
+    /// presence switches the listener into mutual-TLS mode (certificates are
+    /// optional, but verified and used as the identity when presented).
     pub client_ca: Option<PathBuf>,
 }
 
@@ -135,7 +143,8 @@ fn load_client_roots(path: &Path) -> Result<RootCertStore, TlsError> {
 /// Build the rustls [`ServerConfig`] for the apiserver listener from `cfg`.
 ///
 /// Server-auth TLS always; mutual TLS additionally when `cfg.client_ca` is set
-/// (the listener then requires and verifies a client certificate).
+/// (the listener then verifies any client certificate offered — a client that
+/// offers none falls back to token authentication).
 ///
 /// # Errors
 /// [`TlsError`] if any PEM file is missing/empty/unparsable or rustls rejects
@@ -154,6 +163,7 @@ pub fn load_server_config(cfg: &TlsConfig) -> Result<Arc<ServerConfig>, TlsError
     let config = if let Some(ca) = &cfg.client_ca {
         let roots = load_client_roots(ca)?;
         let verifier = WebPkiClientVerifier::builder(Arc::new(roots))
+            .allow_unauthenticated()
             .build()
             .map_err(|e| TlsError::Rustls(e.to_string()))?;
         builder
@@ -168,6 +178,15 @@ pub fn load_server_config(cfg: &TlsConfig) -> Result<Arc<ServerConfig>, TlsError
     };
 
     Ok(Arc::new(config))
+}
+
+/// The identity in the client certificate the handshake verified, if any:
+/// Subject CN → user name, each Subject O → group (the upstream x509 mapping).
+#[must_use]
+pub fn peer_identity<IO>(stream: &tokio_rustls::server::TlsStream<IO>) -> Option<cave_home_apiserver_rs::rbac::UserInfo> {
+    let (_, conn) = stream.get_ref();
+    let leaf = conn.peer_certificates()?.first()?;
+    cave_home_apiserver_rs::x509::subject_identity(leaf.as_ref())
 }
 
 /// Build a [`TlsAcceptor`] for the apiserver listener from `cfg`.
