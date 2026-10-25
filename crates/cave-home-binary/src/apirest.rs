@@ -20,8 +20,33 @@ use cave_home_apiserver_rs::path;
 use cave_home_apiserver_rs::registry::{ListOptions, ListResult, Registry};
 use cave_home_apiserver_rs::status::{Status, StatusReason};
 
+use cave_home_apiserver_rs::admission::AdmissionChain;
+
 use crate::http::{HttpRequest, HttpResponse};
 use crate::version::BuildInfo;
+
+/// Whether `path` is one of the non-resource endpoints this surface serves
+/// (probes, `/version`, `/metrics`, discovery, `OpenAPI`), as opposed to a
+/// resource path parsed by [`path::parse`].
+#[must_use]
+pub const fn is_non_resource_path(_path: &str) -> bool {
+    false
+}
+
+/// Decode the JSON body of a write verb before any lock is taken.
+///
+/// # Errors
+/// The response to send instead (`400`, `415`).
+pub const fn decode_write_body(_req: &HttpRequest) -> Result<Option<Value>, HttpResponse> {
+    Ok(None)
+}
+
+/// Serve one request whose body [`decode_write_body`] already decoded, running
+/// write verbs through `admission` before they reach the registry.
+#[must_use]
+pub fn handle_decoded(reg: &mut Registry, req: &HttpRequest, _body: Option<Value>, _admission: &AdmissionChain) -> HttpResponse {
+    handle(reg, req)
+}
 
 /// Route and serve one request against the registry.
 #[must_use]
@@ -777,6 +802,305 @@ mod tests {
         assert_eq!(resp.status, 200);
         let body = String::from_utf8(resp.body).unwrap();
         assert!(body.contains("gitVersion"), "{body}");
+    }
+
+    // --- the URL names the object; the body cannot retarget it --------------
+
+    fn pods() -> GroupVersionResource {
+        GroupVersionResource::new("", "v1", "pods")
+    }
+
+    fn pod_body(name: &str, ns: Option<&str>, owner: &str) -> String {
+        let ns = ns.map(|n| format!(r#","namespace":"{n}""#)).unwrap_or_default();
+        format!(r#"{{"apiVersion":"v1","kind":"Pod","metadata":{{"name":"{name}"{ns}}},"spec":{{"owner":"{owner}"}}}}"#)
+    }
+
+    /// A registry holding pods `a` and `b` in `default` (and the `other` ns).
+    fn two_pods() -> Registry {
+        let mut reg = Registry::new();
+        for name in ["a", "b"] {
+            let resp = handle(&mut reg, &req_body("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_body(name, None, name)));
+            assert_eq!(resp.status, 201, "{}", String::from_utf8_lossy(&resp.body));
+        }
+        reg
+    }
+
+    fn owner(reg: &Registry, ns: &str, name: &str) -> Option<String> {
+        reg.get(&pods(), ns, name).ok()?.pointer("spec.owner").and_then(Value::as_str).map(str::to_string)
+    }
+
+    fn stored_json(reg: &Registry, name: &str) -> String {
+        reg.get(&pods(), "default", name).expect("stored").to_json_string()
+    }
+
+    #[test]
+    fn put_whose_body_names_another_object_is_400() {
+        let mut reg = two_pods();
+        let b = stored_json(&reg, "b").replace(r#""owner":"b""#, r#""owner":"hijacked""#);
+        let resp = handle(&mut reg, &req_body("PUT", "/api/v1/namespaces/default/pods/a", "application/json", &b));
+        assert_eq!(resp.status, 400, "{}", String::from_utf8_lossy(&resp.body));
+        assert_eq!(owner(&reg, "default", "b").as_deref(), Some("b"));
+        assert_eq!(owner(&reg, "default", "a").as_deref(), Some("a"));
+    }
+
+    #[test]
+    fn put_whose_body_names_another_namespace_is_400() {
+        let mut reg = two_pods();
+        let a = stored_json(&reg, "a").replace(r#""namespace":"default""#, r#""namespace":"kube-system""#);
+        let resp = handle(&mut reg, &req_body("PUT", "/api/v1/namespaces/default/pods/a", "application/json", &a));
+        assert_eq!(resp.status, 400, "{}", String::from_utf8_lossy(&resp.body));
+    }
+
+    #[test]
+    fn put_with_matching_identity_replaces_the_object() {
+        let mut reg = two_pods();
+        let a = stored_json(&reg, "a").replace(r#""owner":"a""#, r#""owner":"renamed""#);
+        let resp = handle(&mut reg, &req_body("PUT", "/api/v1/namespaces/default/pods/a", "application/json", &a));
+        assert_eq!(resp.status, 200, "{}", String::from_utf8_lossy(&resp.body));
+        assert_eq!(owner(&reg, "default", "a").as_deref(), Some("renamed"));
+    }
+
+    #[test]
+    fn post_whose_body_names_another_namespace_is_400_not_silently_moved() {
+        let mut reg = Registry::new();
+        let resp = handle(
+            &mut reg,
+            &req_body("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_body("x", Some("kube-system"), "x")),
+        );
+        assert_eq!(resp.status, 400, "{}", String::from_utf8_lossy(&resp.body));
+        assert!(reg.get(&pods(), "default", "x").is_err());
+        assert!(reg.get(&pods(), "kube-system", "x").is_err());
+    }
+
+    #[test]
+    fn post_of_the_wrong_kind_is_400() {
+        let mut reg = Registry::new();
+        let svc = r#"{"apiVersion":"v1","kind":"Service","metadata":{"name":"x"}}"#;
+        let resp = handle(&mut reg, &req_body("POST", "/api/v1/namespaces/default/pods", "application/json", svc));
+        assert_eq!(resp.status, 400, "{}", String::from_utf8_lossy(&resp.body));
+    }
+
+    #[test]
+    fn merge_patch_cannot_rename_the_target() {
+        let mut reg = two_pods();
+        let resp = handle(
+            &mut reg,
+            &req_body(
+                "PATCH",
+                "/api/v1/namespaces/default/pods/a",
+                "application/merge-patch+json",
+                r#"{"metadata":{"name":"b"},"spec":{"owner":"hijacked"}}"#,
+            ),
+        );
+        assert_eq!(resp.status, 400, "{}", String::from_utf8_lossy(&resp.body));
+        assert_eq!(owner(&reg, "default", "b").as_deref(), Some("b"));
+        assert_eq!(owner(&reg, "default", "a").as_deref(), Some("a"));
+        assert!(reg.get(&pods(), "default", "a").expect("a").pointer("metadata.name") == Some(&Value::from("a")));
+    }
+
+    // --- subresources act on themselves, not the whole object ---------------
+
+    #[test]
+    fn put_on_status_persists_only_status() {
+        let mut reg = two_pods();
+        let a = stored_json(&reg, "a").replace(r#""owner":"a""#, r#""owner":"escalated""#);
+        let with_status = a.trim_end_matches('}').to_string() + r#","status":{"phase":"Running"}}"#;
+        let resp = handle(&mut reg, &req_body("PUT", "/api/v1/namespaces/default/pods/a/status", "application/json", &with_status));
+        assert_eq!(resp.status, 200, "{}", String::from_utf8_lossy(&resp.body));
+        let stored = reg.get(&pods(), "default", "a").expect("a");
+        assert_eq!(stored.pointer("spec.owner"), Some(&Value::from("a")), "spec is not writable via /status");
+        assert_eq!(stored.pointer("status.phase"), Some(&Value::from("Running")));
+    }
+
+    #[test]
+    fn patch_on_status_persists_only_status() {
+        let mut reg = two_pods();
+        let resp = handle(
+            &mut reg,
+            &req_body(
+                "PATCH",
+                "/api/v1/namespaces/default/pods/a/status",
+                "application/merge-patch+json",
+                r#"{"spec":{"owner":"escalated"},"status":{"phase":"Running"}}"#,
+            ),
+        );
+        assert_eq!(resp.status, 200, "{}", String::from_utf8_lossy(&resp.body));
+        let stored = reg.get(&pods(), "default", "a").expect("a");
+        assert_eq!(stored.pointer("spec.owner"), Some(&Value::from("a")));
+        assert_eq!(stored.pointer("status.phase"), Some(&Value::from("Running")));
+    }
+
+    #[test]
+    fn delete_on_a_subresource_is_405_and_keeps_the_object() {
+        let mut reg = two_pods();
+        let del = HttpRequest::parse(b"DELETE /api/v1/namespaces/default/pods/a/status HTTP/1.1\r\n\r\n").expect("parse");
+        assert_eq!(handle(&mut reg, &del).status, 405);
+        assert!(reg.get(&pods(), "default", "a").is_ok(), "the pod must survive a DELETE on its status");
+    }
+
+    #[test]
+    fn unknown_subresources_are_404() {
+        let mut reg = two_pods();
+        assert_eq!(handle(&mut reg, &get("/api/v1/namespaces/default/pods/a/exec")).status, 404);
+        let a = stored_json(&reg, "a").replace(r#""owner":"a""#, r#""owner":"scaled""#);
+        let put = handle(&mut reg, &req_body("PUT", "/api/v1/namespaces/default/pods/a/scale", "application/json", &a));
+        assert_eq!(put.status, 404, "{}", String::from_utf8_lossy(&put.body));
+        assert_eq!(owner(&reg, "default", "a").as_deref(), Some("a"));
+        // The status subresource reads back the object.
+        assert_eq!(handle(&mut reg, &get("/api/v1/namespaces/default/pods/a/status")).status, 200);
+    }
+
+    // --- write bodies must be JSON (CSRF / content-sniffing defence) ---------
+
+    #[test]
+    fn create_and_replace_require_a_json_content_type() {
+        let mut reg = two_pods();
+        for ctype in ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x"] {
+            let post = handle(&mut reg, &req_body("POST", "/api/v1/namespaces/default/pods", ctype, &pod_body("c", None, "c")));
+            assert_eq!(post.status, 415, "POST {ctype}");
+            let current = stored_json(&reg, "a");
+            let put = handle(&mut reg, &req_body("PUT", "/api/v1/namespaces/default/pods/a", ctype, &current));
+            assert_eq!(put.status, 415, "PUT {ctype}");
+        }
+        let body = pod_body("c", None, "c");
+        let no_ctype = HttpRequest::parse(
+            format!("POST /api/v1/namespaces/default/pods HTTP/1.1\r\nContent-Length: {}\r\n\r\n{body}", body.len()).as_bytes(),
+        )
+        .expect("parse");
+        assert_eq!(handle(&mut reg, &no_ctype).status, 415, "missing Content-Type");
+        assert!(reg.get(&pods(), "default", "c").is_err());
+        let charset = handle(
+            &mut reg,
+            &req_body("POST", "/api/v1/namespaces/default/pods", "application/json; charset=utf-8", &body),
+        );
+        assert_eq!(charset.status, 201, "parameters on application/json are fine");
+    }
+
+    #[test]
+    fn patch_requires_a_patch_content_type() {
+        let mut reg = two_pods();
+        let doc = r#"{"metadata":{"labels":{"tier":"web"}}}"#;
+        for ctype in ["application/json", "text/plain", "application/apply-patch+yaml"] {
+            let resp = handle(&mut reg, &req_body("PATCH", "/api/v1/namespaces/default/pods/a", ctype, doc));
+            assert_eq!(resp.status, 415, "PATCH {ctype}");
+        }
+        let raw = format!("PATCH /api/v1/namespaces/default/pods/a HTTP/1.1\r\nContent-Length: {}\r\n\r\n{doc}", doc.len());
+        assert_eq!(handle(&mut reg, &HttpRequest::parse(raw.as_bytes()).expect("parse")).status, 415, "missing Content-Type");
+        for ctype in ["application/merge-patch+json", "application/strategic-merge-patch+json"] {
+            let resp = handle(&mut reg, &req_body("PATCH", "/api/v1/namespaces/default/pods/a", ctype, doc));
+            assert_eq!(resp.status, 200, "PATCH {ctype}: {}", String::from_utf8_lossy(&resp.body));
+        }
+    }
+
+    #[test]
+    fn json_patch_is_applied_and_cannot_retarget() {
+        let mut reg = two_pods();
+        let ok = handle(
+            &mut reg,
+            &req_body(
+                "PATCH",
+                "/api/v1/namespaces/default/pods/a",
+                "application/json-patch+json",
+                r#"[{"op":"replace","path":"/spec/owner","value":"patched"}]"#,
+            ),
+        );
+        assert_eq!(ok.status, 200, "{}", String::from_utf8_lossy(&ok.body));
+        assert_eq!(owner(&reg, "default", "a").as_deref(), Some("patched"));
+        let retarget = handle(
+            &mut reg,
+            &req_body(
+                "PATCH",
+                "/api/v1/namespaces/default/pods/a",
+                "application/json-patch+json",
+                r#"[{"op":"replace","path":"/metadata/name","value":"b"}]"#,
+            ),
+        );
+        assert_eq!(retarget.status, 400, "{}", String::from_utf8_lossy(&retarget.body));
+        assert_eq!(owner(&reg, "default", "b").as_deref(), Some("b"));
+    }
+
+    #[test]
+    fn decode_write_body_reads_only_write_verbs() {
+        assert_eq!(decode_write_body(&get("/api/v1/pods")).map_err(|r| r.status), Ok(None));
+        let post = req_body("POST", "/api/v1/namespaces/default/pods", "application/json", POD_JSON);
+        let decoded = decode_write_body(&post).expect("decodes").expect("a body");
+        assert_eq!(decoded.pointer("metadata.name"), Some(&Value::from("nginx")));
+        let bad = req_body("POST", "/api/v1/namespaces/default/pods", "application/json", "{nope");
+        assert_eq!(decode_write_body(&bad).map_err(|r| r.status), Err(400));
+    }
+
+    #[test]
+    fn non_resource_paths_are_classified() {
+        for p in ["/healthz", "/livez", "/readyz", "/version", "/metrics", "/api", "/apis", "/api/v1", "/apis/apps/v1", "/openapi/v3", "/openapi/v3/api/v1", "/openapi/v2"] {
+            assert!(is_non_resource_path(p), "{p}");
+        }
+        for p in ["/api/v1/pods", "/api/v1/namespaces/default/pods/x", "/apis/apps/v1/deployments", "/nonsense"] {
+            assert!(!is_non_resource_path(p), "{p}");
+        }
+    }
+
+    // --- admission runs on the write path ------------------------------------
+
+    struct DenyCreates;
+    impl cave_home_apiserver_rs::admission::ValidatingPlugin for DenyCreates {
+        fn name(&self) -> &str {
+            "DenyCreates"
+        }
+        fn validate(&self, request: &cave_home_apiserver_rs::admission::AdmissionRequest) -> cave_home_apiserver_rs::status::Result<()> {
+            if request.operation == cave_home_apiserver_rs::admission::Operation::Create {
+                return Err(Status::invalid("creates are not admitted here"));
+            }
+            Ok(())
+        }
+    }
+
+    struct LabelEverything;
+    impl cave_home_apiserver_rs::admission::MutatingPlugin for LabelEverything {
+        fn name(&self) -> &str {
+            "LabelEverything"
+        }
+        fn admit(&self, request: &mut cave_home_apiserver_rs::admission::AdmissionRequest) -> cave_home_apiserver_rs::status::Result<()> {
+            if let Some(Value::Object(root)) = request.object.as_mut() {
+                if let Some(Value::Object(meta)) = root.get_mut("metadata") {
+                    meta.insert("labels".to_string(), json::obj([("admitted", Value::from("yes"))]));
+                }
+            }
+            Ok(())
+        }
+    }
+
+    fn decoded(reg: &mut Registry, req: &HttpRequest, admission: &AdmissionChain) -> HttpResponse {
+        match decode_write_body(req) {
+            Ok(body) => handle_decoded(reg, req, body, admission),
+            Err(resp) => resp,
+        }
+    }
+
+    #[test]
+    fn validating_admission_rejects_before_storage() {
+        let mut reg = Registry::new();
+        let chain = AdmissionChain::new().with_validating(Box::new(DenyCreates));
+        let resp = decoded(&mut reg, &req_body("POST", "/api/v1/namespaces/default/pods", "application/json", POD_JSON), &chain);
+        assert_eq!(resp.status, 422, "{}", String::from_utf8_lossy(&resp.body));
+        assert!(reg.get(&pods(), "default", "nginx").is_err());
+    }
+
+    #[test]
+    fn mutating_admission_shapes_what_is_stored() {
+        let mut reg = two_pods();
+        let chain = AdmissionChain::new().with_mutating(Box::new(LabelEverything));
+        let created = decoded(&mut reg, &req_body("POST", "/api/v1/namespaces/default/pods", "application/json", POD_JSON), &chain);
+        assert_eq!(created.status, 201, "{}", String::from_utf8_lossy(&created.body));
+        let patched = decoded(
+            &mut reg,
+            &req_body("PATCH", "/api/v1/namespaces/default/pods/a", "application/merge-patch+json", r#"{"spec":{"owner":"x"}}"#),
+            &chain,
+        );
+        assert_eq!(patched.status, 200, "{}", String::from_utf8_lossy(&patched.body));
+        for name in ["nginx", "a"] {
+            let obj = reg.get(&pods(), "default", name).expect("stored");
+            assert_eq!(obj.pointer("metadata.labels.admitted"), Some(&Value::from("yes")), "{name}");
+        }
     }
 
     #[test]

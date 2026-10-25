@@ -127,6 +127,17 @@ pub struct ConfigLayer {
     pub bind_addr: Option<String>,
     pub bind_port: Option<u16>,
     pub log_level: Option<LogLevel>,
+    /// PEM server certificate for the listener (TLS).
+    pub tls_cert: Option<String>,
+    /// PEM private key matching [`tls_cert`](Self::tls_cert).
+    pub tls_key: Option<String>,
+    /// PEM CA bundle client certificates are verified against.
+    pub client_ca: Option<String>,
+    /// Static bearer-token file (`token,user,uid[,"groups"]` lines).
+    pub token_file: Option<String>,
+    /// Extra names the listener answers to (`Host` header / certificate SANs).
+    /// `Some` replaces the lower layer's list.
+    pub tls_sans: Option<Vec<String>>,
 }
 
 /// Which of the four precedence layers a [`ConfigLayer`] represents.
@@ -166,6 +177,11 @@ impl ConfigLayer {
             bind_addr: Some("0.0.0.0".to_string()),
             bind_port: Some(8123),
             log_level: Some(LogLevel::Info),
+            tls_cert: None,
+            tls_key: None,
+            client_ca: None,
+            token_file: None,
+            tls_sans: None,
         }
     }
 
@@ -204,6 +220,19 @@ impl ConfigLayer {
         if higher.log_level.is_some() {
             self.log_level = higher.log_level;
         }
+        for (mine, theirs) in [
+            (&mut self.tls_cert, &higher.tls_cert),
+            (&mut self.tls_key, &higher.tls_key),
+            (&mut self.client_ca, &higher.client_ca),
+            (&mut self.token_file, &higher.token_file),
+        ] {
+            if theirs.is_some() {
+                mine.clone_from(theirs);
+            }
+        }
+        if higher.tls_sans.is_some() {
+            self.tls_sans.clone_from(&higher.tls_sans);
+        }
         self.origin = higher.origin;
         self
     }
@@ -219,6 +248,16 @@ pub struct Config {
     pub bind_addr: String,
     pub bind_port: u16,
     pub log_level: LogLevel,
+    /// PEM server certificate (TLS), if configured.
+    pub tls_cert: Option<String>,
+    /// PEM private key, if configured.
+    pub tls_key: Option<String>,
+    /// PEM client-CA bundle, if configured.
+    pub client_ca: Option<String>,
+    /// Static bearer-token file, if configured.
+    pub token_file: Option<String>,
+    /// Extra names the listener answers to.
+    pub tls_sans: Vec<String>,
 }
 
 /// Why a configuration is invalid. No panics — every bad input is one of these.
@@ -242,6 +281,16 @@ pub enum ConfigError {
     /// A pillar was enabled without the orchestration layer that must host it
     /// (Charter §5: everything runs in-process under the orchestration layer).
     MissingOrchestration,
+    /// The listener would be reachable from other machines without TLS.
+    ExposedWithoutTls(String),
+    /// The listener would be reachable from other machines without a
+    /// configured way to check who is connecting (token file or client CA).
+    ExposedWithoutAuth(String),
+    /// Only half of the TLS material was given (certificate without key, key
+    /// without certificate, or a client CA without a server certificate).
+    TlsIncomplete,
+    /// TLS was configured but this build has no TLS support.
+    TlsUnavailable,
 }
 
 impl fmt::Display for ConfigError {
@@ -267,6 +316,24 @@ impl fmt::Display for ConfigError {
             Self::MissingOrchestration => write!(
                 f,
                 "the home foundation must be turned on for the other features to run"
+            ),
+            Self::ExposedWithoutTls(a) => write!(
+                f,
+                "listening on `{a}` lets other devices reach your home's control panel, which needs a \
+                 security certificate (--tls-cert and --tls-key); use 127.0.0.1 to keep it on this computer"
+            ),
+            Self::ExposedWithoutAuth(a) => write!(
+                f,
+                "listening on `{a}` lets other devices reach your home's control panel, which needs a way \
+                 to check who is connecting (--token-file or --client-ca); use 127.0.0.1 to keep it on this computer"
+            ),
+            Self::TlsIncomplete => write!(
+                f,
+                "a security certificate needs both --tls-cert and --tls-key (and --client-ca needs them too)"
+            ),
+            Self::TlsUnavailable => write!(
+                f,
+                "this copy of cave-home was built without security certificate support"
             ),
         }
     }
@@ -324,6 +391,11 @@ impl Config {
             bind_addr,
             bind_port,
             log_level,
+            tls_cert: merged.tls_cert,
+            tls_key: merged.tls_key,
+            client_ca: merged.client_ca,
+            token_file: merged.token_file,
+            tls_sans: merged.tls_sans.unwrap_or_default(),
         };
         cfg.validate()?;
         Ok(cfg)
@@ -435,7 +507,7 @@ mod tests {
         file.bind_port = Some(1);
 
         let mut env = ConfigLayer::empty(Layer::Env);
-        env.bind_addr = Some("10.0.0.1".to_string());
+        env.bind_addr = Some("127.0.0.2".to_string());
         env.bind_port = Some(2);
 
         let mut flags = flags_layer();
@@ -445,7 +517,7 @@ mod tests {
         let cfg = Config::resolve_standard(&file, &env, &flags).expect("valid");
         assert_eq!(cfg.node_name, "from-file"); // only file set it
         assert_eq!(cfg.data_dir, "/data/file"); // only file set it
-        assert_eq!(cfg.bind_addr, "10.0.0.1"); // only env set it
+        assert_eq!(cfg.bind_addr, "127.0.0.2"); // only env set it
         assert_eq!(cfg.log_level, LogLevel::Debug); // only flags set it
         assert_eq!(cfg.bind_port, 3); // contested -> flags wins
     }
@@ -617,10 +689,116 @@ mod tests {
     #[test]
     fn error_messages_are_grandma_friendly() {
         // No implementation jargon in the user-facing error text (Charter §6.3).
-        let msg = ConfigError::MissingOrchestration.to_string();
-        let lower = msg.to_ascii_lowercase();
-        for jargon in ["orchestration", "k3s", "pod", "kubelet"] {
-            assert!(!lower.contains(jargon), "jargon `{jargon}` leaked: {msg}");
+        for err in [
+            ConfigError::MissingOrchestration,
+            ConfigError::ExposedWithoutTls("0.0.0.0".to_string()),
+            ConfigError::ExposedWithoutAuth("0.0.0.0".to_string()),
+            ConfigError::TlsIncomplete,
+            ConfigError::TlsUnavailable,
+        ] {
+            let msg = err.to_string();
+            let lower = msg.to_ascii_lowercase();
+            for jargon in ["orchestration", "k3s", "pod", "kubelet", "apiserver", "rbac", "x509"] {
+                assert!(!lower.contains(jargon), "jargon `{jargon}` leaked: {msg}");
+            }
         }
+    }
+
+    // --- network exposure: loopback by default, TLS + credentials otherwise --
+
+    fn with_bind(addr: &str) -> ConfigLayer {
+        let mut flags = flags_layer();
+        flags.bind_addr = Some(addr.to_string());
+        flags
+    }
+
+    fn resolve_flags(flags: &ConfigLayer) -> Result<Config, ConfigError> {
+        Config::resolve_standard(&ConfigLayer::empty(Layer::File), &ConfigLayer::empty(Layer::Env), flags)
+    }
+
+    #[test]
+    fn default_bind_is_loopback_only() {
+        let cfg = Config::from_layers(&[ConfigLayer::defaults()]).expect("defaults valid");
+        assert_eq!(cfg.bind_addr, "127.0.0.1");
+        assert!(crate::access::is_loopback_host(&cfg.bind_addr));
+    }
+
+    #[test]
+    fn other_loopback_binds_need_no_certificate() {
+        for addr in ["127.0.0.1", "127.0.0.2", "::1", "localhost"] {
+            assert!(resolve_flags(&with_bind(addr)).is_ok(), "{addr}");
+        }
+    }
+
+    #[test]
+    fn exposed_bind_without_tls_is_refused() {
+        for addr in ["0.0.0.0", "::", "192.168.1.20"] {
+            let mut flags = with_bind(addr);
+            flags.token_file = Some("/etc/cave-home/tokens.csv".to_string());
+            assert_eq!(resolve_flags(&flags), Err(ConfigError::ExposedWithoutTls(addr.to_string())), "{addr}");
+        }
+    }
+
+    #[cfg(feature = "tls")]
+    fn exposed_with_tls(addr: &str) -> ConfigLayer {
+        let mut flags = with_bind(addr);
+        flags.tls_cert = Some("/etc/cave-home/tls.crt".to_string());
+        flags.tls_key = Some("/etc/cave-home/tls.key".to_string());
+        flags
+    }
+
+    #[cfg(feature = "tls")]
+    #[test]
+    fn exposed_bind_with_tls_but_no_credentials_is_refused() {
+        assert_eq!(
+            resolve_flags(&exposed_with_tls("0.0.0.0")),
+            Err(ConfigError::ExposedWithoutAuth("0.0.0.0".to_string()))
+        );
+    }
+
+    #[cfg(feature = "tls")]
+    #[test]
+    fn exposed_bind_with_tls_and_credentials_is_allowed() {
+        let mut tokens = exposed_with_tls("0.0.0.0");
+        tokens.token_file = Some("/etc/cave-home/tokens.csv".to_string());
+        assert!(resolve_flags(&tokens).is_ok());
+        let mut certs = exposed_with_tls("0.0.0.0");
+        certs.client_ca = Some("/etc/cave-home/clients.crt".to_string());
+        let cfg = resolve_flags(&certs).expect("client CA counts as authentication");
+        assert_eq!(cfg.client_ca.as_deref(), Some("/etc/cave-home/clients.crt"));
+    }
+
+    #[cfg(not(feature = "tls"))]
+    #[test]
+    fn tls_settings_without_tls_support_are_refused() {
+        let mut flags = flags_layer();
+        flags.tls_cert = Some("/c".to_string());
+        flags.tls_key = Some("/k".to_string());
+        assert_eq!(resolve_flags(&flags), Err(ConfigError::TlsUnavailable));
+    }
+
+    #[test]
+    fn half_configured_tls_is_refused() {
+        let mut cert_only = flags_layer();
+        cert_only.tls_cert = Some("/c".to_string());
+        assert_eq!(resolve_flags(&cert_only), Err(ConfigError::TlsIncomplete));
+        let mut key_only = flags_layer();
+        key_only.tls_key = Some("/k".to_string());
+        assert_eq!(resolve_flags(&key_only), Err(ConfigError::TlsIncomplete));
+        let mut ca_only = flags_layer();
+        ca_only.client_ca = Some("/ca".to_string());
+        assert_eq!(resolve_flags(&ca_only), Err(ConfigError::TlsIncomplete));
+    }
+
+    #[test]
+    fn tls_and_credential_settings_follow_layer_precedence() {
+        let mut file = ConfigLayer::empty(Layer::File);
+        file.token_file = Some("/from/file".to_string());
+        file.tls_sans = Some(vec!["hub.example.com".to_string()]);
+        let mut flags = flags_layer();
+        flags.token_file = Some("/from/flags".to_string());
+        let cfg = Config::resolve_standard(&file, &ConfigLayer::empty(Layer::Env), &flags).expect("valid");
+        assert_eq!(cfg.token_file.as_deref(), Some("/from/flags"));
+        assert_eq!(cfg.tls_sans, vec!["hub.example.com".to_string()]);
     }
 }

@@ -41,6 +41,7 @@
 //! computed plan; there is no concept here of spawning a separate OS process
 //! for a pillar.
 
+pub mod access;
 pub mod apirest;
 pub mod bootstrap;
 pub mod cli;

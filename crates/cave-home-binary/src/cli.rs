@@ -449,6 +449,57 @@ mod tests {
     }
 
     #[test]
+    fn server_accepts_tls_and_credential_flags() {
+        let cmd = parse(&argv(&[
+            "server",
+            "--tls-cert",
+            "/etc/ch/tls.crt",
+            "--tls-key",
+            "/etc/ch/tls.key",
+            "--client-ca",
+            "/etc/ch/clients.crt",
+            "--token-file",
+            "/etc/ch/tokens.csv",
+            "--tls-san",
+            "hub.example.com",
+            "--tls-san",
+            "10.0.0.5",
+        ]))
+        .expect("parses");
+        let Command::Serve { flags, .. } = cmd else {
+            panic!("expected Serve");
+        };
+        assert_eq!(flags.tls_cert.as_deref(), Some("/etc/ch/tls.crt"));
+        assert_eq!(flags.tls_key.as_deref(), Some("/etc/ch/tls.key"));
+        assert_eq!(flags.client_ca.as_deref(), Some("/etc/ch/clients.crt"));
+        assert_eq!(flags.token_file.as_deref(), Some("/etc/ch/tokens.csv"));
+        assert_eq!(
+            flags.tls_sans,
+            Some(vec!["hub.example.com".to_string(), "10.0.0.5".to_string()]),
+            "--tls-san repeats"
+        );
+    }
+
+    #[test]
+    fn tls_flags_need_values() {
+        for flag in ["--tls-cert", "--tls-key", "--client-ca", "--token-file", "--tls-san"] {
+            assert_eq!(
+                parse(&argv(&["server", flag])),
+                Err(ParseError::MissingValue(flag.to_string())),
+                "{flag}"
+            );
+        }
+    }
+
+    #[test]
+    fn run_help_documents_the_security_flags() {
+        let text = help_text(Some("run"));
+        for flag in ["--tls-cert", "--tls-key", "--client-ca", "--token-file", "--tls-san"] {
+            assert!(text.contains(flag), "help must mention {flag}");
+        }
+    }
+
+    #[test]
     fn run_parses_all_flags() {
         let cmd = parse(&argv(&[
             "run",

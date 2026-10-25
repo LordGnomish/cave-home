@@ -230,9 +230,14 @@ mod tests {
             role: NodeRole::Hub,
             components: BTreeSet::new(),
             data_dir: "/x".to_string(),
-            bind_addr: "0.0.0.0".to_string(),
+            bind_addr: "127.0.0.1".to_string(),
             bind_port: 1,
             log_level: crate::config::LogLevel::Info,
+            tls_cert: None,
+            tls_key: None,
+            client_ca: None,
+            token_file: None,
+            tls_sans: Vec::new(),
         };
         assert_eq!(Plan::compute(&cfg).unwrap_err(), PlanError::Empty);
     }
@@ -244,9 +249,14 @@ mod tests {
             role: NodeRole::Hub,
             components: [Component::Core].into_iter().collect(),
             data_dir: "/x".to_string(),
-            bind_addr: "0.0.0.0".to_string(),
+            bind_addr: "127.0.0.1".to_string(),
             bind_port: 1,
             log_level: crate::config::LogLevel::Info,
+            tls_cert: None,
+            tls_key: None,
+            client_ca: None,
+            token_file: None,
+            tls_sans: Vec::new(),
         };
         assert_eq!(
             Plan::compute(&cfg).unwrap_err(),

@@ -133,6 +133,8 @@ fn boot(role: ServeRole, cfg: &Config) -> ExitCode {
         // default boot serves plain HTTP exactly as before.
         #[cfg(feature = "tls")]
         tls: None,
+        access: server::AccessConfig::default(),
+        limits: server::Limits::default(),
     };
 
     let runtime = match tokio::runtime::Runtime::new() {

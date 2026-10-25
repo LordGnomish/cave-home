@@ -26,7 +26,10 @@
 //! a real socket (plain or TLS-terminated), the real registry, the real planner,
 //! real supervised per-tick core invocations, and real ordered teardown.
 
+use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -34,11 +37,14 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{watch, Mutex};
 
 use cave_home_apiserver_rs::gvk::GroupVersionResource;
+use cave_home_apiserver_rs::rbac::UserInfo;
 use cave_home_apiserver_rs::registry::Registry;
+pub use cave_home_apiserver_rs::server::Limits;
 use cave_home_orchestration::bringup::BringUpPlan;
 use cave_home_orchestration::component::Component;
 use cave_home_orchestration::role::NodeIntent;
 
+use crate::access::Gate;
 use crate::node::LocalNode;
 use crate::{apirest, http};
 
@@ -63,10 +69,30 @@ pub struct RuntimeConfig {
     /// default) serves plain HTTP, exactly as before.
     #[cfg(feature = "tls")]
     pub tls: Option<crate::tls::TlsConfig>,
+    /// Who may call the API.
+    pub access: AccessConfig,
+    /// Per-connection bounds (head/body size, timeouts, connection cap).
+    pub limits: Limits,
+}
+
+/// The credential sources the listener accepts. Anonymous access is never
+/// enabled; a boot with no source at all is refused.
+#[derive(Debug, Clone, Default)]
+pub struct AccessConfig {
+    /// A static token file (`token,user,uid[,"groups"]`), as `--token-file`.
+    pub token_file: Option<PathBuf>,
+    /// Tokens supplied programmatically (embedding, tests).
+    pub tokens: Vec<(String, UserInfo)>,
+    /// Where to keep the generated admin token + kubeconfig. Used when no
+    /// token file is configured (normally the node's data dir).
+    pub bootstrap_dir: Option<PathBuf>,
+    /// Extra names (beyond loopback, the node name and its address) the
+    /// listener accepts in the `Host` header.
+    pub extra_hosts: Vec<String>,
 }
 
 impl RuntimeConfig {
-    /// A server-role config bound on all interfaces at `:6443`.
+    /// A server-role config bound to loopback at `:6443`.
     #[must_use]
     pub fn server(node: LocalNode) -> Self {
         Self {
@@ -77,7 +103,20 @@ impl RuntimeConfig {
             reconcile_interval: Duration::from_secs(1),
             #[cfg(feature = "tls")]
             tls: None,
+            access: AccessConfig::default(),
+            limits: Limits::default(),
         }
+    }
+}
+
+/// A source of accepted connections (a [`TcpListener`], or a test double).
+trait Accept: Send + 'static {
+    fn poll_accept(&self, cx: &mut Context<'_>) -> Poll<std::io::Result<(TcpStream, SocketAddr)>>;
+}
+
+impl Accept for TcpListener {
+    fn poll_accept(&self, cx: &mut Context<'_>) -> Poll<std::io::Result<(TcpStream, SocketAddr)>> {
+        Self::poll_accept(self, cx)
     }
 }
 
@@ -208,7 +247,8 @@ where
 
     // Serve until the top-level shutdown flag flips — the listener drains first,
     // so no new requests are accepted while components wind down.
-    serve(listener, registry.clone(), rx.clone(), tls_listener).await?;
+    let gate = Arc::new(Gate::new(cfg.access.tokens.clone(), crate::access::HostPolicy::new(cfg.access.extra_hosts.clone())));
+    serve(listener, registry.clone(), rx.clone(), tls_listener, gate, cfg.limits.clone()).await?;
     log_line("apiserver drained; stopping components in reverse dependency order");
 
     // Ordered graceful teardown: stop each component in reverse bring-up order,
@@ -287,15 +327,17 @@ async fn wait_for_shutdown_signal() {
 // `tls` feature; with the feature off the placeholder type is `Copy`, which
 // would otherwise trip `clone_on_copy`.
 #[cfg_attr(not(feature = "tls"), allow(clippy::clone_on_copy))]
-async fn serve(
-    listener: TcpListener,
+async fn serve<L: Accept>(
+    listener: L,
     registry: SharedRegistry,
     mut shutdown: watch::Receiver<bool>,
     tls: Option<TlsListener>,
+    _gate: Arc<Gate>,
+    _limits: Limits,
 ) -> std::io::Result<()> {
     loop {
         tokio::select! {
-            accepted = listener.accept() => {
+            accepted = std::future::poll_fn(|cx| listener.poll_accept(cx)) => {
                 let (stream, _peer) = accepted?;
                 let reg = registry.clone();
                 let conn_shutdown = shutdown.clone();
@@ -801,7 +843,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("addr");
         let (_tx, rx) = watch::channel(false);
-        let server = tokio::spawn(serve(listener, registry, rx, None));
+        let server = tokio::spawn(serve(listener, registry, rx, None, test_gate(), Limits::default()));
 
         let nodes_body = http_get(addr, "/api/v1/nodes").await;
         assert!(nodes_body.contains("\"kind\":\"NodeList\""), "{nodes_body}");
@@ -818,15 +860,7 @@ mod tests {
     async fn run_until_boots_then_shuts_down_cleanly() {
         // Port 0 lets the OS pick a free port; an already-ready shutdown future
         // exercises the full bring-up → serve → ordered-teardown path.
-        let cfg = RuntimeConfig {
-            intent: NodeIntent::PrimaryHub,
-            node: node(),
-            bind_addr: "127.0.0.1".to_string(),
-            bind_port: 0,
-            reconcile_interval: Duration::from_millis(20),
-            #[cfg(feature = "tls")]
-            tls: None,
-        };
+        let cfg = loopback_cfg(0);
         let result = tokio::time::timeout(Duration::from_secs(5), run_until(cfg, async {})).await;
         assert!(result.is_ok(), "run_until did not return within the timeout");
         assert!(result.expect("timed out").is_ok(), "run_until returned an error");
@@ -996,12 +1030,12 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("addr");
         let (tx, rx) = watch::channel(false);
-        let server = tokio::spawn(serve(listener, registry.clone(), rx, None));
+        let server = tokio::spawn(serve(listener, registry.clone(), rx, None, test_gate(), Limits::default()));
 
         // Open a watch on pods starting from the current (empty) history.
         let mut stream = TcpStream::connect(addr).await.expect("connect");
         stream
-            .write_all(b"GET /api/v1/pods?watch=true&resourceVersion=0 HTTP/1.1\r\nHost: t\r\n\r\n")
+            .write_all(authed("GET", "/api/v1/pods?watch=true&resourceVersion=0", "").as_bytes())
             .await
             .expect("write");
 
@@ -1057,12 +1091,12 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("addr");
         let (tx, rx) = watch::channel(false);
-        let server = tokio::spawn(serve(listener, registry.clone(), rx, None));
+        let server = tokio::spawn(serve(listener, registry.clone(), rx, None, test_gate(), Limits::default()));
         let pods = GroupVersionResource::new("", "v1", "pods");
 
         let mut stream = TcpStream::connect(addr).await.expect("connect");
         stream
-            .write_all(b"GET /api/v1/pods?watch=true&resourceVersion=0 HTTP/1.1\r\nHost: t\r\n\r\n")
+            .write_all(authed("GET", "/api/v1/pods?watch=true&resourceVersion=0", "").as_bytes())
             .await
             .expect("write");
 
@@ -1121,15 +1155,321 @@ mod tests {
         server.abort();
     }
 
-    /// Minimal client: open, send a GET, read the whole response, return the body.
+    /// Minimal client: open, send an authenticated GET, read the whole
+    /// response, return the body.
     async fn http_get(addr: std::net::SocketAddr, path: &str) -> String {
+        let (_status, body) = exchange(addr, &authed("GET", path, "")).await;
+        body
+    }
+
+    // --- access control + connection bounds over a real socket ---------------
+
+    const TEST_TOKEN: &str = "test-admin-token";
+
+    /// A gate admitting [`TEST_TOKEN`] as a cluster admin.
+    fn test_gate() -> Arc<Gate> {
+        Arc::new(Gate::new(
+            vec![(
+                TEST_TOKEN.to_string(),
+                UserInfo::new(crate::access::ADMIN_USER).with_groups(&[crate::access::ADMIN_GROUP]),
+            )],
+            crate::access::HostPolicy::new(["hub-01"]),
+        ))
+    }
+
+    /// A raw request carrying the test credentials and a loopback `Host`.
+    fn authed(method: &str, target: &str, extra_headers: &str) -> String {
+        format!("{method} {target} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {TEST_TOKEN}\r\n{extra_headers}\r\n")
+    }
+
+    /// Send `raw`, read to EOF, return `(status line, body)`.
+    async fn exchange(addr: SocketAddr, raw: &str) -> (String, String) {
         let mut stream = TcpStream::connect(addr).await.expect("connect");
-        let req = format!("GET {path} HTTP/1.1\r\nHost: test\r\n\r\n");
-        stream.write_all(req.as_bytes()).await.expect("write");
+        stream.write_all(raw.as_bytes()).await.expect("write");
         let mut buf = Vec::new();
-        stream.read_to_end(&mut buf).await.expect("read");
-        let text = String::from_utf8(buf).expect("utf8");
-        let (_head, body) = text.split_once("\r\n\r\n").unwrap_or((&text, ""));
-        body.to_string()
+        let _ = stream.read_to_end(&mut buf).await;
+        let text = String::from_utf8_lossy(&buf).into_owned();
+        let status = text.lines().next().unwrap_or_default().to_string();
+        let body = text.split_once("\r\n\r\n").map(|(_, b)| b.to_string()).unwrap_or_default();
+        (status, body)
+    }
+
+    /// Serve a seeded registry on an ephemeral loopback port with `limits`.
+    async fn spawn_server(limits: Limits) -> (SocketAddr, watch::Sender<bool>, tokio::task::JoinHandle<std::io::Result<()>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let (tx, rx) = watch::channel(false);
+        let handle = tokio::spawn(serve(listener, seeded_registry(&node()), rx, None, test_gate(), limits));
+        (addr, tx, handle)
+    }
+
+    /// A loopback runtime config authenticating [`TEST_TOKEN`].
+    fn loopback_cfg(port: u16) -> RuntimeConfig {
+        RuntimeConfig {
+            intent: NodeIntent::PrimaryHub,
+            node: node(),
+            bind_addr: "127.0.0.1".to_string(),
+            bind_port: port,
+            reconcile_interval: Duration::from_millis(20),
+            #[cfg(feature = "tls")]
+            tls: None,
+            access: AccessConfig {
+                tokens: vec![(TEST_TOKEN.to_string(), UserInfo::new("tester").with_groups(&[crate::access::ADMIN_GROUP]))],
+                ..AccessConfig::default()
+            },
+            limits: Limits::default(),
+        }
+    }
+
+    #[test]
+    fn server_preset_binds_loopback() {
+        assert_eq!(RuntimeConfig::server(node()).bind_addr, "127.0.0.1");
+    }
+
+    #[tokio::test]
+    async fn requests_without_credentials_are_401_over_the_wire() {
+        let (addr, _tx, server) = spawn_server(Limits::default()).await;
+        let (status, body) = exchange(addr, "GET /api/v1/pods HTTP/1.1\r\nHost: localhost\r\n\r\n").await;
+        assert!(status.contains(" 401 "), "{status} {body}");
+        let (status, _) = exchange(addr, &authed("GET", "/api/v1/pods", "")).await;
+        assert!(status.contains(" 200 "), "{status}");
+        let (status, _) = exchange(addr, "GET /healthz HTTP/1.1\r\nHost: localhost\r\n\r\n").await;
+        assert!(status.contains(" 200 "), "probes stay open: {status}");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn unauthenticated_writes_do_not_reach_the_store() {
+        let (addr, _tx, server) = spawn_server(Limits::default()).await;
+        let pod = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"intruder"}}"#;
+        let raw = format!(
+            "POST /api/v1/namespaces/default/pods HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{pod}",
+            pod.len()
+        );
+        let (status, _) = exchange(addr, &raw).await;
+        assert!(status.contains(" 401 "), "{status}");
+        let (_, list) = exchange(addr, &authed("GET", "/api/v1/pods", "")).await;
+        assert!(!list.contains("intruder"), "{list}");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn rebinding_host_is_421_over_the_wire() {
+        let (addr, _tx, server) = spawn_server(Limits::default()).await;
+        let raw = format!("GET /api/v1/pods HTTP/1.1\r\nHost: attacker.example:8123\r\nAuthorization: Bearer {TEST_TOKEN}\r\n\r\n");
+        let (status, _) = exchange(addr, &raw).await;
+        assert!(status.contains(" 421 "), "{status}");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn unauthenticated_watch_is_refused_not_streamed() {
+        let (addr, _tx, server) = spawn_server(Limits::default()).await;
+        let (status, _) = tokio::time::timeout(
+            Duration::from_secs(5),
+            exchange(addr, "GET /api/v1/pods?watch=true HTTP/1.1\r\nHost: localhost\r\n\r\n"),
+        )
+        .await
+        .expect("a refused watch closes promptly");
+        assert!(status.contains(" 401 "), "{status}");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn write_without_json_content_type_is_415_over_the_wire() {
+        let (addr, _tx, server) = spawn_server(Limits::default()).await;
+        let body = "name=x";
+        let raw = authed(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            &format!("Content-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n", body.len()),
+        ) + body;
+        let (status, _) = exchange(addr, &raw).await;
+        assert!(status.contains(" 415 "), "{status}");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn oversized_body_is_413_before_it_is_sent() {
+        let (addr, _tx, server) = spawn_server(Limits::default()).await;
+        // Declare a body larger than the cap and never send it: the answer
+        // must come from the head alone.
+        let raw = authed(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            &format!("Content-Type: application/json\r\nContent-Length: {}\r\n", cave_home_apiserver_rs::http::MAX_BODY_BYTES + 1),
+        );
+        let (status, _) = tokio::time::timeout(Duration::from_secs(5), exchange(addr, &raw)).await.expect("prompt 413");
+        assert!(status.contains(" 413 "), "{status}");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn oversized_head_is_431() {
+        let (addr, _tx, server) = spawn_server(Limits::default()).await;
+        let pad = "X-Pad: ".to_string() + &"a".repeat(cave_home_apiserver_rs::http::MAX_HEAD_BYTES) + "\r\n";
+        let (status, _) = tokio::time::timeout(Duration::from_secs(5), exchange(addr, &authed("GET", "/api/v1/pods", &pad)))
+            .await
+            .expect("prompt 431");
+        assert!(status.contains(" 431 "), "{status}");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn idle_connection_is_closed_after_the_read_timeout() {
+        let limits = Limits { read_timeout: Duration::from_millis(200), ..Limits::default() };
+        let (addr, _tx, server) = spawn_server(limits).await;
+        let mut idle = TcpStream::connect(addr).await.expect("connect");
+        let mut buf = [0u8; 64];
+        let closed = tokio::time::timeout(Duration::from_secs(3), idle.read(&mut buf)).await;
+        assert!(closed.is_ok(), "a silent client must be dropped, not held open");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn slow_drip_request_is_cut_off_at_the_deadline() {
+        let limits = Limits {
+            read_timeout: Duration::from_secs(5),
+            request_deadline: Duration::from_millis(300),
+            ..Limits::default()
+        };
+        let (addr, _tx, server) = spawn_server(limits).await;
+        let mut slow = TcpStream::connect(addr).await.expect("connect");
+        let cut = tokio::time::timeout(Duration::from_secs(4), async {
+            // One header byte every 100 ms: each read is quick, the whole
+            // request never completes.
+            for b in "GET /api/v1/pods HTTP/1.1\r\nX-Slow: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".bytes() {
+                if slow.write_all(&[b]).await.is_err() {
+                    return true;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            let mut buf = [0u8; 16];
+            matches!(slow.read(&mut buf).await, Ok(0) | Err(_))
+        })
+        .await;
+        assert_eq!(cut.ok(), Some(true), "the server must give up on a request that never completes");
+        server.abort();
+    }
+
+    /// A listener whose first `failures` accepts fail like `EMFILE` does.
+    struct FlakyListener {
+        inner: TcpListener,
+        failures: std::sync::atomic::AtomicU32,
+    }
+
+    impl Accept for FlakyListener {
+        fn poll_accept(&self, cx: &mut Context<'_>) -> Poll<std::io::Result<(TcpStream, SocketAddr)>> {
+            use std::sync::atomic::Ordering;
+            if self.failures.load(Ordering::SeqCst) > 0 {
+                self.failures.fetch_sub(1, Ordering::SeqCst);
+                return Poll::Ready(Err(std::io::Error::from_raw_os_error(24)));
+            }
+            self.inner.poll_accept(cx)
+        }
+    }
+
+    #[tokio::test]
+    async fn accept_errors_do_not_stop_the_listener() {
+        let inner = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = inner.local_addr().expect("addr");
+        let flaky = FlakyListener { inner, failures: std::sync::atomic::AtomicU32::new(3) };
+        let (_tx, rx) = watch::channel(false);
+        let limits = Limits { accept_backoff: Duration::from_millis(5), ..Limits::default() };
+        let server = tokio::spawn(serve(flaky, seeded_registry(&node()), rx, None, test_gate(), limits));
+        let (status, _) = tokio::time::timeout(Duration::from_secs(5), exchange(addr, &authed("GET", "/healthz", "")))
+            .await
+            .expect("served after transient accept failures");
+        assert!(status.contains(" 200 "), "{status}");
+        assert!(!server.is_finished(), "the accept loop survives EMFILE");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn connections_beyond_the_cap_are_closed_until_a_slot_frees() {
+        let limits = Limits { max_connections: 1, ..Limits::default() };
+        let (addr, _tx, server) = spawn_server(limits).await;
+        // Hold the only slot with an open watch.
+        let mut watcher = TcpStream::connect(addr).await.expect("connect");
+        watcher.write_all(authed("GET", "/api/v1/pods?watch=true", "").as_bytes()).await.expect("write");
+        let mut head = [0u8; 64];
+        let n = tokio::time::timeout(Duration::from_secs(5), watcher.read(&mut head)).await.expect("watch opened").expect("read");
+        assert!(String::from_utf8_lossy(&head[..n]).contains("200"), "watch is streaming");
+        // A second connection is turned away while the slot is held.
+        let (status, _) = tokio::time::timeout(Duration::from_secs(5), exchange(addr, &authed("GET", "/healthz", "")))
+            .await
+            .expect("over-cap connection closes promptly");
+        assert!(!status.contains(" 200 "), "over the cap: {status:?}");
+        // Free the slot; new connections are served again.
+        drop(watcher);
+        let served = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let (status, _) = exchange(addr, &authed("GET", "/healthz", "")).await;
+                if status.contains(" 200 ") {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await;
+        assert!(served.is_ok(), "a freed slot is reused");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn run_until_refuses_an_exposed_plain_http_listener() {
+        let mut cfg = loopback_cfg(0);
+        cfg.bind_addr = "0.0.0.0".to_string();
+        let result = tokio::time::timeout(Duration::from_secs(5), run_until(cfg, async {})).await.expect("prompt");
+        let err = result.expect_err("0.0.0.0 without TLS must not boot");
+        assert!(err.to_string().contains("TLS"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn run_until_refuses_to_boot_without_a_credential_source() {
+        let mut cfg = loopback_cfg(0);
+        cfg.access = AccessConfig::default();
+        let result = tokio::time::timeout(Duration::from_secs(5), run_until(cfg, async {})).await.expect("prompt");
+        assert!(result.is_err(), "no tokens, token file, client CA or bootstrap dir: nobody could log in");
+    }
+
+    #[tokio::test]
+    async fn boot_writes_an_admin_credential_that_authenticates() {
+        let dir = std::env::temp_dir().join(format!("cavehome-boot-{}-{:?}", std::process::id(), std::time::SystemTime::now()));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let mut cfg = loopback_cfg(addr.port());
+        cfg.access = AccessConfig { bootstrap_dir: Some(dir.clone()), ..AccessConfig::default() };
+        let (tx, rx) = watch::channel(false);
+        let shutdown = async move {
+            let mut rx = rx;
+            while !*rx.borrow() {
+                if rx.changed().await.is_err() {
+                    break;
+                }
+            }
+        };
+        let server = tokio::spawn(run_until_on_listener(cfg, listener, shutdown));
+        let token_path = dir.join("admin.token");
+        let token = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let Ok(t) = std::fs::read_to_string(&token_path) {
+                    if !t.trim().is_empty() {
+                        return t.trim().to_string();
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("admin token written at boot");
+        let kubeconfig = std::fs::read_to_string(dir.join("kubeconfig.yaml")).expect("kubeconfig");
+        assert!(kubeconfig.contains(&format!("server: http://127.0.0.1:{}", addr.port())), "{kubeconfig}");
+        let raw = format!("GET /api/v1/nodes HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {token}\r\n\r\n", addr.port());
+        let (status, body) = exchange(addr, &raw).await;
+        assert!(status.contains(" 200 "), "{status} {body}");
+        let _ = tx.send(true);
+        let _ = tokio::time::timeout(Duration::from_secs(5), server).await;
     }
 }

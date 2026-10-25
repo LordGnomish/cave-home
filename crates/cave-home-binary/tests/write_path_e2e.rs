@@ -13,8 +13,10 @@
 
 use std::time::Duration;
 
+use cave_home_apiserver_rs::rbac::UserInfo;
+use cave_home_binary::access::ADMIN_GROUP;
 use cave_home_binary::node::LocalNode;
-use cave_home_binary::server::{run_until_on_listener, RuntimeConfig};
+use cave_home_binary::server::{run_until_on_listener, AccessConfig, Limits, RuntimeConfig};
 use cave_home_orchestration::role::NodeIntent;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -32,8 +34,15 @@ async fn request(addr: std::net::SocketAddr, raw: &str) -> (String, String) {
     (status_line, body)
 }
 
+/// The admin bearer token the booted runtime is configured to accept.
+const TOKEN: &str = "e2e-admin-token";
+
 async fn get(addr: std::net::SocketAddr, path: &str) -> (String, String) {
-    request(addr, &format!("GET {path} HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")).await
+    request(
+        addr,
+        &format!("GET {path} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {TOKEN}\r\nConnection: close\r\n\r\n"),
+    )
+    .await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -52,6 +61,11 @@ async fn pod_created_over_the_wire_is_persisted_and_reconciled_to_running() {
         reconcile_interval: Duration::from_millis(25),
         #[cfg(feature = "tls")]
         tls: None,
+        access: AccessConfig {
+            tokens: vec![(TOKEN.to_string(), UserInfo::new("e2e").with_groups(&[ADMIN_GROUP]))],
+            ..AccessConfig::default()
+        },
+        limits: Limits::default(),
     };
 
     let (stop_tx, stop_rx) = watch::channel(false);
@@ -70,7 +84,7 @@ async fn pod_created_over_the_wire_is_persisted_and_reconciled_to_running() {
         loop {
             if let Ok(mut s) = TcpStream::connect(addr).await {
                 let _ = s
-                    .write_all(b"GET /healthz HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
+                    .write_all(b"GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
                     .await;
                 let mut buf = Vec::new();
                 if s.read_to_end(&mut buf).await.is_ok() && String::from_utf8_lossy(&buf).contains("200") {
@@ -87,8 +101,16 @@ async fn pod_created_over_the_wire_is_persisted_and_reconciled_to_running() {
     //    what `kubectl apply`/`kubectl run` does. No nodeName, no status: the
     //    supervised scheduler + kubelet must fill those in.
     let pod = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"web"},"spec":{"containers":[{"name":"app","image":"nginx:1.27"}]}}"#;
+    // Without credentials the write is refused and nothing is stored.
+    let anonymous = format!(
+        "POST /api/v1/namespaces/default/pods HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        pod.len(),
+        pod
+    );
+    let (status, _) = request(addr, &anonymous).await;
+    assert!(status.contains("401"), "anonymous create must be refused: {status}");
     let post = format!(
-        "POST /api/v1/namespaces/default/pods HTTP/1.1\r\nHost: t\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        "POST /api/v1/namespaces/default/pods HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {TOKEN}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         pod.len(),
         pod
     );
