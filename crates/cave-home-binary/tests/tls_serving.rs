@@ -259,3 +259,84 @@ async fn tokens_still_work_when_a_client_ca_is_configured() {
     let _ = stop.send(true);
     let _ = tokio::time::timeout(Duration::from_secs(5), server).await;
 }
+
+/// The value of `key: value` on the first line of `yaml` that has it.
+fn yaml_field<'a>(yaml: &'a str, key: &str) -> Option<&'a str> {
+    yaml.lines().find_map(|l| l.trim().strip_prefix(key)?.strip_prefix(':').map(str::trim))
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn bootstrap_boot_serves_https_with_a_generated_ca() {
+    // No certificate configured: like k3s, the boot generates its own CA and
+    // serving certificate, so kubectl (which never sends credentials over plain
+    // HTTP) can use the generated kubeconfig as-is.
+    let dir = std::env::temp_dir().join(format!(
+        "cavehome-tls-bootstrap-{}-{:?}",
+        std::process::id(),
+        std::time::SystemTime::now()
+    ));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let cfg = RuntimeConfig {
+        intent: NodeIntent::PrimaryHub,
+        node: LocalNode::new("hub-01", "127.0.0.1"),
+        bind_addr: "127.0.0.1".to_string(),
+        bind_port: addr.port(),
+        reconcile_interval: Duration::from_millis(50),
+        tls: None,
+        access: AccessConfig { bootstrap_dir: Some(dir.clone()), ..AccessConfig::default() },
+        limits: Limits::default(),
+    };
+    let (stop_tx, stop_rx) = watch::channel(false);
+    let shutdown = async move {
+        let mut rx = stop_rx;
+        while !*rx.borrow() {
+            if rx.changed().await.is_err() {
+                break;
+            }
+        }
+    };
+    let server = tokio::spawn(run_until_on_listener(cfg, listener, shutdown));
+
+    let kubeconfig_path = dir.join("kubeconfig.yaml");
+    let kubeconfig = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(text) = std::fs::read_to_string(&kubeconfig_path) {
+                if text.contains("current-context") {
+                    return text;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("kubeconfig written at boot");
+    assert_eq!(yaml_field(&kubeconfig, "server"), Some(format!("https://127.0.0.1:{}", addr.port()).as_str()), "{kubeconfig}");
+    let ca_path = yaml_field(&kubeconfig, "certificate-authority").expect("kubeconfig trusts the generated CA");
+    let token = yaml_field(&kubeconfig, "token").expect("kubeconfig carries the admin token").to_string();
+
+    let ca_pem = std::fs::read(ca_path).expect("generated CA on disk");
+    let ca = rustls_pemfile::certs(&mut ca_pem.as_slice()).next().expect("a CA cert").expect("parses");
+    let client = connector(ca, None);
+    let domain = ServerName::try_from("127.0.0.1").expect("ip server name");
+    let tcp = TcpStream::connect(addr).await.expect("connect");
+    let mut tls = client.connect(domain, tcp).await.expect("the generated serving cert verifies for 127.0.0.1");
+    let raw = format!("GET /api/v1/nodes HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n", addr.port());
+    tls.write_all(raw.as_bytes()).await.expect("write");
+    let mut buf = Vec::new();
+    let _ = tls.read_to_end(&mut buf).await;
+    let resp = String::from_utf8_lossy(&buf).into_owned();
+    assert!(resp.starts_with("HTTP/1.1 200"), "{resp}");
+    assert!(resp.contains("hub-01"), "{resp}");
+
+    // Plain HTTP is not served on that port.
+    let mut plain = TcpStream::connect(addr).await.expect("connect");
+    plain.write_all(b"GET /healthz HTTP/1.1\r\nHost: localhost\r\n\r\n").await.expect("write");
+    let mut buf = Vec::new();
+    let _ = tokio::time::timeout(Duration::from_secs(5), plain.read_to_end(&mut buf)).await;
+    assert!(!String::from_utf8_lossy(&buf).starts_with("HTTP/1.1 200"), "plaintext must not be answered");
+
+    let _ = stop_tx.send(true);
+    let _ = tokio::time::timeout(Duration::from_secs(5), server).await;
+}

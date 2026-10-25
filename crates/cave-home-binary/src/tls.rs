@@ -189,6 +189,27 @@ pub fn peer_identity<IO>(stream: &tokio_rustls::server::TlsStream<IO>) -> Option
     cave_home_apiserver_rs::x509::subject_identity(leaf.as_ref())
 }
 
+/// A serving identity generated at boot: the CA clients should trust and the
+/// listener configuration (server certificate signed by that CA).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GeneratedTls {
+    /// PEM CA certificate (what a kubeconfig's `certificate-authority` names).
+    pub ca: PathBuf,
+    /// The listener's server-auth TLS configuration.
+    pub config: TlsConfig,
+}
+
+/// Ensure `dir` holds a local CA (generated once, then reused so clients keep
+/// trusting it) and a serving certificate signed by it for `localhost`,
+/// `127.0.0.1`, `::1` and `names` (re-issued every call, so new names take
+/// effect). Private keys are written owner-only.
+///
+/// # Errors
+/// I/O failures, or a certificate that cannot be generated or parsed.
+pub fn ensure_self_signed(_dir: &Path, _names: &[String]) -> Result<GeneratedTls, TlsError> {
+    Err(TlsError::Rustls("self-signed bootstrap is not implemented".to_string()))
+}
+
 /// Build a [`TlsAcceptor`] for the apiserver listener from `cfg`.
 ///
 /// # Errors
@@ -269,6 +290,64 @@ mod tests {
         let cfg = TlsConfig::new(empty.clone(), key);
         let err = load_server_config(&cfg).expect_err("empty cert must error");
         assert!(matches!(&err, TlsError::NoCertificates(p) if *p == empty), "got {err:?}");
+    }
+
+    #[test]
+    fn bootstrap_generates_a_reusable_ca_and_a_fresh_serving_cert() {
+        let dir = tmpdir();
+        let first = ensure_self_signed(&dir, &["hub-01".to_string(), "10.0.0.5".to_string()]).expect("generated");
+        load_server_config(&first.config).expect("the generated serving identity loads");
+        assert!(!first.config.is_mutual(), "generated TLS is server-auth only");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for key in [first.config.key.clone(), dir.join("tls").join("ca.key")] {
+                let mode = std::fs::metadata(&key).expect("key exists").permissions().mode() & 0o777;
+                assert_eq!(mode, 0o600, "{} must be owner-only", key.display());
+            }
+        }
+        let ca = std::fs::read(&first.ca).expect("ca");
+        let leaf = std::fs::read(&first.config.cert).expect("leaf");
+        let second = ensure_self_signed(&dir, &["hub-02".to_string()]).expect("again");
+        assert_eq!(std::fs::read(&second.ca).expect("ca"), ca, "the CA is kept so clients keep trusting it");
+        assert_ne!(std::fs::read(&second.config.cert).expect("leaf"), leaf, "the serving cert is re-issued");
+    }
+
+    /// Handshake against an acceptor for `config` as `server_name`, trusting `ca`.
+    async fn handshake(config: &TlsConfig, ca: &Path, server_name: &str) -> bool {
+        use rustls::pki_types::ServerName;
+        let acceptor = acceptor(config).expect("acceptor");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.expect("accept");
+            acceptor.accept(tcp).await.is_ok()
+        });
+        let mut roots = RootCertStore::empty();
+        for der in load_certs(ca).expect("ca certs") {
+            roots.add(der).expect("trust anchor");
+        }
+        let client = rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .with_safe_default_protocol_versions()
+            .expect("versions")
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        let connector = tokio_rustls::TlsConnector::from(Arc::new(client));
+        let tcp = tokio::net::TcpStream::connect(addr).await.expect("connect");
+        let name = ServerName::try_from(server_name.to_string()).expect("server name");
+        let ok = connector.connect(name, tcp).await.is_ok();
+        let _ = server.await;
+        ok
+    }
+
+    #[tokio::test]
+    async fn generated_serving_cert_covers_loopback_and_the_given_names() {
+        let dir = tmpdir();
+        let generated = ensure_self_signed(&dir, &["hub-01".to_string(), "10.0.0.5".to_string()]).expect("generated");
+        for name in ["localhost", "127.0.0.1", "hub-01", "10.0.0.5"] {
+            assert!(handshake(&generated.config, &generated.ca, name).await, "{name} must verify");
+        }
+        assert!(!handshake(&generated.config, &generated.ca, "evil.example").await, "other names must not verify");
     }
 
     #[test]

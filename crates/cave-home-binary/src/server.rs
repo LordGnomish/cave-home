@@ -1745,6 +1745,9 @@ mod tests {
         assert!(result.is_err(), "no tokens, token file, client CA or bootstrap dir: nobody could log in");
     }
 
+    // With the `tls` feature a bootstrap boot serves HTTPS with a generated CA;
+    // that path is covered in tests/tls_serving.rs.
+    #[cfg(not(feature = "tls"))]
     #[tokio::test]
     async fn boot_writes_an_admin_credential_that_authenticates() {
         let dir = std::env::temp_dir().join(format!("cavehome-boot-{}-{:?}", std::process::id(), std::time::SystemTime::now()));

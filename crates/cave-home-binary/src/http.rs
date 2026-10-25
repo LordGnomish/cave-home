@@ -265,6 +265,21 @@ mod tests {
     }
 
     #[test]
+    fn reason_phrases_cover_the_security_responses() {
+        for (code, phrase) in [
+            (401, "Unauthorized"),
+            (403, "Forbidden"),
+            (413, "Content Too Large"),
+            (415, "Unsupported Media Type"),
+            (421, "Misdirected Request"),
+            (431, "Request Header Fields Too Large"),
+            (501, "Not Implemented"),
+        ] {
+            assert_eq!(reason_phrase(code), phrase, "{code}");
+        }
+    }
+
+    #[test]
     fn reason_phrases_cover_documented_codes() {
         assert_eq!(reason_phrase(200), "OK");
         assert_eq!(reason_phrase(201), "Created");
