@@ -227,18 +227,21 @@ where
 /// # Errors
 /// An exposure-rule violation, unusable TLS or credential configuration, and
 /// I/O errors from the listen socket.
-pub async fn run_until_on_listener<S>(cfg: RuntimeConfig, listener: TcpListener, shutdown: S) -> std::io::Result<()>
+pub async fn run_until_on_listener<S>(mut cfg: RuntimeConfig, listener: TcpListener, shutdown: S) -> std::io::Result<()>
 where
     S: std::future::Future<Output = ()> + Send + 'static,
 {
-    // Build the TLS terminator up front (when configured) so a bad cert/key is a
-    // boot failure, not a per-connection surprise. With TLS the listener serves
-    // HTTPS (and verifies client certificates when a client CA is set).
-    let tls_listener = build_tls_listener(&cfg)?;
+    // Exposure is judged on what was explicitly configured: a certificate the
+    // boot generates for itself is for local use, not a decision to expose.
     let local = listener.local_addr()?;
-    let (_, explicit_auth) = protection(&cfg);
-    crate::access::check_exposure(local, tls_listener.is_some(), explicit_auth).map_err(exposure_error)?;
-    let gate = Arc::new(build_gate(&cfg, local, tls_listener.is_some())?);
+    let (tls_configured, explicit_auth) = protection(&cfg);
+    crate::access::check_exposure(local, tls_configured, explicit_auth).map_err(exposure_error)?;
+    let generated_ca = bootstrap_tls(&mut cfg)?;
+    // Build the TLS terminator up front so a bad cert/key is a boot failure,
+    // not a per-connection surprise. With TLS the listener serves HTTPS (and
+    // verifies client certificates when a client CA is set).
+    let tls_listener = build_tls_listener(&cfg)?;
+    let gate = Arc::new(build_gate(&cfg, local, tls_listener.is_some(), generated_ca.as_deref())?);
 
     let registry = seeded_registry(&cfg.node);
 
@@ -330,8 +333,37 @@ fn server_url(local: SocketAddr, tls: bool) -> String {
     format!("{scheme}://{}", SocketAddr::new(ip, local.port()))
 }
 
+/// With no certificate configured but a bootstrap directory, serve HTTPS with
+/// a generated local CA (reused across boots) and a serving certificate it
+/// signs for this node's names — as k3s does; kubectl never sends credentials
+/// over plain HTTP. Returns the CA the generated kubeconfig should trust.
+#[cfg(feature = "tls")]
+fn bootstrap_tls(cfg: &mut RuntimeConfig) -> std::io::Result<Option<PathBuf>> {
+    let Some(dir) = cfg.access.bootstrap_dir.clone().filter(|_| cfg.tls.is_none()) else {
+        return Ok(None);
+    };
+    let mut names = vec![cfg.node.name.clone(), cfg.node.internal_ip.clone(), cfg.bind_addr.clone()];
+    names.extend(cfg.access.extra_hosts.iter().cloned());
+    let generated = crate::tls::ensure_self_signed(&dir, &names)?;
+    log_line(&format!("serving HTTPS with the local certificate authority {}", generated.ca.display()));
+    cfg.tls = Some(generated.config);
+    Ok(Some(generated.ca))
+}
+
+/// Without the `tls` feature the listener stays plain HTTP; say what that
+/// means for kubectl.
+#[cfg(not(feature = "tls"))]
+#[allow(clippy::unnecessary_wraps, clippy::needless_pass_by_ref_mut)] // mirrors the tls-feature signature
+fn bootstrap_tls(cfg: &mut RuntimeConfig) -> std::io::Result<Option<PathBuf>> {
+    if cfg.access.bootstrap_dir.is_some() {
+        log_line("warning: built without TLS; kubectl will not send credentials over plain HTTP (build with the `tls` feature)");
+    }
+    Ok(None)
+}
+
 /// Assemble the access gate from the configured credential sources.
-fn build_gate(cfg: &RuntimeConfig, local: SocketAddr, tls: bool) -> std::io::Result<Gate> {
+/// `generated_ca` is the boot's own CA when [`bootstrap_tls`] made one.
+fn build_gate(cfg: &RuntimeConfig, local: SocketAddr, tls: bool, generated_ca: Option<&std::path::Path>) -> std::io::Result<Gate> {
     let mut tokens = cfg.access.tokens.clone();
     if let Some(path) = &cfg.access.token_file {
         let loaded = crate::access::load_token_file(path)
@@ -339,10 +371,12 @@ fn build_gate(cfg: &RuntimeConfig, local: SocketAddr, tls: bool) -> std::io::Res
         log_line(&format!("loaded {} sign-in token(s) from {}", loaded.len(), path.display()));
         tokens.extend(loaded);
     } else if let Some(dir) = &cfg.access.bootstrap_dir {
+        // Trust the generated CA, or (best effort) the configured server cert,
+        // which is right for a self-signed one.
         #[cfg(feature = "tls")]
-        let ca = cfg.tls.as_ref().filter(|_| tls).map(|t| t.cert.as_path());
+        let ca = generated_ca.or_else(|| cfg.tls.as_ref().filter(|_| tls).map(|t| t.cert.as_path()));
         #[cfg(not(feature = "tls"))]
-        let ca: Option<&std::path::Path> = None;
+        let ca = generated_ca;
         let admin = crate::access::ensure_bootstrap_admin(dir, &server_url(local, tls), ca)
             .map_err(|e| std::io::Error::new(e.kind(), format!("writing admin credentials to {}: {e}", dir.display())))?;
         log_line(&format!("admin kubeconfig: {}", admin.kubeconfig_path.display()));

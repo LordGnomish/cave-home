@@ -298,7 +298,7 @@ fn random_bytes(_buf: &mut [u8]) -> std::io::Result<()> {
 /// Write `bytes` to `path`, readable by the owner only. The file is created
 /// `0600` (no window where it is world-readable) and an existing file is
 /// tightened before it is overwritten.
-fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let mut opts = std::fs::OpenOptions::new();
     opts.write(true).create(true).truncate(true);
     #[cfg(unix)]

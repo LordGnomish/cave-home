@@ -101,7 +101,11 @@ fn show_config(cfg: &Config) {
     println!("Network:     {}:{}", cfg.bind_addr, cfg.bind_port);
     println!(
         "Security:    {}",
-        if cfg.tls_cert.is_some() { "encrypted with your certificate" } else { "this computer only, not encrypted" }
+        match (cfg.tls_cert.is_some(), cfg!(feature = "tls")) {
+            (true, _) => "encrypted with your certificate",
+            (false, true) => "this computer only, encrypted with a certificate made at first start",
+            (false, false) => "this computer only, not encrypted",
+        }
     );
     println!(
         "Sign-in:     {}",

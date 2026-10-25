@@ -47,16 +47,22 @@ cave-home-klipper-lb-rs       = { path = "../cave-home-klipper-lb-rs" }
 # The household-facing Portal view-model, mounted alongside the control plane.
 cave-home-portal              = { path = "../cave-home-portal" }
 
-# TLS for the apiserver listener (off by default; the plain-HTTP path is the
-# baseline). `ring` is the offline crypto provider — matching cave-home-unifi —
-# so no aws-lc-sys C/network build is pulled in.
+# TLS for the apiserver listener (the `tls` feature, on by default). `ring` is
+# the offline crypto provider — matching cave-home-unifi — so no aws-lc-sys
+# C/network build is pulled in. rcgen generates the local CA + serving
+# certificate a boot uses when no certificate is configured (as k3s does).
 tokio-rustls   = { version = "0.26", default-features = false, features = ["ring", "tls12"], optional = true }
 rustls         = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
 rustls-pemfile = { version = "2", optional = true }
+rcgen          = { version = "0.13", default-features = false, features = ["ring", "pem"], optional = true }
 
 [features]
+# HTTPS by default: kubectl never sends credentials over plain HTTP, and
+# anonymous access is disabled, so a build without TLS can only be driven by
+# clients that send bearer tokens over plain loopback HTTP.
+default = ["tls"]
 # Serve the apiserver over HTTPS (and, with a client CA configured, mTLS).
-tls = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile"]
+tls = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile", "dep:rcgen"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "macros", "time", "test-util"] }

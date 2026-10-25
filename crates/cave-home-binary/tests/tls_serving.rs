@@ -260,9 +260,14 @@ async fn tokens_still_work_when_a_client_ca_is_configured() {
     let _ = tokio::time::timeout(Duration::from_secs(5), server).await;
 }
 
-/// The value of `key: value` on the first line of `yaml` that has it.
-fn yaml_field<'a>(yaml: &'a str, key: &str) -> Option<&'a str> {
-    yaml.lines().find_map(|l| l.trim().strip_prefix(key)?.strip_prefix(':').map(str::trim))
+/// The scalar value of `key: value` on the first line of `yaml` that has it
+/// (plain, or JSON-quoted as the kubeconfig writer quotes unusual paths).
+fn yaml_field(yaml: &str, key: &str) -> Option<String> {
+    let raw = yaml.lines().find_map(|l| l.trim().strip_prefix(key)?.strip_prefix(':').map(str::trim))?;
+    if raw.starts_with('"') {
+        return cave_home_apiserver_rs::json::Value::parse(raw).ok()?.as_str().map(str::to_string);
+    }
+    Some(raw.to_string())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -312,9 +317,9 @@ async fn bootstrap_boot_serves_https_with_a_generated_ca() {
     })
     .await
     .expect("kubeconfig written at boot");
-    assert_eq!(yaml_field(&kubeconfig, "server"), Some(format!("https://127.0.0.1:{}", addr.port()).as_str()), "{kubeconfig}");
+    assert_eq!(yaml_field(&kubeconfig, "server"), Some(format!("https://127.0.0.1:{}", addr.port())), "{kubeconfig}");
     let ca_path = yaml_field(&kubeconfig, "certificate-authority").expect("kubeconfig trusts the generated CA");
-    let token = yaml_field(&kubeconfig, "token").expect("kubeconfig carries the admin token").to_string();
+    let token = yaml_field(&kubeconfig, "token").expect("kubeconfig carries the admin token");
 
     let ca_pem = std::fs::read(ca_path).expect("generated CA on disk");
     let ca = rustls_pemfile::certs(&mut ca_pem.as_slice()).next().expect("a CA cert").expect("parses");

@@ -82,6 +82,8 @@ pub enum TlsError {
     NoClientCaAnchors(PathBuf),
     /// rustls rejected the assembled configuration.
     Rustls(String),
+    /// A local CA or serving certificate could not be generated.
+    Generate(String),
 }
 
 impl std::fmt::Display for TlsError {
@@ -92,6 +94,7 @@ impl std::fmt::Display for TlsError {
             Self::NoPrivateKey(p) => write!(f, "no private key in {}", p.display()),
             Self::NoClientCaAnchors(p) => write!(f, "no usable CA certificates in {}", p.display()),
             Self::Rustls(e) => write!(f, "rustls configuration error: {e}"),
+            Self::Generate(e) => write!(f, "generating the local certificate: {e}"),
         }
     }
 }
@@ -199,15 +202,72 @@ pub struct GeneratedTls {
     pub config: TlsConfig,
 }
 
-/// Ensure `dir` holds a local CA (generated once, then reused so clients keep
-/// trusting it) and a serving certificate signed by it for `localhost`,
-/// `127.0.0.1`, `::1` and `names` (re-issued every call, so new names take
-/// effect). Private keys are written owner-only.
+/// Ensure `dir` holds a local CA and a serving certificate it signed.
+///
+/// The CA is generated once, then reused so clients keep trusting it. The
+/// serving certificate covers `localhost`, `127.0.0.1`, `::1` and `names`, and
+/// is re-issued every call so new names take effect. Private keys are written
+/// owner-only.
 ///
 /// # Errors
 /// I/O failures, or a certificate that cannot be generated or parsed.
-pub fn ensure_self_signed(_dir: &Path, _names: &[String]) -> Result<GeneratedTls, TlsError> {
-    Err(TlsError::Rustls("self-signed bootstrap is not implemented".to_string()))
+pub fn ensure_self_signed(dir: &Path, names: &[String]) -> Result<GeneratedTls, TlsError> {
+    use rcgen::{CertificateParams, DnType, ExtendedKeyUsagePurpose, KeyPair};
+
+    let gen_err = |e: rcgen::Error| TlsError::Generate(e.to_string());
+    let tls_dir = dir.join("tls");
+    std::fs::create_dir_all(&tls_dir).map_err(|e| TlsError::Io(tls_dir.clone(), e))?;
+    let (ca_path, ca_key_path) = (tls_dir.join("ca.crt"), tls_dir.join("ca.key"));
+
+    // The CA: reuse the stored key so every re-issued serving cert chains to the
+    // ca.crt clients already trust; generate both on first boot (or if either
+    // file is missing or unreadable).
+    let stored_key = std::fs::read_to_string(&ca_key_path)
+        .ok()
+        .filter(|_| ca_path.exists())
+        .and_then(|pem| KeyPair::from_pem(&pem).ok());
+    let (ca_key, fresh) = match stored_key {
+        Some(key) => (key, false),
+        None => (KeyPair::generate().map_err(gen_err)?, true),
+    };
+    let issuer = local_ca_params().map_err(gen_err)?.self_signed(&ca_key).map_err(gen_err)?;
+    if fresh {
+        crate::access::write_private(&ca_key_path, ca_key.serialize_pem().as_bytes())
+            .map_err(|e| TlsError::Io(ca_key_path.clone(), e))?;
+        std::fs::write(&ca_path, issuer.pem()).map_err(|e| TlsError::Io(ca_path.clone(), e))?;
+    }
+
+    // The serving certificate, re-issued for the current names.
+    let mut sans = vec!["localhost".to_string(), "127.0.0.1".to_string(), "::1".to_string()];
+    for name in names {
+        let name = name.trim().trim_matches(['[', ']']);
+        let wildcard = name.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_unspecified());
+        if !name.is_empty() && !wildcard && !sans.iter().any(|s| s.eq_ignore_ascii_case(name)) {
+            sans.push(name.to_string());
+        }
+    }
+    let mut params = CertificateParams::new(sans).map_err(gen_err)?;
+    params.distinguished_name.push(DnType::CommonName, "cave-home");
+    params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+    let key = KeyPair::generate().map_err(gen_err)?;
+    let leaf = params.signed_by(&key, &issuer, &ca_key).map_err(gen_err)?;
+    let (cert_path, key_path) = (tls_dir.join("server.crt"), tls_dir.join("server.key"));
+    crate::access::write_private(&key_path, key.serialize_pem().as_bytes()).map_err(|e| TlsError::Io(key_path.clone(), e))?;
+    std::fs::write(&cert_path, leaf.pem()).map_err(|e| TlsError::Io(cert_path.clone(), e))?;
+
+    Ok(GeneratedTls { ca: ca_path, config: TlsConfig::new(cert_path, key_path) })
+}
+
+/// The fixed identity of the local CA. Rebuilding the same parameters over the
+/// stored key yields an issuer whose subject and key identifier match the
+/// stored `ca.crt`, so new serving certs keep chaining to it.
+fn local_ca_params() -> Result<rcgen::CertificateParams, rcgen::Error> {
+    use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, KeyUsagePurpose};
+    let mut params = CertificateParams::new(Vec::<String>::new())?;
+    params.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
+    params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign, KeyUsagePurpose::DigitalSignature];
+    params.distinguished_name.push(DnType::CommonName, "cave-home local CA");
+    Ok(params)
 }
 
 /// Build a [`TlsAcceptor`] for the apiserver listener from `cfg`.
