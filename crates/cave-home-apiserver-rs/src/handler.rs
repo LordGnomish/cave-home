@@ -84,6 +84,30 @@ impl ApiServer {
         }
     }
 
+    /// A deliberately **insecure** server: anonymous requests are accepted and
+    /// every request is authorized (`AlwaysAllow`). Exists so unit tests can
+    /// exercise the REST semantics without minting credentials; never serve it
+    /// on a socket.
+    #[must_use]
+    pub fn insecure_for_tests() -> Self {
+        Self {
+            registry: Registry::new(),
+            authn: AuthenticatorChain::new()
+                .with(Box::new(AnonymousAuthenticator))
+                .allow_anonymous(true),
+            authz: Authorization::AlwaysAllow,
+            admission: AdmissionChain::new(),
+            audit: None,
+            metrics: Arc::new(Metrics::new()),
+        }
+    }
+
+    /// Run the pipeline for a request whose body was already decoded by
+    /// [`preparse_body`] (so the caller can decode outside any lock it holds).
+    pub fn handle_preparsed(&mut self, req: &Request, _body: PreparsedBody) -> Response {
+        self.handle(req)
+    }
+
     /// Attach an audit sink (builder style).
     #[must_use]
     pub fn with_audit(mut self, sink: Arc<dyn AuditSink>) -> Self {
@@ -315,6 +339,31 @@ impl ApiServer {
                 format!("verb {other} is not supported"),
             )),
         }
+    }
+}
+
+/// A request body decoded ahead of the handler. Produced by [`preparse_body`]
+/// so the (potentially large) JSON decode happens before the caller takes the
+/// lock that serializes access to the [`ApiServer`].
+#[derive(Clone, Debug)]
+pub enum PreparsedBody {
+    /// The method carries no body the handler reads (GET, DELETE, …).
+    None,
+    /// The body decoded to this JSON value.
+    Json(Value),
+    /// The body could not be decoded; the handler answers with this status.
+    Invalid(Status),
+}
+
+/// Decode the request body for the write verbs that read one (POST, PUT, PATCH).
+#[must_use]
+pub fn preparse_body(req: &Request) -> PreparsedBody {
+    match req.method {
+        Method::Post | Method::Put | Method::Patch => match parse_body(req) {
+            Ok(v) => PreparsedBody::Json(v),
+            Err(s) => PreparsedBody::Invalid(s),
+        },
+        _ => PreparsedBody::None,
     }
 }
 
@@ -807,7 +856,7 @@ mod tests {
 
     #[test]
     fn create_returns_201_with_resource_version() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
         assert_eq!(resp.status, 201);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
@@ -817,7 +866,7 @@ mod tests {
 
     #[test]
     fn get_existing_returns_200() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
         let resp = s.handle(&req("GET", "/api/v1/namespaces/default/pods/nginx", "application/json", ""));
         assert_eq!(resp.status, 200);
@@ -826,7 +875,7 @@ mod tests {
 
     #[test]
     fn get_missing_returns_404_status() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let resp = s.handle(&req("GET", "/api/v1/namespaces/default/pods/ghost", "application/json", ""));
         assert_eq!(resp.status, 404);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
@@ -836,7 +885,7 @@ mod tests {
 
     #[test]
     fn list_returns_podlist_with_items() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "a")));
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "b")));
         let resp = s.handle(&req("GET", "/api/v1/namespaces/default/pods", "application/json", ""));
@@ -848,7 +897,7 @@ mod tests {
 
     #[test]
     fn list_honours_label_selector() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let labeled = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"web","namespace":"default","labels":{"app":"web"}}}"#;
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", labeled));
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "db")));
@@ -859,7 +908,7 @@ mod tests {
 
     #[test]
     fn update_bumps_resource_version() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let created = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
         let body = body_str(&created);
         let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx", "application/json", &body));
@@ -870,7 +919,7 @@ mod tests {
 
     #[test]
     fn update_with_stale_rv_returns_409() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
         // Stale rv on the PUT body.
         let stale = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default","resourceVersion":"999"}}"#;
@@ -880,7 +929,7 @@ mod tests {
 
     #[test]
     fn merge_patch_updates_field() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let with_spec = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default"},"spec":{"replicas":1}}"#;
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", with_spec));
         let resp = s.handle(&req(
@@ -896,7 +945,7 @@ mod tests {
 
     #[test]
     fn json_patch_replaces_field() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let with_spec = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default"},"spec":{"replicas":1}}"#;
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", with_spec));
         let resp = s.handle(&req(
@@ -912,7 +961,7 @@ mod tests {
 
     #[test]
     fn delete_returns_200_and_removes() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
         let del = s.handle(&req("DELETE", "/api/v1/namespaces/default/pods/nginx", "application/json", ""));
         assert_eq!(del.status, 200);
@@ -922,14 +971,14 @@ mod tests {
 
     #[test]
     fn unknown_resource_returns_404() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let resp = s.handle(&req("GET", "/apis/example.com/v1/widgets", "application/json", ""));
         assert_eq!(resp.status, 404);
     }
 
     #[test]
     fn put_on_collection_is_405() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods", "application/json", "{}"));
         assert_eq!(resp.status, 405);
     }
@@ -941,7 +990,7 @@ mod tests {
 
     #[test]
     fn create_rejects_kind_mismatch_400() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         // POST a Service body to the pods endpoint.
         let svc = r#"{"apiVersion":"v1","kind":"Service","metadata":{"name":"x","namespace":"default"}}"#;
         let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", svc));
@@ -952,7 +1001,7 @@ mod tests {
 
     #[test]
     fn create_rejects_api_version_mismatch_400() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         // Right kind, wrong apiVersion (apps/v1 on a core/v1 pods endpoint).
         let body = r#"{"apiVersion":"apps/v1","kind":"Pod","metadata":{"name":"x","namespace":"default"}}"#;
         let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", body));
@@ -963,7 +1012,7 @@ mod tests {
     fn create_allows_empty_kind_and_api_version() {
         // Upstream tolerates a body that omits apiVersion/kind on create (the
         // endpoint supplies the GVK); only an explicit *wrong* value is rejected.
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let body = r#"{"metadata":{"name":"x","namespace":"default"}}"#;
         let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", body));
         assert_eq!(resp.status, 201);
@@ -971,7 +1020,7 @@ mod tests {
 
     #[test]
     fn create_rejects_namespace_conflict_400() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         // URL namespace is "default" but the body says "other".
         let body = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"x","namespace":"other"}}"#;
         let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", body));
@@ -987,7 +1036,7 @@ mod tests {
     #[test]
     fn create_allows_empty_namespace_in_body() {
         // A body with no namespace inherits the URL namespace (no conflict).
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let body = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"x"}}"#;
         let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", body));
         assert_eq!(resp.status, 201);
@@ -997,7 +1046,7 @@ mod tests {
 
     #[test]
     fn update_rejects_name_mismatch_400() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
         // PUT to /pods/nginx with a body naming a different object.
         let body = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"other","namespace":"default"}}"#;
@@ -1013,7 +1062,7 @@ mod tests {
 
     #[test]
     fn update_allows_matching_name() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let created = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
         let body = body_str(&created);
         let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx", "application/json", &body));
@@ -1022,7 +1071,7 @@ mod tests {
 
     #[test]
     fn update_rejects_kind_mismatch_400() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
         let body = r#"{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"nginx","namespace":"default"}}"#;
         let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx", "application/json", body));
@@ -1032,14 +1081,14 @@ mod tests {
     #[test]
     fn create_rejects_non_object_body_400() {
         // A create body must be a JSON object, not an array/scalar.
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", "[1,2,3]"));
         assert_eq!(resp.status, 400);
     }
 
     #[test]
     fn status_subresource_update_rejects_name_mismatch_400() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let with_spec = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default"},"spec":{"replicas":1}}"#;
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", with_spec));
         let body = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"other","namespace":"default"},"status":{"phase":"Running"}}"#;
@@ -1080,7 +1129,7 @@ mod tests {
                 TokenAuthenticator::new().with_token("alice-token", UserInfo::new("alice")),
             ))
             .allow_anonymous(false);
-        ApiServer::new()
+        ApiServer::insecure_for_tests()
             .with_authn(authn)
             .with_authz(Authorization::Rbac(authz))
     }
@@ -1130,7 +1179,7 @@ mod tests {
 
     #[test]
     fn always_deny_is_403() {
-        let mut s = ApiServer::new().with_authz(Authorization::AlwaysDeny);
+        let mut s = ApiServer::insecure_for_tests().with_authz(Authorization::AlwaysDeny);
         let resp = s.handle(&req("GET", "/api/v1/pods", "application/json", ""));
         assert_eq!(resp.status, 403);
     }
@@ -1157,7 +1206,7 @@ mod tests {
                 TokenAuthenticator::new().with_token("bob-token", UserInfo::new("bob")),
             ))
             .allow_anonymous(false);
-        let mut s = ApiServer::new()
+        let mut s = ApiServer::insecure_for_tests()
             .with_authn(authn)
             .with_authz(Authorization::Rbac(authz));
         let resp = s.handle(&req_auth("GET", "/api/v1/namespaces/default/pods", "bob-token", ""));
@@ -1168,7 +1217,7 @@ mod tests {
 
     #[test]
     fn metrics_endpoint_exposes_prometheus_text() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
         s.handle(&req("GET", "/api/v1/namespaces/default/pods/ghost", "application/json", ""));
         let resp = s.handle(&req("GET", "/metrics", "text/plain", ""));
@@ -1181,7 +1230,7 @@ mod tests {
 
     #[test]
     fn metrics_count_accessible_on_server() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         s.handle(&req("GET", "/api/v1/pods", "application/json", ""));
         assert_eq!(s.metrics.request_count("list", 200), 1);
     }
@@ -1194,7 +1243,7 @@ mod tests {
     #[test]
     fn audit_records_successful_request() {
         let sink = Arc::new(MemoryAuditSink::new());
-        let mut s = ApiServer::new().with_audit(sink.clone());
+        let mut s = ApiServer::insecure_for_tests().with_audit(sink.clone());
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
         assert_eq!(sink.len(), 1);
         let ev = &sink.events()[0];
@@ -1208,7 +1257,7 @@ mod tests {
     #[test]
     fn audit_records_errors() {
         let sink = Arc::new(MemoryAuditSink::new());
-        let mut s = ApiServer::new().with_audit(sink.clone());
+        let mut s = ApiServer::insecure_for_tests().with_audit(sink.clone());
         s.handle(&req("GET", "/api/v1/namespaces/default/pods/ghost", "application/json", ""));
         assert_eq!(sink.len(), 1);
         assert_eq!(sink.events()[0].response_code, 404);
@@ -1219,7 +1268,7 @@ mod tests {
 
     #[test]
     fn watch_streams_added_events_as_chunked() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "a")));
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "b")));
         let resp = s.handle(&req(
@@ -1239,7 +1288,7 @@ mod tests {
 
     #[test]
     fn watch_since_resource_version_returns_only_newer() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "a"))); // rv1
         s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "b"))); // rv2
         let resp = s.handle(&req(
@@ -1256,7 +1305,7 @@ mod tests {
 
     #[test]
     fn watch_reports_modified_and_deleted() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let created = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "a")));
         let body = body_str(&created);
         s.handle(&req("PUT", "/api/v1/namespaces/default/pods/a", "application/json", &body));
@@ -1275,7 +1324,7 @@ mod tests {
 
     #[test]
     fn watch_is_namespace_scoped() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         s.handle(&req("POST", "/api/v1/namespaces/ns1/pods", "application/json", &pod_json("ns1", "a")));
         s.handle(&req("POST", "/api/v1/namespaces/ns2/pods", "application/json", &pod_json("ns2", "b")));
         let resp = s.handle(&req(
@@ -1327,7 +1376,7 @@ mod tests {
     #[test]
     fn validating_plugin_rejects_nameless_create_422() {
         let chain = AdmissionChain::new().with_validating(Box::new(RequireName));
-        let mut s = ApiServer::new().with_admission(chain);
+        let mut s = ApiServer::insecure_for_tests().with_admission(chain);
         let nameless = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"namespace":"default"}}"#;
         let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", nameless));
         assert_eq!(resp.status, 422);
@@ -1336,7 +1385,7 @@ mod tests {
     #[test]
     fn mutating_plugin_applies_before_storage() {
         let chain = AdmissionChain::new().with_mutating(Box::new(AnnotateOwner));
-        let mut s = ApiServer::new().with_admission(chain);
+        let mut s = ApiServer::insecure_for_tests().with_admission(chain);
         let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
         assert_eq!(resp.status, 201);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
@@ -1346,7 +1395,7 @@ mod tests {
     #[test]
     fn admission_runs_on_update() {
         let chain = AdmissionChain::new().with_validating(Box::new(RejectUpdates));
-        let mut s = ApiServer::new().with_admission(chain);
+        let mut s = ApiServer::insecure_for_tests().with_admission(chain);
         // Seed directly (bypass admission), then attempt an update through the handler.
         s.registry
             .create(
@@ -1363,7 +1412,7 @@ mod tests {
 
     #[test]
     fn health_probes_return_ok() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         for path in ["/healthz", "/livez", "/readyz"] {
             let resp = s.handle(&req("GET", path, "text/plain", ""));
             assert_eq!(resp.status, 200, "{path}");
@@ -1377,14 +1426,14 @@ mod tests {
         let authn = AuthenticatorChain::new()
             .with(Box::new(TokenAuthenticator::new().with_token("t", UserInfo::new("u"))))
             .allow_anonymous(false);
-        let mut s = ApiServer::new().with_authn(authn);
+        let mut s = ApiServer::insecure_for_tests().with_authn(authn);
         let resp = s.handle(&req("GET", "/healthz", "text/plain", ""));
         assert_eq!(resp.status, 200);
     }
 
     #[test]
     fn api_discovery_lists_core_version() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let resp = s.handle(&req("GET", "/api", "application/json", ""));
         assert_eq!(resp.status, 200);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
@@ -1395,7 +1444,7 @@ mod tests {
 
     #[test]
     fn apis_discovery_lists_groups() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let resp = s.handle(&req("GET", "/apis", "application/json", ""));
         assert_eq!(resp.status, 200);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
@@ -1408,7 +1457,7 @@ mod tests {
 
     #[test]
     fn core_resource_list_includes_pods() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let resp = s.handle(&req("GET", "/api/v1", "application/json", ""));
         assert_eq!(resp.status, 200);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
@@ -1421,7 +1470,7 @@ mod tests {
 
     #[test]
     fn grouped_resource_list_includes_deployments() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let resp = s.handle(&req("GET", "/apis/apps/v1", "application/json", ""));
         assert_eq!(resp.status, 200);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
@@ -1433,14 +1482,14 @@ mod tests {
 
     #[test]
     fn unknown_group_version_discovery_is_404() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let resp = s.handle(&req("GET", "/apis/nope.example.com/v9", "application/json", ""));
         assert_eq!(resp.status, 404);
     }
 
     #[test]
     fn openapi_v2_endpoint_returns_swagger_document() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let resp = s.handle(&req("GET", "/openapi/v2", "application/json", ""));
         assert_eq!(resp.status, 200);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
@@ -1455,7 +1504,7 @@ mod tests {
 
     #[test]
     fn version_endpoint_reports_major_minor() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let resp = s.handle(&req("GET", "/version", "application/json", ""));
         assert_eq!(resp.status, 200);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
@@ -1466,7 +1515,7 @@ mod tests {
 
     #[test]
     fn update_status_subresource_persists_only_status() {
-        let mut s = ApiServer::new();
+        let mut s = ApiServer::insecure_for_tests();
         let with_spec = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default"},"spec":{"replicas":1}}"#;
         let created = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", with_spec));
         let cv = crate::json::parse(&body_str(&created)).expect("json");
@@ -1480,5 +1529,230 @@ mod tests {
         let v = crate::json::parse(&body_str(&resp)).expect("json");
         assert_eq!(v.pointer("spec.replicas"), Some(&Value::from(1_i64)));
         assert_eq!(v.pointer("status.phase"), Some(&Value::from("Running")));
+    }
+
+    // --- secure-by-default construction ------------------------------------
+
+    fn token_chain() -> AuthenticatorChain {
+        AuthenticatorChain::new()
+            .with(Box::new(TokenAuthenticator::new().with_token("bob-token", UserInfo::new("bob"))))
+            .allow_anonymous(false)
+    }
+
+    #[test]
+    fn new_server_rejects_anonymous_requests() {
+        let mut s = ApiServer::new();
+        let resp = s.handle(&req("GET", "/api/v1/namespaces/default/pods", "application/json", ""));
+        assert_eq!(resp.status, 401, "{}", body_str(&resp));
+        let create = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "x")));
+        assert_eq!(create.status, 401, "{}", body_str(&create));
+        assert!(s.registry.get(&GroupVersionResource::new("", "v1", "pods"), "default", "x").is_err());
+    }
+
+    #[test]
+    fn default_server_is_the_secure_one() {
+        let mut s = ApiServer::default();
+        let resp = s.handle(&req("GET", "/api/v1/pods", "application/json", ""));
+        assert_eq!(resp.status, 401);
+    }
+
+    #[test]
+    fn new_server_does_not_authorize_everything() {
+        // Authenticated, but no RBAC grant: the default authorizer denies.
+        let mut s = ApiServer::new().with_authn(token_chain());
+        let resp = s.handle(&req_auth("GET", "/api/v1/namespaces/default/pods", "bob-token", ""));
+        assert_eq!(resp.status, 403, "{}", body_str(&resp));
+    }
+
+    #[test]
+    fn new_server_still_answers_health_probes() {
+        let mut s = ApiServer::new();
+        assert_eq!(s.handle(&req("GET", "/healthz", "text/plain", "")).status, 200);
+    }
+
+    #[test]
+    fn insecure_for_tests_is_explicitly_permissive() {
+        let mut s = ApiServer::insecure_for_tests();
+        assert_eq!(s.handle(&req("GET", "/api/v1/pods", "application/json", "")).status, 200);
+    }
+
+    // --- body decode before the handler lock --------------------------------
+
+    #[test]
+    fn preparse_body_decodes_write_bodies_only() {
+        let post = req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "a"));
+        assert!(matches!(preparse_body(&post), PreparsedBody::Json(_)));
+        let bad = req("POST", "/api/v1/namespaces/default/pods", "application/json", "{nope");
+        assert!(matches!(preparse_body(&bad), PreparsedBody::Invalid(s) if s.code == 400));
+        let get = req("GET", "/api/v1/pods", "application/json", "");
+        assert!(matches!(preparse_body(&get), PreparsedBody::None));
+    }
+
+    #[test]
+    fn handle_preparsed_uses_the_supplied_body_without_reparsing() {
+        let mut s = ApiServer::insecure_for_tests();
+        let wire = req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "on-the-wire"));
+        let decoded = crate::json::parse(&pod_json("default", "pre-decoded")).expect("json");
+        let resp = s.handle_preparsed(&wire, PreparsedBody::Json(decoded));
+        assert_eq!(resp.status, 201, "{}", body_str(&resp));
+        let pods = GroupVersionResource::new("", "v1", "pods");
+        assert!(s.registry.get(&pods, "default", "pre-decoded").is_ok());
+        assert!(s.registry.get(&pods, "default", "on-the-wire").is_err());
+    }
+
+    // --- URL identity is authoritative for PATCH ----------------------------
+
+    fn seeded_pair() -> ApiServer {
+        let mut s = ApiServer::insecure_for_tests();
+        for name in ["a", "b"] {
+            let body = format!(
+                r#"{{"apiVersion":"v1","kind":"Pod","metadata":{{"name":"{name}","namespace":"default"}},"spec":{{"owner":"{name}"}}}}"#
+            );
+            assert_eq!(s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &body)).status, 201);
+        }
+        s
+    }
+
+    fn stored(s: &ApiServer, ns: &str, name: &str) -> Value {
+        s.registry.get(&GroupVersionResource::new("", "v1", "pods"), ns, name).expect("stored")
+    }
+
+    #[test]
+    fn merge_patch_cannot_rename_the_target() {
+        let mut s = seeded_pair();
+        let resp = s.handle(&req(
+            "PATCH",
+            "/api/v1/namespaces/default/pods/a",
+            "application/merge-patch+json",
+            r#"{"metadata":{"name":"b"},"spec":{"owner":"hijacked"}}"#,
+        ));
+        assert_eq!(resp.status, 400, "{}", body_str(&resp));
+        assert_eq!(stored(&s, "default", "b").pointer("spec.owner"), Some(&Value::from("b")));
+        assert_eq!(stored(&s, "default", "a").pointer("spec.owner"), Some(&Value::from("a")));
+    }
+
+    #[test]
+    fn json_patch_cannot_retarget_another_object() {
+        let mut s = seeded_pair();
+        let b_rv = stored(&s, "default", "b")
+            .pointer("metadata.resourceVersion")
+            .and_then(Value::as_str)
+            .expect("rv")
+            .to_string();
+        let ops = format!(
+            r#"[{{"op":"replace","path":"/metadata/name","value":"b"}},{{"op":"replace","path":"/metadata/resourceVersion","value":"{b_rv}"}},{{"op":"replace","path":"/spec/owner","value":"hijacked"}}]"#
+        );
+        let resp = s.handle(&req("PATCH", "/api/v1/namespaces/default/pods/a", "application/json-patch+json", &ops));
+        assert_eq!(resp.status, 400, "{}", body_str(&resp));
+        assert_eq!(stored(&s, "default", "b").pointer("spec.owner"), Some(&Value::from("b")));
+    }
+
+    #[test]
+    fn merge_patch_cannot_move_the_object_to_another_namespace() {
+        let mut s = seeded_pair();
+        let resp = s.handle(&req(
+            "PATCH",
+            "/api/v1/namespaces/default/pods/a",
+            "application/merge-patch+json",
+            r#"{"metadata":{"namespace":"kube-system"}}"#,
+        ));
+        assert_eq!(resp.status, 400, "{}", body_str(&resp));
+        assert_eq!(stored(&s, "default", "a").pointer("metadata.namespace"), Some(&Value::from("default")));
+    }
+
+    #[test]
+    fn merge_patch_that_drops_the_name_is_rejected() {
+        let mut s = seeded_pair();
+        let resp = s.handle(&req(
+            "PATCH",
+            "/api/v1/namespaces/default/pods/a",
+            "application/merge-patch+json",
+            r#"{"metadata":{"name":null}}"#,
+        ));
+        assert_eq!(resp.status, 400, "{}", body_str(&resp));
+    }
+
+    // --- subresources execute as subresources -------------------------------
+
+    #[test]
+    fn patch_on_status_subresource_persists_only_status() {
+        let mut s = seeded_pair();
+        let resp = s.handle(&req(
+            "PATCH",
+            "/api/v1/namespaces/default/pods/a/status",
+            "application/merge-patch+json",
+            r#"{"spec":{"owner":"escalated"},"status":{"phase":"Running"}}"#,
+        ));
+        assert_eq!(resp.status, 200, "{}", body_str(&resp));
+        let a = stored(&s, "default", "a");
+        assert_eq!(a.pointer("spec.owner"), Some(&Value::from("a")), "spec must not change via /status");
+        assert_eq!(a.pointer("status.phase"), Some(&Value::from("Running")));
+    }
+
+    #[test]
+    fn rbac_status_grant_cannot_patch_spec() {
+        // A user granted only `pods/status` patch (a kubelet-style grant) must
+        // not be able to rewrite the pod spec through the status subresource.
+        let role = ClusterRole {
+            name: "status-writer".to_string(),
+            rules: vec![PolicyRule::resource_rule(&[""], &["pods/status"], &["patch"])],
+        };
+        let binding = ClusterRoleBinding {
+            name: "bob-status".to_string(),
+            subjects: vec![Subject::user("bob")],
+            role_ref: RoleRef::cluster_role("status-writer"),
+        };
+        let mut s = seeded_pair()
+            .with_authn(token_chain())
+            .with_authz(Authorization::Rbac(RbacAuthorizer::new().with_cluster_role(role).with_cluster_role_binding(binding)));
+        let patch = r#"{"spec":{"owner":"bob"},"status":{"phase":"Running"}}"#;
+        let raw = format!(
+            "PATCH /api/v1/namespaces/default/pods/a/status HTTP/1.1\r\nauthorization: Bearer bob-token\r\ncontent-type: application/merge-patch+json\r\ncontent-length: {}\r\n\r\n{patch}",
+            patch.len()
+        );
+        let resp = s.handle(&Request::parse(raw.as_bytes()).expect("parse"));
+        assert_eq!(resp.status, 200, "{}", body_str(&resp));
+        assert_eq!(stored(&s, "default", "a").pointer("spec.owner"), Some(&Value::from("a")));
+        // …and the same grant does not reach the main resource.
+        let full = format!(
+            "PATCH /api/v1/namespaces/default/pods/a HTTP/1.1\r\nauthorization: Bearer bob-token\r\ncontent-type: application/merge-patch+json\r\ncontent-length: {}\r\n\r\n{patch}",
+            patch.len()
+        );
+        assert_eq!(s.handle(&Request::parse(full.as_bytes()).expect("parse")).status, 403);
+    }
+
+    #[test]
+    fn delete_on_a_subresource_is_rejected_and_keeps_the_object() {
+        let mut s = seeded_pair();
+        let resp = s.handle(&req("DELETE", "/api/v1/namespaces/default/pods/a/status", "application/json", ""));
+        assert_eq!(resp.status, 405, "{}", body_str(&resp));
+        assert!(s.registry.get(&GroupVersionResource::new("", "v1", "pods"), "default", "a").is_ok());
+    }
+
+    #[test]
+    fn writes_to_unknown_subresources_are_not_found() {
+        let mut s = seeded_pair();
+        let a = body_str(&s.handle(&req("GET", "/api/v1/namespaces/default/pods/a", "application/json", "")));
+        let rewritten = a.replace(r#""owner":"a""#, r#""owner":"scaled""#);
+        let put = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/a/scale", "application/json", &rewritten));
+        assert_eq!(put.status, 404, "{}", body_str(&put));
+        let patch = s.handle(&req(
+            "PATCH",
+            "/api/v1/namespaces/default/pods/a/binding",
+            "application/merge-patch+json",
+            r#"{"spec":{"owner":"bound"}}"#,
+        ));
+        assert_eq!(patch.status, 404, "{}", body_str(&patch));
+        assert_eq!(stored(&s, "default", "a").pointer("spec.owner"), Some(&Value::from("a")));
+    }
+
+    #[test]
+    fn get_on_an_unknown_subresource_is_not_found() {
+        let mut s = seeded_pair();
+        let resp = s.handle(&req("GET", "/api/v1/namespaces/default/pods/a/exec", "application/json", ""));
+        assert_eq!(resp.status, 404, "{}", body_str(&resp));
+        // The status subresource reads back the object.
+        let st = s.handle(&req("GET", "/api/v1/namespaces/default/pods/a/status", "application/json", ""));
+        assert_eq!(st.status, 200, "{}", body_str(&st));
     }
 }

@@ -927,4 +927,64 @@ mod tests {
         assert!(parse("").is_err());
         assert!(parse("tru").is_err());
     }
+
+    // --- hostile-input bounds (request bodies come straight off the socket) --
+
+    /// Run `f` on a worker thread and fail the test if it has not returned
+    /// within `secs` — a quadratic decoder never finishes on the inputs below.
+    fn finishes_within<T: Send + 'static>(secs: u64, f: impl FnOnce() -> T + Send + 'static) -> T {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(secs))
+            .expect("decoding must be linear in the input size")
+    }
+
+    /// 1 MiB of two-byte UTF-8 scalars inside one string literal.
+    fn long_non_ascii_string_doc() -> String {
+        format!("\"{}\"", "é".repeat(512 * 1024))
+    }
+
+    #[test]
+    fn parse_decodes_a_long_non_ascii_string_in_linear_time() {
+        let doc = long_non_ascii_string_doc();
+        let v = finishes_within(5, move || parse(&doc)).expect("parses");
+        assert_eq!(v.as_str().map(str::len), Some(1024 * 1024));
+    }
+
+    #[test]
+    fn value_parse_decodes_a_long_non_ascii_string_in_linear_time() {
+        let doc = long_non_ascii_string_doc();
+        let v = finishes_within(5, move || Value::parse(&doc)).expect("parses");
+        assert_eq!(v.as_str().map(str::len), Some(1024 * 1024));
+    }
+
+    #[test]
+    fn string_fast_path_preserves_escapes_and_multibyte_runs() {
+        let doc = r#"{"k":"aééb😀c\n\"d\\","é😀":"x"}"#;
+        for v in [parse(doc).expect("parse"), Value::parse(doc).expect("Value::parse")] {
+            assert_eq!(v.pointer("k").and_then(Value::as_str), Some("aééb😀c\n\"d\\"));
+            assert_eq!(v.get("é😀").and_then(Value::as_str), Some("x"));
+        }
+    }
+
+    fn nested_arrays(depth: usize) -> String {
+        format!("{}{}", "[".repeat(depth), "]".repeat(depth))
+    }
+
+    #[test]
+    fn parse_accepts_nesting_up_to_the_limit() {
+        assert!(parse(&nested_arrays(128)).is_ok());
+        assert!(parse(&format!("{}1{}", "{\"a\":".repeat(128), "}".repeat(128))).is_ok());
+    }
+
+    #[test]
+    fn parse_rejects_nesting_beyond_the_limit() {
+        let err = parse(&nested_arrays(129)).expect_err("129 nested arrays exceed the limit");
+        assert!(err.message.contains("deep"), "{err}");
+        let err = parse(&format!("{}1{}", "{\"a\":".repeat(200), "}".repeat(200)))
+            .expect_err("200 nested objects exceed the limit");
+        assert!(err.message.contains("deep"), "{err}");
+    }
 }

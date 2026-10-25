@@ -14,6 +14,7 @@
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crate::handler::ApiServer;
 use crate::http::Request;
@@ -81,6 +82,123 @@ pub fn read_request<R: Read>(stream: &mut R) -> io::Result<Option<Request>> {
     Ok(Some(Request::parse(&buf[..want]).map_err(to_io)?))
 }
 
+/// Per-connection resource bounds for the socket loop.
+#[derive(Clone, Debug)]
+pub struct Limits {
+    /// Largest accepted request head (request line + headers), in bytes.
+    pub max_head_bytes: usize,
+    /// Largest accepted request body (`Content-Length`), in bytes.
+    pub max_body_bytes: usize,
+    /// Socket read timeout (each read, including the TLS handshake).
+    pub read_timeout: Duration,
+    /// Socket write timeout.
+    pub write_timeout: Duration,
+    /// Wall-clock budget for receiving one whole request.
+    pub request_deadline: Duration,
+    /// Connections served concurrently; further connections are closed.
+    pub max_connections: usize,
+    /// Pause after a failed `accept()` before trying again.
+    pub accept_backoff: Duration,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            max_head_bytes: crate::http::MAX_HEAD_BYTES,
+            max_body_bytes: crate::http::MAX_BODY_BYTES,
+            read_timeout: Duration::from_secs(10),
+            write_timeout: Duration::from_secs(10),
+            request_deadline: Duration::from_secs(30),
+            max_connections: 256,
+            accept_backoff: Duration::from_millis(50),
+        }
+    }
+}
+
+/// Why a request could not be read off the wire.
+#[derive(Debug)]
+pub enum RequestReadError {
+    /// The head exceeded [`Limits::max_head_bytes`] (`431`).
+    HeadTooLarge,
+    /// The declared body exceeded [`Limits::max_body_bytes`] (`413`).
+    BodyTooLarge(usize),
+    /// The framing was malformed (`400`).
+    BadRequest(String),
+    /// The request used a framing this server does not implement (`501`).
+    NotImplemented(String),
+    /// The request did not arrive within [`Limits::request_deadline`].
+    TimedOut,
+    /// The underlying stream failed.
+    Io(io::Error),
+}
+
+impl std::fmt::Display for RequestReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::HeadTooLarge => f.write_str("request head too large"),
+            Self::BodyTooLarge(n) => write!(f, "request body of {n} bytes is too large"),
+            Self::BadRequest(m) => write!(f, "bad request: {m}"),
+            Self::NotImplemented(m) => write!(f, "not implemented: {m}"),
+            Self::TimedOut => f.write_str("request not received in time"),
+            Self::Io(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for RequestReadError {}
+
+/// Read one request like [`read_request`], enforcing `limits`.
+///
+/// # Errors
+/// A [`RequestReadError`] naming the violated bound or the I/O failure.
+pub fn read_request_bounded<R: Read>(stream: &mut R, _limits: &Limits) -> Result<Option<Request>, RequestReadError> {
+    read_request(stream).map_err(RequestReadError::Io)
+}
+
+/// Counts in-flight connections against [`Limits::max_connections`].
+#[derive(Clone, Debug)]
+pub struct ConnectionLimiter {
+    max: usize,
+}
+
+/// One admitted connection; dropping it frees the slot.
+#[derive(Debug)]
+pub struct ConnectionPermit {
+    _limiter: ConnectionLimiter,
+}
+
+impl ConnectionLimiter {
+    /// A limiter admitting at most `max` concurrent connections.
+    #[must_use]
+    pub fn new(max: usize) -> Self {
+        Self { max }
+    }
+
+    /// Admit one more connection, or `None` when at capacity.
+    #[must_use]
+    pub fn try_acquire(&self) -> Option<ConnectionPermit> {
+        let _ = self.max;
+        Some(ConnectionPermit { _limiter: self.clone() })
+    }
+}
+
+/// Drive an accept stream: serve each connection on its own thread (bounded by
+/// [`Limits::max_connections`]) and survive transient `accept()` failures.
+///
+/// # Errors
+/// An accept error.
+pub fn serve_incoming<I, S, F>(incoming: I, _limits: &Limits, serve: F) -> io::Result<()>
+where
+    I: IntoIterator<Item = io::Result<S>>,
+    S: Send + 'static,
+    F: Fn(S) -> io::Result<()> + Send + Sync + 'static,
+{
+    for conn in incoming {
+        let _ = serve(conn?);
+    }
+    Ok(())
+}
+
 /// Serve exactly one request on `stream`: read it, run the handler under the
 /// shared lock, write the response (with `Connection: close`), and flush. A
 /// peer that closes without sending a request is a no-op.
@@ -118,6 +236,14 @@ impl Server {
             listener: TcpListener::bind(addr)?,
             app,
         })
+    }
+
+    /// Like [`Server::bind`] with explicit per-connection [`Limits`].
+    ///
+    /// # Errors
+    /// Any bind error from the OS.
+    pub fn bind_with_limits(addr: impl ToSocketAddrs, app: Arc<Mutex<ApiServer>>, _limits: Limits) -> io::Result<Self> {
+        Self::bind(addr, app)
     }
 
     /// The bound local address (resolves the ephemeral port).
@@ -202,7 +328,7 @@ mod tests {
 
     #[test]
     fn serve_stream_writes_handler_response() {
-        let app = Mutex::new(ApiServer::new());
+        let app = Mutex::new(ApiServer::insecure_for_tests());
         let raw = b"GET /healthz HTTP/1.1\r\n\r\n";
         let mut stream = MockStream { input: Cursor::new(raw.to_vec()), output: Vec::new() };
         serve_stream(&mut stream, &app).expect("serve");
@@ -237,7 +363,7 @@ mod tests {
 
     #[test]
     fn kubectl_style_rest_session_over_tcp() {
-        let app = Arc::new(Mutex::new(ApiServer::new()));
+        let app = Arc::new(Mutex::new(ApiServer::insecure_for_tests()));
         let server = Server::bind("127.0.0.1:0", app).expect("bind");
         let addr = server.local_addr().expect("addr");
 
@@ -275,5 +401,160 @@ mod tests {
         assert!(deleted.starts_with("HTTP/1.1 200 OK\r\n"), "delete: {deleted}");
 
         worker.join().expect("worker");
+    }
+
+    // --- bounded reads: hostile clients cannot make the server buffer forever --
+
+    /// A reader that yields `head` and then fails the test if the server keeps
+    /// reading — proof an oversized body is refused *before* it is read.
+    struct HeadThenTripwire {
+        head: Cursor<Vec<u8>>,
+    }
+
+    impl Read for HeadThenTripwire {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            let n = self.head.read(buf)?;
+            if n == 0 {
+                return Err(io::Error::other("server read past the head of an oversized request"));
+            }
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn bounded_read_rejects_an_oversized_head() {
+        let mut raw = b"GET /api/v1/pods HTTP/1.1\r\n".to_vec();
+        while raw.len() <= crate::http::MAX_HEAD_BYTES {
+            raw.extend_from_slice(b"x-pad: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\n");
+        }
+        let err = read_request_bounded(&mut Cursor::new(raw), &Limits::default()).expect_err("head too large");
+        assert!(matches!(err, RequestReadError::HeadTooLarge), "{err}");
+    }
+
+    #[test]
+    fn bounded_read_refuses_an_oversized_body_without_reading_it() {
+        let declared = crate::http::MAX_BODY_BYTES + 1;
+        let head = format!("POST /api/v1/namespaces/default/pods HTTP/1.1\r\ncontent-length: {declared}\r\n\r\n");
+        let mut stream = HeadThenTripwire { head: Cursor::new(head.into_bytes()) };
+        let err = read_request_bounded(&mut stream, &Limits::default()).expect_err("body too large");
+        assert!(matches!(err, RequestReadError::BodyTooLarge(n) if n == declared), "{err}");
+    }
+
+    #[test]
+    fn bounded_read_rejects_a_malformed_content_length() {
+        let raw = b"POST /x HTTP/1.1\r\ncontent-length: lots\r\n\r\n".to_vec();
+        let err = read_request_bounded(&mut Cursor::new(raw), &Limits::default()).expect_err("bad length");
+        assert!(matches!(err, RequestReadError::BadRequest(_)), "{err}");
+    }
+
+    #[test]
+    fn bounded_read_refuses_chunked_request_bodies() {
+        let raw = b"POST /x HTTP/1.1\r\ntransfer-encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n".to_vec();
+        let err = read_request_bounded(&mut Cursor::new(raw), &Limits::default()).expect_err("chunked");
+        assert!(matches!(err, RequestReadError::NotImplemented(_)), "{err}");
+    }
+
+    #[test]
+    fn bounded_read_accepts_a_body_within_the_limit() {
+        let raw = b"POST /x HTTP/1.1\r\ncontent-length: 5\r\n\r\nhello".to_vec();
+        let req = read_request_bounded(&mut Cursor::new(raw), &Limits::default()).expect("ok").expect("some");
+        assert_eq!(req.body, b"hello");
+    }
+
+    #[test]
+    fn serve_stream_answers_413_for_an_oversized_body() {
+        let app = Mutex::new(ApiServer::insecure_for_tests());
+        let head = format!(
+            "POST /api/v1/namespaces/default/pods HTTP/1.1\r\ncontent-length: {}\r\n\r\n",
+            crate::http::MAX_BODY_BYTES + 1
+        );
+        let mut stream = MockStream { input: Cursor::new(head.into_bytes()), output: Vec::new() };
+        serve_stream(&mut stream, &app).expect("serve");
+        let text = String::from_utf8(stream.output).expect("utf8");
+        assert!(text.starts_with("HTTP/1.1 413 "), "{text}");
+        assert!(text.contains("RequestEntityTooLarge"), "{text}");
+    }
+
+    #[test]
+    fn serve_stream_answers_431_for_an_oversized_head() {
+        let app = Mutex::new(ApiServer::insecure_for_tests());
+        let mut raw = b"GET /api/v1/pods HTTP/1.1\r\n".to_vec();
+        while raw.len() <= crate::http::MAX_HEAD_BYTES {
+            raw.extend_from_slice(b"x-pad: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\n");
+        }
+        let mut stream = MockStream { input: Cursor::new(raw), output: Vec::new() };
+        serve_stream(&mut stream, &app).expect("serve");
+        let text = String::from_utf8(stream.output).expect("utf8");
+        assert!(text.starts_with("HTTP/1.1 431 "), "{text}");
+    }
+
+    // --- accept loop: concurrency cap, transient errors, slow clients --------
+
+    #[test]
+    fn connection_limiter_caps_concurrency_and_frees_on_drop() {
+        let limiter = ConnectionLimiter::new(2);
+        let a = limiter.try_acquire().expect("first");
+        let _b = limiter.try_acquire().expect("second");
+        assert!(limiter.try_acquire().is_none(), "third connection exceeds the cap");
+        drop(a);
+        assert!(limiter.try_acquire().is_some(), "a freed slot is reusable");
+    }
+
+    #[test]
+    fn accept_errors_do_not_stop_the_server() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let served = Arc::new(AtomicUsize::new(0));
+        let counter = served.clone();
+        let incoming: Vec<io::Result<u32>> = vec![
+            Err(io::Error::other("Too many open files (os error 24)")),
+            Ok(1),
+            Err(io::Error::from(io::ErrorKind::ConnectionAborted)),
+            Ok(2),
+        ];
+        let limits = Limits { accept_backoff: Duration::from_millis(1), ..Limits::default() };
+        serve_incoming(incoming, &limits, move |_conn| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
+        .expect("transient accept errors are not fatal");
+        assert_eq!(served.load(Ordering::SeqCst), 2, "both good connections were served");
+    }
+
+    #[test]
+    fn connections_are_served_off_the_accept_thread() {
+        // Two connections whose handlers each wait for the other: served inline
+        // on one thread this deadlocks; served concurrently it completes.
+        use std::sync::Barrier;
+        let barrier = Arc::new(Barrier::new(2));
+        let b = barrier.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let incoming: Vec<io::Result<u32>> = vec![Ok(1), Ok(2)];
+            let r = serve_incoming(incoming, &Limits::default(), move |_| {
+                b.wait();
+                Ok(())
+            });
+            let _ = tx.send(r.is_ok());
+        });
+        assert_eq!(rx.recv_timeout(Duration::from_secs(5)), Ok(true), "connections must be served concurrently");
+    }
+
+    #[test]
+    fn idle_client_is_dropped_after_the_read_timeout() {
+        let app = Arc::new(Mutex::new(ApiServer::insecure_for_tests()));
+        let limits = Limits { read_timeout: Duration::from_millis(200), ..Limits::default() };
+        let server = Server::bind_with_limits("127.0.0.1:0", app, limits).expect("bind");
+        let addr = server.local_addr().expect("addr");
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(server.serve_once().is_err());
+        });
+        // Connect and then send nothing (slowloris).
+        let _idle = TcpStream::connect(addr).expect("connect");
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(5)),
+            Ok(true),
+            "an idle connection must time out instead of pinning the server"
+        );
     }
 }

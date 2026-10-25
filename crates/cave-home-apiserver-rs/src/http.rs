@@ -10,6 +10,13 @@
 
 use std::fmt;
 
+/// Largest request head (request line + headers) a listener accepts: 64 KiB.
+pub const MAX_HEAD_BYTES: usize = 64 * 1024;
+
+/// Largest request body a listener accepts: 3 MiB (the upstream apiserver's
+/// default `MaxRequestBodyBytes`).
+pub const MAX_BODY_BYTES: usize = 3 * 1024 * 1024;
+
 /// An HTTP request method. Unknown methods are preserved verbatim so the handler
 /// can answer `405 Method Not Allowed` rather than mis-route.
 #[derive(Clone, Debug, Eq, PartialEq)]

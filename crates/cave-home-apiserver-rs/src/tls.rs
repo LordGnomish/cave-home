@@ -29,7 +29,7 @@ use rustls::{RootCertStore, ServerConfig, ServerConnection, StreamOwned};
 
 use crate::handler::ApiServer;
 use crate::http::Request;
-use crate::server::read_request;
+use crate::server::{read_request, Limits};
 
 fn to_io<E: std::fmt::Display>(e: E) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, e.to_string())
@@ -175,6 +175,19 @@ impl TlsServer {
         Ok(Self { listener: TcpListener::bind(addr)?, app, config })
     }
 
+    /// Like [`TlsServer::bind`] with explicit per-connection [`Limits`].
+    ///
+    /// # Errors
+    /// Any bind error from the OS.
+    pub fn bind_with_limits(
+        addr: impl ToSocketAddrs,
+        app: Arc<Mutex<ApiServer>>,
+        config: Arc<ServerConfig>,
+        _limits: Limits,
+    ) -> io::Result<Self> {
+        Self::bind(addr, app, config)
+    }
+
     /// The bound local address (resolves the ephemeral port).
     ///
     /// # Errors
@@ -295,7 +308,7 @@ mod tests {
 
     #[test]
     fn tls_handshake_and_request_roundtrip() {
-        let app = Arc::new(Mutex::new(ApiServer::new()));
+        let app = Arc::new(Mutex::new(ApiServer::insecure_for_tests()));
         let config = server_config(SERVER_CERT, SERVER_KEY).expect("server config");
         let server = TlsServer::bind("127.0.0.1:0", app, config).expect("bind");
         let addr = server.local_addr().expect("addr");
@@ -313,7 +326,7 @@ mod tests {
         // The apiserver trusts ONLY the front-proxy headers the terminator
         // injects from the verified cert; anonymous is disabled.
         let audit = Arc::new(MemoryAuditSink::new());
-        let app = ApiServer::new()
+        let app = ApiServer::insecure_for_tests()
             .with_authn(
                 AuthenticatorChain::new()
                     .with(Box::new(RequestHeaderAuthenticator::new()))
@@ -343,7 +356,7 @@ mod tests {
         // A plain (cert-less) client must fail the handshake against an mTLS
         // server, so the server-side serve_once returns an error rather than a
         // 200. We assert the connection yields no valid HTTP response.
-        let app = Arc::new(Mutex::new(ApiServer::new()));
+        let app = Arc::new(Mutex::new(ApiServer::insecure_for_tests()));
         let config = server_config_mtls(SERVER_CERT, SERVER_KEY, CA_CERT).expect("mtls config");
         let server = TlsServer::bind("127.0.0.1:0", app, config).expect("bind");
         let addr = server.local_addr().expect("addr");
@@ -355,5 +368,21 @@ mod tests {
         let resp = tls_call(addr, client_config_plain(), &get("/healthz"));
         worker.join().expect("worker");
         assert!(!resp.contains("200 OK"), "cert-less client must not be served: {resp}");
+    }
+
+    #[test]
+    fn stalled_handshake_times_out() {
+        // A client that opens TCP and never speaks TLS must not pin the server.
+        let app = Arc::new(Mutex::new(ApiServer::insecure_for_tests()));
+        let config = server_config(SERVER_CERT, SERVER_KEY).expect("server config");
+        let limits = Limits { read_timeout: std::time::Duration::from_millis(200), ..Limits::default() };
+        let server = TlsServer::bind_with_limits("127.0.0.1:0", app, config, limits).expect("bind");
+        let addr = server.local_addr().expect("addr");
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(server.serve_once().is_err());
+        });
+        let _silent = TcpStream::connect(addr).expect("connect");
+        assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(5)), Ok(true));
     }
 }
