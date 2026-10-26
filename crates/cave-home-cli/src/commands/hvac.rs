@@ -58,7 +58,7 @@ mod tests {
     }
 
     #[test]
-    fn run_returns_zero() {
-        assert_eq!(run(), 0);
+    fn run_reports_not_connected() {
+        assert_eq!(run(), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 }

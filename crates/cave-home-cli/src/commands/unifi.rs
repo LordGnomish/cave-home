@@ -444,7 +444,7 @@ fn dispatch_live(sub: &ArgMatches, verbose: bool) -> i32 {
 }
 
 async fn run_live(cfg: &LiveConfig, target: &str, verbose: bool) -> i32 {
-    let transport = match ReqwestTransport::new(Duration::from_secs(15)) {
+    let transport = match ReqwestTransport::new(Duration::from_secs(15), &cave_home_unifi::tls::TlsTrust::dangerous_accept_any_certificate()) {
         Ok(t) => t,
         Err(e) => {
             eprintln!("unifi live: {e}");
@@ -509,7 +509,7 @@ async fn run_live(cfg: &LiveConfig, target: &str, verbose: bool) -> i32 {
             };
             let access = AccessClient::new(
                 AccessConfig::new(host.clone(), token.clone()),
-                match ReqwestTransport::new(Duration::from_secs(15)) {
+                match ReqwestTransport::new(Duration::from_secs(15), &cave_home_unifi::tls::TlsTrust::dangerous_accept_any_certificate()) {
                     Ok(t) => t,
                     Err(e) => {
                         eprintln!("unifi live: {e}");
@@ -637,7 +637,7 @@ mod tests {
         let m = c
             .try_get_matches_from(["unifi", "network", "status"])
             .unwrap();
-        assert_eq!(run_matched(&m, false), 0);
+        assert_eq!(run_matched(&m, false), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]
@@ -646,7 +646,7 @@ mod tests {
         let m = c
             .try_get_matches_from(["unifi", "protect", "seam", "list"])
             .unwrap();
-        assert_eq!(run_matched(&m, false), 0);
+        assert_eq!(run_matched(&m, false), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]
@@ -655,7 +655,7 @@ mod tests {
         let m = c
             .try_get_matches_from(["unifi", "access", "unlock", "front", "--minutes", "15"])
             .unwrap();
-        assert_eq!(run_matched(&m, true), 0);
+        assert_eq!(run_matched(&m, true), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]
@@ -664,6 +664,6 @@ mod tests {
         let m = c
             .try_get_matches_from(["unifi", "talk", "control", "c1", "decline"])
             .unwrap();
-        assert_eq!(run_matched(&m, false), 0);
+        assert_eq!(run_matched(&m, false), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 }

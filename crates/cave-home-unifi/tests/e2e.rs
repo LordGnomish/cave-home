@@ -36,7 +36,13 @@ fn console_for(server: &MockServer) -> Console {
 }
 
 fn transport() -> ReqwestTransport {
-    ReqwestTransport::new(Duration::from_secs(5)).expect("build transport")
+    // Plain-HTTP mock: no TLS in the loop, so a default (verifying) client.
+    ReqwestTransport::from_client(
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .expect("build client"),
+    )
 }
 
 /// Mount the UniFi OS login endpoint: 200 + a `TOKEN` cookie and CSRF header.

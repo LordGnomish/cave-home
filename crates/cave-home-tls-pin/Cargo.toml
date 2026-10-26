@@ -1,0 +1,34 @@
+[package]
+name              = "cave-home-tls-pin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace   = true
+description = "cave-home-tls-pin — TLS trust for LAN appliances that present self-signed certificates (UniFi consoles, Hue bridges): SHA-256 certificate / public-key pinning, private-CA + common-name verification, a TOFU capture helper for onboarding, and an explicitly named, logged no-verify opt-in. rustls ServerCertVerifier usable from reqwest (use_preconfigured_tls) and tokio-tungstenite. First-party."
+
+[package.metadata.cave-home]
+upstream    = "none"
+port-method = "first-party"
+
+[features]
+# Certificate generation + a tiny blocking TLS test server, shared by the
+# dependent crates' integration tests. Never enabled in a production build.
+test-support = ["dep:rcgen"]
+
+[dependencies]
+base64  = "0.22"
+ring    = "0.17"
+rustls  = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-webpki = { version = "0.103", default-features = false, features = ["ring", "alloc", "std"] }
+thiserror = "2"
+tracing = "0.1"
+rcgen   = { version = "0.13", default-features = false, features = ["ring", "pem"], optional = true }
+
+[dev-dependencies]
+# Self dev-dependency: the integration tests use the `test-support` server.
+cave-home-tls-pin = { path = ".", features = ["test-support"] }
+
+[lints]
+workspace = true

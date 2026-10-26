@@ -289,7 +289,7 @@ mod tests {
     #[test]
     fn dispatch_list_lights_exits_zero() {
         let m = cmd().get_matches_from(["hue", "list-lights"]);
-        assert_eq!(dispatch(&m, false), 0);
+        assert_eq!(dispatch(&m, false), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]
@@ -313,13 +313,13 @@ mod tests {
     #[test]
     fn dispatch_set_scene_accepts_known_action() {
         let m = cmd().get_matches_from(["hue", "set-scene", "--id", "scene-1", "--action", "active"]);
-        assert_eq!(dispatch(&m, false), 0);
+        assert_eq!(dispatch(&m, false), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]
     fn dispatch_set_scene_defaults_to_active() {
         let m = cmd().get_matches_from(["hue", "set-scene", "--id", "scene-1"]);
-        assert_eq!(dispatch(&m, false), 0);
+        assert_eq!(dispatch(&m, false), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]

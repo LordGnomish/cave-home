@@ -20,6 +20,22 @@ use async_trait::async_trait;
 use reqwest::{Client, Method};
 use serde_json::Value;
 
+/// The Signify (Philips Hue) bridge root CA (RED placeholder).
+pub const SIGNIFY_HUE_ROOT_CA_PEM: &str = "";
+
+/// The Signify root as DER (RED placeholder).
+pub fn signify_root_ca_der() -> HueResult<rustls_pki::CertificateDer<'static>> {
+    Err(HueError::Generic("not implemented".into()))
+}
+
+/// Trust a bridge by the Signify root + CN == bridge id (RED placeholder).
+pub fn signify_bridge_trust(bridge_id: &str) -> HueResult<crate::tls::TlsTrust> {
+    let _ = bridge_id;
+    Err(HueError::Generic("not implemented".into()))
+}
+
+use cave_home_tls_pin::rustls_pki;
+
 /// CLIP-v2 path prefix shared by every resource endpoint.
 const CLIP_V2_PREFIX: &str = "clip/v2";
 
@@ -40,7 +56,8 @@ impl ReqwestTransport {
     /// certificate. The bridge mints this cert itself; there is no public CA in
     /// the chain, so standard verification would always fail. Traffic never
     /// leaves the local network.
-    pub fn new(host: &str, app_key: &str) -> HueResult<Self> {
+    pub fn new(host: &str, app_key: &str, trust: &crate::tls::TlsTrust) -> HueResult<Self> {
+        let _ = trust;
         let client = Client::builder()
             .danger_accept_invalid_certs(true)
             .build()
@@ -242,7 +259,11 @@ mod tests {
 
     #[test]
     fn new_targets_https_self_signed_bridge() {
-        let t = ReqwestTransport::new("10.0.0.5", "k").unwrap();
+        let trust = crate::tls::TlsTrust::pinned(crate::tls::PinSet::from(crate::tls::Pin::Certificate(
+            crate::tls::Sha256Fingerprint::of(b"bridge"),
+        )))
+        .unwrap();
+        let t = ReqwestTransport::new("10.0.0.5", "k", &trust).unwrap();
         assert_eq!(t.base_url(), "https://10.0.0.5");
         assert_eq!(t.eventstream_url(), "https://10.0.0.5/eventstream/clip/v2");
     }

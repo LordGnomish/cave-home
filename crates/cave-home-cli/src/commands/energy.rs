@@ -228,19 +228,19 @@ mod tests {
     #[test]
     fn dispatch_status_exits_zero() {
         let m = cmd().get_matches_from(["energy", "status"]);
-        assert_eq!(dispatch(&m, false), 0);
+        assert_eq!(dispatch(&m, false), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]
     fn dispatch_mode_accepts_tbc() {
         let m = cmd().get_matches_from(["energy", "mode", "tbc"]);
-        assert_eq!(dispatch(&m, false), 0);
+        assert_eq!(dispatch(&m, false), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]
     fn dispatch_mode_accepts_self_consumption() {
         let m = cmd().get_matches_from(["energy", "mode", "self-consumption"]);
-        assert_eq!(dispatch(&m, false), 0);
+        assert_eq!(dispatch(&m, false), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]
@@ -252,7 +252,7 @@ mod tests {
     #[test]
     fn dispatch_backup_reserve_accepts_valid() {
         let m = cmd().get_matches_from(["energy", "backup-reserve", "50"]);
-        assert_eq!(dispatch(&m, false), 0);
+        assert_eq!(dispatch(&m, false), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]
@@ -270,7 +270,7 @@ mod tests {
     #[test]
     fn dispatch_history_exits_zero() {
         let m = cmd().get_matches_from(["energy", "history", "--range", "24h"]);
-        assert_eq!(dispatch(&m, false), 0);
+        assert_eq!(dispatch(&m, false), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]

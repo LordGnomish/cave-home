@@ -52,6 +52,8 @@ pub mod bridge;
 pub mod discovery;
 pub mod errors;
 pub mod metrics;
+#[cfg(feature = "runtime")]
+pub mod tls;
 pub mod util;
 pub mod v1;
 pub mod v2;

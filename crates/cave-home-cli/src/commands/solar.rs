@@ -352,13 +352,13 @@ mod tests {
     #[test]
     fn dispatch_status_default_exits_zero() {
         let m = cmd().get_matches_from(["solar", "status"]);
-        assert_eq!(dispatch(&m, false), 0);
+        assert_eq!(dispatch(&m, false), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]
     fn dispatch_evcc_list_exits_zero() {
         let m = cmd().get_matches_from(["solar", "evcc", "list"]);
-        assert_eq!(dispatch(&m, false), 0);
+        assert_eq!(dispatch(&m, false), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]
@@ -370,19 +370,19 @@ mod tests {
     #[test]
     fn dispatch_evcc_mode_accepts_pv() {
         let m = cmd().get_matches_from(["solar", "evcc", "mode", "lp1", "pv"]);
-        assert_eq!(dispatch(&m, false), 0);
+        assert_eq!(dispatch(&m, false), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]
     fn dispatch_sunspec_battery_exits_zero() {
         let m = cmd().get_matches_from(["solar", "sunspec", "battery"]);
-        assert_eq!(dispatch(&m, false), 0);
+        assert_eq!(dispatch(&m, false), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]
     fn dispatch_forecast_today_exits_zero() {
         let m = cmd().get_matches_from(["solar", "forecast", "today"]);
-        assert_eq!(dispatch(&m, false), 0);
+        assert_eq!(dispatch(&m, false), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]

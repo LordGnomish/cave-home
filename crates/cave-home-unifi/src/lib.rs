@@ -67,6 +67,7 @@ pub mod metrics;
 pub mod network;
 pub mod protect;
 pub mod render;
+pub mod tls;
 pub mod transport;
 pub mod ws;
 

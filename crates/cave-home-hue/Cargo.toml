@@ -30,7 +30,7 @@ default = ["runtime"]
 # `runtime` pulls in the real async HTTP(S) + SSE transport (reqwest/rustls).
 # Disable it (`--no-default-features`) for a pure, dependency-light core that is
 # tested entirely against in-process stubs.
-runtime = ["dep:reqwest"]
+runtime = ["dep:reqwest", "dep:cave-home-tls-pin"]
 
 [dependencies]
 async-trait = "0.1"
@@ -51,8 +51,11 @@ reqwest = { version = "0.12", default-features = false, features = [
     "json",
     "http2",
 ], optional = true }
+# Bridge certificate pinning / Signify-root verification for the transport.
+cave-home-tls-pin = { path = "../cave-home-tls-pin", optional = true }
 
 [dev-dependencies]
+cave-home-tls-pin = { path = "../cave-home-tls-pin", features = ["test-support"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "io-util", "test-util", "net"] }
 
 [lints]

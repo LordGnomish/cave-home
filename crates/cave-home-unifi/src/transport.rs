@@ -294,7 +294,8 @@ impl ReqwestTransport {
     ///
     /// # Errors
     /// Fails if the underlying TLS backend cannot be initialised.
-    pub fn new(timeout: std::time::Duration) -> Result<Self> {
+    pub fn new(timeout: std::time::Duration, trust: &crate::tls::TlsTrust) -> Result<Self> {
+        let _ = trust;
         let client = reqwest::Client::builder()
             .danger_accept_invalid_certs(true)
             .timeout(timeout)

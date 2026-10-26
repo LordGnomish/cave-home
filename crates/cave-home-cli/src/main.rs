@@ -13,8 +13,8 @@ use clap::{Arg, ArgAction, Command};
 use cave_home_cli::commands::{
     alarm, automation, calendar, camera, cover, destroy, device, display, doorbell, energy,
     esphome, free_home, garden, get, history, household, hue, hvac, init, jarvis, join, knx,
-    lights, lock, matter, mobile, music, notify, pool, room, scene, solar, status, top, unifi,
-    vacuum, voice, water, wellness, zigbee, zwave,
+    lights, lock, matter, mobile, music, not_connected, notify, pool, room, scene, solar, status,
+    top, unifi, vacuum, voice, water, wellness, zigbee, zwave,
 };
 
 fn build_cli() -> Command {
@@ -208,42 +208,40 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_status_exits_zero() {
+    fn dispatch_status_reports_not_connected() {
         let code = run_with_args(["cavehomectl", "status"].iter().map(|s| s.to_string()));
-        // Demo data has one Warn but no Down, so exit 0.
-        assert_eq!(code, 0);
+        // No hub backend is wired into the CLI: never "all good".
+        assert_eq!(code, not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]
-    fn dispatch_unknown_top_level_args() {
-        // clap will exit non-zero on parse error; we don't try to
-        // intercept that here — instead, confirm a known-good path
-        // returns 0.
+    fn dispatch_device_list_reports_not_connected() {
         let code = run_with_args(
             ["cavehomectl", "device", "list"]
                 .iter()
                 .map(|s| s.to_string()),
         );
-        assert_eq!(code, 0);
+        assert_eq!(code, not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]
-    fn dispatch_scene_trigger_known() {
+    fn dispatch_scene_trigger_reports_not_connected() {
         let code = run_with_args(
             ["cavehomectl", "scene", "trigger", "Sleep"]
                 .iter()
                 .map(|s| s.to_string()),
         );
-        assert_eq!(code, 0);
+        assert_eq!(code, not_connected::EXIT_NOT_CONNECTED);
     }
 
     #[test]
-    fn dispatch_scene_trigger_unknown() {
+    fn dispatch_scene_trigger_unknown_is_not_connected_either() {
+        // Without a scene registry the CLI cannot know which scenes exist.
         let code = run_with_args(
             ["cavehomectl", "scene", "trigger", "nonexistent-scene"]
                 .iter()
                 .map(|s| s.to_string()),
         );
-        assert_eq!(code, 1);
+        assert_eq!(code, not_connected::EXIT_NOT_CONNECTED);
     }
 }

@@ -345,19 +345,13 @@ mod real {
 
     impl TungsteniteConnector {
         /// Build a connector that trusts the console's self-signed certificate.
-        #[must_use]
-        pub fn new() -> Self {
+        pub fn new(trust: &crate::tls::TlsTrust) -> Result<Self> {
+            let _ = trust;
             let tls = rustls::ClientConfig::builder()
                 .dangerous()
                 .with_custom_certificate_verifier(Arc::new(no_verify::NoVerify::new()))
                 .with_no_client_auth();
-            Self { tls: Arc::new(tls) }
-        }
-    }
-
-    impl Default for TungsteniteConnector {
-        fn default() -> Self {
-            Self::new()
+            Ok(Self { tls: Arc::new(tls) })
         }
     }
 
@@ -622,6 +616,6 @@ mod tests {
     fn real_connector_constructs() {
         // Build the real connector (exercises the rustls dangerous config path);
         // an actual connect needs a live console, covered by integration only.
-        let _c = TungsteniteConnector::new();
+        let _c = TungsteniteConnector::new(&crate::tls::TlsTrust::dangerous_accept_any_certificate()).unwrap();
     }
 }

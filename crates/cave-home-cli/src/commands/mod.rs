@@ -32,6 +32,7 @@ pub mod free_home;
 pub mod hue;
 pub mod jarvis;
 pub mod knx;
+pub mod not_connected;
 pub mod solar;
 pub mod unifi;
 
