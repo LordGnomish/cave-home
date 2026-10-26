@@ -70,7 +70,10 @@ fn dispatch(command: &Command) -> ExitCode {
             println!("Status reporting needs a running home; start it with `cave-home run`.");
             ExitCode::SUCCESS
         }
-        Command::NodeList | Command::NodeJoin { .. } | Command::Backup { .. } | Command::Restore { .. } => {
+        Command::NodeList
+        | Command::NodeJoin { .. }
+        | Command::Backup { .. }
+        | Command::Restore { .. } => {
             println!("This needs a running home; start it with `cave-home run`.");
             ExitCode::SUCCESS
         }
@@ -142,7 +145,10 @@ fn boot(role: ServeRole, cfg: &Config) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    println!("Starting your home as a {} node (Ctrl-C to stop)…", role.as_str());
+    println!(
+        "Starting your home as a {} node (Ctrl-C to stop)…",
+        role.as_str()
+    );
     match runtime.block_on(server::run(rt_cfg)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -155,12 +161,18 @@ fn boot(role: ServeRole, cfg: &Config) -> ExitCode {
 fn report_plan(cfg: &Config) -> ExitCode {
     match Plan::compute(cfg) {
         Ok(plan) => {
-            println!("Your home `{}` would start these parts, in order:", cfg.node_name);
+            println!(
+                "Your home `{}` would start these parts, in order:",
+                cfg.node_name
+            );
             for (i, c) in plan.steps().iter().enumerate() {
                 println!("  {}. {}", i + 1, c.friendly_name());
             }
             let down = ShutdownPlan::from_bootstrap(&plan);
-            println!("(On stop it winds down in the reverse order: {} parts.)", down.len());
+            println!(
+                "(On stop it winds down in the reverse order: {} parts.)",
+                down.len()
+            );
             println!("Start it for real with `cave-home serve server`.");
             ExitCode::SUCCESS
         }

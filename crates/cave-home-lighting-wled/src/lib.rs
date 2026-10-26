@@ -71,9 +71,9 @@ pub mod label;
 pub mod segment;
 pub mod state;
 
-pub use color::{kelvin_to_rgb, Hsv, Rgb, Rgbw};
-pub use command::{headline, Command, CommandError};
-pub use effect::{effect_name, Effect, Palette, EFFECTS, PALETTES};
+pub use color::{Hsv, Rgb, Rgbw, kelvin_to_rgb};
+pub use command::{Command, CommandError, headline};
+pub use effect::{EFFECTS, Effect, PALETTES, Palette, effect_name};
 pub use label::Lang;
 pub use segment::Segment;
 pub use state::{Nightlight, State};

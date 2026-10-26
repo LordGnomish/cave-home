@@ -67,15 +67,24 @@ pub struct WatchEvent {
 ///   etcd cannot replay history that compaction removed
 ///   (`ErrCompacted` on a watch).
 /// * [`KineError::EmptyKey`] / [`KineError::InvalidRange`] from the filter.
-pub fn watch(store: &Store, filter: &RangeRequest, start_revision: Revision) -> Result<Vec<WatchEvent>> {
+pub fn watch(
+    store: &Store,
+    filter: &RangeRequest,
+    start_revision: Revision,
+) -> Result<Vec<WatchEvent>> {
     if start_revision < 0 {
-        return Err(KineError::NegativeRevision { revision: start_revision });
+        return Err(KineError::NegativeRevision {
+            revision: start_revision,
+        });
     }
     let compacted = store.compacted_revision();
     // A watch from a revision strictly below the compacted floor cannot be
     // satisfied: the events between start_revision and the floor are gone.
     if start_revision != 0 && start_revision < compacted {
-        return Err(KineError::Compacted { requested: start_revision, compacted });
+        return Err(KineError::Compacted {
+            requested: start_revision,
+            compacted,
+        });
     }
     validate_filter(filter)?;
 
@@ -84,7 +93,11 @@ pub fn watch(store: &Store, filter: &RangeRequest, start_revision: Revision) -> 
         .iter()
         .filter(|r| r.mod_revision > start_revision && filter_contains(filter, &r.key))
         .map(|r| WatchEvent {
-            kind: if r.deleted { EventKind::Delete } else { EventKind::Put },
+            kind: if r.deleted {
+                EventKind::Delete
+            } else {
+                EventKind::Put
+            },
             key: r.key.clone(),
             value: r.value.clone(),
             // The pure model does not track old_value; prev_kv is filled by the
@@ -103,9 +116,7 @@ fn filter_contains(filter: &RangeRequest, candidate: &[u8]) -> bool {
         RangeEnd::Single => candidate == filter.key.as_slice(),
         RangeEnd::Prefix => candidate.starts_with(&filter.key),
         RangeEnd::AllKeys => true,
-        RangeEnd::Explicit(end) => {
-            candidate >= filter.key.as_slice() && candidate < end.as_slice()
-        }
+        RangeEnd::Explicit(end) => candidate >= filter.key.as_slice() && candidate < end.as_slice(),
     }
 }
 
@@ -200,7 +211,10 @@ mod tests {
         s.create(b"k", b"v2", 0).unwrap(); // 3 create_rev 3
         let evs = watch(&s, &RangeRequest::key(b"k"), 0).unwrap();
         assert_eq!(evs[0].create_revision, 1);
-        assert_eq!(evs[2].create_revision, 3, "recreate has a new create_revision");
+        assert_eq!(
+            evs[2].create_revision, 3,
+            "recreate has a new create_revision"
+        );
     }
 
     #[test]
@@ -208,7 +222,13 @@ mod tests {
         let mut s = history();
         compact(&mut s, 2).unwrap();
         let err = watch(&s, &RangeRequest::all(), 1).unwrap_err();
-        assert_eq!(err, KineError::Compacted { requested: 1, compacted: 2 });
+        assert_eq!(
+            err,
+            KineError::Compacted {
+                requested: 1,
+                compacted: 2
+            }
+        );
     }
 
     #[test]
@@ -232,6 +252,9 @@ mod tests {
     #[test]
     fn watch_rejects_empty_key_filter() {
         let s = history();
-        assert_eq!(watch(&s, &RangeRequest::key(b""), 0), Err(KineError::EmptyKey));
+        assert_eq!(
+            watch(&s, &RangeRequest::key(b""), 0),
+            Err(KineError::EmptyKey)
+        );
     }
 }

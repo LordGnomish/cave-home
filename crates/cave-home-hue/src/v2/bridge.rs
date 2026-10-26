@@ -111,7 +111,10 @@ mod tests {
 
     #[tokio::test]
     async fn initialize_pulls_all_resource_controllers() {
-        let mk = |data| V2Envelope { errors: vec![], data };
+        let mk = |data| V2Envelope {
+            errors: vec![],
+            data,
+        };
         // pop() yields the last element first; initialize() pulls in order
         // lights, scenes, grouped_light, motion, button — so push in reverse.
         let req = Arc::new(StubReq {

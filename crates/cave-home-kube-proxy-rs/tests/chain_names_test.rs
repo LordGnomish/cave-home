@@ -101,7 +101,8 @@ fn service_port_endpoint_chain_name_for_ns1_svc1_endpoint() {
 #[test]
 fn chain_names_are_28_chars_or_less() {
     // Upstream: iptables chain names must be <= 28 chars.
-    let svc = service_port_policy_cluster_chain("very-long-namespace/very-long-service:portname", "tcp");
+    let svc =
+        service_port_policy_cluster_chain("very-long-namespace/very-long-service:portname", "tcp");
     assert!(svc.len() <= 28, "got {} ({} chars)", svc, svc.len());
     let sep = service_port_endpoint_chain_name(
         "very-long-namespace/very-long-service:portname",

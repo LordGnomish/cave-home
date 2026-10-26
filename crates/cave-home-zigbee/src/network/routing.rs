@@ -203,7 +203,10 @@ mod tests {
         let mut t = RoutingTable::new();
         t.upsert(entry(0x1234, 0x0001));
         t.set_status(0x1234, RoutingStatus::DiscoveryFailed);
-        assert_eq!(t.lookup(0x1234).unwrap().status, RoutingStatus::DiscoveryFailed);
+        assert_eq!(
+            t.lookup(0x1234).unwrap().status,
+            RoutingStatus::DiscoveryFailed
+        );
     }
 
     #[test]

@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use parking_lot::Mutex;
 
 use crate::error::{Result, TeslaError};
-use crate::fleet_api::client::{send_with_retry, Backoff, Clock, FleetClient, HttpTransport};
+use crate::fleet_api::client::{Backoff, Clock, FleetClient, HttpTransport, send_with_retry};
 use crate::fleet_api::endpoints::{EnergyEndpoint, HistoryKind, HistoryPeriod};
 use crate::fleet_api::types::{Envelope, HistorySeries, LiveStatus, SiteInfo};
 use crate::models::{BatteryData, DateRange, HistoryData, OpMode, PowerFlowData, SiteStatus};
@@ -267,8 +267,8 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::fleet_api::client::{FleetClient, ManualClock, MockTransport};
     use crate::fleet_api::Region;
+    use crate::fleet_api::client::{FleetClient, ManualClock, MockTransport};
     use crate::models::OpMode;
 
     const LIVE: &str = r#"{"response":{"solar_power":3000,"battery_power":-1000,"load_power":2000,
@@ -301,10 +301,15 @@ mod tests {
         // Prime the cache.
         let _ = p.get_power_flow().await.unwrap();
         // Now the API goes dark; advance past the rate-limit but within TTL.
-        p.client().transport().set_failure(Some("network down".into()));
+        p.client()
+            .transport()
+            .set_failure(Some("network down".into()));
         clock.advance(60_000);
         let f = p.get_power_flow().await.unwrap();
-        assert!((f.pv_watts - 3000.0).abs() < f64::EPSILON, "served stale snapshot");
+        assert!(
+            (f.pv_watts - 3000.0).abs() < f64::EPSILON,
+            "served stale snapshot"
+        );
     }
 
     #[tokio::test]
@@ -331,9 +336,10 @@ mod tests {
     #[tokio::test]
     async fn get_status_merges_live_and_info() {
         let clock = Arc::new(ManualClock::new(0));
-        let t = MockTransport::new()
-            .route("/live_status", 200, LIVE)
-            .route("/site_info", 200, INFO);
+        let t =
+            MockTransport::new()
+                .route("/live_status", 200, LIVE)
+                .route("/site_info", 200, INFO);
         let p = provider(t, clock);
         let s = p.get_status().await.unwrap();
         assert_eq!(s.name.as_deref(), Some("Cave"));
@@ -359,7 +365,13 @@ mod tests {
         let p = provider(t, clock);
         p.set_backup_reserve(25).await.unwrap();
         let reqs = p.client().transport().requests.lock();
-        assert!(reqs[0].body.as_deref().unwrap().contains("\"backup_reserve_percent\":25"));
+        assert!(
+            reqs[0]
+                .body
+                .as_deref()
+                .unwrap()
+                .contains("\"backup_reserve_percent\":25")
+        );
     }
 
     #[tokio::test]
@@ -369,7 +381,13 @@ mod tests {
         let p = provider(t, clock);
         p.set_operation_mode(OpMode::Backup).await.unwrap();
         let reqs = p.client().transport().requests.lock();
-        assert!(reqs[0].body.as_deref().unwrap().contains("\"default_real_mode\":\"backup\""));
+        assert!(
+            reqs[0]
+                .body
+                .as_deref()
+                .unwrap()
+                .contains("\"default_real_mode\":\"backup\"")
+        );
     }
 
     #[tokio::test]

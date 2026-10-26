@@ -45,11 +45,14 @@ impl<T> AccessEnvelope<T> {
     /// code or a missing `data`.
     pub fn into_data(self) -> crate::Result<T> {
         if self.code == "SUCCESS" {
-            self.data.ok_or_else(|| UnifiError::Decode("Access response had no data".into()))
+            self.data
+                .ok_or_else(|| UnifiError::Decode("Access response had no data".into()))
         } else {
             Err(UnifiError::Http {
                 status: 0,
-                message: self.msg.unwrap_or_else(|| format!("Access code {}", self.code)),
+                message: self
+                    .msg
+                    .unwrap_or_else(|| format!("Access code {}", self.code)),
                 body: String::new(),
             })
         }
@@ -408,10 +411,9 @@ mod tests {
 
     #[test]
     fn access_log_denied_maps_to_no_permission() {
-        let w: WireAccessLog = serde_json::from_str(
-            r#"{"actor":"Unknown","door_id":"d1","result":"BLOCKED"}"#,
-        )
-        .unwrap();
+        let w: WireAccessLog =
+            serde_json::from_str(r#"{"actor":"Unknown","door_id":"d1","result":"BLOCKED"}"#)
+                .unwrap();
         assert!(!w.is_granted());
         assert_eq!(
             w.into_domain().outcome,
@@ -436,10 +438,19 @@ mod tests {
             door_name: None,
             actor: None,
         };
-        assert_eq!(mk("access.dps_change").kind(), NotificationKind::DoorbellRing);
-        assert_eq!(mk("access.logs.add").kind(), NotificationKind::AccessGranted);
+        assert_eq!(
+            mk("access.dps_change").kind(),
+            NotificationKind::DoorbellRing
+        );
+        assert_eq!(
+            mk("access.logs.add").kind(),
+            NotificationKind::AccessGranted
+        );
         assert_eq!(mk("access.denied").kind(), NotificationKind::AccessDenied);
-        assert_eq!(mk("access.device.update").kind(), NotificationKind::DeviceUpdate);
+        assert_eq!(
+            mk("access.device.update").kind(),
+            NotificationKind::DeviceUpdate
+        );
         assert_eq!(mk("something.else").kind(), NotificationKind::Other);
     }
 

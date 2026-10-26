@@ -25,7 +25,10 @@ pub enum Outcome {
 /// Whether `outcome` is a retryable network failure.
 #[must_use]
 pub const fn is_retryable(outcome: Outcome) -> bool {
-    matches!(outcome, Outcome::ConnectFailed | Outcome::Timeout | Outcome::Reset)
+    matches!(
+        outcome,
+        Outcome::ConnectFailed | Outcome::Timeout | Outcome::Reset
+    )
 }
 
 /// A bounded retry policy with exponential backoff.
@@ -43,7 +46,11 @@ impl RetryPolicy {
     /// A policy that never retries (one attempt, no backoff).
     #[must_use]
     pub const fn none() -> Self {
-        Self { attempts: 1, initial_interval_ms: 0, max_interval_ms: 0 }
+        Self {
+            attempts: 1,
+            initial_interval_ms: 0,
+            max_interval_ms: 0,
+        }
     }
 
     /// Whether another attempt is permitted given `attempts_made` so far (≥ 1).
@@ -71,11 +78,7 @@ impl RetryPolicy {
 /// The index of the next backend to try, rotating through `n` servers.
 #[must_use]
 pub const fn next_server_index(current: usize, n: usize) -> usize {
-    if n == 0 {
-        0
-    } else {
-        (current + 1) % n
-    }
+    if n == 0 { 0 } else { (current + 1) % n }
 }
 
 #[cfg(test)]
@@ -92,7 +95,11 @@ mod tests {
 
     #[test]
     fn should_retry_respects_attempt_budget() {
-        let p = RetryPolicy { attempts: 3, initial_interval_ms: 100, max_interval_ms: 2000 };
+        let p = RetryPolicy {
+            attempts: 3,
+            initial_interval_ms: 100,
+            max_interval_ms: 2000,
+        };
         assert!(p.should_retry(1));
         assert!(p.should_retry(2));
         assert!(!p.should_retry(3)); // 3 attempts made == budget, stop
@@ -107,7 +114,11 @@ mod tests {
 
     #[test]
     fn backoff_is_exponential_and_capped() {
-        let p = RetryPolicy { attempts: 5, initial_interval_ms: 100, max_interval_ms: 500 };
+        let p = RetryPolicy {
+            attempts: 5,
+            initial_interval_ms: 100,
+            max_interval_ms: 500,
+        };
         assert_eq!(p.backoff_ms(1), 100); // 100 * 2^0
         assert_eq!(p.backoff_ms(2), 200); // 100 * 2^1
         assert_eq!(p.backoff_ms(3), 400); // 100 * 2^2

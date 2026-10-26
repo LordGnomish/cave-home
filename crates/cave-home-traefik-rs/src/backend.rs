@@ -41,7 +41,11 @@ impl std::error::Error for BackendError {}
 /// # Errors
 /// Returns [`BackendError`] if the server URL has no authority or the assembled
 /// URI does not parse.
-pub fn upstream_uri(server_url: &str, path: &str, query: Option<&str>) -> Result<Uri, BackendError> {
+pub fn upstream_uri(
+    server_url: &str,
+    path: &str,
+    query: Option<&str>,
+) -> Result<Uri, BackendError> {
     let normalized = if server_url.contains("://") {
         server_url.to_string()
     } else {
@@ -103,6 +107,9 @@ mod tests {
 
     #[test]
     fn rejects_url_without_authority() {
-        assert!(matches!(upstream_uri("http://", "/x", None), Err(BackendError::InvalidServer(_))));
+        assert!(matches!(
+            upstream_uri("http://", "/x", None),
+            Err(BackendError::InvalidServer(_))
+        ));
     }
 }

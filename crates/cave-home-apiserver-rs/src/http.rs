@@ -86,14 +86,18 @@ impl Headers {
     /// Insert/append a header (lowercased name on the wire). Duplicates are kept;
     /// [`Headers::get`] returns the first.
     pub fn insert(&mut self, name: impl Into<String>, value: impl Into<String>) {
-        self.entries.push((name.into().to_ascii_lowercase(), value.into()));
+        self.entries
+            .push((name.into().to_ascii_lowercase(), value.into()));
     }
 
     /// Case-insensitive lookup of the first value for `name`.
     #[must_use]
     pub fn get(&self, name: &str) -> Option<&str> {
         let want = name.to_ascii_lowercase();
-        self.entries.iter().find(|(k, _)| *k == want).map(|(_, v)| v.as_str())
+        self.entries
+            .iter()
+            .find(|(k, _)| *k == want)
+            .map(|(_, v)| v.as_str())
     }
 
     /// All values for `name`, in insertion order (case-insensitive). Used for
@@ -101,7 +105,11 @@ impl Headers {
     #[must_use]
     pub fn get_all(&self, name: &str) -> Vec<&str> {
         let want = name.to_ascii_lowercase();
-        self.entries.iter().filter(|(k, _)| *k == want).map(|(_, v)| v.as_str()).collect()
+        self.entries
+            .iter()
+            .filter(|(k, _)| *k == want)
+            .map(|(_, v)| v.as_str())
+            .collect()
     }
 
     /// Remove every value for `name` (case-insensitive). Returns the number of
@@ -129,7 +137,9 @@ pub struct HttpError {
 
 impl HttpError {
     fn new(message: impl Into<String>) -> Self {
-        Self { message: message.into() }
+        Self {
+            message: message.into(),
+        }
     }
 }
 
@@ -171,7 +181,9 @@ impl Request {
         let body = raw[sep + 4..].to_vec();
 
         let mut lines = head.split("\r\n");
-        let request_line = lines.next().ok_or_else(|| HttpError::new("empty request"))?;
+        let request_line = lines
+            .next()
+            .ok_or_else(|| HttpError::new("empty request"))?;
         let mut parts = request_line.split(' ');
         let method = parts.next().ok_or_else(|| HttpError::new("no method"))?;
         let target = parts.next().ok_or_else(|| HttpError::new("no target"))?;
@@ -231,7 +243,10 @@ impl Request {
     /// The first decoded value for query parameter `key`.
     #[must_use]
     pub fn query_get(&self, key: &str) -> Option<String> {
-        self.query_pairs().into_iter().find(|(k, _)| k == key).map(|(_, v)| v)
+        self.query_pairs()
+            .into_iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v)
     }
 }
 
@@ -255,7 +270,12 @@ impl Response {
     /// A response with the given status and no body.
     #[must_use]
     pub fn new(status: u16) -> Self {
-        Self { status, headers: Headers::new(), body: Vec::new(), chunked: false }
+        Self {
+            status,
+            headers: Headers::new(),
+            body: Vec::new(),
+            chunked: false,
+        }
     }
 
     /// A chunked `application/json` streaming response whose `body` already holds
@@ -264,7 +284,12 @@ impl Response {
     pub fn chunked_json(framed_body: Vec<u8>) -> Self {
         let mut headers = Headers::new();
         headers.insert("content-type", "application/json");
-        Self { status: 200, headers, body: framed_body, chunked: true }
+        Self {
+            status: 200,
+            headers,
+            body: framed_body,
+            chunked: true,
+        }
     }
 
     /// Append a header (builder style).
@@ -292,8 +317,12 @@ impl Response {
             out.extend_from_slice(last_chunk());
             return out;
         }
-        let mut out = format!("HTTP/1.1 {} {}\r\n", self.status, reason_phrase(self.status))
-            .into_bytes();
+        let mut out = format!(
+            "HTTP/1.1 {} {}\r\n",
+            self.status,
+            reason_phrase(self.status)
+        )
+        .into_bytes();
         for (k, v) in self.headers.iter() {
             out.extend_from_slice(format!("{k}: {v}\r\n").as_bytes());
         }
@@ -309,8 +338,12 @@ impl Response {
     /// by [`last_chunk`].
     #[must_use]
     pub fn streaming_head(&self) -> Vec<u8> {
-        let mut out = format!("HTTP/1.1 {} {}\r\n", self.status, reason_phrase(self.status))
-            .into_bytes();
+        let mut out = format!(
+            "HTTP/1.1 {} {}\r\n",
+            self.status,
+            reason_phrase(self.status)
+        )
+        .into_bytes();
         for (k, v) in self.headers.iter() {
             if k.eq_ignore_ascii_case("content-length") {
                 continue;
@@ -470,10 +503,14 @@ mod tests {
 
     #[test]
     fn query_pairs_percent_decoded() {
-        let raw = b"GET /api/v1/pods?labelSelector=app%3Dweb%2Ctier%3Dfront&limit=5 HTTP/1.1\r\n\r\n";
+        let raw =
+            b"GET /api/v1/pods?labelSelector=app%3Dweb%2Ctier%3Dfront&limit=5 HTTP/1.1\r\n\r\n";
         let req = Request::parse(raw).expect("parse");
         let pairs = req.query_pairs();
-        assert_eq!(req.query_get("labelSelector").as_deref(), Some("app=web,tier=front"));
+        assert_eq!(
+            req.query_get("labelSelector").as_deref(),
+            Some("app=web,tier=front")
+        );
         assert_eq!(req.query_get("limit").as_deref(), Some("5"));
         assert_eq!(pairs.len(), 2);
     }
@@ -495,8 +532,7 @@ mod tests {
 
     #[test]
     fn response_serializes_status_headers_body() {
-        let resp = Response::new(200)
-            .with_body("application/json", b"{\"ok\":true}".to_vec());
+        let resp = Response::new(200).with_body("application/json", b"{\"ok\":true}".to_vec());
         let bytes = resp.to_bytes();
         let text = String::from_utf8(bytes).expect("utf8");
         assert!(text.starts_with("HTTP/1.1 200 OK\r\n"), "got: {text}");

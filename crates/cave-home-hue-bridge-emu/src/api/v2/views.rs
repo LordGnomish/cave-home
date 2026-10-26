@@ -80,11 +80,7 @@ pub fn device_view_for_light(light: &EmulatedLight) -> Value {
 
 /// Render a group as a `room` or `zone` v2 resource.
 #[must_use]
-pub fn room_or_zone_view(
-    group: &EmulatedGroup,
-    registry: &BridgeRegistry,
-    rtype: &str,
-) -> Value {
+pub fn room_or_zone_view(group: &EmulatedGroup, registry: &BridgeRegistry, rtype: &str) -> Value {
     let children: Vec<Value> = group
         .member_lights_v1
         .iter()
@@ -157,10 +153,7 @@ pub fn scene_view(scene: &EmulatedScene, registry: &BridgeRegistry) -> Value {
                 payload.insert("color".into(), json!({"xy": {"x": x, "y": y}}));
             }
             if let Some(mirek) = action.mirek {
-                payload.insert(
-                    "color_temperature".into(),
-                    json!({"mirek": mirek}),
-                );
+                payload.insert("color_temperature".into(), json!({"mirek": mirek}));
             }
             Some(json!({
                 "target": {"rid": light.id_v2.to_string(), "rtype": "light"},

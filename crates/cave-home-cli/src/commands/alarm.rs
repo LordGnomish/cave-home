@@ -16,16 +16,10 @@ pub fn cmd() -> Command {
         .subcommand(
             Command::new("arm")
                 .about("Arm (home / away / night)")
-                .arg(Arg::new("mode").long("mode").required(true))
+                .arg(Arg::new("mode").long("mode").required(true)),
         )
-        .subcommand(
-            Command::new("disarm")
-                .about("Disarm the alarm")
-        )
-        .subcommand(
-            Command::new("status")
-                .about("Show armed state + history")
-        )
+        .subcommand(Command::new("disarm").about("Disarm the alarm"))
+        .subcommand(Command::new("status").about("Show armed state + history"))
 }
 
 pub fn run() -> i32 {
@@ -40,7 +34,10 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
+        let names: Vec<_> = c
+            .get_subcommands()
+            .map(|s| s.get_name().to_string())
+            .collect();
         for sub in ["arm", "disarm", "status"] {
             assert!(
                 names.iter().any(|n| n == sub),

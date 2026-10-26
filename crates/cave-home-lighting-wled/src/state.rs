@@ -87,12 +87,8 @@ impl State {
     /// values are clamped into a byte.
     fn color_from_json(v: &Json) -> Rgb {
         let arr = v.as_arr().unwrap_or(&[]);
-        let ch = |i: usize| -> u8 {
-            arr.get(i)
-                .and_then(Json::as_int)
-                .unwrap_or(0)
-                .clamp(0, 255) as u8
-        };
+        let ch =
+            |i: usize| -> u8 { arr.get(i).and_then(Json::as_int).unwrap_or(0).clamp(0, 255) as u8 };
         Rgb::new(ch(0), ch(1), ch(2))
     }
 
@@ -149,7 +145,10 @@ impl State {
         let mut m = BTreeMap::new();
         m.insert("on".to_string(), Json::Bool(nl.on));
         m.insert("dur".to_string(), Json::Int(i64::from(nl.duration_min)));
-        m.insert("tbri".to_string(), Json::Int(i64::from(nl.target_brightness)));
+        m.insert(
+            "tbri".to_string(),
+            Json::Int(i64::from(nl.target_brightness)),
+        );
         m.insert("mode".to_string(), Json::Int(i64::from(nl.mode)));
         Json::Obj(m)
     }
@@ -167,7 +166,11 @@ impl State {
                 .and_then(Json::as_int)
                 .unwrap_or(0)
                 .clamp(0, 255) as u8,
-            mode: v.get("mode").and_then(Json::as_int).unwrap_or(1).clamp(0, 255) as u8,
+            mode: v
+                .get("mode")
+                .and_then(Json::as_int)
+                .unwrap_or(1)
+                .clamp(0, 255) as u8,
         }
     }
 
@@ -177,7 +180,10 @@ impl State {
         let mut m = BTreeMap::new();
         m.insert("on".to_string(), Json::Bool(self.on));
         m.insert("bri".to_string(), Json::Int(i64::from(self.brightness)));
-        m.insert("transition".to_string(), Json::Int(i64::from(self.transition)));
+        m.insert(
+            "transition".to_string(),
+            Json::Int(i64::from(self.transition)),
+        );
         // WLED uses -1 to mean "no preset".
         m.insert(
             "ps".to_string(),
@@ -300,7 +306,10 @@ mod tests {
         let mut s = State::default();
         s.preset = None;
         let json = s.to_json();
-        assert!(json.contains("\"ps\":-1"), "no-preset encodes as -1: {json}");
+        assert!(
+            json.contains("\"ps\":-1"),
+            "no-preset encodes as -1: {json}"
+        );
         let back = State::from_json(&json).expect("decode");
         assert_eq!(back.preset, None);
     }
@@ -325,8 +334,8 @@ mod tests {
     #[test]
     fn clamps_out_of_range_json_values() {
         // A device claiming bri=9999 must not overflow our u8.
-        let s = State::from_json("{\"bri\":9999,\"seg\":[{\"col\":[[999,-5,40]]}]}")
-            .expect("decode");
+        let s =
+            State::from_json("{\"bri\":9999,\"seg\":[{\"col\":[[999,-5,40]]}]}").expect("decode");
         assert_eq!(s.brightness, 255);
         assert_eq!(s.segments[0].colors[0], Rgb::new(255, 0, 40));
     }

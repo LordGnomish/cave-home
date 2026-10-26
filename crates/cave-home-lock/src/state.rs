@@ -125,7 +125,10 @@ mod tests {
 
     #[test]
     fn command_in_flight_states() {
-        assert_eq!(LockCommand::Lock.in_flight_state(), Some(LockState::Locking));
+        assert_eq!(
+            LockCommand::Lock.in_flight_state(),
+            Some(LockState::Locking)
+        );
         assert_eq!(
             LockCommand::Unlock.in_flight_state(),
             Some(LockState::Unlocking)

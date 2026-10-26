@@ -14,4 +14,4 @@ pub mod commands;
 pub mod slip;
 
 pub use commands::{DeconzCommand, DeconzResponse};
-pub use slip::{SlipFramer, SLIP_END, SLIP_ESC};
+pub use slip::{SLIP_END, SLIP_ESC, SlipFramer};

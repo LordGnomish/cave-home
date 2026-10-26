@@ -7,8 +7,8 @@
 //! Property (0x26) and Subscription Identifier (0x0B) repeat.
 
 use super::wire::{
-    get_binary, get_string, get_u16, get_u32, get_u8, get_var_int, put_binary,
-    put_string, put_u16, put_u32, put_u8, put_var_int, Error,
+    Error, get_binary, get_string, get_u8, get_u16, get_u32, get_var_int, put_binary, put_string,
+    put_u8, put_u16, put_u32, put_var_int,
 };
 use bytes::{Bytes, BytesMut};
 
@@ -110,9 +110,7 @@ impl Property {
             | Property::ResponseInformation(s)
             | Property::ServerReference(s)
             | Property::ReasonString(s) => put_string(s, out)?,
-            Property::CorrelationData(b) | Property::AuthenticationData(b) => {
-                put_binary(b, out)?
-            }
+            Property::CorrelationData(b) | Property::AuthenticationData(b) => put_binary(b, out)?,
             Property::UserProperty(k, v) => {
                 put_string(k, out)?;
                 put_string(v, out)?;
@@ -173,7 +171,10 @@ pub fn encode_properties(props: &[Property], out: &mut BytesMut) -> Result<(), E
         put_u8(p.identifier(), &mut body);
         p.encode_value(&mut body)?;
     }
-    put_var_int(u32::try_from(body.len()).map_err(|_| Error::VarIntTooLong)?, out)?;
+    put_var_int(
+        u32::try_from(body.len()).map_err(|_| Error::VarIntTooLong)?,
+        out,
+    )?;
     out.extend_from_slice(&body);
     Ok(())
 }
@@ -182,7 +183,9 @@ pub fn encode_properties(props: &[Property], out: &mut BytesMut) -> Result<(), E
 pub fn decode_properties(buf: &mut &[u8]) -> Result<Vec<Property>, Error> {
     let len = get_var_int(buf)? as usize;
     if buf.len() < len {
-        return Err(Error::Underflow { needed: len - buf.len() });
+        return Err(Error::Underflow {
+            needed: len - buf.len(),
+        });
     }
     let (mut block, rest) = buf.split_at(len);
     let mut props = Vec::new();

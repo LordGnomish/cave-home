@@ -40,7 +40,10 @@ pub fn slugify(value: &str) -> String {
 /// Returns `preferred` if it is not already in `existing`; otherwise appends
 /// `_2`, `_3`, … until an unused candidate is found.
 #[must_use]
-pub fn ensure_unique_string<S: BuildHasher>(preferred: &str, existing: &HashSet<String, S>) -> String {
+pub fn ensure_unique_string<S: BuildHasher>(
+    preferred: &str,
+    existing: &HashSet<String, S>,
+) -> String {
     if !existing.contains(preferred) {
         return preferred.to_owned();
     }
@@ -75,10 +78,19 @@ mod tests {
     #[test]
     fn ensure_unique_string_suffixes_on_collision() {
         let mut existing = HashSet::new();
-        assert_eq!(ensure_unique_string("light_kitchen", &existing), "light_kitchen");
+        assert_eq!(
+            ensure_unique_string("light_kitchen", &existing),
+            "light_kitchen"
+        );
         existing.insert("light_kitchen".to_owned());
-        assert_eq!(ensure_unique_string("light_kitchen", &existing), "light_kitchen_2");
+        assert_eq!(
+            ensure_unique_string("light_kitchen", &existing),
+            "light_kitchen_2"
+        );
         existing.insert("light_kitchen_2".to_owned());
-        assert_eq!(ensure_unique_string("light_kitchen", &existing), "light_kitchen_3");
+        assert_eq!(
+            ensure_unique_string("light_kitchen", &existing),
+            "light_kitchen_3"
+        );
     }
 }

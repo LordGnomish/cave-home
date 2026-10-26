@@ -79,7 +79,10 @@ impl OtaRequestor {
         let t = s
             .get_mut(&node_id)
             .ok_or_else(|| MatterError::NotFound(format!("ota target {:?}", node_id)))?;
-        if !matches!(t.state, OtaState::Idle | OtaState::Delayed | OtaState::Unknown) {
+        if !matches!(
+            t.state,
+            OtaState::Idle | OtaState::Delayed | OtaState::Unknown
+        ) {
             return Err(MatterError::IncorrectState(format!(
                 "cannot query in state {:?}",
                 t.state

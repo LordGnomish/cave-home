@@ -73,26 +73,56 @@ fn prometheus_exposition_lists_phase_counters_latency_and_errors() {
     // PV count by status (labeled gauge).
     assert!(text.contains("# TYPE localpath_pvs gauge"), "{text}");
     assert!(text.contains("localpath_pvs{phase=\"Bound\"} 2"), "{text}");
-    assert!(text.contains("localpath_pvs{phase=\"Released\"} 1"), "{text}");
-    assert!(text.contains("localpath_pvs{phase=\"Pending\"} 0"), "{text}");
+    assert!(
+        text.contains("localpath_pvs{phase=\"Released\"} 1"),
+        "{text}"
+    );
+    assert!(
+        text.contains("localpath_pvs{phase=\"Pending\"} 0"),
+        "{text}"
+    );
     assert!(text.contains("localpath_pvs_total 3"), "{text}");
 
     // counters.
-    assert!(text.contains("# TYPE localpath_provisions_total counter"), "{text}");
+    assert!(
+        text.contains("# TYPE localpath_provisions_total counter"),
+        "{text}"
+    );
     assert!(text.contains("localpath_provisions_total 7"), "{text}");
-    assert!(text.contains("localpath_provision_failures_total 1"), "{text}");
+    assert!(
+        text.contains("localpath_provision_failures_total 1"),
+        "{text}"
+    );
     assert!(text.contains("localpath_deletions_total 2"), "{text}");
-    assert!(text.contains("localpath_reconcile_errors_total 3"), "{text}");
+    assert!(
+        text.contains("localpath_reconcile_errors_total 3"),
+        "{text}"
+    );
 
     // provisioning latency summary (sum + count).
-    assert!(text.contains("# TYPE localpath_provision_latency_seconds summary"), "{text}");
-    assert!(text.contains("localpath_provision_latency_seconds_count 1"), "{text}");
-    assert!(text.contains("localpath_provision_latency_seconds_sum"), "{text}");
+    assert!(
+        text.contains("# TYPE localpath_provision_latency_seconds summary"),
+        "{text}"
+    );
+    assert!(
+        text.contains("localpath_provision_latency_seconds_count 1"),
+        "{text}"
+    );
+    assert!(
+        text.contains("localpath_provision_latency_seconds_sum"),
+        "{text}"
+    );
 
     // Every non-comment line is "metric value" (value parses as a number).
-    for line in text.lines().filter(|l| !l.starts_with('#') && !l.is_empty()) {
+    for line in text
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.is_empty())
+    {
         let parts: Vec<&str> = line.rsplitn(2, ' ').collect();
         assert_eq!(parts.len(), 2, "bad exposition line: {line:?}");
-        assert!(parts[0].parse::<f64>().is_ok(), "non-numeric value: {line:?}");
+        assert!(
+            parts[0].parse::<f64>().is_ok(),
+            "non-numeric value: {line:?}"
+        );
     }
 }

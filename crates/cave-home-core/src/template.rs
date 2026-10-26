@@ -127,7 +127,10 @@ mod tests {
             "unknown"
         );
         // malformed id -> unknown (no error)
-        assert_eq!(eng.render("{{ states('garbage') }}").expect("render"), "unknown");
+        assert_eq!(
+            eng.render("{{ states('garbage') }}").expect("render"),
+            "unknown"
+        );
     }
 
     #[test]
@@ -147,17 +150,20 @@ mod tests {
     fn state_attr_reads_attribute_and_supports_arithmetic() {
         let eng = engine_with_kitchen();
         assert_eq!(
-            eng.render("{{ state_attr('light.kitchen', 'brightness') }}").expect("r"),
+            eng.render("{{ state_attr('light.kitchen', 'brightness') }}")
+                .expect("r"),
             "200"
         );
         // the value is a real number, usable in arithmetic
         assert_eq!(
-            eng.render("{{ state_attr('light.kitchen', 'brightness') // 2 }}").expect("r"),
+            eng.render("{{ state_attr('light.kitchen', 'brightness') // 2 }}")
+                .expect("r"),
             "100"
         );
         // missing attribute renders as the none token
         assert_eq!(
-            eng.render("{{ state_attr('light.kitchen', 'nope') }}").expect("r"),
+            eng.render("{{ state_attr('light.kitchen', 'nope') }}")
+                .expect("r"),
             "none"
         );
     }
@@ -166,11 +172,13 @@ mod tests {
     fn is_state_attr_compares_value() {
         let eng = engine_with_kitchen();
         assert_eq!(
-            eng.render("{{ is_state_attr('light.kitchen', 'brightness', 200) }}").expect("r"),
+            eng.render("{{ is_state_attr('light.kitchen', 'brightness', 200) }}")
+                .expect("r"),
             "true"
         );
         assert_eq!(
-            eng.render("{{ is_state_attr('light.kitchen', 'brightness', 5) }}").expect("r"),
+            eng.render("{{ is_state_attr('light.kitchen', 'brightness', 5) }}")
+                .expect("r"),
             "false"
         );
     }

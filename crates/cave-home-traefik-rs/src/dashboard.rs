@@ -94,7 +94,11 @@ impl Snapshot {
             })
             .collect();
 
-        Self { routers, services, middlewares: middleware_names.into_iter().collect() }
+        Self {
+            routers,
+            services,
+            middlewares: middleware_names.into_iter().collect(),
+        }
     }
 
     /// Serialize the snapshot to JSON.
@@ -114,9 +118,13 @@ mod tests {
     use crate::router::Router;
 
     fn config() -> DynamicConfig {
-        let router = Router::new("api", "Host(`app.example`) && PathPrefix(`/api`)", "api-svc")
-            .unwrap()
-            .with_tls(true);
+        let router = Router::new(
+            "api",
+            "Host(`app.example`) && PathPrefix(`/api`)",
+            "api-svc",
+        )
+        .unwrap()
+        .with_tls(true);
         let service = Service::new(
             "api-svc",
             vec![

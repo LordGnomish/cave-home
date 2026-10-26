@@ -103,7 +103,11 @@ mod tests {
             DoorbellEvent::CallEnded,
             DoorbellEvent::VisitorTimeout,
         ] {
-            assert_eq!(MediaRequest::for_event(ev, 0), None, "{ev:?} should not capture");
+            assert_eq!(
+                MediaRequest::for_event(ev, 0),
+                None,
+                "{ev:?} should not capture"
+            );
         }
     }
 }

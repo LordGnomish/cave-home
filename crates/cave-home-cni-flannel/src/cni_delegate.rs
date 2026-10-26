@@ -91,7 +91,12 @@ impl DelegateConfig {
              \"ipam\":{{\"type\":\"host-local\",\
              \"ranges\":[[{{\"subnet\":\"{}\"}}]],\
              \"routes\":[{{\"dst\":\"{}\"}}]}}}}",
-            self.name, self.cni_version, DELEGATE_TYPE, env.mtu, self.bridge, node_subnet,
+            self.name,
+            self.cni_version,
+            DELEGATE_TYPE,
+            env.mtu,
+            self.bridge,
+            node_subnet,
             pod_network
         );
         j

@@ -24,13 +24,17 @@ impl LockFeatures {
     /// A plain deadbolt: lock and unlock only.
     #[must_use]
     pub const fn deadbolt() -> Self {
-        Self { supports_open: false }
+        Self {
+            supports_open: false,
+        }
     }
 
     /// A latch-capable lock that can also pull the door open.
     #[must_use]
     pub const fn with_open() -> Self {
-        Self { supports_open: true }
+        Self {
+            supports_open: true,
+        }
     }
 }
 
@@ -72,7 +76,10 @@ impl Lock {
     /// A newly seen lock whose real state is not yet known.
     #[must_use]
     pub const fn new(features: LockFeatures) -> Self {
-        Self { state: LockState::Unknown, features }
+        Self {
+            state: LockState::Unknown,
+            features,
+        }
     }
 
     /// A lock that has reported a known starting state.
@@ -131,9 +138,7 @@ impl Lock {
     /// current state.
     pub fn apply(&mut self, command: LockCommand) -> Result<LockState, TransitionError> {
         self.is_legal(command)?;
-        self.state = command
-            .in_flight_state()
-            .unwrap_or(LockState::Open);
+        self.state = command.in_flight_state().unwrap_or(LockState::Open);
         Ok(self.state)
     }
 
@@ -154,9 +159,7 @@ impl Lock {
         self.is_legal(command)?;
         match credential.verify(presented) {
             CodeVerdict::Accepted => self.apply(command),
-            CodeVerdict::Rejected | CodeVerdict::LockedOut => {
-                Err(TransitionError::CodeRejected)
-            }
+            CodeVerdict::Rejected | CodeVerdict::LockedOut => Err(TransitionError::CodeRejected),
         }
     }
 
@@ -255,7 +258,11 @@ mod tests {
             lock.apply(LockCommand::Open),
             Err(TransitionError::Unsupported)
         );
-        assert_eq!(lock.state(), LockState::Locked, "rejected open changes nothing");
+        assert_eq!(
+            lock.state(),
+            LockState::Locked,
+            "rejected open changes nothing"
+        );
     }
 
     #[test]
@@ -367,6 +374,10 @@ mod tests {
             lock.apply_with_code(LockCommand::Unlock, &mut cred, &attempt),
             Err(TransitionError::IllegalTransition)
         );
-        assert_eq!(cred.failure_count(), 0, "illegal command must not burn the lock-out budget");
+        assert_eq!(
+            cred.failure_count(),
+            0,
+            "illegal command must not burn the lock-out budget"
+        );
     }
 }

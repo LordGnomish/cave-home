@@ -30,7 +30,10 @@ pub struct ValidationError {
 
 impl ValidationError {
     fn new(key: impl Into<String>, message: impl Into<String>) -> Self {
-        Self { key: key.into(), message: message.into() }
+        Self {
+            key: key.into(),
+            message: message.into(),
+        }
     }
 }
 
@@ -56,12 +59,22 @@ pub struct Field {
 impl Field {
     #[must_use]
     pub fn required(key: impl Into<String>, ty: FieldType) -> Self {
-        Self { key: key.into(), ty, required: true, default: None }
+        Self {
+            key: key.into(),
+            ty,
+            required: true,
+            default: None,
+        }
     }
 
     #[must_use]
     pub fn optional(key: impl Into<String>, ty: FieldType) -> Self {
-        Self { key: key.into(), ty, required: false, default: None }
+        Self {
+            key: key.into(),
+            ty,
+            required: false,
+            default: None,
+        }
     }
 
     #[must_use]
@@ -83,7 +96,10 @@ pub struct Schema {
 impl Schema {
     #[must_use]
     pub const fn new(fields: Vec<Field>) -> Self {
-        Self { fields, allow_extra: false }
+        Self {
+            fields,
+            allow_extra: false,
+        }
     }
 
     #[must_use]
@@ -243,16 +259,26 @@ impl CoreConfig {
 
         // Post-schema value checks HA enforces beyond the type schema.
         let mut errors = Vec::new();
-        let str_of = |k: &str| map.get(k).and_then(serde_yaml::Value::as_str).map(str::to_owned);
+        let str_of = |k: &str| {
+            map.get(k)
+                .and_then(serde_yaml::Value::as_str)
+                .map(str::to_owned)
+        };
         let f64_of = |k: &str| map.get(k).and_then(serde_yaml::Value::as_f64);
 
         let latitude = f64_of("latitude").unwrap_or(defaults.latitude);
         if !(-90.0..=90.0).contains(&latitude) {
-            errors.push(ValidationError::new("latitude", "must be between -90 and 90"));
+            errors.push(ValidationError::new(
+                "latitude",
+                "must be between -90 and 90",
+            ));
         }
         let longitude = f64_of("longitude").unwrap_or(defaults.longitude);
         if !(-180.0..=180.0).contains(&longitude) {
-            errors.push(ValidationError::new("longitude", "must be between -180 and 180"));
+            errors.push(ValidationError::new(
+                "longitude",
+                "must be between -180 and 180",
+            ));
         }
 
         let unit_token = str_of("unit_system").unwrap_or_else(|| "metric".to_owned());
@@ -277,7 +303,10 @@ impl CoreConfig {
             name: str_of("name").unwrap_or(defaults.name),
             latitude,
             longitude,
-            elevation: map.get("elevation").and_then(serde_yaml::Value::as_i64).unwrap_or(defaults.elevation),
+            elevation: map
+                .get("elevation")
+                .and_then(serde_yaml::Value::as_i64)
+                .unwrap_or(defaults.elevation),
             unit_system: unit_system.unwrap_or_default(),
             time_zone: str_of("time_zone").unwrap_or(defaults.time_zone),
             currency: str_of("currency").unwrap_or(defaults.currency),
@@ -311,7 +340,10 @@ mod tests {
         let err = schema.validate(&parse("port: 80")).unwrap_err();
         assert_eq!(
             err,
-            ConfigError::Validation(vec![ValidationError::new("name", "required key is missing")])
+            ConfigError::Validation(vec![ValidationError::new(
+                "name",
+                "required key is missing"
+            )])
         );
     }
 
@@ -346,7 +378,10 @@ mod tests {
     #[test]
     fn schema_rejects_non_mapping() {
         let schema = Schema::new(vec![]);
-        assert_eq!(schema.validate(&parse("- 1\n- 2")).unwrap_err(), ConfigError::NotAMapping);
+        assert_eq!(
+            schema.validate(&parse("- 1\n- 2")).unwrap_err(),
+            ConfigError::NotAMapping
+        );
     }
 
     #[test]
@@ -383,9 +418,13 @@ mod tests {
     #[test]
     fn core_config_rejects_out_of_range_coordinates() {
         let err = CoreConfig::from_yaml("latitude: 999\nlongitude: 4.0").unwrap_err();
-        assert!(matches!(err, ConfigError::Validation(ref v) if v.iter().any(|e| e.key == "latitude")));
+        assert!(
+            matches!(err, ConfigError::Validation(ref v) if v.iter().any(|e| e.key == "latitude"))
+        );
         let err2 = CoreConfig::from_yaml("longitude: -500").unwrap_err();
-        assert!(matches!(err2, ConfigError::Validation(ref v) if v.iter().any(|e| e.key == "longitude")));
+        assert!(
+            matches!(err2, ConfigError::Validation(ref v) if v.iter().any(|e| e.key == "longitude"))
+        );
     }
 
     #[test]
@@ -396,6 +435,9 @@ mod tests {
 
     #[test]
     fn core_config_bad_yaml_errors() {
-        assert!(matches!(CoreConfig::from_yaml("name: : :").unwrap_err(), ConfigError::Yaml(_)));
+        assert!(matches!(
+            CoreConfig::from_yaml("name: : :").unwrap_err(),
+            ConfigError::Yaml(_)
+        ));
     }
 }

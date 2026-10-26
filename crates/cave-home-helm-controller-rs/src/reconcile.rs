@@ -84,8 +84,7 @@ pub fn decide(
         },
         ReleaseState::Absent => Action::Install,
         ReleaseState::Deployed { applied_hash, .. } => {
-            let config =
-                config_values.map(|v| crate::chart::HelmChartConfig { values: Some(v) });
+            let config = config_values.map(|v| crate::chart::HelmChartConfig { values: Some(v) });
             let desired_hash = desired.desired_hash(chart_defaults, config.as_ref());
             if *applied_hash == desired_hash {
                 Action::NoOp
@@ -203,7 +202,9 @@ mod tests {
         let mut c2 = chart();
         let old_hash = c2.desired_hash(None, None);
         // Now the desired spec changes its values: same observed hash is stale.
-        c2.spec.set.insert("replicas".into(), Value::Number("3".into()));
+        c2.spec
+            .set
+            .insert("replicas".into(), Value::Number("3".into()));
         let obs = ReleaseState::Deployed {
             applied_hash: old_hash,
             revision: 1,

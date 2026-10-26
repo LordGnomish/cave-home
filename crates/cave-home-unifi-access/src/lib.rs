@@ -104,4 +104,4 @@ pub use door::{AccessDoor, AccessHub, DoorId, DoorPosition, LockState, RelayStat
 pub use event::{AccessEvent, AccessLog, AccessOutcome, Direction};
 pub use label::{AccessMessage, Lang};
 pub use policy::{AccessDecision, DenyReason, Permission, Policy};
-pub use schedule::{minute_of_week, Schedule, Window, MINUTES_PER_WEEK};
+pub use schedule::{MINUTES_PER_WEEK, Schedule, Window, minute_of_week};

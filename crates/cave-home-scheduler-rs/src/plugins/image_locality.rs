@@ -5,7 +5,7 @@
 //!         pkg/scheduler/framework/plugins/imagelocality/image_locality.go
 
 use crate::cache::NodeInfo;
-use crate::framework::{CycleState, ScorePlugin, Status, MAX_NODE_SCORE};
+use crate::framework::{CycleState, MAX_NODE_SCORE, ScorePlugin, Status};
 use crate::types::Pod;
 
 pub struct ImageLocality;

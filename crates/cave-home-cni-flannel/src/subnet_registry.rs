@@ -114,8 +114,8 @@ impl LeaseAttrs {
             .ok_or(LeaseDecodeError::MissingField("PublicIP"))?
             .parse()
             .map_err(|_| LeaseDecodeError::Malformed)?;
-        let backend = json_str(s, "BackendType")
-            .ok_or(LeaseDecodeError::MissingField("BackendType"))?;
+        let backend =
+            json_str(s, "BackendType").ok_or(LeaseDecodeError::MissingField("BackendType"))?;
         match backend.as_str() {
             "vxlan" => {
                 let mac: MacAddr = json_str(s, "VtepMAC")
@@ -136,8 +136,8 @@ impl LeaseAttrs {
                 vni: 0,
             }),
             "wireguard" => {
-                let key = json_str(s, "PublicKey")
-                    .ok_or(LeaseDecodeError::MissingField("PublicKey"))?;
+                let key =
+                    json_str(s, "PublicKey").ok_or(LeaseDecodeError::MissingField("PublicKey"))?;
                 Ok(Self {
                     data: NodeBackendData::Wireguard {
                         public_ip,
@@ -344,7 +344,10 @@ mod tests {
         let attrs = LeaseAttrs::from_json(json).expect("decode");
         assert_eq!(attrs.vni, 1);
         match attrs.data {
-            NodeBackendData::Vxlan { public_ip, vtep_mac } => {
+            NodeBackendData::Vxlan {
+                public_ip,
+                vtep_mac,
+            } => {
                 assert_eq!(public_ip, v4("10.0.0.5"));
                 assert_eq!(vtep_mac.to_string(), "de:ad:be:ef:00:01");
             }
@@ -385,7 +388,8 @@ mod tests {
             },
             vni: 1,
         };
-        reg.apply(&put(&full_key(sn), &attrs.to_json())).expect("add");
+        reg.apply(&put(&full_key(sn), &attrs.to_json()))
+            .expect("add");
         // The Delete carries no value, but the cache supplies the attrs.
         let removed = reg.apply(&del(&full_key(sn))).expect("removed");
         match removed {

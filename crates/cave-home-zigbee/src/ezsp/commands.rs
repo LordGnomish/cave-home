@@ -124,9 +124,7 @@ impl EzspCommand {
             Self::Version {
                 desired_protocol_version,
             } => vec![*desired_protocol_version],
-            Self::NetworkInit
-            | Self::GetNetworkParameters
-            | Self::LeaveNetwork => Vec::new(),
+            Self::NetworkInit | Self::GetNetworkParameters | Self::LeaveNetwork => Vec::new(),
             Self::PermitJoining { duration_seconds } => vec![*duration_seconds],
             Self::FormNetwork { encoded_params } => encoded_params.clone(),
         }

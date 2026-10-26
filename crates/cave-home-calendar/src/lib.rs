@@ -76,10 +76,10 @@ pub mod ical;
 pub mod label;
 pub mod rrule;
 
-pub use agenda::{agenda, next_occurrence, Occurrence};
+pub use agenda::{Occurrence, agenda, next_occurrence};
 pub use date::{Date, DateError, DateTime, Weekday};
-pub use event::{parse_duration, Duration, Event};
-pub use ical::parse::{parse_date_value, parse_vcalendar, ContentLine, DateValue, VEvent};
+pub use event::{Duration, Event, parse_duration};
 pub use ical::IcalError;
-pub use label::{event_headline, occurrence_phrase, recurrence_phrase, weekday_name, Lang};
+pub use ical::parse::{ContentLine, DateValue, VEvent, parse_date_value, parse_vcalendar};
+pub use label::{Lang, event_headline, occurrence_phrase, recurrence_phrase, weekday_name};
 pub use rrule::{ByDay, Freq, Limit, RRule};

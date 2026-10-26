@@ -22,6 +22,6 @@ pub(crate) mod wire;
 
 pub use codec::{decode_v5, encode_v5};
 pub use packet::PacketV5;
-pub use property::{decode_properties, encode_properties, Property};
+pub use property::{Property, decode_properties, encode_properties};
 pub use reason::ReasonCode;
 pub use wire::Error;

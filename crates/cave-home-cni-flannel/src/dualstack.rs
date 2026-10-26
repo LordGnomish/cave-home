@@ -66,7 +66,10 @@ impl fmt::Display for DualStackError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::FamilyMismatch => {
-                write!(f, "dual-stack config family mismatch (v4 plan must be IPv4, v6 plan IPv6)")
+                write!(
+                    f,
+                    "dual-stack config family mismatch (v4 plan must be IPv4, v6 plan IPv6)"
+                )
             }
             Self::V4Subnet(e) => write!(f, "IPv4 subnet: {e}"),
             Self::V6Subnet(e) => write!(f, "IPv6 subnet: {e}"),
@@ -104,8 +107,10 @@ impl DualStackSubnetManager {
         if !v4_cluster.is_ipv4() || !v6_cluster.is_ipv6() {
             return Err(DualStackError::FamilyMismatch);
         }
-        let v4 = SubnetManager::new(v4_cluster, v4_node_prefix).map_err(DualStackError::V4Subnet)?;
-        let v6 = SubnetManager::new(v6_cluster, v6_node_prefix).map_err(DualStackError::V6Subnet)?;
+        let v4 =
+            SubnetManager::new(v4_cluster, v4_node_prefix).map_err(DualStackError::V4Subnet)?;
+        let v6 =
+            SubnetManager::new(v6_cluster, v6_node_prefix).map_err(DualStackError::V6Subnet)?;
         Ok(Self { v4, v6 })
     }
 
@@ -319,16 +324,18 @@ mod tests {
     #[test]
     fn allocate_rolls_back_v4_when_v6_exhausted() {
         // v4 has plenty of room; v6 (/127 → two /128 subnets) runs out first.
-        let mut m =
-            DualStackSubnetManager::new(cidr("10.42.0.0/16"), 24, cidr("fd00::/127"), 128)
-                .expect("mgr");
+        let mut m = DualStackSubnetManager::new(cidr("10.42.0.0/16"), 24, cidr("fd00::/127"), 128)
+            .expect("mgr");
         m.allocate("a").expect("a");
         m.allocate("b").expect("b");
         // The third node cannot get a v6 subnet → the whole pair must fail and
         // the v4 lease it grabbed must be rolled back.
         let err = m.allocate("c").unwrap_err();
         assert!(matches!(err, DualStackError::V6Subnet(_)));
-        assert!(m.v4().lease_for("c").is_none(), "v4 lease must be rolled back");
+        assert!(
+            m.v4().lease_for("c").is_none(),
+            "v4 lease must be rolled back"
+        );
         assert!(m.v6().lease_for("c").is_none());
     }
 

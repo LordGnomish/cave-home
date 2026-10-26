@@ -85,7 +85,10 @@ impl GroupsCluster {
                 "reserved group id 0x{id:04x}"
             )));
         }
-        let g = self.groups.entry(id).or_insert_with(|| Group::new(id, name));
+        let g = self
+            .groups
+            .entry(id)
+            .or_insert_with(|| Group::new(id, name));
         g.members.insert(ieee);
         Ok(())
     }
@@ -151,10 +154,13 @@ impl GroupsCluster {
     /// # Errors
     /// Returns [`ZigbeeError::Unknown`] if `id` doesn't exist.
     pub fn rename(&mut self, id: u16, new_name: impl Into<String>) -> Result<()> {
-        let g = self.groups.get_mut(&id).ok_or_else(|| ZigbeeError::Unknown {
-            kind: "group",
-            id: format!("0x{id:04x}"),
-        })?;
+        let g = self
+            .groups
+            .get_mut(&id)
+            .ok_or_else(|| ZigbeeError::Unknown {
+                kind: "group",
+                id: format!("0x{id:04x}"),
+            })?;
         g.name = new_name.into();
         Ok(())
     }

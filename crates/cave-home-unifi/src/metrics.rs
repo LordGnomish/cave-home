@@ -171,11 +171,7 @@ impl Metrics {
             "# HELP unifi_authenticated Whether the client currently holds a session (1/0)."
         );
         let _ = writeln!(out, "# TYPE unifi_authenticated gauge");
-        let _ = writeln!(
-            out,
-            "unifi_authenticated {}",
-            u8::from(i.authenticated)
-        );
+        let _ = writeln!(out, "unifi_authenticated {}", u8::from(i.authenticated));
 
         let _ = writeln!(
             out,
@@ -183,10 +179,7 @@ impl Metrics {
         );
         let _ = writeln!(out, "# TYPE unifi_ws_events_total counter");
         for (pillar, count) in &i.ws_events {
-            let _ = writeln!(
-                out,
-                "unifi_ws_events_total{{pillar=\"{pillar}\"}} {count}"
-            );
+            let _ = writeln!(out, "unifi_ws_events_total{{pillar=\"{pillar}\"}} {count}");
         }
         let _ = writeln!(
             out,
@@ -212,8 +205,9 @@ mod tests {
         assert_eq!(m.total_requests(), 3);
         let out = m.render_prometheus();
         assert!(out.contains("unifi_requests_total{endpoint=\"network/clients\"} 2"));
-        assert!(out
-            .contains("unifi_request_duration_seconds_sum{endpoint=\"network/clients\"} 0.3"));
+        assert!(
+            out.contains("unifi_request_duration_seconds_sum{endpoint=\"network/clients\"} 0.3")
+        );
     }
 
     #[test]

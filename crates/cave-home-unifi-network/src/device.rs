@@ -61,7 +61,11 @@ pub struct SwitchPort {
 impl SwitchPort {
     #[must_use]
     pub const fn new(number: u16, poe_capable: bool) -> Self {
-        Self { number, poe_capable, poe_active: false }
+        Self {
+            number,
+            poe_capable,
+            poe_active: false,
+        }
     }
 }
 

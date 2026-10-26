@@ -36,19 +36,28 @@ pub fn ops_from_json(value: &Value) -> Result<Vec<PatchOp>, Status> {
             .ok_or_else(|| Status::bad_request("JSON Patch operation missing \"path\""))?
             .to_string();
         let value_of = || {
-            item.get("value")
-                .cloned()
-                .ok_or_else(|| Status::bad_request(format!("JSON Patch {op:?} op requires \"value\"")))
+            item.get("value").cloned().ok_or_else(|| {
+                Status::bad_request(format!("JSON Patch {op:?} op requires \"value\""))
+            })
         };
         let parsed = match op {
-            "add" => PatchOp::Add { path, value: value_of()? },
-            "replace" => PatchOp::Replace { path, value: value_of()? },
-            "test" => PatchOp::Test { path, value: value_of()? },
+            "add" => PatchOp::Add {
+                path,
+                value: value_of()?,
+            },
+            "replace" => PatchOp::Replace {
+                path,
+                value: value_of()?,
+            },
+            "test" => PatchOp::Test {
+                path,
+                value: value_of()?,
+            },
             "remove" => PatchOp::Remove { path },
             other => {
                 return Err(Status::bad_request(format!(
                     "unknown JSON Patch op {other:?}"
-                )))
+                )));
             }
         };
         ops.push(parsed);
@@ -164,7 +173,9 @@ fn set_at(doc: &mut Value, path: &str, value: Value, allow_create: bool) -> Resu
         *doc = value;
         return Ok(());
     }
-    let (last, parents) = tokens.split_last().ok_or_else(|| Status::invalid("empty pointer"))?;
+    let (last, parents) = tokens
+        .split_last()
+        .ok_or_else(|| Status::invalid("empty pointer"))?;
     let mut cur = doc;
     for t in parents {
         cur = descend_mut(cur, t)
@@ -173,7 +184,9 @@ fn set_at(doc: &mut Value, path: &str, value: Value, allow_create: bool) -> Resu
     match cur {
         Value::Object(m) => {
             if !allow_create && !m.contains_key(last) {
-                return Err(Status::invalid(format!("replace target {path:?} does not exist")));
+                return Err(Status::invalid(format!(
+                    "replace target {path:?} does not exist"
+                )));
             }
             m.insert(last.clone(), value);
             Ok(())
@@ -181,7 +194,9 @@ fn set_at(doc: &mut Value, path: &str, value: Value, allow_create: bool) -> Resu
         Value::Array(a) => {
             if last == "-" {
                 if !allow_create {
-                    return Err(Status::invalid(format!("cannot replace at append index {path:?}")));
+                    return Err(Status::invalid(format!(
+                        "cannot replace at append index {path:?}"
+                    )));
                 }
                 a.push(value);
                 return Ok(());
@@ -202,7 +217,9 @@ fn set_at(doc: &mut Value, path: &str, value: Value, allow_create: bool) -> Resu
             }
             Ok(())
         }
-        _ => Err(Status::invalid(format!("cannot set on non-container at {path:?}"))),
+        _ => Err(Status::invalid(format!(
+            "cannot set on non-container at {path:?}"
+        ))),
     }
 }
 
@@ -219,7 +236,9 @@ fn remove_at(doc: &mut Value, path: &str) -> Result<(), Status> {
     match cur {
         Value::Object(m) => {
             if m.remove(last).is_none() {
-                return Err(Status::invalid(format!("remove target {path:?} does not exist")));
+                return Err(Status::invalid(format!(
+                    "remove target {path:?} does not exist"
+                )));
             }
             Ok(())
         }
@@ -233,7 +252,9 @@ fn remove_at(doc: &mut Value, path: &str) -> Result<(), Status> {
             a.remove(i);
             Ok(())
         }
-        _ => Err(Status::invalid(format!("cannot remove from non-container at {path:?}"))),
+        _ => Err(Status::invalid(format!(
+            "cannot remove from non-container at {path:?}"
+        ))),
     }
 }
 
@@ -408,16 +429,30 @@ mod tests {
         assert_eq!(ops.len(), 4);
         assert_eq!(
             ops[0],
-            PatchOp::Add { path: "/metadata/labels/x".into(), value: Value::from("1") }
+            PatchOp::Add {
+                path: "/metadata/labels/x".into(),
+                value: Value::from("1")
+            }
         );
         assert_eq!(
             ops[1],
-            PatchOp::Replace { path: "/spec/replicas".into(), value: Value::from(3_i64) }
+            PatchOp::Replace {
+                path: "/spec/replicas".into(),
+                value: Value::from(3_i64)
+            }
         );
-        assert_eq!(ops[2], PatchOp::Remove { path: "/status".into() });
+        assert_eq!(
+            ops[2],
+            PatchOp::Remove {
+                path: "/status".into()
+            }
+        );
         assert_eq!(
             ops[3],
-            PatchOp::Test { path: "/kind".into(), value: Value::from("Pod") }
+            PatchOp::Test {
+                path: "/kind".into(),
+                value: Value::from("Pod")
+            }
         );
     }
 
@@ -428,11 +463,13 @@ mod tests {
 
     #[test]
     fn ops_from_json_rejects_unknown_op_and_missing_path() {
-        assert!(ops_from_json(&Value::Array(vec![obj([
-            ("op", Value::from("frobnicate")),
-            ("path", Value::from("/x")),
-        ])]))
-        .is_err());
+        assert!(
+            ops_from_json(&Value::Array(vec![obj([
+                ("op", Value::from("frobnicate")),
+                ("path", Value::from("/x")),
+            ])]))
+            .is_err()
+        );
         assert!(ops_from_json(&Value::Array(vec![obj([("op", Value::from("add"))])])).is_err());
     }
 }

@@ -162,14 +162,9 @@ impl AccessLog {
             return false;
         }
         // Find this person's most recent granted passage with a known direction.
-        let last_known = self
-            .events
-            .iter()
-            .rev()
-            .find(|e| {
-                e.who == who
-                    && e.outcome.is_granted()
-                    && e.direction != Direction::Unknown
+        let last_known =
+            self.events.iter().rev().find(|e| {
+                e.who == who && e.outcome.is_granted() && e.direction != Direction::Unknown
             });
         matches!(last_known, Some(e) if e.direction == Direction::Entry)
     }
@@ -182,7 +177,12 @@ mod tests {
     #[test]
     fn records_grant_and_deny() {
         let mut log = AccessLog::new();
-        log.record(AccessEvent::granted("alice", DoorId::new("d1"), Direction::Entry, 1));
+        log.record(AccessEvent::granted(
+            "alice",
+            DoorId::new("d1"),
+            Direction::Entry,
+            1,
+        ));
         log.record(AccessEvent::denied(
             "bob",
             DoorId::new("d1"),
@@ -199,9 +199,24 @@ mod tests {
     #[test]
     fn capacity_evicts_oldest() {
         let mut log = AccessLog::with_capacity(2);
-        log.record(AccessEvent::granted("a", DoorId::new("d"), Direction::Entry, 1));
-        log.record(AccessEvent::granted("b", DoorId::new("d"), Direction::Entry, 2));
-        log.record(AccessEvent::granted("c", DoorId::new("d"), Direction::Entry, 3));
+        log.record(AccessEvent::granted(
+            "a",
+            DoorId::new("d"),
+            Direction::Entry,
+            1,
+        ));
+        log.record(AccessEvent::granted(
+            "b",
+            DoorId::new("d"),
+            Direction::Entry,
+            2,
+        ));
+        log.record(AccessEvent::granted(
+            "c",
+            DoorId::new("d"),
+            Direction::Entry,
+            3,
+        ));
         assert_eq!(log.len(), 2);
         assert_eq!(log.events()[0].who, "b"); // "a" evicted
         assert_eq!(log.last().expect("non-empty").who, "c");
@@ -210,8 +225,18 @@ mod tests {
     #[test]
     fn zero_capacity_keeps_latest() {
         let mut log = AccessLog::with_capacity(0);
-        log.record(AccessEvent::granted("a", DoorId::new("d"), Direction::Entry, 1));
-        log.record(AccessEvent::granted("b", DoorId::new("d"), Direction::Entry, 2));
+        log.record(AccessEvent::granted(
+            "a",
+            DoorId::new("d"),
+            Direction::Entry,
+            1,
+        ));
+        log.record(AccessEvent::granted(
+            "b",
+            DoorId::new("d"),
+            Direction::Entry,
+            2,
+        ));
         assert_eq!(log.len(), 1);
         assert_eq!(log.last().expect("non-empty").who, "b");
     }
@@ -219,9 +244,24 @@ mod tests {
     #[test]
     fn granted_for_filters_person_and_outcome() {
         let mut log = AccessLog::new();
-        log.record(AccessEvent::granted("alice", DoorId::new("d"), Direction::Entry, 1));
-        log.record(AccessEvent::denied("alice", DoorId::new("d"), DenyReason::OutsideSchedule, 2));
-        log.record(AccessEvent::granted("bob", DoorId::new("d"), Direction::Entry, 3));
+        log.record(AccessEvent::granted(
+            "alice",
+            DoorId::new("d"),
+            Direction::Entry,
+            1,
+        ));
+        log.record(AccessEvent::denied(
+            "alice",
+            DoorId::new("d"),
+            DenyReason::OutsideSchedule,
+            2,
+        ));
+        log.record(AccessEvent::granted(
+            "bob",
+            DoorId::new("d"),
+            Direction::Entry,
+            3,
+        ));
         let alice = log.granted_for("alice");
         assert_eq!(alice.len(), 1);
         assert_eq!(alice[0].tick, 1);
@@ -230,7 +270,12 @@ mod tests {
     #[test]
     fn passback_suspicious_on_double_entry() {
         let mut log = AccessLog::new();
-        log.record(AccessEvent::granted("alice", DoorId::new("d"), Direction::Entry, 1));
+        log.record(AccessEvent::granted(
+            "alice",
+            DoorId::new("d"),
+            Direction::Entry,
+            1,
+        ));
         // Alice already entered and has not exited — entering again is suspicious.
         assert!(log.is_passback_suspicious("alice", Direction::Entry));
     }
@@ -238,8 +283,18 @@ mod tests {
     #[test]
     fn passback_not_suspicious_after_exit() {
         let mut log = AccessLog::new();
-        log.record(AccessEvent::granted("alice", DoorId::new("d"), Direction::Entry, 1));
-        log.record(AccessEvent::granted("alice", DoorId::new("d"), Direction::Exit, 2));
+        log.record(AccessEvent::granted(
+            "alice",
+            DoorId::new("d"),
+            Direction::Entry,
+            1,
+        ));
+        log.record(AccessEvent::granted(
+            "alice",
+            DoorId::new("d"),
+            Direction::Exit,
+            2,
+        ));
         // She left; a fresh entry is fine.
         assert!(!log.is_passback_suspicious("alice", Direction::Entry));
     }
@@ -247,7 +302,12 @@ mod tests {
     #[test]
     fn passback_ignores_exit_intent() {
         let mut log = AccessLog::new();
-        log.record(AccessEvent::granted("alice", DoorId::new("d"), Direction::Entry, 1));
+        log.record(AccessEvent::granted(
+            "alice",
+            DoorId::new("d"),
+            Direction::Entry,
+            1,
+        ));
         // Leaving is never a passback concern.
         assert!(!log.is_passback_suspicious("alice", Direction::Exit));
     }

@@ -14,7 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use super::path::{base_path_on_node, folder_name, volume_path, PathError};
+use super::path::{PathError, base_path_on_node, folder_name, volume_path};
 use super::{DEFAULT_NODE_AFFINITY_KEY, DEFAULT_VOLUME_TYPE};
 use crate::local_path_provisioner::config::StorageClassConfig;
 
@@ -311,7 +311,11 @@ pub fn decide_provision(
     }
 
     // On shared FS the node is ignored in path resolution (upstream passes "").
-    let node_for_path = if shared_fs { "" } else { req.node_name.as_str() };
+    let node_for_path = if shared_fs {
+        ""
+    } else {
+        req.node_name.as_str()
+    };
     let base = base_path_on_node(cfg, node_for_path, &req.requested_path, selector)?;
     let folder = folder_name(&req.pv_name, &req.namespace, &req.pvc_name);
     let path = volume_path(&base, &folder);

@@ -80,7 +80,9 @@ impl Clock {
     ///   revision — etcd's `ErrFutureRev`.
     pub const fn resolve_read(&self, requested: Revision) -> Result<Revision> {
         if requested < 0 {
-            return Err(KineError::NegativeRevision { revision: requested });
+            return Err(KineError::NegativeRevision {
+                revision: requested,
+            });
         }
         if requested == CURRENT {
             return Ok(self.current);
@@ -137,7 +139,10 @@ mod tests {
         c.next();
         assert_eq!(
             c.resolve_read(9),
-            Err(KineError::FutureRevision { requested: 9, current: 1 })
+            Err(KineError::FutureRevision {
+                requested: 9,
+                current: 1
+            })
         );
     }
 

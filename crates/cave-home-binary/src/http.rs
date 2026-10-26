@@ -72,9 +72,18 @@ impl HttpRequest {
 
         let request_line = lines.next().ok_or(ParseError::BadRequestLine)?;
         let mut parts = request_line.split(' ');
-        let method = parts.next().filter(|s| !s.is_empty()).ok_or(ParseError::BadRequestLine)?;
-        let target = parts.next().filter(|s| !s.is_empty()).ok_or(ParseError::BadRequestLine)?;
-        let _version = parts.next().filter(|s| s.starts_with("HTTP/")).ok_or(ParseError::BadRequestLine)?;
+        let method = parts
+            .next()
+            .filter(|s| !s.is_empty())
+            .ok_or(ParseError::BadRequestLine)?;
+        let target = parts
+            .next()
+            .filter(|s| !s.is_empty())
+            .ok_or(ParseError::BadRequestLine)?;
+        let _version = parts
+            .next()
+            .filter(|s| s.starts_with("HTTP/"))
+            .ok_or(ParseError::BadRequestLine)?;
 
         let (path, query) = target.split_once('?').map_or((target, ""), |(p, q)| (p, q));
 
@@ -100,7 +109,10 @@ impl HttpRequest {
     #[must_use]
     pub fn header(&self, name: &str) -> Option<&str> {
         let lname = name.to_ascii_lowercase();
-        self.headers.iter().find(|(k, _)| *k == lname).map(|(_, v)| v.as_str())
+        self.headers
+            .iter()
+            .find(|(k, _)| *k == lname)
+            .map(|(_, v)| v.as_str())
     }
 
     /// The declared body length, if a valid `Content-Length` header is present.
@@ -109,7 +121,9 @@ impl HttpRequest {
     /// [`ParseError::BadContentLength`] if the header is present but unparseable.
     pub fn content_length(&self) -> Result<Option<usize>, ParseError> {
         self.header("content-length").map_or(Ok(None), |v| {
-            v.parse::<usize>().map(Some).map_err(|_| ParseError::BadContentLength)
+            v.parse::<usize>()
+                .map(Some)
+                .map_err(|_| ParseError::BadContentLength)
         })
     }
 }
@@ -146,7 +160,11 @@ impl HttpResponse {
     /// A plain-text response (`text/plain; charset=utf-8`).
     #[must_use]
     pub fn text(status: u16, body: impl Into<String>) -> Self {
-        Self::new(status, "text/plain; charset=utf-8", body.into().into_bytes())
+        Self::new(
+            status,
+            "text/plain; charset=utf-8",
+            body.into().into_bytes(),
+        )
     }
 
     /// Serialize the full HTTP/1.1 response (status line, headers, blank line,
@@ -154,7 +172,11 @@ impl HttpResponse {
     #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         use std::fmt::Write as _;
-        let mut head = format!("HTTP/1.1 {} {}\r\n", self.status, reason_phrase(self.status));
+        let mut head = format!(
+            "HTTP/1.1 {} {}\r\n",
+            self.status,
+            reason_phrase(self.status)
+        );
         for (name, value) in &self.headers {
             head.push_str(name);
             head.push_str(": ");
@@ -230,7 +252,10 @@ mod tests {
 
     #[test]
     fn incomplete_head_is_incomplete() {
-        assert_eq!(HttpRequest::parse(b"GET / HTTP/1.1\r\nHost: x"), Err(ParseError::Incomplete));
+        assert_eq!(
+            HttpRequest::parse(b"GET / HTTP/1.1\r\nHost: x"),
+            Err(ParseError::Incomplete)
+        );
         assert_eq!(head_end(b"GET / HTTP/1.1\r\nHost: x"), None);
     }
 
@@ -243,7 +268,10 @@ mod tests {
 
     #[test]
     fn bad_request_line_is_rejected() {
-        assert_eq!(HttpRequest::parse(b"GET\r\n\r\n"), Err(ParseError::BadRequestLine));
+        assert_eq!(
+            HttpRequest::parse(b"GET\r\n\r\n"),
+            Err(ParseError::BadRequestLine)
+        );
     }
 
     #[test]

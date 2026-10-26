@@ -232,11 +232,7 @@ fn parse_channels(device_obj: &BTreeMap<String, Json>) -> Vec<Channel> {
 
         let mut datapoints = Vec::new();
         parse_datapoints(fields.get("inputs"), Direction::Input, &mut datapoints);
-        parse_datapoints(
-            fields.get("outputs"),
-            Direction::Output,
-            &mut datapoints,
-        );
+        parse_datapoints(fields.get("outputs"), Direction::Output, &mut datapoints);
 
         channels.push(Channel {
             id: channel_id,

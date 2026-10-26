@@ -58,7 +58,10 @@ impl UserInfo {
     /// A user with no groups.
     #[must_use]
     pub fn new(name: impl Into<String>) -> Self {
-        Self { name: name.into(), groups: Vec::new() }
+        Self {
+            name: name.into(),
+            groups: Vec::new(),
+        }
     }
 
     /// Attach group memberships.
@@ -206,7 +209,11 @@ impl PolicyRule {
         if attrs.resource_request {
             verb_matches(&self.verbs, &attrs.verb)
                 && api_group_matches(&self.api_groups, &attrs.api_group)
-                && resource_matches(&self.resources, &attrs.combined_resource(), &attrs.subresource)
+                && resource_matches(
+                    &self.resources,
+                    &attrs.combined_resource(),
+                    &attrs.subresource,
+                )
                 && resource_name_matches(&self.resource_names, &attrs.name)
         } else {
             verb_matches(&self.verbs, &attrs.verb)
@@ -244,13 +251,21 @@ impl Subject {
     /// A user subject.
     #[must_use]
     pub fn user(name: impl Into<String>) -> Self {
-        Self { kind: SubjectKind::User, name: name.into(), namespace: String::new() }
+        Self {
+            kind: SubjectKind::User,
+            name: name.into(),
+            namespace: String::new(),
+        }
     }
 
     /// A group subject.
     #[must_use]
     pub fn group(name: impl Into<String>) -> Self {
-        Self { kind: SubjectKind::Group, name: name.into(), namespace: String::new() }
+        Self {
+            kind: SubjectKind::Group,
+            name: name.into(),
+            namespace: String::new(),
+        }
     }
 
     /// A service-account subject in `namespace`.
@@ -297,13 +312,19 @@ impl RoleRef {
     /// Reference a namespaced [`Role`].
     #[must_use]
     pub fn role(name: impl Into<String>) -> Self {
-        Self { kind: RoleRefKind::Role, name: name.into() }
+        Self {
+            kind: RoleRefKind::Role,
+            name: name.into(),
+        }
     }
 
     /// Reference a [`ClusterRole`].
     #[must_use]
     pub fn cluster_role(name: impl Into<String>) -> Self {
-        Self { kind: RoleRefKind::ClusterRole, name: name.into() }
+        Self {
+            kind: RoleRefKind::ClusterRole,
+            name: name.into(),
+        }
     }
 }
 
@@ -493,9 +514,7 @@ fn resource_matches(resources: &[String], combined: &str, subresource: &str) -> 
     resources.iter().any(|r| {
         r == "*"
             || r == combined
-            || (!subresource.is_empty()
-                && r.starts_with("*/")
-                && &r[2..] == subresource)
+            || (!subresource.is_empty() && r.starts_with("*/") && &r[2..] == subresource)
     })
 }
 
@@ -566,7 +585,11 @@ mod tests {
         let az = RbacAuthorizer::new()
             .with_cluster_role(ClusterRole {
                 name: "pod-reader".into(),
-                rules: vec![PolicyRule::resource_rule(&[""], &["pods"], &["get", "list"])],
+                rules: vec![PolicyRule::resource_rule(
+                    &[""],
+                    &["pods"],
+                    &["get", "list"],
+                )],
             })
             .with_cluster_role_binding(ClusterRoleBinding {
                 name: "alice-reads-pods".into(),
@@ -606,7 +629,11 @@ mod tests {
 
     #[test]
     fn wildcard_api_group_allows_any_group() {
-        let az = single_cluster_grant(PolicyRule::resource_rule(&["*"], &["deployments"], &["get"]));
+        let az = single_cluster_grant(PolicyRule::resource_rule(
+            &["*"],
+            &["deployments"],
+            &["get"],
+        ));
         let a = Attributes::resource(alice(), "get", "apps", "deployments", "default", "d");
         assert_eq!(az.authorize(&a), Decision::Allow);
     }
@@ -696,7 +723,8 @@ mod tests {
         let a = Attributes::resource(user, "get", "", "pods", "default", "p");
         assert_eq!(az.authorize(&a), Decision::Allow);
         // A user not in the group gets nothing.
-        let outsider = Attributes::resource(UserInfo::new("eve"), "get", "", "pods", "default", "p");
+        let outsider =
+            Attributes::resource(UserInfo::new("eve"), "get", "", "pods", "default", "p");
         assert_eq!(az.authorize(&outsider), Decision::NoOpinion);
     }
 
@@ -843,16 +871,37 @@ mod tests {
                 role_ref: RoleRef::cluster_role("mixed"),
             });
         assert_eq!(
-            az.authorize(&Attributes::resource(alice(), "get", "", "pods", "default", "p")),
+            az.authorize(&Attributes::resource(
+                alice(),
+                "get",
+                "",
+                "pods",
+                "default",
+                "p"
+            )),
             Decision::Allow
         );
         assert_eq!(
-            az.authorize(&Attributes::resource(alice(), "list", "", "services", "default", "")),
+            az.authorize(&Attributes::resource(
+                alice(),
+                "list",
+                "",
+                "services",
+                "default",
+                ""
+            )),
             Decision::Allow
         );
         // But a verb/resource combination spanning two rules is NOT granted.
         assert_eq!(
-            az.authorize(&Attributes::resource(alice(), "list", "", "pods", "default", "")),
+            az.authorize(&Attributes::resource(
+                alice(),
+                "list",
+                "",
+                "pods",
+                "default",
+                ""
+            )),
             Decision::NoOpinion
         );
     }
@@ -876,7 +925,10 @@ mod tests {
     /// Build an authorizer that grants `rule` cluster-wide to `alice`.
     fn single_cluster_grant(rule: PolicyRule) -> RbacAuthorizer {
         RbacAuthorizer::new()
-            .with_cluster_role(ClusterRole { name: "r".into(), rules: vec![rule] })
+            .with_cluster_role(ClusterRole {
+                name: "r".into(),
+                rules: vec![rule],
+            })
             .with_cluster_role_binding(ClusterRoleBinding {
                 name: "b".into(),
                 subjects: vec![Subject::user("alice")],

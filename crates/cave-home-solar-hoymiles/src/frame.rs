@@ -161,7 +161,11 @@ mod tests {
 
     #[test]
     fn command_opcode_round_trips() {
-        for cmd in [Command::RealTimeData, Command::DeviceInfo, Command::AlarmData] {
+        for cmd in [
+            Command::RealTimeData,
+            Command::DeviceInfo,
+            Command::AlarmData,
+        ] {
             assert_eq!(Command::from_opcode(cmd.opcode()), Some(cmd));
         }
     }

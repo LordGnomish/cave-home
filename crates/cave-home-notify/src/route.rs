@@ -231,7 +231,10 @@ mod tests {
         let plan = route(&note("alarm", Priority::High), &subs);
         assert_eq!(plan.len(), 3);
         assert_eq!(
-            plan.deliveries.iter().map(|d| d.channel).collect::<Vec<_>>(),
+            plan.deliveries
+                .iter()
+                .map(|d| d.channel)
+                .collect::<Vec<_>>(),
             vec![Channel::Push, Channel::Email, Channel::Sms]
         );
     }
@@ -264,10 +267,12 @@ mod tests {
         let plan = route(&note("leak", Priority::Min), &subs);
         assert_eq!(plan.len(), 1);
         assert_eq!(plan.deliveries[0].channel, Channel::Webhook);
-        assert!(!plan
-            .deliveries
-            .iter()
-            .any(|d| d.channel == Channel::Push || d.channel == Channel::Sms));
+        assert!(
+            !plan
+                .deliveries
+                .iter()
+                .any(|d| d.channel == Channel::Push || d.channel == Channel::Sms)
+        );
     }
 
     #[test]

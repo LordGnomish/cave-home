@@ -74,13 +74,11 @@ impl ReplicaSetController {
             let name = format!("{}-{}", rs.meta.name, base36(self.pod_seq));
             let mut meta = ObjectMeta::new(&name, &rs.meta.namespace, "");
             meta.labels = rs.spec.template.labels.clone();
-            meta.owner_references = vec![OwnerReference::to(
-                "ReplicaSet",
-                &rs.meta.name,
-                &rs.meta.uid,
-            )
-            .controller()
-            .blocking()];
+            meta.owner_references = vec![
+                OwnerReference::to("ReplicaSet", &rs.meta.name, &rs.meta.uid)
+                    .controller()
+                    .blocking(),
+            ];
             cluster.pods.create(Pod::new(meta));
         }
     }

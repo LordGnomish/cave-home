@@ -226,7 +226,11 @@ pub struct JsonError {
 
 impl fmt::Display for JsonError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "invalid JSON at offset {}: {}", self.offset, self.message)
+        write!(
+            f,
+            "invalid JSON at offset {}: {}",
+            self.offset, self.message
+        )
     }
 }
 
@@ -524,7 +528,9 @@ impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnexpectedEof => f.write_str("unexpected end of JSON input"),
-            Self::Unexpected { pos, found } => write!(f, "unexpected character {found:?} at byte {pos}"),
+            Self::Unexpected { pos, found } => {
+                write!(f, "unexpected character {found:?} at byte {pos}")
+            }
             Self::InvalidNumber(s) => write!(f, "invalid JSON number {s:?}"),
             Self::InvalidEscape => f.write_str("invalid JSON string escape"),
             Self::TrailingData(pos) => write!(f, "trailing data after JSON value at byte {pos}"),
@@ -571,7 +577,10 @@ impl<'a> ValueParser<'a> {
     const MAX_DEPTH: usize = 128;
 
     const fn new(input: &'a str) -> Self {
-        Self { bytes: input.as_bytes(), pos: 0 }
+        Self {
+            bytes: input.as_bytes(),
+            pos: 0,
+        }
     }
 
     fn peek(&self) -> Option<u8> {
@@ -593,7 +602,10 @@ impl<'a> ValueParser<'a> {
             b'[' => self.parse_array(depth),
             b'{' => self.parse_object(depth),
             b'-' | b'0'..=b'9' => self.parse_number(),
-            other => Err(ParseError::Unexpected { pos: self.pos, found: other as char }),
+            other => Err(ParseError::Unexpected {
+                pos: self.pos,
+                found: other as char,
+            }),
         }
     }
 
@@ -605,7 +617,10 @@ impl<'a> ValueParser<'a> {
         } else if self.pos >= self.bytes.len() {
             Err(ParseError::UnexpectedEof)
         } else {
-            Err(ParseError::Unexpected { pos: self.pos, found: self.bytes[self.pos] as char })
+            Err(ParseError::Unexpected {
+                pos: self.pos,
+                found: self.bytes[self.pos] as char,
+            })
         }
     }
 
@@ -614,7 +629,10 @@ impl<'a> ValueParser<'a> {
         if self.peek() == Some(b'-') {
             self.pos += 1;
         }
-        while matches!(self.peek(), Some(b'0'..=b'9' | b'.' | b'e' | b'E' | b'+' | b'-')) {
+        while matches!(
+            self.peek(),
+            Some(b'0'..=b'9' | b'.' | b'e' | b'E' | b'+' | b'-')
+        ) {
             self.pos += 1;
         }
         let tok = std::str::from_utf8(&self.bytes[start..self.pos]).unwrap_or("");
@@ -623,7 +641,9 @@ impl<'a> ValueParser<'a> {
         if tok.is_empty() || tok.ends_with(['.', 'e', 'E', '+', '-']) {
             return Err(ParseError::InvalidNumber(tok.to_string()));
         }
-        tok.parse::<f64>().map(Value::Number).map_err(|_| ParseError::InvalidNumber(tok.to_string()))
+        tok.parse::<f64>()
+            .map(Value::Number)
+            .map_err(|_| ParseError::InvalidNumber(tok.to_string()))
     }
 
     fn parse_string(&mut self) -> Result<String, ParseError> {
@@ -642,10 +662,16 @@ impl<'a> ValueParser<'a> {
                     self.parse_escape(&mut out)?;
                 }
                 // A raw control char (< 0x20) is illegal in a JSON string.
-                0x00..=0x1F => return Err(ParseError::Unexpected { pos: self.pos, found: b as char }),
+                0x00..=0x1F => {
+                    return Err(ParseError::Unexpected {
+                        pos: self.pos,
+                        found: b as char,
+                    });
+                }
                 _ => {
                     // Decode one UTF-8 scalar from the remaining bytes.
-                    let rest = std::str::from_utf8(&self.bytes[self.pos..]).map_err(|_| ParseError::InvalidEscape)?;
+                    let rest = std::str::from_utf8(&self.bytes[self.pos..])
+                        .map_err(|_| ParseError::InvalidEscape)?;
                     let ch = rest.chars().next().ok_or(ParseError::UnexpectedEof)?;
                     out.push(ch);
                     self.pos += ch.len_utf8();
@@ -677,7 +703,9 @@ impl<'a> ValueParser<'a> {
         let hi = self.read_hex4()?;
         // Surrogate pair: a high surrogate must be followed by `\uXXXX` low one.
         if (0xD800..=0xDBFF).contains(&hi) {
-            if self.bytes.get(self.pos) != Some(&b'\\') || self.bytes.get(self.pos + 1) != Some(&b'u') {
+            if self.bytes.get(self.pos) != Some(&b'\\')
+                || self.bytes.get(self.pos + 1) != Some(&b'u')
+            {
                 return Err(ParseError::InvalidEscape);
             }
             self.pos += 2;
@@ -694,7 +722,10 @@ impl<'a> ValueParser<'a> {
     }
 
     fn read_hex4(&mut self) -> Result<u32, ParseError> {
-        let slice = self.bytes.get(self.pos..self.pos + 4).ok_or(ParseError::UnexpectedEof)?;
+        let slice = self
+            .bytes
+            .get(self.pos..self.pos + 4)
+            .ok_or(ParseError::UnexpectedEof)?;
         let s = std::str::from_utf8(slice).map_err(|_| ParseError::InvalidEscape)?;
         let v = u32::from_str_radix(s, 16).map_err(|_| ParseError::InvalidEscape)?;
         self.pos += 4;
@@ -722,7 +753,12 @@ impl<'a> ValueParser<'a> {
                     self.pos += 1;
                     return Ok(Value::Array(items));
                 }
-                other => return Err(ParseError::Unexpected { pos: self.pos, found: other as char }),
+                other => {
+                    return Err(ParseError::Unexpected {
+                        pos: self.pos,
+                        found: other as char,
+                    });
+                }
             }
         }
     }
@@ -742,7 +778,10 @@ impl<'a> ValueParser<'a> {
             self.skip_ws();
             if self.peek() != Some(b'"') {
                 return match self.peek() {
-                    Some(c) => Err(ParseError::Unexpected { pos: self.pos, found: c as char }),
+                    Some(c) => Err(ParseError::Unexpected {
+                        pos: self.pos,
+                        found: c as char,
+                    }),
                     None => Err(ParseError::UnexpectedEof),
                 };
             }
@@ -750,7 +789,10 @@ impl<'a> ValueParser<'a> {
             self.skip_ws();
             if self.peek() != Some(b':') {
                 return match self.peek() {
-                    Some(c) => Err(ParseError::Unexpected { pos: self.pos, found: c as char }),
+                    Some(c) => Err(ParseError::Unexpected {
+                        pos: self.pos,
+                        found: c as char,
+                    }),
                     None => Err(ParseError::UnexpectedEof),
                 };
             }
@@ -765,7 +807,12 @@ impl<'a> ValueParser<'a> {
                     self.pos += 1;
                     return Ok(Value::Object(map));
                 }
-                other => return Err(ParseError::Unexpected { pos: self.pos, found: other as char }),
+                other => {
+                    return Err(ParseError::Unexpected {
+                        pos: self.pos,
+                        found: other as char,
+                    });
+                }
             }
         }
     }
@@ -787,7 +834,10 @@ mod tests {
 
     #[test]
     fn parse_string_escapes() {
-        assert_eq!(Value::parse(r#""a\"b\nc\t\\""#).unwrap(), Value::from("a\"b\nc\t\\"));
+        assert_eq!(
+            Value::parse(r#""a\"b\nc\t\\""#).unwrap(),
+            Value::from("a\"b\nc\t\\")
+        );
         assert_eq!(Value::parse(r#""Aé""#).unwrap(), Value::from("Aé"));
         // surrogate pair → 😀
         assert_eq!(Value::parse(r#""😀""#).unwrap(), Value::from("😀"));
@@ -796,7 +846,14 @@ mod tests {
     #[test]
     fn parse_array_and_object_with_whitespace() {
         let v = Value::parse("  [1, 2, 3]  ").unwrap();
-        assert_eq!(v, Value::Array(vec![Value::from(1_i64), Value::from(2_i64), Value::from(3_i64)]));
+        assert_eq!(
+            v,
+            Value::Array(vec![
+                Value::from(1_i64),
+                Value::from(2_i64),
+                Value::from(3_i64)
+            ])
+        );
         let o = Value::parse("{\n  \"b\": 2,\n  \"a\": \"x\"\n}").unwrap();
         assert_eq!(o, obj([("a", Value::from("x")), ("b", Value::from(2_i64))]));
     }
@@ -807,9 +864,14 @@ mod tests {
         let v = Value::parse(src).unwrap();
         // canonical re-serialization must round-trip exactly (keys already sorted).
         assert_eq!(v.to_json_string(), src);
-        assert_eq!(v.pointer("metadata.name").and_then(Value::as_str), Some("nginx"));
         assert_eq!(
-            v.pointer("spec.containers").and_then(Value::as_array).map(<[_]>::len),
+            v.pointer("metadata.name").and_then(Value::as_str),
+            Some("nginx")
+        );
+        assert_eq!(
+            v.pointer("spec.containers")
+                .and_then(Value::as_array)
+                .map(<[_]>::len),
             Some(1)
         );
     }
@@ -852,10 +914,7 @@ mod tests {
 
     #[test]
     fn string_escaping() {
-        assert_eq!(
-            Value::from("a\"b\nc").to_json_string(),
-            r#""a\"b\nc""#
-        );
+        assert_eq!(Value::from("a\"b\nc").to_json_string(), r#""a\"b\nc""#);
     }
 
     // --- parser (request-body decode) ---------------------------------------
@@ -881,13 +940,19 @@ mod tests {
         assert_eq!(parse(r#""hi""#).expect("s"), Value::from("hi"));
         assert_eq!(parse(r#""a\"b\nc""#).expect("esc"), Value::from("a\"b\nc"));
         assert_eq!(parse(r#""A""#).expect("u"), Value::from("A"));
-        assert_eq!(parse(r#""tab\there""#).expect("t"), Value::from("tab\there"));
+        assert_eq!(
+            parse(r#""tab\there""#).expect("t"),
+            Value::from("tab\there")
+        );
     }
 
     #[test]
     fn parse_array_and_object_nested() {
         let v = parse(r#"{"a":[1,2,{"b":true}],"c":null}"#).expect("nested");
-        assert_eq!(v.pointer("a").and_then(Value::as_array).map(<[_]>::len), Some(3));
+        assert_eq!(
+            v.pointer("a").and_then(Value::as_array).map(<[_]>::len),
+            Some(3)
+        );
         assert_eq!(v.pointer("c"), Some(&Value::Null));
         // index 2 of array is an object {b:true}
         let third = &v.pointer("a").and_then(Value::as_array).unwrap()[2];

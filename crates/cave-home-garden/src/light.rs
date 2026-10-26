@@ -100,15 +100,31 @@ impl LightFit {
     #[must_use]
     pub fn message(self, plant_name: &str, lang: Lang) -> String {
         match (self, lang) {
-            (Self::Adequate, Lang::En) => format!("{plant_name} is getting just the right amount of light."),
-            (Self::Adequate, Lang::De) => format!("{plant_name} bekommt genau die richtige Menge Licht."),
+            (Self::Adequate, Lang::En) => {
+                format!("{plant_name} is getting just the right amount of light.")
+            }
+            (Self::Adequate, Lang::De) => {
+                format!("{plant_name} bekommt genau die richtige Menge Licht.")
+            }
             (Self::Adequate, Lang::Tr) => format!("{plant_name} tam doğru miktarda ışık alıyor."),
-            (Self::TooLittle, Lang::En) => format!("{plant_name} needs more light — move it somewhere brighter."),
-            (Self::TooLittle, Lang::De) => format!("{plant_name} braucht mehr Licht — an einen helleren Platz stellen."),
-            (Self::TooLittle, Lang::Tr) => format!("{plant_name} daha çok ışığa ihtiyaç duyuyor — daha aydınlık bir yere taşıyın."),
-            (Self::TooMuch, Lang::En) => format!("{plant_name} is getting too much sun — give it some shade."),
-            (Self::TooMuch, Lang::De) => format!("{plant_name} bekommt zu viel Sonne — etwas Schatten geben."),
-            (Self::TooMuch, Lang::Tr) => format!("{plant_name} çok fazla güneş alıyor — biraz gölge verin."),
+            (Self::TooLittle, Lang::En) => {
+                format!("{plant_name} needs more light — move it somewhere brighter.")
+            }
+            (Self::TooLittle, Lang::De) => {
+                format!("{plant_name} braucht mehr Licht — an einen helleren Platz stellen.")
+            }
+            (Self::TooLittle, Lang::Tr) => format!(
+                "{plant_name} daha çok ışığa ihtiyaç duyuyor — daha aydınlık bir yere taşıyın."
+            ),
+            (Self::TooMuch, Lang::En) => {
+                format!("{plant_name} is getting too much sun — give it some shade.")
+            }
+            (Self::TooMuch, Lang::De) => {
+                format!("{plant_name} bekommt zu viel Sonne — etwas Schatten geben.")
+            }
+            (Self::TooMuch, Lang::Tr) => {
+                format!("{plant_name} çok fazla güneş alıyor — biraz gölge verin.")
+            }
         }
     }
 }
@@ -132,9 +148,18 @@ mod tests {
 
     #[test]
     fn part_shade_band() {
-        assert_eq!(assess_lux(2_000.0, LightNeed::PartShade), LightFit::TooLittle);
-        assert_eq!(assess_lux(10_000.0, LightNeed::PartShade), LightFit::Adequate);
-        assert_eq!(assess_lux(50_000.0, LightNeed::PartShade), LightFit::TooMuch);
+        assert_eq!(
+            assess_lux(2_000.0, LightNeed::PartShade),
+            LightFit::TooLittle
+        );
+        assert_eq!(
+            assess_lux(10_000.0, LightNeed::PartShade),
+            LightFit::Adequate
+        );
+        assert_eq!(
+            assess_lux(50_000.0, LightNeed::PartShade),
+            LightFit::TooMuch
+        );
     }
 
     #[test]
@@ -151,10 +176,19 @@ mod tests {
     #[test]
     fn coarse_band_agrees_with_lux() {
         // A fern (shade) under direct sun: too much.
-        assert_eq!(assess_band(LightBand::FullSun, LightNeed::Shade), LightFit::TooMuch);
+        assert_eq!(
+            assess_band(LightBand::FullSun, LightNeed::Shade),
+            LightFit::TooMuch
+        );
         // A fern in dim light: adequate.
-        assert_eq!(assess_band(LightBand::Dim, LightNeed::Shade), LightFit::Adequate);
+        assert_eq!(
+            assess_band(LightBand::Dim, LightNeed::Shade),
+            LightFit::Adequate
+        );
         // A tomato (full sun) in the dark: too little.
-        assert_eq!(assess_band(LightBand::Dark, LightNeed::FullSun), LightFit::TooLittle);
+        assert_eq!(
+            assess_band(LightBand::Dark, LightNeed::FullSun),
+            LightFit::TooLittle
+        );
     }
 }

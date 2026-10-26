@@ -84,9 +84,16 @@ mod tests {
             Context::new(),
         );
         // a clone sees the same state machine contents
-        assert!(clone.states.is_state(&EntityId::new("lock", "front").expect("id"), "locked"));
+        assert!(
+            clone
+                .states
+                .is_state(&EntityId::new("lock", "front").expect("id"), "locked")
+        );
         // and the same area registry
         let area = ctx.areas.create("Garage").expect("area");
-        assert_eq!(clone.areas.get(&area.id).map(|a| a.name), Some("Garage".into()));
+        assert_eq!(
+            clone.areas.get(&area.id).map(|a| a.name),
+            Some("Garage".into())
+        );
     }
 }

@@ -118,7 +118,10 @@ mod tests {
     #[test]
     fn default_hemisphere_is_northern() {
         assert_eq!(Hemisphere::default(), Hemisphere::Northern);
-        assert_eq!(growing_season(7), growing_season_in(7, Hemisphere::default()));
+        assert_eq!(
+            growing_season(7),
+            growing_season_in(7, Hemisphere::default())
+        );
     }
 
     #[test]

@@ -23,7 +23,8 @@ fn ready_pod(name: &str) -> Pod {
 #[test]
 fn endpoints_collect_ready_matching_pods() {
     let mut c = Cluster::new();
-    c.services.create(Service::new(ObjectMeta::new("web", "prod", ""), sel()));
+    c.services
+        .create(Service::new(ObjectMeta::new("web", "prod", ""), sel()));
     c.pods.create(ready_pod("a"));
     c.pods.create(ready_pod("b"));
     // Not ready -> excluded.
@@ -31,18 +32,28 @@ fn endpoints_collect_ready_matching_pods() {
     nr.status.ready = false;
     c.pods.update(nr);
     // Wrong label -> excluded.
-    c.pods.create(Pod::new(ObjectMeta::new("d", "prod", "").with_label("app", "db")));
+    c.pods.create(Pod::new(
+        ObjectMeta::new("d", "prod", "").with_label("app", "db"),
+    ));
     let mut ctrl = EndpointsController::new();
 
     assert_eq!(ctrl.reconcile("prod/web", &mut c, 0), Outcome::Done);
-    let ep = c.endpoints.get("prod/web").expect("endpoints object created with the service name");
-    assert_eq!(ep.addresses, vec!["prod/a", "prod/b"], "only ready, matching pods, sorted");
+    let ep = c
+        .endpoints
+        .get("prod/web")
+        .expect("endpoints object created with the service name");
+    assert_eq!(
+        ep.addresses,
+        vec!["prod/a", "prod/b"],
+        "only ready, matching pods, sorted"
+    );
 }
 
 #[test]
 fn endpoints_update_when_a_pod_becomes_unready() {
     let mut c = Cluster::new();
-    c.services.create(Service::new(ObjectMeta::new("web", "prod", ""), sel()));
+    c.services
+        .create(Service::new(ObjectMeta::new("web", "prod", ""), sel()));
     c.pods.create(ready_pod("a"));
     c.pods.create(ready_pod("b"));
     let mut ctrl = EndpointsController::new();
@@ -53,13 +64,18 @@ fn endpoints_update_when_a_pod_becomes_unready() {
     b.status.ready = false;
     c.pods.update(b);
     ctrl.reconcile("prod/web", &mut c, 1);
-    assert_eq!(c.endpoints.get("prod/web").unwrap().addresses, vec!["prod/a"], "unready pod dropped");
+    assert_eq!(
+        c.endpoints.get("prod/web").unwrap().addresses,
+        vec!["prod/a"],
+        "unready pod dropped"
+    );
 }
 
 #[test]
 fn service_with_no_ready_pods_has_empty_endpoints() {
     let mut c = Cluster::new();
-    c.services.create(Service::new(ObjectMeta::new("web", "prod", ""), sel()));
+    c.services
+        .create(Service::new(ObjectMeta::new("web", "prod", ""), sel()));
     let mut ctrl = EndpointsController::new();
     ctrl.reconcile("prod/web", &mut c, 0);
     assert!(c.endpoints.get("prod/web").unwrap().addresses.is_empty());

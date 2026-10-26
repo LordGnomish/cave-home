@@ -85,7 +85,9 @@ mod tests {
             "load_power":{load},"grid_power":{grid},"percentage_charged":{soc},
             "energy_left":0,"total_pack_energy":0,"grid_status":"Active"}}}}"#
         );
-        serde_json::from_str::<Envelope<LiveStatus>>(&json).unwrap().response
+        serde_json::from_str::<Envelope<LiveStatus>>(&json)
+            .unwrap()
+            .response
     }
 
     #[test]

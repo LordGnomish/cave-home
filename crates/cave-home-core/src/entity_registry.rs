@@ -277,7 +277,10 @@ mod tests {
             "light",
             "hue",
             "u1",
-            EntityCreate { suggested_object_id: Some("Kitchen Lamp".into()), ..EntityCreate::default() },
+            EntityCreate {
+                suggested_object_id: Some("Kitchen Lamp".into()),
+                ..EntityCreate::default()
+            },
         );
         assert_eq!(first.entity_id, "light.kitchen_lamp");
         // a second call with the same triple returns the SAME entity_id
@@ -293,13 +296,19 @@ mod tests {
             "light",
             "hue",
             "u1",
-            EntityCreate { suggested_object_id: Some("lamp".into()), ..EntityCreate::default() },
+            EntityCreate {
+                suggested_object_id: Some("lamp".into()),
+                ..EntityCreate::default()
+            },
         );
         let b = reg.get_or_create(
             "light",
             "tplink",
             "u2",
-            EntityCreate { suggested_object_id: Some("lamp".into()), ..EntityCreate::default() },
+            EntityCreate {
+                suggested_object_id: Some("lamp".into()),
+                ..EntityCreate::default()
+            },
         );
         assert_eq!(a.entity_id, "light.lamp");
         assert_eq!(b.entity_id, "light.lamp_2");
@@ -308,7 +317,10 @@ mod tests {
             "switch",
             "hue",
             "u3",
-            EntityCreate { suggested_object_id: Some("lamp".into()), ..EntityCreate::default() },
+            EntityCreate {
+                suggested_object_id: Some("lamp".into()),
+                ..EntityCreate::default()
+            },
         );
         assert_eq!(c.entity_id, "switch.lamp");
     }
@@ -320,9 +332,15 @@ mod tests {
             "sensor",
             "zwave",
             "node5-temp",
-            EntityCreate { device_id: Some("dev1".into()), ..EntityCreate::default() },
+            EntityCreate {
+                device_id: Some("dev1".into()),
+                ..EntityCreate::default()
+            },
         );
-        assert_eq!(reg.get_entity_id("sensor", "zwave", "node5-temp"), Some(e.entity_id.clone()));
+        assert_eq!(
+            reg.get_entity_id("sensor", "zwave", "node5-temp"),
+            Some(e.entity_id.clone())
+        );
         assert!(reg.get_entity_id("sensor", "zwave", "nope").is_none());
         assert_eq!(reg.entities_for_device("dev1").len(), 1);
         assert!(reg.entities_for_device("other").is_empty());
@@ -350,14 +368,21 @@ mod tests {
 
         // clearing a disabler with Some(None)
         let cleared = reg
-            .update(&e.entity_id, EntityUpdate { disabled_by: Some(None), ..EntityUpdate::default() })
+            .update(
+                &e.entity_id,
+                EntityUpdate {
+                    disabled_by: Some(None),
+                    ..EntityUpdate::default()
+                },
+            )
             .expect("clear");
         assert!(!cleared.disabled());
         // name untouched by this update (None leaves it)
         assert_eq!(cleared.name.as_deref(), Some("Reading light"));
 
         assert_eq!(
-            reg.update("light.ghost", EntityUpdate::default()).unwrap_err(),
+            reg.update("light.ghost", EntityUpdate::default())
+                .unwrap_err(),
             EntityRegistryError::UnknownEntityId("light.ghost".into())
         );
     }
@@ -369,7 +394,10 @@ mod tests {
             "light",
             "hue",
             "u1",
-            EntityCreate { suggested_object_id: Some("lamp".into()), ..EntityCreate::default() },
+            EntityCreate {
+                suggested_object_id: Some("lamp".into()),
+                ..EntityCreate::default()
+            },
         );
         assert!(reg.remove(&e.entity_id).is_some());
         assert!(reg.get(&e.entity_id).is_none());
@@ -379,7 +407,10 @@ mod tests {
             "light",
             "hue",
             "u1",
-            EntityCreate { suggested_object_id: Some("lamp".into()), ..EntityCreate::default() },
+            EntityCreate {
+                suggested_object_id: Some("lamp".into()),
+                ..EntityCreate::default()
+            },
         );
         assert_eq!(again.entity_id, "light.lamp");
     }

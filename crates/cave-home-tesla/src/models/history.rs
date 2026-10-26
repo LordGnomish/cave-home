@@ -26,7 +26,10 @@ impl DateRange {
                 "history range end precedes start".into(),
             ));
         }
-        Ok(Self { start_unix, end_unix })
+        Ok(Self {
+            start_unix,
+            end_unix,
+        })
     }
 
     /// The last `hours` ending at `now_unix`.
@@ -71,10 +74,7 @@ impl HistoryData {
     /// The peak solar production across the series (0 if empty).
     #[must_use]
     pub fn peak_pv_watts(&self) -> f64 {
-        self.samples
-            .iter()
-            .map(|s| s.pv_watts)
-            .fold(0.0, f64::max)
+        self.samples.iter().map(|s| s.pv_watts).fold(0.0, f64::max)
     }
 }
 
@@ -129,7 +129,9 @@ mod tests {
             {"timestamp":"t0","solar_power":0,"battery_power":500,"grid_power":-500},
             {"timestamp":"t1","solar_power":4000,"battery_power":-1500,"grid_power":0}
         ]}}"#;
-        let wire = serde_json::from_str::<Envelope<HistorySeries>>(json).unwrap().response;
+        let wire = serde_json::from_str::<Envelope<HistorySeries>>(json)
+            .unwrap()
+            .response;
         let h = HistoryData::from(&wire);
         assert_eq!(h.period, "day");
         assert_eq!(h.samples.len(), 2);
@@ -144,7 +146,9 @@ mod tests {
             {"timestamp":"t0","solar_power":1000,"battery_power":0,"grid_power":0},
             {"timestamp":"t1","solar_power":4200,"battery_power":0,"grid_power":0}
         ]}}"#;
-        let wire = serde_json::from_str::<Envelope<HistorySeries>>(json).unwrap().response;
+        let wire = serde_json::from_str::<Envelope<HistorySeries>>(json)
+            .unwrap()
+            .response;
         let h = HistoryData::from(&wire);
         assert!((h.peak_pv_watts() - 4200.0).abs() < f64::EPSILON);
     }

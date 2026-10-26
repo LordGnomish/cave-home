@@ -370,15 +370,21 @@ mod tests {
     #[test]
     fn exit_delay_boundary_one_second_short_stays_arming() {
         let mut p = panel(standard_cfg());
-        p.apply_with_code(AlarmCommand::ArmAway, &code("1379")).expect("arm");
+        p.apply_with_code(AlarmCommand::ArmAway, &code("1379"))
+            .expect("arm");
         assert_eq!(p.tick(9), AlarmState::Arming, "1s short of exit delay");
-        assert_eq!(p.tick(1), AlarmState::ArmedAway, "exactly at exit delay arms");
+        assert_eq!(
+            p.tick(1),
+            AlarmState::ArmedAway,
+            "exactly at exit delay arms"
+        );
     }
 
     #[test]
     fn entry_delay_boundary_disarm_in_time_prevents_trigger() {
         let mut p = panel(standard_cfg());
-        p.apply_with_code(AlarmCommand::ArmAway, &code("1379")).expect("arm");
+        p.apply_with_code(AlarmCommand::ArmAway, &code("1379"))
+            .expect("arm");
         p.tick(10);
         p.sensor_trip(Zone::Perimeter);
         assert_eq!(p.tick(4), AlarmState::Pending, "still within entry delay");
@@ -392,7 +398,8 @@ mod tests {
     #[test]
     fn entry_delay_elapses_exactly_triggers() {
         let mut p = panel(standard_cfg());
-        p.apply_with_code(AlarmCommand::ArmAway, &code("1379")).expect("arm");
+        p.apply_with_code(AlarmCommand::ArmAway, &code("1379"))
+            .expect("arm");
         p.tick(10);
         p.sensor_trip(Zone::Perimeter);
         assert_eq!(p.tick(5), AlarmState::Triggered);
@@ -413,7 +420,8 @@ mod tests {
     fn zero_entry_delay_triggers_immediately_on_trip() {
         let cfg = PanelConfig::new(10, 0, 20, true, false, false, false).expect("valid");
         let mut p = panel(cfg);
-        p.apply_with_code(AlarmCommand::ArmAway, &code("1379")).expect("arm");
+        p.apply_with_code(AlarmCommand::ArmAway, &code("1379"))
+            .expect("arm");
         p.tick(10);
         assert_eq!(p.sensor_trip(Zone::Perimeter), AlarmState::Triggered);
     }
@@ -423,7 +431,8 @@ mod tests {
         // Home instant: an interior trip in home mode sounds immediately.
         let cfg = PanelConfig::new(0, 30, 20, true, true, false, false).expect("valid");
         let mut p = panel(cfg);
-        p.apply_with_code(AlarmCommand::ArmHome, &code("1379")).expect("arm home");
+        p.apply_with_code(AlarmCommand::ArmHome, &code("1379"))
+            .expect("arm home");
         assert_eq!(p.state(), AlarmState::ArmedHome);
         assert_eq!(p.sensor_trip(Zone::Interior), AlarmState::Triggered);
     }
@@ -432,7 +441,8 @@ mod tests {
     fn home_mode_bypasses_interior_motion_when_not_instant() {
         let cfg = PanelConfig::new(0, 30, 20, true, false, false, false).expect("valid");
         let mut p = panel(cfg);
-        p.apply_with_code(AlarmCommand::ArmHome, &code("1379")).expect("arm home");
+        p.apply_with_code(AlarmCommand::ArmHome, &code("1379"))
+            .expect("arm home");
         // Interior motion in home mode (not instant) is bypassed: people move.
         assert_eq!(p.sensor_trip(Zone::Interior), AlarmState::ArmedHome);
         // But the perimeter is still watched.
@@ -443,14 +453,16 @@ mod tests {
     fn instant_night_zone_triggers_without_entry_delay() {
         let cfg = PanelConfig::new(0, 30, 20, true, false, true, false).expect("valid");
         let mut p = panel(cfg);
-        p.apply_with_code(AlarmCommand::ArmNight, &code("1379")).expect("arm night");
+        p.apply_with_code(AlarmCommand::ArmNight, &code("1379"))
+            .expect("arm night");
         assert_eq!(p.sensor_trip(Zone::Interior), AlarmState::Triggered);
     }
 
     #[test]
     fn triggered_auto_returns_to_prior_armed_state_after_siren() {
         let mut p = panel(standard_cfg());
-        p.apply_with_code(AlarmCommand::ArmAway, &code("1379")).expect("arm");
+        p.apply_with_code(AlarmCommand::ArmAway, &code("1379"))
+            .expect("arm");
         p.tick(10);
         p.sensor_trip(Zone::Perimeter);
         p.tick(5); // -> Triggered
@@ -463,7 +475,8 @@ mod tests {
     fn triggered_stays_when_config_says_stay() {
         let cfg = PanelConfig::new(10, 5, 20, true, false, false, true).expect("valid");
         let mut p = panel(cfg);
-        p.apply_with_code(AlarmCommand::ArmAway, &code("1379")).expect("arm");
+        p.apply_with_code(AlarmCommand::ArmAway, &code("1379"))
+            .expect("arm");
         p.tick(10);
         p.sensor_trip(Zone::Perimeter);
         p.tick(5); // -> Triggered
@@ -478,26 +491,36 @@ mod tests {
             p.apply_with_code(AlarmCommand::ArmAway, &code("0000")),
             Err(AlarmError::CodeRejected)
         );
-        assert_eq!(p.state(), AlarmState::Disarmed, "rejected arm changes nothing");
+        assert_eq!(
+            p.state(),
+            AlarmState::Disarmed,
+            "rejected arm changes nothing"
+        );
     }
 
     #[test]
     fn disarm_requires_correct_code() {
         let mut p = panel(standard_cfg());
-        p.apply_with_code(AlarmCommand::ArmAway, &code("1379")).expect("arm");
+        p.apply_with_code(AlarmCommand::ArmAway, &code("1379"))
+            .expect("arm");
         p.tick(10);
         assert_eq!(
             p.apply_with_code(AlarmCommand::Disarm, &code("0000")),
             Err(AlarmError::CodeRejected)
         );
-        assert_eq!(p.state(), AlarmState::ArmedAway, "wrong disarm leaves armed");
+        assert_eq!(
+            p.state(),
+            AlarmState::ArmedAway,
+            "wrong disarm leaves armed"
+        );
     }
 
     #[test]
     fn brute_force_lockout_then_correct_code_refused() {
         let cfg = standard_cfg();
         let mut p = AlarmPanel::new(cfg, CodeCredential::enroll_with_limit(&code("1379"), 3));
-        p.apply_with_code(AlarmCommand::ArmAway, &code("1379")).expect("arm");
+        p.apply_with_code(AlarmCommand::ArmAway, &code("1379"))
+            .expect("arm");
         p.tick(10);
         // Three wrong disarms -> locked out.
         for _ in 0..3 {
@@ -514,7 +537,10 @@ mod tests {
 
     #[test]
     fn illegal_command_does_not_spend_an_attempt() {
-        let mut p = AlarmPanel::new(standard_cfg(), CodeCredential::enroll_with_limit(&code("1379"), 3));
+        let mut p = AlarmPanel::new(
+            standard_cfg(),
+            CodeCredential::enroll_with_limit(&code("1379"), 3),
+        );
         // Disarming an already-disarmed panel is illegal; it must not burn the
         // keypad budget even with a wrong code.
         assert_eq!(
@@ -522,12 +548,16 @@ mod tests {
             Err(AlarmError::IllegalTransition)
         );
         // Now exhaust the budget on a legal-but-wrong path to prove it was full.
-        p.apply_with_code(AlarmCommand::ArmAway, &code("1379")).expect("arm");
+        p.apply_with_code(AlarmCommand::ArmAway, &code("1379"))
+            .expect("arm");
         p.tick(10);
         for _ in 0..3 {
             let _ = p.apply_with_code(AlarmCommand::Disarm, &code("0000"));
         }
-        assert!(p.is_locked_out(), "exactly 3 attempts after the illegal one locked it out");
+        assert!(
+            p.is_locked_out(),
+            "exactly 3 attempts after the illegal one locked it out"
+        );
     }
 
     #[test]
@@ -541,7 +571,10 @@ mod tests {
     #[test]
     fn code_free_arm_refused_when_code_required() {
         let mut p = panel(standard_cfg()); // arm_requires_code = true
-        assert_eq!(p.apply(AlarmCommand::ArmAway), Err(AlarmError::CodeRejected));
+        assert_eq!(
+            p.apply(AlarmCommand::ArmAway),
+            Err(AlarmError::CodeRejected)
+        );
         assert_eq!(p.state(), AlarmState::Disarmed);
     }
 
@@ -558,7 +591,8 @@ mod tests {
     #[test]
     fn cannot_arm_into_the_same_mode() {
         let mut p = panel(standard_cfg());
-        p.apply_with_code(AlarmCommand::ArmAway, &code("1379")).expect("arm");
+        p.apply_with_code(AlarmCommand::ArmAway, &code("1379"))
+            .expect("arm");
         p.tick(10);
         assert_eq!(p.state(), AlarmState::ArmedAway);
         // Re-arming the same mode is a no-op illegal transition.
@@ -571,7 +605,8 @@ mod tests {
     #[test]
     fn can_switch_between_armed_modes() {
         let mut p = panel(standard_cfg());
-        p.apply_with_code(AlarmCommand::ArmAway, &code("1379")).expect("arm away");
+        p.apply_with_code(AlarmCommand::ArmAway, &code("1379"))
+            .expect("arm away");
         p.tick(10);
         // Switching away->home re-runs the exit delay.
         assert_eq!(
@@ -584,7 +619,8 @@ mod tests {
     #[test]
     fn cannot_arm_while_pending() {
         let mut p = panel(standard_cfg());
-        p.apply_with_code(AlarmCommand::ArmAway, &code("1379")).expect("arm");
+        p.apply_with_code(AlarmCommand::ArmAway, &code("1379"))
+            .expect("arm");
         p.tick(10);
         p.sensor_trip(Zone::Perimeter); // Pending
         assert_eq!(
@@ -602,7 +638,8 @@ mod tests {
     #[test]
     fn panic_trigger_while_armed_returns_to_that_mode_after_siren() {
         let mut p = panel(standard_cfg());
-        p.apply_with_code(AlarmCommand::ArmNight, &code("1379")).expect("arm night");
+        p.apply_with_code(AlarmCommand::ArmNight, &code("1379"))
+            .expect("arm night");
         p.tick(10);
         assert_eq!(p.apply(AlarmCommand::Trigger), Ok(AlarmState::Triggered));
         // After the siren time, return to the night mode it was in.
@@ -621,15 +658,23 @@ mod tests {
     fn cannot_trigger_when_already_triggered() {
         let mut p = panel(standard_cfg());
         p.apply(AlarmCommand::Trigger).expect("panic");
-        assert_eq!(p.apply(AlarmCommand::Trigger), Err(AlarmError::IllegalTransition));
+        assert_eq!(
+            p.apply(AlarmCommand::Trigger),
+            Err(AlarmError::IllegalTransition)
+        );
     }
 
     #[test]
     fn ticks_in_settled_state_are_noops() {
         let mut p = panel(standard_cfg());
-        p.apply_with_code(AlarmCommand::ArmAway, &code("1379")).expect("arm");
+        p.apply_with_code(AlarmCommand::ArmAway, &code("1379"))
+            .expect("arm");
         p.tick(10); // ArmedAway
-        assert_eq!(p.tick(9999), AlarmState::ArmedAway, "settled state ignores time");
+        assert_eq!(
+            p.tick(9999),
+            AlarmState::ArmedAway,
+            "settled state ignores time"
+        );
         assert_eq!(p.elapsed(), 0);
     }
 
@@ -644,15 +689,20 @@ mod tests {
     fn sensor_trip_during_arming_is_ignored() {
         // While still in the exit delay nobody is "intruding".
         let mut p = panel(standard_cfg());
-        p.apply_with_code(AlarmCommand::ArmAway, &code("1379")).expect("arm");
+        p.apply_with_code(AlarmCommand::ArmAway, &code("1379"))
+            .expect("arm");
         assert_eq!(p.state(), AlarmState::Arming);
         assert_eq!(p.sensor_trip(Zone::Perimeter), AlarmState::Arming);
     }
 
     #[test]
     fn disarm_clears_keypad_lockout() {
-        let mut p = AlarmPanel::new(standard_cfg(), CodeCredential::enroll_with_limit(&code("1379"), 2));
-        p.apply_with_code(AlarmCommand::ArmAway, &code("1379")).expect("arm");
+        let mut p = AlarmPanel::new(
+            standard_cfg(),
+            CodeCredential::enroll_with_limit(&code("1379"), 2),
+        );
+        p.apply_with_code(AlarmCommand::ArmAway, &code("1379"))
+            .expect("arm");
         p.tick(10);
         // One wrong attempt (limit 2, not yet locked out).
         let _ = p.apply_with_code(AlarmCommand::Disarm, &code("0000"));
@@ -663,16 +713,21 @@ mod tests {
             Ok(AlarmState::Disarmed)
         );
         // Re-arm and prove the counter was reset (2 wrong now needed to lock).
-        p.apply_with_code(AlarmCommand::ArmAway, &code("1379")).expect("arm");
+        p.apply_with_code(AlarmCommand::ArmAway, &code("1379"))
+            .expect("arm");
         p.tick(10);
         let _ = p.apply_with_code(AlarmCommand::Disarm, &code("0000"));
-        assert!(!p.is_locked_out(), "counter was reset by the successful disarm");
+        assert!(
+            !p.is_locked_out(),
+            "counter was reset by the successful disarm"
+        );
     }
 
     #[test]
     fn vacation_mode_arms_and_watches_everything() {
         let mut p = panel(standard_cfg());
-        p.apply_with_code(AlarmCommand::ArmVacation, &code("1379")).expect("arm vacation");
+        p.apply_with_code(AlarmCommand::ArmVacation, &code("1379"))
+            .expect("arm vacation");
         assert_eq!(p.tick(10), AlarmState::ArmedVacation);
         // Interior motion is NOT bypassed in vacation mode.
         assert_eq!(p.sensor_trip(Zone::Interior), AlarmState::Pending);

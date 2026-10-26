@@ -21,9 +21,7 @@ use serde_json::json;
 
 use cave_home_unifi_access::AccessEvent;
 
-use super::types::{
-    AccessEnvelope, DoorStatus, Visitor, WireAccessLog, WireDoor, WireVisitor,
-};
+use super::types::{AccessEnvelope, DoorStatus, Visitor, WireAccessLog, WireDoor, WireVisitor};
 use crate::error::{Result, UnifiError};
 use crate::metrics::Metrics;
 use crate::transport::{HttpMethod, HttpRequest, HttpResponse, HttpTransport};
@@ -271,7 +269,9 @@ impl<T: HttpTransport> AccessClient<T> {
         if door_id.is_empty() {
             return Err(UnifiError::InvalidArgument("empty door id".into()));
         }
-        let url = self.config.developer_url(&format!("doors/{door_id}/unlock"));
+        let url = self
+            .config
+            .developer_url(&format!("doors/{door_id}/unlock"));
         let resp = self
             .send(HttpRequest::new(HttpMethod::Put, url), "access/unlock")
             .await?;
@@ -289,9 +289,14 @@ impl<T: HttpTransport> AccessClient<T> {
         if door_id.is_empty() {
             return Err(UnifiError::InvalidArgument("empty door id".into()));
         }
-        let url = self.config.developer_url(&format!("doors/{door_id}/unlock"));
+        let url = self
+            .config
+            .developer_url(&format!("doors/{door_id}/unlock"));
         let resp = self
-            .send(HttpRequest::new(HttpMethod::Put, url), "access/intercom_unlock")
+            .send(
+                HttpRequest::new(HttpMethod::Put, url),
+                "access/intercom_unlock",
+            )
             .await?;
         let env: AccessEnvelope<serde_json::Value> = resp.json_body()?;
         env.into_data().map(|_| ())
@@ -310,7 +315,9 @@ impl<T: HttpTransport> AccessClient<T> {
         if let Some(interval) = rule.interval() {
             body["interval"] = json!(interval);
         }
-        let url = self.config.developer_url(&format!("doors/{door_id}/lock_rule"));
+        let url = self
+            .config
+            .developer_url(&format!("doors/{door_id}/lock_rule"));
         let req = HttpRequest::new(HttpMethod::Put, url).json(&body)?;
         let resp = self.send(req, "access/lock_rule").await?;
         let env: AccessEnvelope<serde_json::Value> = resp.json_body()?;
@@ -326,10 +333,7 @@ mod tests {
     fn client_returning(body: &[u8]) -> AccessClient<MockTransport> {
         let t = MockTransport::new();
         t.push(HttpResponse::json(200, body.to_vec()));
-        AccessClient::new(
-            AccessConfig::new("10.0.0.2", "TOK").with_tls(false),
-            t,
-        )
+        AccessClient::new(AccessConfig::new("10.0.0.2", "TOK").with_tls(false), t)
     }
 
     #[test]
@@ -376,10 +380,12 @@ mod tests {
         client.answer_intercom("front").await.unwrap();
         let req = client.transport().last_request().unwrap();
         assert!(req.url.ends_with("/doors/front/unlock"));
-        assert!(client
-            .metrics()
-            .render_prometheus()
-            .contains("unifi_requests_total{endpoint=\"access/intercom_unlock\"} 1"));
+        assert!(
+            client
+                .metrics()
+                .render_prometheus()
+                .contains("unifi_requests_total{endpoint=\"access/intercom_unlock\"} 1")
+        );
     }
 
     #[tokio::test]
@@ -397,8 +403,7 @@ mod tests {
             .await
             .unwrap();
         let req = client.transport().last_request().unwrap();
-        let body: serde_json::Value =
-            serde_json::from_slice(req.body.as_ref().unwrap()).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(req.body.as_ref().unwrap()).unwrap();
         assert_eq!(body["type"], "custom");
         assert_eq!(body["interval"], 10);
     }

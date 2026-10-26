@@ -234,8 +234,8 @@ impl ServiceRecord {
             return Err(RecordError::ZeroPort);
         }
 
-        let service =
-            DnsName::parse(SERVICE_TYPE).map_err(|_| RecordError::BadName(SERVICE_TYPE.to_owned()))?;
+        let service = DnsName::parse(SERVICE_TYPE)
+            .map_err(|_| RecordError::BadName(SERVICE_TYPE.to_owned()))?;
         // Instance name = "<label>._cavehome._tcp.local".
         let instance_dotted = format!("{instance_label}.{SERVICE_TYPE}");
         let instance = DnsName::parse(&instance_dotted)
@@ -243,13 +243,27 @@ impl ServiceRecord {
         let target = DnsName::parse(host).map_err(|_| RecordError::BadName(host.to_owned()))?;
 
         let ptr = PtrRecord { service, instance };
-        let srv = SrvRecord { priority: 0, weight: 0, port, target: target.clone() };
+        let srv = SrvRecord {
+            priority: 0,
+            weight: 0,
+            port,
+            target: target.clone(),
+        };
         let addresses = addresses
             .into_iter()
-            .map(|addr| ARecord { host: target.clone(), addr })
+            .map(|addr| ARecord {
+                host: target.clone(),
+                addr,
+            })
             .collect();
 
-        Ok(Self { ptr, srv, txt, addresses, ttl })
+        Ok(Self {
+            ptr,
+            srv,
+            txt,
+            addresses,
+            ttl,
+        })
     }
 
     /// The unique node id this record advertises (from its TXT).
@@ -283,7 +297,11 @@ mod tests {
     use std::net::Ipv4Addr;
 
     fn ver() -> Version {
-        Version { major: 1, minor: 4, patch: 0 }
+        Version {
+            major: 1,
+            minor: 4,
+            patch: 0,
+        }
     }
 
     fn txt() -> TxtRecord {
@@ -326,7 +344,11 @@ mod tests {
 
     #[test]
     fn txt_rejects_missing_required_key() {
-        let entries = vec!["role=primary".to_owned(), "v=1.4.0".to_owned(), "api=8123".to_owned()];
+        let entries = vec![
+            "role=primary".to_owned(),
+            "v=1.4.0".to_owned(),
+            "api=8123".to_owned(),
+        ];
         assert_eq!(
             TxtRecord::decode(&entries),
             Err(RecordError::MissingTxtKey("id"))
@@ -392,12 +414,18 @@ mod tests {
         )
         .expect("builds");
         assert_eq!(rec.ptr.service.to_dotted(), "_cavehome._tcp.local");
-        assert_eq!(rec.ptr.instance.to_dotted(), "hub-kitchen._cavehome._tcp.local");
+        assert_eq!(
+            rec.ptr.instance.to_dotted(),
+            "hub-kitchen._cavehome._tcp.local"
+        );
         assert_eq!(rec.srv.target.to_dotted(), "kitchen.local");
         assert_eq!(rec.srv.port, 8123);
         assert_eq!(rec.node_id(), "hub-kitchen");
         assert_eq!(rec.hostname(), "kitchen.local");
-        assert_eq!(rec.addresses(), vec![IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10))]);
+        assert_eq!(
+            rec.addresses(),
+            vec![IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10))]
+        );
     }
 
     #[test]

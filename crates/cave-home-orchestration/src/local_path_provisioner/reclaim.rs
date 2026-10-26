@@ -35,7 +35,10 @@ pub enum DeleteDecision {
 /// [`ReclaimError::NoNodeAffinity`] when a local-FS PV has no affinity term,
 /// [`ReclaimError::MultipleAffinityValues`] when the term has more than one
 /// value, or [`ReclaimError::CannotFindAffinitedNode`] when the value is empty.
-pub fn path_and_node_for_pv(pv: &PvSpec, shared_fs: bool) -> Result<(String, String), ReclaimError> {
+pub fn path_and_node_for_pv(
+    pv: &PvSpec,
+    shared_fs: bool,
+) -> Result<(String, String), ReclaimError> {
     let path = match &pv.source {
         VolumeSource::HostPath { path } | VolumeSource::Local { path } => path.clone(),
     };

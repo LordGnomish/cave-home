@@ -204,8 +204,13 @@ pub trait QueueSortPlugin: Send + Sync {
 /// hypothetical evaluation.
 pub trait PreFilterExtensions: Send + Sync {
     /// A pod is being added to `node` in the hypothetical; update cycle state.
-    fn add_pod(&self, state: &mut CycleState, pod: &Pod, pod_to_add: &Pod, node: &NodeInfo)
-        -> Status;
+    fn add_pod(
+        &self,
+        state: &mut CycleState,
+        pod: &Pod,
+        pod_to_add: &Pod,
+        node: &NodeInfo,
+    ) -> Status;
     /// A pod is being removed from `node` in the hypothetical; update cycle state.
     fn remove_pod(
         &self,
@@ -374,7 +379,9 @@ pub enum PermitDecision {
 impl WaitingPod {
     /// Construct a waiting-pod handle plus the receiver the framework awaits.
     #[must_use]
-    pub fn new(pod_uid: impl Into<String>) -> (Self, tokio::sync::oneshot::Receiver<PermitDecision>) {
+    pub fn new(
+        pod_uid: impl Into<String>,
+    ) -> (Self, tokio::sync::oneshot::Receiver<PermitDecision>) {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let wp = Self {
             pod_uid: pod_uid.into(),

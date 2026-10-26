@@ -53,17 +53,17 @@ pub mod source_sink;
 pub mod types;
 
 pub use cache::{NodeInfo, SchedulerCache};
+pub use config::SchedulerConfig;
 pub use framework::{
     ActionType, BindPlugin, ClusterEvent, Code, CycleState, FilterPlugin, Gvk, NodeScore,
     PermitDecision, PermitPlugin, PluginRegistry, PostBindPlugin, PostFilterPlugin, PreBindPlugin,
     PreEnqueuePlugin, PreFilterExtensions, PreFilterPlugin, PreFilterResult, PreScorePlugin,
     QueueSortPlugin, RegistryBuilder, ReservePlugin, ScorePlugin, Status, WaitingPod,
 };
-pub use plugins::{default_registry, PrioritySort};
+pub use plugins::{PrioritySort, default_registry};
 pub use preemption::DefaultPreemption;
 pub use queue::{PriorityQueue, QueuedPodInfo, SchedulingQueue};
-pub use config::SchedulerConfig;
-pub use schedule_one::{schedule_one, schedule_one_limited, ScheduleResult};
+pub use schedule_one::{ScheduleResult, schedule_one, schedule_one_limited};
 pub use scheduler::{CycleOutcome, Scheduler};
 pub use source_sink::{
     EventStream, InMemorySink, InMemorySource, NodeEvent, NodeEventStream, PodEvent, SchedulerSink,
@@ -73,6 +73,6 @@ pub use types::{
     Affinity, Container, ContainerPort, HostPathSource, Node, NodeAffinity, NodeSelector,
     NodeSelectorOperator, NodeSelectorRequirement, NodeSelectorTerm, NodeSpec, NodeStatus,
     ObjectMeta, Pod, PodPhase, PodSpec, PodStatus, Protocol, PvcSource, Quantity, ResourceList,
-    ResourceName, ResourceRequirements, Taint, TaintEffect, Toleration, TolerationOperator,
-    Volume, VolumeSource,
+    ResourceName, ResourceRequirements, Taint, TaintEffect, Toleration, TolerationOperator, Volume,
+    VolumeSource,
 };

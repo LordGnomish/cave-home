@@ -187,7 +187,10 @@ mod tests {
     #[test]
     fn validate_rejects_empty_rules() {
         let cfg = EncryptionConfiguration { rules: vec![] };
-        assert!(matches!(cfg.validate(), Err(EncryptionConfigError::NoRules)));
+        assert!(matches!(
+            cfg.validate(),
+            Err(EncryptionConfigError::NoRules)
+        ));
     }
 
     #[test]

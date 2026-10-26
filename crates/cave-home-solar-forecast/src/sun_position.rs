@@ -78,7 +78,8 @@ pub fn declination_deg(day_of_year: u16) -> f64 {
 pub fn equation_of_time_min(day_of_year: u16) -> f64 {
     let g = day_angle(day_of_year);
     // EoT (radians) Fourier form, converted to minutes via 229.18.
-    let eot_rad = 0.000_075 + 0.001_868 * g.cos() - 0.032_077 * g.sin()
+    let eot_rad = 0.000_075 + 0.001_868 * g.cos()
+        - 0.032_077 * g.sin()
         - 0.014_615 * (2.0 * g).cos()
         - 0.040_849 * (2.0 * g).sin();
     229.18 * eot_rad
@@ -136,14 +137,17 @@ impl SunPosition {
 /// [`sun_position_at`]. Latitude is degrees north (negative south); the hour
 /// angle comes from [`hour_angle_deg`].
 #[must_use]
-pub fn position_from_angles(latitude_deg: f64, declination_deg: f64, hour_angle_deg: f64) -> SunPosition {
+pub fn position_from_angles(
+    latitude_deg: f64,
+    declination_deg: f64,
+    hour_angle_deg: f64,
+) -> SunPosition {
     let lat = to_rad(latitude_deg);
     let dec = to_rad(declination_deg);
     let ha = to_rad(hour_angle_deg);
 
     // Elevation: sin(elev) = sinφ sinδ + cosφ cosδ cosH.
-    let sin_elev =
-        lat.sin() * dec.sin() + lat.cos() * dec.cos() * ha.cos();
+    let sin_elev = lat.sin() * dec.sin() + lat.cos() * dec.cos() * ha.cos();
     let sin_elev = sin_elev.clamp(-1.0, 1.0);
     let elev = sin_elev.asin();
 
@@ -151,13 +155,14 @@ pub fn position_from_angles(latitude_deg: f64, declination_deg: f64, hour_angle_
     // the horizon and through the poles of the standard cos-azimuth formula.
     //   az = atan2( sinH, cosH sinφ − tanδ cosφ )
     // measured from SOUTH; we rotate to a from-NORTH compass bearing below.
-    let az_from_south = ha
-        .sin()
-        .atan2(ha.cos() * lat.sin() - dec.tan() * lat.cos());
+    let az_from_south = ha.sin().atan2(ha.cos() * lat.sin() - dec.tan() * lat.cos());
     // Convert "clockwise from south" to "clockwise from north" in [0, 360).
     let az_deg = (to_deg(az_from_south) + 180.0).rem_euclid(360.0);
 
-    SunPosition { elevation_deg: to_deg(elev), azimuth_deg: az_deg }
+    SunPosition {
+        elevation_deg: to_deg(elev),
+        azimuth_deg: az_deg,
+    }
 }
 
 /// Compute the sun's position at a site for a true solar time.
@@ -294,9 +299,17 @@ mod tests {
     fn sun_rises_in_the_east_sets_in_the_west() {
         // Morning: azimuth in the eastern half (< 180°). Afternoon: western.
         let morning = sun_position_at(49.7, 172, 8.0);
-        assert!(morning.azimuth_deg < 180.0, "morning az={}", morning.azimuth_deg);
+        assert!(
+            morning.azimuth_deg < 180.0,
+            "morning az={}",
+            morning.azimuth_deg
+        );
         let afternoon = sun_position_at(49.7, 172, 16.0);
-        assert!(afternoon.azimuth_deg > 180.0, "afternoon az={}", afternoon.azimuth_deg);
+        assert!(
+            afternoon.azimuth_deg > 180.0,
+            "afternoon az={}",
+            afternoon.azimuth_deg
+        );
     }
 
     #[test]

@@ -98,9 +98,21 @@ impl Metrics {
         let mut out = String::new();
 
         for (name, help, value) in [
-            ("hue_lights_on", "Hue lights currently switched on", f64::from(on)),
-            ("hue_lights_total", "Hue lights known to the bridge", f64::from(total)),
-            ("hue_scenes_total", "Hue scenes known to the bridge", f64::from(scenes)),
+            (
+                "hue_lights_on",
+                "Hue lights currently switched on",
+                f64::from(on),
+            ),
+            (
+                "hue_lights_total",
+                "Hue lights known to the bridge",
+                f64::from(total),
+            ),
+            (
+                "hue_scenes_total",
+                "Hue scenes known to the bridge",
+                f64::from(scenes),
+            ),
             (
                 "hue_bridge_reachable",
                 "Whether the Hue bridge is reachable (1) or not (0)",
@@ -113,7 +125,10 @@ impl Metrics {
         }
 
         let evt = "hue_eventstream_events_total";
-        let _ = writeln!(out, "# HELP {evt} EventStream events delivered to controllers");
+        let _ = writeln!(
+            out,
+            "# HELP {evt} EventStream events delivered to controllers"
+        );
         let _ = writeln!(out, "# TYPE {evt} counter");
         let _ = writeln!(out, "{evt} {events}");
 
@@ -122,11 +137,18 @@ impl Metrics {
         let _ = writeln!(out, "# TYPE {dur} summary");
         for (endpoint, (count, sum)) in &requests {
             let _ = writeln!(out, "{dur}_count{{endpoint=\"{endpoint}\"}} {count}");
-            let _ = writeln!(out, "{dur}_sum{{endpoint=\"{endpoint}\"}} {}", fmt_f64(*sum));
+            let _ = writeln!(
+                out,
+                "{dur}_sum{{endpoint=\"{endpoint}\"}} {}",
+                fmt_f64(*sum)
+            );
         }
 
         let errs = "hue_api_errors_total";
-        let _ = writeln!(out, "# HELP {errs} CLIP API error responses by endpoint and status");
+        let _ = writeln!(
+            out,
+            "# HELP {errs} CLIP API error responses by endpoint and status"
+        );
         let _ = writeln!(out, "# TYPE {errs} counter");
         for ((endpoint, status), count) in &errors {
             let _ = writeln!(
@@ -166,7 +188,10 @@ mod tests {
         assert!(out.contains("hue_scenes_total 5"));
         assert!(out.contains("hue_bridge_reachable 1"));
         for name in ["hue_lights_on", "hue_lights_total", "hue_bridge_reachable"] {
-            assert!(out.contains(&format!("# TYPE {name} gauge")), "missing TYPE {name}");
+            assert!(
+                out.contains(&format!("# TYPE {name} gauge")),
+                "missing TYPE {name}"
+            );
         }
     }
 

@@ -132,12 +132,30 @@ mod tests {
 
     #[test]
     fn status_band_mapping() {
-        assert_eq!(SolarStatus::from_state(OperatingState::Mppt), SolarStatus::Producing);
-        assert_eq!(SolarStatus::from_state(OperatingState::Throttled), SolarStatus::Producing);
-        assert_eq!(SolarStatus::from_state(OperatingState::Sleeping), SolarStatus::Sleeping);
-        assert_eq!(SolarStatus::from_state(OperatingState::Off), SolarStatus::Off);
-        assert_eq!(SolarStatus::from_state(OperatingState::Fault), SolarStatus::Fault);
-        assert_eq!(SolarStatus::from_state(OperatingState::Other(42)), SolarStatus::Unknown);
+        assert_eq!(
+            SolarStatus::from_state(OperatingState::Mppt),
+            SolarStatus::Producing
+        );
+        assert_eq!(
+            SolarStatus::from_state(OperatingState::Throttled),
+            SolarStatus::Producing
+        );
+        assert_eq!(
+            SolarStatus::from_state(OperatingState::Sleeping),
+            SolarStatus::Sleeping
+        );
+        assert_eq!(
+            SolarStatus::from_state(OperatingState::Off),
+            SolarStatus::Off
+        );
+        assert_eq!(
+            SolarStatus::from_state(OperatingState::Fault),
+            SolarStatus::Fault
+        );
+        assert_eq!(
+            SolarStatus::from_state(OperatingState::Other(42)),
+            SolarStatus::Unknown
+        );
     }
 
     #[test]
@@ -146,7 +164,10 @@ mod tests {
         assert_eq!(describe(&r, Lang::En), "Solar inverter is producing 3.2 kW");
         assert_eq!(describe(&r, Lang::Tr), "Güneş invertörü 3.2 kW üretiyor");
         // German comma decimal.
-        assert_eq!(describe(&r, Lang::De), "Der Solar-Wechselrichter erzeugt 3,2 kW");
+        assert_eq!(
+            describe(&r, Lang::De),
+            "Der Solar-Wechselrichter erzeugt 3,2 kW"
+        );
     }
 
     #[test]
@@ -185,9 +206,24 @@ mod tests {
     fn ui_strings_carry_no_implementation_jargon() {
         // Charter §6.3: the UI must never surface protocol/decode terms.
         const BANNED: &[&str] = &[
-            "Modbus", "register", "holding", "MQTT", "Zigbee", "enum16",
-            "model 10", "model 11", "sunssf", "acc32", "uint16", "int16",
-            "float32", "entity_id", "pod", "kubelet", "0x", "0X",
+            "Modbus",
+            "register",
+            "holding",
+            "MQTT",
+            "Zigbee",
+            "enum16",
+            "model 10",
+            "model 11",
+            "sunssf",
+            "acc32",
+            "uint16",
+            "int16",
+            "float32",
+            "entity_id",
+            "pod",
+            "kubelet",
+            "0x",
+            "0X",
         ];
         let powers = [Some(3210.0), Some(0.0), None];
         let states = [

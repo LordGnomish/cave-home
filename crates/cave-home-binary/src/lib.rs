@@ -52,9 +52,9 @@ pub mod node;
 pub mod server;
 pub mod shutdown;
 pub mod supervisor;
+pub mod table;
 #[cfg(feature = "tls")]
 pub mod tls;
-pub mod table;
 pub mod version;
 
 pub use bootstrap::{Plan, PlanError};
@@ -171,8 +171,18 @@ mod tests {
     fn friendly_names_carry_no_implementation_jargon() {
         // Charter §6.3 / ADR-007: household-facing labels stay in home vocabulary.
         let banned = [
-            "pod", "kubelet", "etcd", "namespace", "rbac", "mqtt", "broker",
-            "orchestration", "k3s", "container", "zigbee", "modbus",
+            "pod",
+            "kubelet",
+            "etcd",
+            "namespace",
+            "rbac",
+            "mqtt",
+            "broker",
+            "orchestration",
+            "k3s",
+            "container",
+            "zigbee",
+            "modbus",
         ];
         for c in Component::ALL {
             let lower = c.friendly_name().to_ascii_lowercase();

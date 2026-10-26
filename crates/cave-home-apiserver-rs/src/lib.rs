@@ -132,27 +132,27 @@ pub use authn::{
     TokenAuthenticator,
 };
 pub use discovery::{ApiGroup, ApiResource, GroupVersionEntry};
+pub use gvk::{GroupVersionKind, GroupVersionResource, RegisteredKind};
 pub use handler::{ApiServer, Authorization};
 pub use http::{Headers, Method, Request, Response};
-pub use metrics::Metrics;
-pub use server::{read_request, serve_stream, Server};
-pub use storage::{registry_key, Backend, KineBackend};
-pub use gvk::{GroupVersionKind, GroupVersionResource, RegisteredKind};
 pub use json::Value;
 pub use meta::{ObjectMeta, OwnerReference};
+pub use metrics::Metrics;
 pub use patch::PatchOp;
-pub use path::{parse as parse_path, ResourcePath};
+pub use path::{ResourcePath, parse as parse_path};
 pub use rbac::{
     Attributes, ClusterRole, ClusterRoleBinding, Decision, PolicyRule, RbacAuthorizer, Role,
     RoleBinding, RoleRef, RoleRefKind, Subject, SubjectKind, UserInfo,
 };
 pub use registry::{ListOptions, ListResult, Registry, WatchEvent, WatchEventKind};
 pub use selector::{FieldSelector, LabelSelector, Requirement};
+pub use server::{Server, read_request, serve_stream};
+pub use status::{Status, StatusReason};
+pub use storage::{Backend, KineBackend, registry_key};
+#[cfg(feature = "tls")]
+pub use tls::{TlsServer, serve_tls_stream, server_config, server_config_mtls};
 pub use webhook::{
     AdmissionResponse, FailurePolicy, HttpWebhookClient, MockWebhookClient, RuleWithOperations,
     WebhookClient, WebhookError, WebhookMutatingPlugin, WebhookRules, WebhookValidatingPlugin,
 };
 pub use x509::subject_identity;
-#[cfg(feature = "tls")]
-pub use tls::{serve_tls_stream, server_config, server_config_mtls, TlsServer};
-pub use status::{Status, StatusReason};

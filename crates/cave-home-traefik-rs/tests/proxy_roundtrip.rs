@@ -31,7 +31,9 @@ async fn spawn_echo_backend() -> std::net::SocketAddr {
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
         loop {
-            let Ok((stream, _)) = listener.accept().await else { break };
+            let Ok((stream, _)) = listener.accept().await else {
+                break;
+            };
             tokio::spawn(async move {
                 let io = TokioIo::new(stream);
                 let svc = service_fn(|req: Request<Incoming>| async move {
@@ -177,6 +179,9 @@ async fn middleware_redirect_short_circuits_without_backend() {
 
     let (status, headers, _) = proxy_get(proxy_addr, "secure.test", "/dashboard").await;
     assert_eq!(status, StatusCode::FOUND);
-    let location = headers.iter().find(|(n, _)| n == "location").map(|(_, v)| v.clone());
+    let location = headers
+        .iter()
+        .find(|(n, _)| n == "location")
+        .map(|(_, v)| v.clone());
     assert_eq!(location.as_deref(), Some("https://secure.test/dashboard"));
 }

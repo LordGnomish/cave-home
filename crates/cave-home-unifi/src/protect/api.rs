@@ -166,10 +166,7 @@ mod tests {
         assert_eq!(bs.cameras.len(), 1);
         assert_eq!(bs.last_update_id.as_deref(), Some("u9"));
         let req = client.transport().last_request().unwrap();
-        assert_eq!(
-            req.url,
-            "https://10.0.0.3:443/proxy/protect/api/bootstrap"
-        );
+        assert_eq!(req.url, "https://10.0.0.3:443/proxy/protect/api/bootstrap");
     }
 
     #[tokio::test]

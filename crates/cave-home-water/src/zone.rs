@@ -206,8 +206,7 @@ mod tests {
 
     #[test]
     fn accepts_valid_zone_with_boundaries() {
-        let z = Zone::new(7, "Back garden", 900, Some(0.0), Some(12.5))
-            .expect("valid zone");
+        let z = Zone::new(7, "Back garden", 900, Some(0.0), Some(12.5)).expect("valid zone");
         assert_eq!(z.id(), 7);
         assert_eq!(z.name(), "Back garden");
         assert_eq!(z.runtime_seconds(), 900);

@@ -4,8 +4,8 @@
 //! End-to-end OAuth2-PKCE flow against the public crate surface.
 
 use cave_home_tesla::fleet_api::auth::{
-    authorize_url, parse_token_response, refresh_body, token_exchange_body, AuthConfig, PkcePair,
-    TokenExchange, TokenSet,
+    AuthConfig, PkcePair, TokenExchange, TokenSet, authorize_url, parse_token_response,
+    refresh_body, token_exchange_body,
 };
 
 // RFC 7636 Appendix B worked example.

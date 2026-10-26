@@ -46,7 +46,12 @@ const fn truncation_decimals(p: Pollutant) -> i32 {
 
 /// Build a breakpoint row.
 const fn bp(c_lo: f64, c_hi: f64, i_lo: f64, i_hi: f64) -> Breakpoint {
-    Breakpoint { c_lo, c_hi, i_lo, i_hi }
+    Breakpoint {
+        c_lo,
+        c_hi,
+        i_lo,
+        i_hi,
+    }
 }
 
 // PM2.5, 24-hour, µg/m³ — EPA 2024 revision (lowered breakpoints).
@@ -172,8 +177,7 @@ pub fn sub_index(pollutant: Pollutant, concentration: f64) -> AqiOutcome {
         }
     }
     // Concentration above the published maximum: report the table ceiling.
-    let max_index =
-        rows.last().map_or(0.0, |r| r.i_hi);
+    let max_index = rows.last().map_or(0.0, |r| r.i_hi);
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let ceil = max_index as u16;
     AqiOutcome::AboveTable(ceil)
@@ -209,7 +213,10 @@ mod tests {
     #[test]
     fn co_eight_hour_band() {
         // 9.4 ppm is the top of the "Moderate" CO band -> AQI 100.
-        assert_eq!(sub_index(Pollutant::CarbonMonoxide, 9.4), AqiOutcome::Value(100));
+        assert_eq!(
+            sub_index(Pollutant::CarbonMonoxide, 9.4),
+            AqiOutcome::Value(100)
+        );
     }
 
     #[test]
@@ -229,16 +236,31 @@ mod tests {
     #[test]
     fn above_table_reports_ceiling_not_garbage() {
         // PM2.5 table tops out at 325.4 µg/m³ -> ceiling AQI 500.
-        assert_eq!(sub_index(Pollutant::Pm25, 9_999.0), AqiOutcome::AboveTable(500));
+        assert_eq!(
+            sub_index(Pollutant::Pm25, 9_999.0),
+            AqiOutcome::AboveTable(500)
+        );
         // O3 8-hour table tops out at AQI 300.
-        assert_eq!(sub_index(Pollutant::Ozone, 1.0), AqiOutcome::AboveTable(300));
+        assert_eq!(
+            sub_index(Pollutant::Ozone, 1.0),
+            AqiOutcome::AboveTable(300)
+        );
     }
 
     #[test]
     fn non_aqi_pollutants_are_not_applicable() {
-        assert_eq!(sub_index(Pollutant::CarbonDioxide, 800.0), AqiOutcome::NotApplicable);
-        assert_eq!(sub_index(Pollutant::VocIndex, 100.0), AqiOutcome::NotApplicable);
-        assert_eq!(sub_index(Pollutant::Radon, 100.0), AqiOutcome::NotApplicable);
+        assert_eq!(
+            sub_index(Pollutant::CarbonDioxide, 800.0),
+            AqiOutcome::NotApplicable
+        );
+        assert_eq!(
+            sub_index(Pollutant::VocIndex, 100.0),
+            AqiOutcome::NotApplicable
+        );
+        assert_eq!(
+            sub_index(Pollutant::Radon, 100.0),
+            AqiOutcome::NotApplicable
+        );
     }
 
     #[test]

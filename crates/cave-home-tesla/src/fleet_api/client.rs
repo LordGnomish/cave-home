@@ -16,8 +16,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use parking_lot::Mutex;
 
-use super::endpoints::{ApiRequest, EnergyEndpoint, HttpMethod};
 use super::Region;
+use super::endpoints::{ApiRequest, EnergyEndpoint, HttpMethod};
 use crate::error::{Result, TeslaError};
 
 // ----------------------------------------------------------------------------
@@ -396,8 +396,8 @@ pub async fn send_with_retry<T: HttpTransport>(
 
 #[cfg(test)]
 mod tests {
-    use super::super::endpoints::{EnergyEndpoint, HttpMethod};
     use super::super::Region;
+    use super::super::endpoints::{EnergyEndpoint, HttpMethod};
     use super::*;
 
     #[test]
@@ -451,7 +451,9 @@ mod tests {
     async fn mock_transport_routes_and_logs_requests() {
         let t = MockTransport::new().route("/live_status", 200, r#"{"ok":true}"#);
         let resp = t
-            .send(HttpRequest::get("https://x/api/1/energy_sites/1/live_status"))
+            .send(HttpRequest::get(
+                "https://x/api/1/energy_sites/1/live_status",
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status, 200);
@@ -462,7 +464,10 @@ mod tests {
     async fn client_call_returns_ok_body() {
         let t = MockTransport::new().route("/live_status", 200, r#"{"response":{}}"#);
         let client = FleetClient::new(t, Region::Europe).with_token("AT-123");
-        let resp = client.call(&EnergyEndpoint::LiveStatus(1), 0).await.unwrap();
+        let resp = client
+            .call(&EnergyEndpoint::LiveStatus(1), 0)
+            .await
+            .unwrap();
         assert_eq!(resp.status, 200);
     }
 
@@ -470,7 +475,10 @@ mod tests {
     async fn client_call_injects_bearer_header() {
         let t = MockTransport::new().route("/live_status", 200, "{}");
         let client = FleetClient::new(t, Region::Europe).with_token("AT-123");
-        client.call(&EnergyEndpoint::LiveStatus(1), 0).await.unwrap();
+        client
+            .call(&EnergyEndpoint::LiveStatus(1), 0)
+            .await
+            .unwrap();
         let reqs = client.transport().requests.lock();
         let auth = reqs[0]
             .headers
@@ -483,7 +491,10 @@ mod tests {
     async fn client_call_maps_non_2xx_to_error() {
         let t = MockTransport::new().route("/live_status", 500, "boom");
         let client = FleetClient::new(t, Region::Europe).with_token("AT");
-        let err = client.call(&EnergyEndpoint::LiveStatus(1), 0).await.unwrap_err();
+        let err = client
+            .call(&EnergyEndpoint::LiveStatus(1), 0)
+            .await
+            .unwrap_err();
         assert!(matches!(err, TeslaError::Http { status: 500, .. }));
     }
 
@@ -491,7 +502,10 @@ mod tests {
     async fn client_call_enforces_rate_limit() {
         let t = MockTransport::new().route("/live_status", 200, "{}");
         let client = FleetClient::new(t, Region::Europe).with_token("AT");
-        client.call(&EnergyEndpoint::LiveStatus(1), 0).await.unwrap();
+        client
+            .call(&EnergyEndpoint::LiveStatus(1), 0)
+            .await
+            .unwrap();
         // Second call to the same endpoint 1s later is throttled.
         let err = client
             .call(&EnergyEndpoint::LiveStatus(1), 1_000)
@@ -505,12 +519,24 @@ mod tests {
         let t = MockTransport::new().route("/backup", 200, "{}");
         let client = FleetClient::new(t, Region::Europe).with_token("AT");
         client
-            .call(&EnergyEndpoint::SetBackupReserve { site_id: 1, percent: 30 }, 0)
+            .call(
+                &EnergyEndpoint::SetBackupReserve {
+                    site_id: 1,
+                    percent: 30,
+                },
+                0,
+            )
             .await
             .unwrap();
         let reqs = client.transport().requests.lock();
         assert_eq!(reqs[0].method, HttpMethod::Post);
-        assert!(reqs[0].body.as_deref().unwrap().contains("backup_reserve_percent"));
+        assert!(
+            reqs[0]
+                .body
+                .as_deref()
+                .unwrap()
+                .contains("backup_reserve_percent")
+        );
     }
 
     #[tokio::test(start_paused = true)]

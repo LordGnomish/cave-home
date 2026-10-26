@@ -2,7 +2,7 @@
 //! Multi-instance leader election over a shared coordination Lease
 //! (`client-go/tools/leaderelection` + `coordination.k8s.io/v1` Lease).
 
-use cave_home_controller_manager_rs::leaderelection::{ElectionResult, Lease, LeaderElector};
+use cave_home_controller_manager_rs::leaderelection::{ElectionResult, LeaderElector, Lease};
 
 const DURATION: i64 = 15;
 
@@ -104,7 +104,11 @@ fn at_most_one_leader_under_contention() {
     b.try_acquire_or_renew(&mut lease, 0);
     let now = 5;
     let leaders = [a.is_leader(&lease, now), b.is_leader(&lease, now)];
-    assert_eq!(leaders.iter().filter(|x| **x).count(), 1, "exactly one leader at any time");
+    assert_eq!(
+        leaders.iter().filter(|x| **x).count(),
+        1,
+        "exactly one leader at any time"
+    );
 }
 
 // --- Graceful release ---------------------------------------------------
@@ -117,8 +121,14 @@ fn release_lets_a_successor_acquire_immediately_without_waiting_for_expiry() {
     a.try_acquire_or_renew(&mut lease, 100); // A leads, valid until 115
 
     // A releases on graceful shutdown at t=103 (well before expiry).
-    assert!(a.release(&mut lease, 103), "the holder releases its own lease");
-    assert!(!a.is_leader(&lease, 103), "A is no longer leader after releasing");
+    assert!(
+        a.release(&mut lease, 103),
+        "the holder releases its own lease"
+    );
+    assert!(
+        !a.is_leader(&lease, 103),
+        "A is no longer leader after releasing"
+    );
 
     // B can acquire right away even though the original duration had not elapsed.
     match b.try_acquire_or_renew(&mut lease, 104) {
@@ -137,7 +147,10 @@ fn a_non_holder_cannot_release_the_lease() {
     let b = LeaderElector::new("B", DURATION);
     let mut lease: Option<Lease> = None;
     a.try_acquire_or_renew(&mut lease, 100);
-    assert!(!b.release(&mut lease, 101), "B does not hold the lease, so cannot release it");
+    assert!(
+        !b.release(&mut lease, 101),
+        "B does not hold the lease, so cannot release it"
+    );
     assert!(a.is_leader(&lease, 101), "A still holds it");
 }
 
@@ -149,7 +162,10 @@ fn released_lease_is_expired_for_validity_checks() {
     a.release(&mut lease, 102);
     // An empty-holder lease is held by nobody.
     assert!(!a.is_leader(&lease, 102));
-    assert!(lease.as_ref().unwrap().holder_identity.is_empty(), "holder cleared on release");
+    assert!(
+        lease.as_ref().unwrap().holder_identity.is_empty(),
+        "holder cleared on release"
+    );
 }
 
 // --- Renew-deadline timing ----------------------------------------------
@@ -161,9 +177,18 @@ fn config_rejects_a_renew_deadline_that_is_not_shorter_than_the_lease_duration()
     // Upstream invariant: leaseDuration > renewDeadline > 0 and
     // renewDeadline > retryPeriod*JitterFactor; we enforce the ordering.
     assert!(LeaderElectionConfig::new(15, 10, 2).is_ok());
-    assert!(LeaderElectionConfig::new(10, 10, 2).is_err(), "renew_deadline must be < lease_duration");
-    assert!(LeaderElectionConfig::new(15, 2, 5).is_err(), "retry_period must be < renew_deadline");
-    assert!(LeaderElectionConfig::new(15, 0, 0).is_err(), "renew_deadline must be > 0");
+    assert!(
+        LeaderElectionConfig::new(10, 10, 2).is_err(),
+        "renew_deadline must be < lease_duration"
+    );
+    assert!(
+        LeaderElectionConfig::new(15, 2, 5).is_err(),
+        "retry_period must be < renew_deadline"
+    );
+    assert!(
+        LeaderElectionConfig::new(15, 0, 0).is_err(),
+        "renew_deadline must be > 0"
+    );
 }
 
 #[test]
@@ -180,9 +205,15 @@ fn a_holder_that_misses_its_renew_deadline_must_stop_leading() {
     let last_renew = 100;
 
     // 9s after the last successful renew: still within the 10s deadline.
-    assert!(!cfg.renew_deadline_exceeded(last_renew, 109), "within deadline, keep leading");
+    assert!(
+        !cfg.renew_deadline_exceeded(last_renew, 109),
+        "within deadline, keep leading"
+    );
     // 11s after: deadline blown, must relinquish.
-    assert!(cfg.renew_deadline_exceeded(last_renew, 111), "deadline exceeded, stop leading");
+    assert!(
+        cfg.renew_deadline_exceeded(last_renew, 111),
+        "deadline exceeded, stop leading"
+    );
 }
 
 // --- Observed-record tracking -------------------------------------------
@@ -200,7 +231,10 @@ fn observe_tracks_the_time_the_record_last_changed() {
 
     // The record is unchanged at t=108: observed_at stays put.
     obs = b.observe_again(obs, lease.as_ref(), 108);
-    assert_eq!(obs.observed_at, 105, "unchanged record keeps the original observation time");
+    assert_eq!(
+        obs.observed_at, 105,
+        "unchanged record keeps the original observation time"
+    );
 
     // A renews at 110 (record changes); B's next observation resets the clock.
     a.try_acquire_or_renew(&mut lease, 110);

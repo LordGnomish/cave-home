@@ -111,18 +111,27 @@ mod tests {
     #[tokio::test]
     async fn synthesizes_non_empty_audio_and_records_text() {
         let tts = MockTts::new();
-        let r = tts.synthesize("Turning on the kitchen light.", Lang::En).await.unwrap();
+        let r = tts
+            .synthesize("Turning on the kitchen light.", Lang::En)
+            .await
+            .unwrap();
         assert_eq!(r.text, "Turning on the kitchen light.");
         assert_eq!(r.language, Lang::En);
         assert!(!r.samples.is_empty());
-        assert_eq!(*tts.spoken.lock(), vec!["Turning on the kitchen light.".to_string()]);
+        assert_eq!(
+            *tts.spoken.lock(),
+            vec!["Turning on the kitchen light.".to_string()]
+        );
     }
 
     #[tokio::test]
     async fn longer_text_speaks_longer() {
         let tts = MockTts::new();
         let short = tts.synthesize("ok", Lang::En).await.unwrap();
-        let long = tts.synthesize("okay then, here we go", Lang::En).await.unwrap();
+        let long = tts
+            .synthesize("okay then, here we go", Lang::En)
+            .await
+            .unwrap();
         assert!(long.duration_ms() > short.duration_ms());
     }
 }

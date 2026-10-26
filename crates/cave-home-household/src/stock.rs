@@ -25,10 +25,9 @@ pub enum StockError {
 impl core::fmt::Display for StockError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::NotEnoughStock { wanted, available } => write!(
-                f,
-                "tried to use {wanted} but only {available} is in stock"
-            ),
+            Self::NotEnoughStock { wanted, available } => {
+                write!(f, "tried to use {wanted} but only {available} is in stock")
+            }
             Self::BadAmount => f.write_str("the amount must be a finite, non-negative number"),
         }
     }
@@ -62,7 +61,10 @@ pub fn consume(product: &Product, amount: f64) -> Result<f64, StockError> {
     let amount = checked_amount(amount)?;
     let available = product.stock();
     if amount > available {
-        return Err(StockError::NotEnoughStock { wanted: amount, available });
+        return Err(StockError::NotEnoughStock {
+            wanted: amount,
+            available,
+        });
     }
     Ok(available - amount)
 }
@@ -92,7 +94,10 @@ pub fn open(product: &Product, unit_size: f64) -> Result<f64, StockError> {
     let unit_size = checked_amount(unit_size)?;
     let available = product.stock();
     if unit_size > available {
-        return Err(StockError::NotEnoughStock { wanted: unit_size, available });
+        return Err(StockError::NotEnoughStock {
+            wanted: unit_size,
+            available,
+        });
     }
     Ok(available)
 }
@@ -115,8 +120,14 @@ mod tests {
     use crate::product::QuantityUnit;
 
     fn milk(stock: f64) -> Product {
-        Product::new("Milk", QuantityUnit::Millilitres { step: 1000.0 }, stock, 1000.0, None)
-            .expect("valid product")
+        Product::new(
+            "Milk",
+            QuantityUnit::Millilitres { step: 1000.0 },
+            stock,
+            1000.0,
+            None,
+        )
+        .expect("valid product")
     }
 
     #[test]
@@ -136,7 +147,10 @@ mod tests {
         let p = milk(500.0);
         assert_eq!(
             consume(&p, 800.0),
-            Err(StockError::NotEnoughStock { wanted: 800.0, available: 500.0 })
+            Err(StockError::NotEnoughStock {
+                wanted: 800.0,
+                available: 500.0
+            })
         );
     }
 
@@ -151,7 +165,10 @@ mod tests {
         let p = milk(1000.0);
         assert_eq!(open(&p, 1000.0), Ok(1000.0));
         let empty = milk(0.0);
-        assert!(matches!(open(&empty, 1000.0), Err(StockError::NotEnoughStock { .. })));
+        assert!(matches!(
+            open(&empty, 1000.0),
+            Err(StockError::NotEnoughStock { .. })
+        ));
     }
 
     #[test]

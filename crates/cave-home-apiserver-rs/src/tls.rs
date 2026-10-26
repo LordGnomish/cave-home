@@ -172,7 +172,11 @@ impl TlsServer {
         app: Arc<Mutex<ApiServer>>,
         config: Arc<ServerConfig>,
     ) -> io::Result<Self> {
-        Ok(Self { listener: TcpListener::bind(addr)?, app, config })
+        Ok(Self {
+            listener: TcpListener::bind(addr)?,
+            app,
+            config,
+        })
     }
 
     /// The bound local address (resolves the ephemeral port).
@@ -253,7 +257,10 @@ mod tests {
                 .with_safe_default_protocol_versions()
                 .expect("versions")
                 .with_root_certificates(roots)
-                .with_client_auth_cert(load_certs(CLIENT_CERT).expect("cert"), load_private_key(CLIENT_KEY).expect("key"))
+                .with_client_auth_cert(
+                    load_certs(CLIENT_CERT).expect("cert"),
+                    load_private_key(CLIENT_KEY).expect("key"),
+                )
                 .expect("client auth"),
         )
     }
@@ -327,7 +334,11 @@ mod tests {
         let addr = server.local_addr().expect("addr");
 
         let worker = std::thread::spawn(move || server.serve_once().expect("serve_once"));
-        let resp = tls_call(addr, client_config_mtls(), &get("/api/v1/namespaces/default/pods"));
+        let resp = tls_call(
+            addr,
+            client_config_mtls(),
+            &get("/api/v1/namespaces/default/pods"),
+        );
         worker.join().expect("worker");
 
         // The list succeeds (authenticated) and the recorded identity is the
@@ -350,10 +361,15 @@ mod tests {
 
         let worker = std::thread::spawn(move || {
             // The handshake fails (no client cert): serve_once surfaces an error.
-            server.serve_once().expect_err("handshake without client cert must fail")
+            server
+                .serve_once()
+                .expect_err("handshake without client cert must fail")
         });
         let resp = tls_call(addr, client_config_plain(), &get("/healthz"));
         worker.join().expect("worker");
-        assert!(!resp.contains("200 OK"), "cert-less client must not be served: {resp}");
+        assert!(
+            !resp.contains("200 OK"),
+            "cert-less client must not be served: {resp}"
+        );
     }
 }

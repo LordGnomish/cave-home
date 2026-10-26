@@ -9,7 +9,7 @@ use cave_home_kube_proxy_rs::core::model::{
     Endpoint, EndpointConditions, EndpointPort, EndpointSlice, ExternalTrafficPolicy, Protocol,
     Service, ServicePort, ServiceType, SessionAffinity,
 };
-use cave_home_kube_proxy_rs::core::select::{select_endpoints, NodeContext};
+use cave_home_kube_proxy_rs::core::select::{NodeContext, select_endpoints};
 
 fn ip(s: &str) -> IpAddr {
     s.parse().expect("ip literal")
@@ -49,11 +49,19 @@ fn ep(addr: &str, conds: EndpointConditions, node: Option<&str>, zone: Option<&s
 }
 
 fn ready() -> EndpointConditions {
-    EndpointConditions { ready: Some(true), serving: Some(true), terminating: Some(false) }
+    EndpointConditions {
+        ready: Some(true),
+        serving: Some(true),
+        terminating: Some(false),
+    }
 }
 
 fn unready() -> EndpointConditions {
-    EndpointConditions { ready: Some(false), serving: Some(false), terminating: Some(false) }
+    EndpointConditions {
+        ready: Some(false),
+        serving: Some(false),
+        terminating: Some(false),
+    }
 }
 
 fn slice(eps: Vec<Endpoint>) -> EndpointSlice {
@@ -61,7 +69,11 @@ fn slice(eps: Vec<Endpoint>) -> EndpointSlice {
         namespace: "ns".into(),
         service_name: "svc".into(),
         slice_name: "svc-1".into(),
-        ports: vec![EndpointPort { name: "http".into(), protocol: Protocol::Tcp, port: 8080 }],
+        ports: vec![EndpointPort {
+            name: "http".into(),
+            protocol: Protocol::Tcp,
+            port: 8080,
+        }],
         endpoints: eps,
     }
 }
@@ -73,7 +85,12 @@ fn only_ready_endpoints_selected() {
         ep("10.1.0.1", ready(), None, None),
         ep("10.1.0.2", unready(), None, None),
     ]);
-    let sel = select_endpoints(&s, &s.ports[0], std::slice::from_ref(&sl), &NodeContext::default());
+    let sel = select_endpoints(
+        &s,
+        &s.ports[0],
+        std::slice::from_ref(&sl),
+        &NodeContext::default(),
+    );
     assert_eq!(sel.cluster.len(), 1);
     assert_eq!(sel.cluster[0].ip, ip("10.1.0.1"));
     assert!(!sel.from_terminating);
@@ -82,20 +99,39 @@ fn only_ready_endpoints_selected() {
 #[test]
 fn unset_ready_condition_treated_as_ready() {
     let s = svc(ExternalTrafficPolicy::Cluster);
-    let sl = slice(vec![ep("10.1.0.9", EndpointConditions::default(), None, None)]);
-    let sel = select_endpoints(&s, &s.ports[0], std::slice::from_ref(&sl), &NodeContext::default());
+    let sl = slice(vec![ep(
+        "10.1.0.9",
+        EndpointConditions::default(),
+        None,
+        None,
+    )]);
+    let sel = select_endpoints(
+        &s,
+        &s.ports[0],
+        std::slice::from_ref(&sl),
+        &NodeContext::default(),
+    );
     assert_eq!(sel.cluster.len(), 1);
 }
 
 #[test]
 fn terminating_endpoint_excluded_from_normal_set() {
     let s = svc(ExternalTrafficPolicy::Cluster);
-    let term = EndpointConditions { ready: Some(false), serving: Some(true), terminating: Some(true) };
+    let term = EndpointConditions {
+        ready: Some(false),
+        serving: Some(true),
+        terminating: Some(true),
+    };
     let sl = slice(vec![
         ep("10.1.0.1", ready(), None, None),
         ep("10.1.0.2", term, None, None),
     ]);
-    let sel = select_endpoints(&s, &s.ports[0], std::slice::from_ref(&sl), &NodeContext::default());
+    let sel = select_endpoints(
+        &s,
+        &s.ports[0],
+        std::slice::from_ref(&sl),
+        &NodeContext::default(),
+    );
     assert_eq!(sel.cluster.len(), 1);
     assert_eq!(sel.cluster[0].ip, ip("10.1.0.1"));
 }
@@ -105,9 +141,18 @@ fn terminating_fallback_used_when_no_ready() {
     // No ready endpoints, but a serving-terminating one exists -> use it
     // rather than black-holing the Service.
     let s = svc(ExternalTrafficPolicy::Cluster);
-    let term = EndpointConditions { ready: Some(false), serving: Some(true), terminating: Some(true) };
+    let term = EndpointConditions {
+        ready: Some(false),
+        serving: Some(true),
+        terminating: Some(true),
+    };
     let sl = slice(vec![ep("10.1.0.7", term, None, None)]);
-    let sel = select_endpoints(&s, &s.ports[0], std::slice::from_ref(&sl), &NodeContext::default());
+    let sel = select_endpoints(
+        &s,
+        &s.ports[0],
+        std::slice::from_ref(&sl),
+        &NodeContext::default(),
+    );
     assert_eq!(sel.cluster.len(), 1);
     assert!(sel.from_terminating);
 }
@@ -116,14 +161,22 @@ fn terminating_fallback_used_when_no_ready() {
 fn target_port_resolved_from_named_slice_port() {
     let s = svc(ExternalTrafficPolicy::Cluster);
     let sl = slice(vec![ep("10.1.0.1", ready(), None, None)]);
-    let sel = select_endpoints(&s, &s.ports[0], std::slice::from_ref(&sl), &NodeContext::default());
+    let sel = select_endpoints(
+        &s,
+        &s.ports[0],
+        std::slice::from_ref(&sl),
+        &NodeContext::default(),
+    );
     assert_eq!(sel.cluster[0].port, 8080);
 }
 
 #[test]
 fn external_policy_cluster_uses_all_ready() {
     let s = svc(ExternalTrafficPolicy::Cluster);
-    let node = NodeContext { node_name: Some("node-a".into()), zone: None };
+    let node = NodeContext {
+        node_name: Some("node-a".into()),
+        zone: None,
+    };
     let sl = slice(vec![
         ep("10.1.0.1", ready(), Some("node-a"), None),
         ep("10.1.0.2", ready(), Some("node-b"), None),
@@ -136,7 +189,10 @@ fn external_policy_cluster_uses_all_ready() {
 #[test]
 fn external_policy_local_keeps_only_local_node() {
     let s = svc(ExternalTrafficPolicy::Local);
-    let node = NodeContext { node_name: Some("node-a".into()), zone: None };
+    let node = NodeContext {
+        node_name: Some("node-a".into()),
+        zone: None,
+    };
     let sl = slice(vec![
         ep("10.1.0.1", ready(), Some("node-a"), None),
         ep("10.1.0.2", ready(), Some("node-b"), None),
@@ -154,7 +210,10 @@ fn external_policy_local_empty_when_no_local_endpoint() {
     // Local policy on a node with no local endpoint -> empty external set
     // (the rule builder turns this into a Reject for the external frontend).
     let s = svc(ExternalTrafficPolicy::Local);
-    let node = NodeContext { node_name: Some("node-c".into()), zone: None };
+    let node = NodeContext {
+        node_name: Some("node-c".into()),
+        zone: None,
+    };
     let sl = slice(vec![
         ep("10.1.0.1", ready(), Some("node-a"), None),
         ep("10.1.0.2", ready(), Some("node-b"), None),
@@ -177,7 +236,10 @@ fn hinted(addr: &str, zone: &str, for_zones: &[&str]) -> Endpoint {
 #[test]
 fn topology_hints_restrict_to_local_zone() {
     let s = svc(ExternalTrafficPolicy::Cluster);
-    let node = NodeContext { node_name: None, zone: Some("z1".into()) };
+    let node = NodeContext {
+        node_name: None,
+        zone: Some("z1".into()),
+    };
     let sl = slice(vec![
         hinted("10.1.0.1", "z1", &["z1"]),
         hinted("10.1.0.2", "z2", &["z2"]),
@@ -191,7 +253,10 @@ fn topology_hints_restrict_to_local_zone() {
 fn topology_hints_ignored_when_not_all_endpoints_hinted() {
     // One endpoint lacks hints -> fail-open, hints ignored, both selected.
     let s = svc(ExternalTrafficPolicy::Cluster);
-    let node = NodeContext { node_name: None, zone: Some("z1".into()) };
+    let node = NodeContext {
+        node_name: None,
+        zone: Some("z1".into()),
+    };
     let sl = slice(vec![
         hinted("10.1.0.1", "z1", &["z1"]),
         ep("10.1.0.2", ready(), None, Some("z2")), // no hints
@@ -204,13 +269,20 @@ fn topology_hints_ignored_when_not_all_endpoints_hinted() {
 fn topology_hints_fail_open_when_local_zone_has_none() {
     // All hinted, but none for our zone -> would empty the set -> ignore hint.
     let s = svc(ExternalTrafficPolicy::Cluster);
-    let node = NodeContext { node_name: None, zone: Some("z9".into()) };
+    let node = NodeContext {
+        node_name: None,
+        zone: Some("z9".into()),
+    };
     let sl = slice(vec![
         hinted("10.1.0.1", "z1", &["z1"]),
         hinted("10.1.0.2", "z2", &["z2"]),
     ]);
     let sel = select_endpoints(&s, &s.ports[0], std::slice::from_ref(&sl), &node);
-    assert_eq!(sel.cluster.len(), 2, "hint that black-holes the zone is ignored");
+    assert_eq!(
+        sel.cluster.len(),
+        2,
+        "hint that black-holes the zone is ignored"
+    );
 }
 
 #[test]
@@ -221,7 +293,12 @@ fn topology_hints_inactive_without_node_zone() {
         hinted("10.1.0.2", "z2", &["z2"]),
     ]);
     // No node zone known -> hints can't apply.
-    let sel = select_endpoints(&s, &s.ports[0], std::slice::from_ref(&sl), &NodeContext::default());
+    let sel = select_endpoints(
+        &s,
+        &s.ports[0],
+        std::slice::from_ref(&sl),
+        &NodeContext::default(),
+    );
     assert_eq!(sel.cluster.len(), 2);
 }
 
@@ -254,7 +331,15 @@ fn no_matching_port_yields_no_endpoints() {
     // Slice port name doesn't match the Service port and target_port is set,
     // so the numeric fallback (8080) is still used.
     sl.ports[0].name = "other".into();
-    let sel = select_endpoints(&s, &s.ports[0], std::slice::from_ref(&sl), &NodeContext::default());
+    let sel = select_endpoints(
+        &s,
+        &s.ports[0],
+        std::slice::from_ref(&sl),
+        &NodeContext::default(),
+    );
     assert_eq!(sel.cluster.len(), 1);
-    assert_eq!(sel.cluster[0].port, 8080, "falls back to numeric target_port");
+    assert_eq!(
+        sel.cluster[0].port, 8080,
+        "falls back to numeric target_port"
+    );
 }

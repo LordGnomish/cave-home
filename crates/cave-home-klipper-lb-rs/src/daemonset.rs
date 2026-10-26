@@ -241,7 +241,13 @@ mod tests {
         );
         for c in &spec.containers {
             assert_eq!(c.env.len(), 5);
-            for name in ["SRC_PORT", "SRC_RANGE", "DEST_PROTO", "DEST_PORT", "DEST_IPS"] {
+            for name in [
+                "SRC_PORT",
+                "SRC_RANGE",
+                "DEST_PROTO",
+                "DEST_PORT",
+                "DEST_IPS",
+            ] {
                 assert!(c.env_value(name).is_some(), "missing {name}");
             }
         }

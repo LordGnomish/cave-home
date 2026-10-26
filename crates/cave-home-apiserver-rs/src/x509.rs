@@ -62,7 +62,11 @@ fn read_tlv(input: &[u8]) -> Option<Tlv<'_>> {
     if input.len() < end {
         return None;
     }
-    Some(Tlv { tag, value: &input[header..end], len: end })
+    Some(Tlv {
+        tag,
+        value: &input[header..end],
+        len: end,
+    })
 }
 
 /// DER `SEQUENCE` tag (constructed).
@@ -173,7 +177,10 @@ mod tests {
     #[test]
     fn extracts_organizations_as_groups_in_order() {
         let id = subject_identity(CLIENT_DER).expect("parse subject");
-        assert_eq!(id.groups, vec!["system:masters".to_string(), "dev".to_string()]);
+        assert_eq!(
+            id.groups,
+            vec!["system:masters".to_string(), "dev".to_string()]
+        );
     }
 
     #[test]

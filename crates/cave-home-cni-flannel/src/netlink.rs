@@ -397,7 +397,10 @@ mod tests {
         let bytes = m.serialize();
         // nlmsg_len = 16 (hdr) + 16 (ifinfomsg) = 32.
         assert_eq!(u32::from_le_bytes(bytes[0..4].try_into().unwrap()), 32);
-        assert_eq!(u16::from_le_bytes(bytes[4..6].try_into().unwrap()), RTM_NEWLINK);
+        assert_eq!(
+            u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
+            RTM_NEWLINK
+        );
         let flags = u16::from_le_bytes(bytes[6..8].try_into().unwrap());
         assert_eq!(flags, NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL);
         assert_eq!(bytes.len(), 32);
@@ -430,7 +433,10 @@ mod tests {
         assert_eq!(b[5], RTPROT_BOOT);
         assert_eq!(b[6], RT_SCOPE_UNIVERSE);
         assert_eq!(b[7], RTN_UNICAST);
-        assert_eq!(u32::from_le_bytes(b[8..12].try_into().unwrap()), RTNH_F_ONLINK);
+        assert_eq!(
+            u32::from_le_bytes(b[8..12].try_into().unwrap()),
+            RTNH_F_ONLINK
+        );
     }
 
     #[test]
@@ -438,7 +444,10 @@ mod tests {
         let b = ndmsg(AF_BRIDGE, 7, NUD_PERMANENT, NTF_SELF, 0);
         assert_eq!(b[0], AF_BRIDGE);
         assert_eq!(i32::from_le_bytes(b[4..8].try_into().unwrap()), 7);
-        assert_eq!(u16::from_le_bytes(b[8..10].try_into().unwrap()), NUD_PERMANENT);
+        assert_eq!(
+            u16::from_le_bytes(b[8..10].try_into().unwrap()),
+            NUD_PERMANENT
+        );
         assert_eq!(b[10], NTF_SELF);
     }
 

@@ -223,13 +223,7 @@ mod tests {
     #[test]
     fn integral_trapezoid_multiple_segments() {
         // y = x at t=0,1,2,3,4. Area under y=x from 0..4 = 8.
-        let area = integral(&series(&[
-            (0, 0.0),
-            (1, 1.0),
-            (2, 2.0),
-            (3, 3.0),
-            (4, 4.0),
-        ]));
+        let area = integral(&series(&[(0, 0.0), (1, 1.0), (2, 2.0), (3, 3.0), (4, 4.0)]));
         assert!((area - 8.0).abs() < 1e-9, "area = {area}");
     }
 
@@ -243,8 +237,8 @@ mod tests {
     fn time_weighted_mean_weights_by_duration() {
         // 0 held 0..1 (1s), 10 held 1..10 (9s). Trapezoidal area:
         // seg1 (0+10)/2*1 = 5; seg2 (10+10)/2*9 = 90 -> 95 over span 10 = 9.5.
-        let twm = time_weighted_mean(&series(&[(0, 0.0), (1, 10.0), (10, 10.0)]))
-            .expect("non-zero span");
+        let twm =
+            time_weighted_mean(&series(&[(0, 0.0), (1, 10.0), (10, 10.0)])).expect("non-zero span");
         assert!((twm - 9.5).abs() < 1e-9, "twm = {twm}");
     }
 
@@ -275,10 +269,7 @@ mod tests {
     #[test]
     fn find_gaps_detects_silence() {
         // Expected every 60s. 0,60,120 then a jump to 600 (a 480s gap).
-        let gaps = find_gaps(
-            &series(&[(0, 1.0), (60, 1.0), (120, 1.0), (600, 1.0)]),
-            60,
-        );
+        let gaps = find_gaps(&series(&[(0, 1.0), (60, 1.0), (120, 1.0), (600, 1.0)]), 60);
         assert_eq!(gaps.len(), 1);
         assert_eq!(gaps[0], Gap { from: 120, to: 600 });
         assert_eq!(gaps[0].duration(), 480);

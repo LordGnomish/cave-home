@@ -180,15 +180,39 @@ mod tests {
     #[test]
     fn rejects_implausibly_long_delay() {
         assert_eq!(
-            PanelConfig::new(PanelConfig::MAX_DELAY + 1, 30, 240, true, false, false, false),
+            PanelConfig::new(
+                PanelConfig::MAX_DELAY + 1,
+                30,
+                240,
+                true,
+                false,
+                false,
+                false
+            ),
             Err(ConfigError::DelayTooLong)
         );
         assert_eq!(
-            PanelConfig::new(60, PanelConfig::MAX_DELAY + 1, 240, true, false, false, false),
+            PanelConfig::new(
+                60,
+                PanelConfig::MAX_DELAY + 1,
+                240,
+                true,
+                false,
+                false,
+                false
+            ),
             Err(ConfigError::DelayTooLong)
         );
         assert_eq!(
-            PanelConfig::new(60, 30, PanelConfig::MAX_DELAY + 1, true, false, false, false),
+            PanelConfig::new(
+                60,
+                30,
+                PanelConfig::MAX_DELAY + 1,
+                true,
+                false,
+                false,
+                false
+            ),
             Err(ConfigError::DelayTooLong)
         );
     }
@@ -215,8 +239,14 @@ mod tests {
     #[test]
     fn instant_zone_predicate() {
         let cfg = PanelConfig::new(60, 30, 240, true, true, false, false).expect("valid");
-        assert!(cfg.is_instant_for(true, false), "home instant zone fires instantly");
-        assert!(!cfg.is_instant_for(false, true), "night instant disabled here");
+        assert!(
+            cfg.is_instant_for(true, false),
+            "home instant zone fires instantly"
+        );
+        assert!(
+            !cfg.is_instant_for(false, true),
+            "night instant disabled here"
+        );
         assert!(!cfg.is_instant_for(false, false));
     }
 }

@@ -115,11 +115,18 @@ impl Metrics {
         let _ = writeln!(out, "# TYPE {dur} summary");
         for (endpoint, (count, sum)) in &requests {
             let _ = writeln!(out, "{dur}_count{{endpoint=\"{endpoint}\"}} {count}");
-            let _ = writeln!(out, "{dur}_sum{{endpoint=\"{endpoint}\"}} {}", fmt_f64(*sum));
+            let _ = writeln!(
+                out,
+                "{dur}_sum{{endpoint=\"{endpoint}\"}} {}",
+                fmt_f64(*sum)
+            );
         }
 
         let errs = "tesla_api_errors_total";
-        let _ = writeln!(out, "# HELP {errs} Fleet API error responses by endpoint and status");
+        let _ = writeln!(
+            out,
+            "# HELP {errs} Fleet API error responses by endpoint and status"
+        );
         let _ = writeln!(out, "# TYPE {errs} counter");
         for ((endpoint, status), count) in &errors {
             let _ = writeln!(
@@ -179,8 +186,14 @@ mod tests {
             "tesla_grid_import_watts",
             "tesla_grid_export_watts",
         ] {
-            assert!(out.contains(&format!("# HELP {name} ")), "missing HELP {name}");
-            assert!(out.contains(&format!("# TYPE {name} gauge")), "missing TYPE {name}");
+            assert!(
+                out.contains(&format!("# HELP {name} ")),
+                "missing HELP {name}"
+            );
+            assert!(
+                out.contains(&format!("# TYPE {name} gauge")),
+                "missing TYPE {name}"
+            );
         }
     }
 
@@ -191,8 +204,12 @@ mod tests {
         m.record_request("live_status", 0.75);
         let out = m.render();
         assert!(out.contains("# TYPE tesla_api_request_duration_seconds summary"));
-        assert!(out.contains(r#"tesla_api_request_duration_seconds_count{endpoint="live_status"} 2"#));
-        assert!(out.contains(r#"tesla_api_request_duration_seconds_sum{endpoint="live_status"} 1"#));
+        assert!(
+            out.contains(r#"tesla_api_request_duration_seconds_count{endpoint="live_status"} 2"#)
+        );
+        assert!(
+            out.contains(r#"tesla_api_request_duration_seconds_sum{endpoint="live_status"} 1"#)
+        );
     }
 
     #[test]
@@ -203,8 +220,7 @@ mod tests {
         m.record_error("backup", 429);
         let out = m.render();
         assert!(out.contains("# TYPE tesla_api_errors_total counter"));
-        assert!(out
-            .contains(r#"tesla_api_errors_total{endpoint="live_status",status="500"} 2"#));
+        assert!(out.contains(r#"tesla_api_errors_total{endpoint="live_status",status="500"} 2"#));
         assert!(out.contains(r#"tesla_api_errors_total{endpoint="backup",status="429"} 1"#));
     }
 

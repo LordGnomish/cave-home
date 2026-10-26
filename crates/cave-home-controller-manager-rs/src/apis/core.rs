@@ -56,7 +56,10 @@ impl Pod {
     /// A pending pod with the given metadata.
     #[must_use]
     pub fn new(meta: ObjectMeta) -> Self {
-        Self { meta, status: PodStatus::default() }
+        Self {
+            meta,
+            status: PodStatus::default(),
+        }
     }
 
     /// `true` if the pod is active: not terminal and not terminating. This is
@@ -110,7 +113,9 @@ impl Namespace {
     /// A namespace object with the given name.
     #[must_use]
     pub fn new(name: &str, uid: &str) -> Self {
-        Self { meta: ObjectMeta::new(name, "", uid) }
+        Self {
+            meta: ObjectMeta::new(name, "", uid),
+        }
     }
 }
 
@@ -180,7 +185,10 @@ impl Endpoints {
     /// An empty endpoints object named after its service.
     #[must_use]
     pub const fn new(meta: ObjectMeta) -> Self {
-        Self { meta, addresses: Vec::new() }
+        Self {
+            meta,
+            addresses: Vec::new(),
+        }
     }
 }
 
@@ -262,7 +270,10 @@ impl ServiceAccount {
     /// A service account with the given metadata and no secrets.
     #[must_use]
     pub const fn new(meta: ObjectMeta) -> Self {
-        Self { meta, secrets: Vec::new() }
+        Self {
+            meta,
+            secrets: Vec::new(),
+        }
     }
 }
 

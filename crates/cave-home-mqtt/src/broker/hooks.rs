@@ -55,16 +55,28 @@ mod tests {
 
     impl BrokerHook for Recorder {
         fn on_connect(&self, client_id: &str) {
-            self.events.lock().unwrap().push(format!("connect:{client_id}"));
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("connect:{client_id}"));
         }
         fn on_disconnect(&self, client_id: &str) {
-            self.events.lock().unwrap().push(format!("disconnect:{client_id}"));
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("disconnect:{client_id}"));
         }
         fn on_subscribe(&self, client_id: &str, filter: &str) {
-            self.events.lock().unwrap().push(format!("subscribe:{client_id}:{filter}"));
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("subscribe:{client_id}:{filter}"));
         }
         fn on_publish(&self, e: &PublishEvent<'_>) -> PublishDecision {
-            self.events.lock().unwrap().push(format!("publish:{}:{}", e.client_id, e.topic));
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("publish:{}:{}", e.client_id, e.topic));
             if self.reject_topic.as_deref() == Some(e.topic) {
                 PublishDecision::Reject
             } else {
@@ -97,35 +109,44 @@ mod tests {
         let rec = Arc::new(Recorder::default());
         let mut b = broker_with(rec.clone());
         b.connect(connect("c"));
-        b.handle("c", PacketV5::Subscribe(SubscribeV5 {
-            packet_id: 1,
-            properties: vec![],
-            subscriptions: vec![SubscriptionV5 {
-                topic_filter: "home/#".into(),
+        b.handle(
+            "c",
+            PacketV5::Subscribe(SubscribeV5 {
+                packet_id: 1,
+                properties: vec![],
+                subscriptions: vec![SubscriptionV5 {
+                    topic_filter: "home/#".into(),
+                    qos: QoS::AtMostOnce,
+                    no_local: false,
+                    retain_as_published: false,
+                    retain_handling: RetainHandling::SendOnSubscribe,
+                }],
+            }),
+        );
+        b.handle(
+            "c",
+            PacketV5::Publish(PublishV5 {
+                topic: "home/x".into(),
                 qos: QoS::AtMostOnce,
-                no_local: false,
-                retain_as_published: false,
-                retain_handling: RetainHandling::SendOnSubscribe,
-            }],
-        }));
-        b.handle("c", PacketV5::Publish(PublishV5 {
-            topic: "home/x".into(),
-            qos: QoS::AtMostOnce,
-            retain: false,
-            dup: false,
-            packet_id: None,
-            properties: vec![],
-            payload: Bytes::from_static(b"hello"),
-        }));
+                retain: false,
+                dup: false,
+                packet_id: None,
+                properties: vec![],
+                payload: Bytes::from_static(b"hello"),
+            }),
+        );
         b.network_disconnect("c");
 
         let events = rec.events.lock().unwrap().clone();
-        assert_eq!(events, vec![
-            "connect:c",
-            "subscribe:c:home/#",
-            "publish:c:home/x",
-            "disconnect:c",
-        ]);
+        assert_eq!(
+            events,
+            vec![
+                "connect:c",
+                "subscribe:c:home/#",
+                "publish:c:home/x",
+                "disconnect:c",
+            ]
+        );
 
         let m = b.metrics();
         assert_eq!(m.clients_total, 1);
@@ -138,30 +159,39 @@ mod tests {
 
     #[test]
     fn hook_can_veto_a_publish() {
-        let rec = Arc::new(Recorder { reject_topic: Some("home/secret".into()), ..Default::default() });
+        let rec = Arc::new(Recorder {
+            reject_topic: Some("home/secret".into()),
+            ..Default::default()
+        });
         let mut b = broker_with(rec);
         b.connect(connect("sub"));
-        b.handle("sub", PacketV5::Subscribe(SubscribeV5 {
-            packet_id: 1,
-            properties: vec![],
-            subscriptions: vec![SubscriptionV5 {
-                topic_filter: "home/#".into(),
-                qos: QoS::AtLeastOnce,
-                no_local: false,
-                retain_as_published: false,
-                retain_handling: RetainHandling::SendOnSubscribe,
-            }],
-        }));
+        b.handle(
+            "sub",
+            PacketV5::Subscribe(SubscribeV5 {
+                packet_id: 1,
+                properties: vec![],
+                subscriptions: vec![SubscriptionV5 {
+                    topic_filter: "home/#".into(),
+                    qos: QoS::AtLeastOnce,
+                    no_local: false,
+                    retain_as_published: false,
+                    retain_handling: RetainHandling::SendOnSubscribe,
+                }],
+            }),
+        );
         b.connect(connect("pub"));
-        let acts = b.handle("pub", PacketV5::Publish(PublishV5 {
-            topic: "home/secret".into(),
-            qos: QoS::AtLeastOnce,
-            retain: false,
-            dup: false,
-            packet_id: Some(4),
-            properties: vec![],
-            payload: Bytes::from_static(b"x"),
-        }));
+        let acts = b.handle(
+            "pub",
+            PacketV5::Publish(PublishV5 {
+                topic: "home/secret".into(),
+                qos: QoS::AtLeastOnce,
+                retain: false,
+                dup: false,
+                packet_id: Some(4),
+                properties: vec![],
+                payload: Bytes::from_static(b"x"),
+            }),
+        );
         // Not routed to the subscriber; publisher gets NotAuthorized.
         assert!(!acts.iter().any(|a| matches!(a,
             Action::Send { client_id, packet: PacketV5::Publish(_) } if client_id == "sub")));
@@ -175,26 +205,32 @@ mod tests {
         let rec = Arc::new(Recorder::default());
         let mut b = broker_with(rec);
         b.connect(connect("c"));
-        b.handle("c", PacketV5::Subscribe(SubscribeV5 {
-            packet_id: 1,
-            properties: vec![],
-            subscriptions: vec![SubscriptionV5 {
-                topic_filter: "home/#".into(),
+        b.handle(
+            "c",
+            PacketV5::Subscribe(SubscribeV5 {
+                packet_id: 1,
+                properties: vec![],
+                subscriptions: vec![SubscriptionV5 {
+                    topic_filter: "home/#".into(),
+                    qos: QoS::AtMostOnce,
+                    no_local: false,
+                    retain_as_published: false,
+                    retain_handling: RetainHandling::SendOnSubscribe,
+                }],
+            }),
+        );
+        b.handle(
+            "c",
+            PacketV5::Publish(PublishV5 {
+                topic: "home/keep".into(),
                 qos: QoS::AtMostOnce,
-                no_local: false,
-                retain_as_published: false,
-                retain_handling: RetainHandling::SendOnSubscribe,
-            }],
-        }));
-        b.handle("c", PacketV5::Publish(PublishV5 {
-            topic: "home/keep".into(),
-            qos: QoS::AtMostOnce,
-            retain: true,
-            dup: false,
-            packet_id: None,
-            properties: vec![],
-            payload: Bytes::from_static(b"v"),
-        }));
+                retain: true,
+                dup: false,
+                packet_id: None,
+                properties: vec![],
+                payload: Bytes::from_static(b"v"),
+            }),
+        );
         let text = b.prometheus();
         assert!(text.contains("\nmqtt_clients_connected 1\n"));
         assert!(text.contains("\nmqtt_retained_messages 1\n"));

@@ -97,7 +97,11 @@ impl Vacuum {
     /// A vacuum with a known starting state, an empty map and a Medium suction
     /// default.
     #[must_use]
-    pub const fn with_state(features: VacuumFeatures, state: VacuumState, battery: Battery) -> Self {
+    pub const fn with_state(
+        features: VacuumFeatures,
+        state: VacuumState,
+        battery: Battery,
+    ) -> Self {
         Self {
             state,
             battery,
@@ -386,7 +390,10 @@ mod tests {
         let mut idle = full_vac(VacuumState::Idle);
         assert_eq!(idle.apply(VacuumCommand::Start), Ok(VacuumState::Cleaning));
         let mut paused = full_vac(VacuumState::Paused);
-        assert_eq!(paused.apply(VacuumCommand::Start), Ok(VacuumState::Cleaning));
+        assert_eq!(
+            paused.apply(VacuumCommand::Start),
+            Ok(VacuumState::Cleaning)
+        );
     }
 
     #[test]
@@ -396,7 +403,11 @@ mod tests {
             v.apply(VacuumCommand::Start),
             Err(CommandError::IllegalTransition)
         );
-        assert_eq!(v.state(), VacuumState::Cleaning, "rejected start changes nothing");
+        assert_eq!(
+            v.state(),
+            VacuumState::Cleaning,
+            "rejected start changes nothing"
+        );
     }
 
     #[test]
@@ -469,7 +480,10 @@ mod tests {
 
     #[test]
     fn spot_clean_unsupported_is_rejected() {
-        let feats = VacuumFeatures { supports_spot: false, ..VacuumFeatures::basic() };
+        let feats = VacuumFeatures {
+            supports_spot: false,
+            ..VacuumFeatures::basic()
+        };
         let mut v = Vacuum::with_state(feats, VacuumState::Idle, full_battery());
         assert_eq!(
             v.apply(VacuumCommand::CleanSpot),
@@ -491,16 +505,16 @@ mod tests {
 
     #[test]
     fn set_unsupported_fan_speed_is_rejected() {
-        let mut v = Vacuum::with_state(
-            VacuumFeatures::basic(),
-            VacuumState::Idle,
-            full_battery(),
-        );
+        let mut v = Vacuum::with_state(VacuumFeatures::basic(), VacuumState::Idle, full_battery());
         assert_eq!(
             v.apply(VacuumCommand::SetFanSpeed(FanSpeed::Turbo)),
             Err(CommandError::Unsupported)
         );
-        assert_eq!(v.fan_speed(), FanSpeed::Medium, "rejected change leaves default");
+        assert_eq!(
+            v.fan_speed(),
+            FanSpeed::Medium,
+            "rejected change leaves default"
+        );
     }
 
     // ---- segment / zone cleaning + validation -----------------------------
@@ -520,16 +534,16 @@ mod tests {
                 SegmentRequestError::UnknownSegments(vec![9])
             ))
         );
-        assert_eq!(v.state(), VacuumState::Docked, "rejected clean changes nothing");
+        assert_eq!(
+            v.state(),
+            VacuumState::Docked,
+            "rejected clean changes nothing"
+        );
     }
 
     #[test]
     fn clean_rooms_unsupported_on_basic_unit() {
-        let mut v = Vacuum::with_state(
-            VacuumFeatures::basic(),
-            VacuumState::Idle,
-            full_battery(),
-        );
+        let mut v = Vacuum::with_state(VacuumFeatures::basic(), VacuumState::Idle, full_battery());
         assert_eq!(v.clean_rooms(&[1]), Err(CommandError::Unsupported));
     }
 
@@ -565,7 +579,10 @@ mod tests {
         let mut v = full_vac(VacuumState::Cleaning);
         let low = Battery::new(15, ChargeDirection::Discharging).expect("valid");
         let triggered = v.update_battery(low);
-        assert!(triggered, "low battery while cleaning must trigger auto-return");
+        assert!(
+            triggered,
+            "low battery while cleaning must trigger auto-return"
+        );
         assert_eq!(v.state(), VacuumState::Returning);
     }
 
@@ -581,7 +598,10 @@ mod tests {
     fn start_blocked_when_battery_too_low() {
         let low = Battery::new(10, ChargeDirection::Discharging).expect("valid");
         let mut v = Vacuum::with_state(VacuumFeatures::full(), VacuumState::Docked, low);
-        assert_eq!(v.apply(VacuumCommand::Start), Err(CommandError::BatteryTooLow));
+        assert_eq!(
+            v.apply(VacuumCommand::Start),
+            Err(CommandError::BatteryTooLow)
+        );
     }
 
     #[test]
@@ -608,7 +628,10 @@ mod tests {
         let mut v = full_vac(VacuumState::Cleaning);
         v.report_error(ErrorCode::WheelStuck);
         assert_eq!(v.apply(VacuumCommand::Start), Err(CommandError::Faulted));
-        assert_eq!(v.apply(VacuumCommand::CleanSpot), Err(CommandError::Faulted));
+        assert_eq!(
+            v.apply(VacuumCommand::CleanSpot),
+            Err(CommandError::Faulted)
+        );
         assert_eq!(v.clean_rooms(&[1]), Err(CommandError::Faulted));
     }
 
@@ -646,7 +669,11 @@ mod tests {
         let mut v = full_vac(VacuumState::Returning);
         v.report_error(ErrorCode::Trapped);
         v.reached_dock();
-        assert_eq!(v.state(), VacuumState::Error, "a fault is not silently docked away");
+        assert_eq!(
+            v.state(),
+            VacuumState::Error,
+            "a fault is not silently docked away"
+        );
     }
 
     // ---- manual -----------------------------------------------------------

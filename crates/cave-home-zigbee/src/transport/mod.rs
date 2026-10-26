@@ -206,7 +206,9 @@ impl UartTransport {
             .write(true)
             .open(path_ref)
             .await
-            .map_err(|e| ZigbeeError::Transport(format!("uart open {}: {e}", path_ref.display())))?;
+            .map_err(|e| {
+                ZigbeeError::Transport(format!("uart open {}: {e}", path_ref.display()))
+            })?;
         Ok(Self {
             name: path_ref.display().to_string(),
             file: AsyncMutex::new(file),

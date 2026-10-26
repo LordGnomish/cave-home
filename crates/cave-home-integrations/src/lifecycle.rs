@@ -149,10 +149,9 @@ pub const fn next(current: State, event: Transition) -> Result<State, Transition
         (State::NotLoaded | State::Loaded, Transition::BeginMigration) => Some(State::Migrating),
 
         // Unloading.
-        (
-            State::Loaded | State::SetupError | State::SetupRetry,
-            Transition::BeginUnload,
-        ) => Some(State::Unloading),
+        (State::Loaded | State::SetupError | State::SetupRetry, Transition::BeginUnload) => {
+            Some(State::Unloading)
+        }
         (State::Unloading, Transition::Unloaded) => Some(State::NotLoaded),
 
         // Give up retrying.
@@ -162,7 +161,10 @@ pub const fn next(current: State, event: Transition) -> Result<State, Transition
     };
     match next {
         Some(s) => Ok(s),
-        None => Err(TransitionError { from: current, event }),
+        None => Err(TransitionError {
+            from: current,
+            event,
+        }),
     }
 }
 
@@ -181,7 +183,11 @@ mod tests {
 
     #[test]
     fn transient_failure_goes_to_retry() {
-        let s = next(State::SettingUp, Transition::SetupFailed(Failure::Unreachable)).expect("fail");
+        let s = next(
+            State::SettingUp,
+            Transition::SetupFailed(Failure::Unreachable),
+        )
+        .expect("fail");
         assert_eq!(s, State::SetupRetry);
         assert!(s.wants_retry());
         assert!(!s.needs_attention());
@@ -189,8 +195,11 @@ mod tests {
 
     #[test]
     fn permanent_failure_goes_to_error() {
-        let s = next(State::SettingUp, Transition::SetupFailed(Failure::BadCredentials))
-            .expect("fail");
+        let s = next(
+            State::SettingUp,
+            Transition::SetupFailed(Failure::BadCredentials),
+        )
+        .expect("fail");
         assert_eq!(s, State::SetupError);
         assert!(!s.wants_retry());
         assert!(s.needs_attention());

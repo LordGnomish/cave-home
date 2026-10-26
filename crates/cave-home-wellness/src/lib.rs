@@ -75,10 +75,10 @@ pub mod streak;
 pub mod trend;
 
 pub use band::{ActivityBand, RestingHrBand, SleepBand};
-pub use goal::{progress, Goal, GoalMetric, GoalProgress, Period};
+pub use goal::{Goal, GoalMetric, GoalProgress, Period, progress};
 pub use label::Lang;
 pub use metric::{
     ActiveMinutes, BodyWeight, DailyMetrics, HeartRate, MetricError, SleepDuration, Steps,
 };
 pub use streak::{current_streak, longest_streak};
-pub use trend::{classify_trend, Trend};
+pub use trend::{Trend, classify_trend};

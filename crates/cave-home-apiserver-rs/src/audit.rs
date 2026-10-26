@@ -11,7 +11,7 @@
 
 use std::sync::Mutex;
 
-use crate::json::{obj, Value};
+use crate::json::{Value, obj};
 use crate::path::ResourcePath;
 
 /// One audit record, captured at the `ResponseComplete` stage.
@@ -165,13 +165,22 @@ mod tests {
         e.response_code = 201;
         let v = e.to_json();
         assert_eq!(v.pointer("kind"), Some(&Value::from("Event")));
-        assert_eq!(v.pointer("apiVersion"), Some(&Value::from("audit.k8s.io/v1")));
+        assert_eq!(
+            v.pointer("apiVersion"),
+            Some(&Value::from("audit.k8s.io/v1"))
+        );
         assert_eq!(v.pointer("verb"), Some(&Value::from("create")));
         assert_eq!(v.pointer("user.username"), Some(&Value::from("alice")));
         assert_eq!(v.pointer("objectRef.resource"), Some(&Value::from("pods")));
-        assert_eq!(v.pointer("objectRef.namespace"), Some(&Value::from("default")));
+        assert_eq!(
+            v.pointer("objectRef.namespace"),
+            Some(&Value::from("default"))
+        );
         assert_eq!(v.pointer("objectRef.name"), Some(&Value::from("nginx")));
-        assert_eq!(v.pointer("responseStatus.code"), Some(&Value::from(201_i64)));
+        assert_eq!(
+            v.pointer("responseStatus.code"),
+            Some(&Value::from(201_i64))
+        );
     }
 
     #[test]

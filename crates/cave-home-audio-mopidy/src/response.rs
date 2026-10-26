@@ -126,6 +126,9 @@ mod tests {
         let mut r = Response::new();
         r.field("partition", "default");
         let out = r.ack(AckError::Arg, 1, "setvol", "Integer expected");
-        assert_eq!(out, "partition: default\nACK [2@1] {setvol} Integer expected\n");
+        assert_eq!(
+            out,
+            "partition: default\nACK [2@1] {setvol} Integer expected\n"
+        );
     }
 }

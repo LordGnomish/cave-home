@@ -98,7 +98,10 @@ impl EndpointSliceCache {
                             continue;
                         }
                         for ip in &ep.addresses {
-                            bucket.push(EndpointInfo { ip: ip.clone(), port: port.port });
+                            bucket.push(EndpointInfo {
+                                ip: ip.clone(),
+                                port: port.port,
+                            });
                         }
                     }
                 }

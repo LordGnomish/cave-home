@@ -76,7 +76,13 @@ impl EnergyFlowView {
     /// Build from the raw powers (battery negative = charging, grid negative =
     /// exporting).
     #[must_use]
-    pub const fn from_powers(pv_w: f64, load_w: f64, battery_w: f64, grid_w: f64, soc_percent: f64) -> Self {
+    pub const fn from_powers(
+        pv_w: f64,
+        load_w: f64,
+        battery_w: f64,
+        grid_w: f64,
+        soc_percent: f64,
+    ) -> Self {
         Self {
             pv_w,
             load_w,
@@ -102,21 +108,41 @@ impl EnergyFlowView {
         let import = self.grid_w.max(0.0); // from grid
 
         if charge > 0.0 {
-            edges.push(FlowEdge { from: FlowNode::Solar, to: FlowNode::Battery, watts: charge });
+            edges.push(FlowEdge {
+                from: FlowNode::Solar,
+                to: FlowNode::Battery,
+                watts: charge,
+            });
         }
         if export > 0.0 {
-            edges.push(FlowEdge { from: FlowNode::Solar, to: FlowNode::Grid, watts: export });
+            edges.push(FlowEdge {
+                from: FlowNode::Solar,
+                to: FlowNode::Grid,
+                watts: export,
+            });
         }
         // Solar left for the home after charging + export.
         let solar_to_home = (self.pv_w - charge - export).max(0.0);
         if solar_to_home > 0.0 {
-            edges.push(FlowEdge { from: FlowNode::Solar, to: FlowNode::Home, watts: solar_to_home });
+            edges.push(FlowEdge {
+                from: FlowNode::Solar,
+                to: FlowNode::Home,
+                watts: solar_to_home,
+            });
         }
         if discharge > 0.0 {
-            edges.push(FlowEdge { from: FlowNode::Battery, to: FlowNode::Home, watts: discharge });
+            edges.push(FlowEdge {
+                from: FlowNode::Battery,
+                to: FlowNode::Home,
+                watts: discharge,
+            });
         }
         if import > 0.0 {
-            edges.push(FlowEdge { from: FlowNode::Grid, to: FlowNode::Home, watts: import });
+            edges.push(FlowEdge {
+                from: FlowNode::Grid,
+                to: FlowNode::Home,
+                watts: import,
+            });
         }
         edges
     }
@@ -135,7 +161,10 @@ impl SocBar {
     /// A new bar.
     #[must_use]
     pub const fn new(percent: f64, reserve_percent: u8) -> Self {
-        Self { percent, reserve_percent }
+        Self {
+            percent,
+            reserve_percent,
+        }
     }
 
     /// The fill fraction, 0.0..=1.0 (clamped).
@@ -348,9 +377,21 @@ mod tests {
         // 5 kW sun, 1 kW house, charging 1 kW, exporting 3 kW.
         let flow = EnergyFlowView::from_powers(5000.0, 1000.0, -1000.0, -3000.0, 75.0);
         let edges = flow.active_edges();
-        assert!(edges.iter().any(|e| e.from == FlowNode::Solar && e.to == FlowNode::Battery));
-        assert!(edges.iter().any(|e| e.from == FlowNode::Solar && e.to == FlowNode::Grid));
-        assert!(edges.iter().any(|e| e.from == FlowNode::Solar && e.to == FlowNode::Home));
+        assert!(
+            edges
+                .iter()
+                .any(|e| e.from == FlowNode::Solar && e.to == FlowNode::Battery)
+        );
+        assert!(
+            edges
+                .iter()
+                .any(|e| e.from == FlowNode::Solar && e.to == FlowNode::Grid)
+        );
+        assert!(
+            edges
+                .iter()
+                .any(|e| e.from == FlowNode::Solar && e.to == FlowNode::Home)
+        );
         assert!(!edges.iter().any(|e| e.from == FlowNode::Grid));
         assert!(!edges.iter().any(|e| e.from == FlowNode::Battery));
         // Solar→Home = 5000 - 1000(charge) - 3000(export) = 1000 W.
@@ -365,14 +406,25 @@ mod tests {
     fn flow_night_discharging_and_importing() {
         let flow = EnergyFlowView::from_powers(0.0, 2000.0, 1500.0, 500.0, 40.0);
         let edges = flow.active_edges();
-        assert!(edges.iter().any(|e| e.from == FlowNode::Battery && e.to == FlowNode::Home));
-        assert!(edges.iter().any(|e| e.from == FlowNode::Grid && e.to == FlowNode::Home));
+        assert!(
+            edges
+                .iter()
+                .any(|e| e.from == FlowNode::Battery && e.to == FlowNode::Home)
+        );
+        assert!(
+            edges
+                .iter()
+                .any(|e| e.from == FlowNode::Grid && e.to == FlowNode::Home)
+        );
         assert!(!edges.iter().any(|e| e.from == FlowNode::Solar));
     }
 
     #[test]
     fn flow_node_labels_localised() {
-        assert_ne!(FlowNode::Battery.label(Lang::En), FlowNode::Battery.label(Lang::Tr));
+        assert_ne!(
+            FlowNode::Battery.label(Lang::En),
+            FlowNode::Battery.label(Lang::Tr)
+        );
         for n in FlowNode::ALL {
             assert!(!n.label(Lang::En).is_empty());
         }
@@ -398,7 +450,11 @@ mod tests {
     fn history_graph_normalises_bar_heights() {
         let g = HistoryGraph::new(
             "Last 24 hours",
-            vec![("08:00".into(), 1.0), ("12:00".into(), 4.0), ("16:00".into(), 2.0)],
+            vec![
+                ("08:00".into(), 1.0),
+                ("12:00".into(), 4.0),
+                ("16:00".into(), 2.0),
+            ],
         );
         assert!((g.max_value() - 4.0).abs() < f64::EPSILON);
         let heights = g.normalized_heights();
@@ -450,8 +506,18 @@ mod tests {
                 text.push_str(o.label);
             }
             let lower = text.to_ascii_lowercase();
-            for banned in ["oauth", "fleet", "instant_power", "self_consumption", "powerwall", "watts"] {
-                assert!(!lower.contains(banned), "{lang:?} leaked jargon '{banned}': {text}");
+            for banned in [
+                "oauth",
+                "fleet",
+                "instant_power",
+                "self_consumption",
+                "powerwall",
+                "watts",
+            ] {
+                assert!(
+                    !lower.contains(banned),
+                    "{lang:?} leaked jargon '{banned}': {text}"
+                );
             }
         }
     }

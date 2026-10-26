@@ -24,7 +24,10 @@ impl StateSample {
     /// Record that `state` began at `timestamp`.
     #[must_use]
     pub fn new(timestamp: i64, state: impl Into<String>) -> Self {
-        Self { timestamp, state: state.into() }
+        Self {
+            timestamp,
+            state: state.into(),
+        }
     }
 
     /// When this state began.
@@ -144,10 +147,7 @@ mod tests {
 
     #[test]
     fn sorts_out_of_order_changes() {
-        let tl = StateTimeline::new(vec![
-            StateSample::new(20, "off"),
-            StateSample::new(0, "on"),
-        ]);
+        let tl = StateTimeline::new(vec![StateSample::new(20, "off"), StateSample::new(0, "on")]);
         assert_eq!(tl.changes()[0].timestamp(), 0);
         assert_eq!(tl.changes()[1].timestamp(), 20);
     }

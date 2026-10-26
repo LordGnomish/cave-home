@@ -99,7 +99,9 @@ pub fn full_config(ctx: &V1Context, app_key: &str) -> ApiResult {
 /// `GET /api/<appkey>` — entire datastore.
 pub fn full_state(ctx: &V1Context, app_key: &str) -> ApiResult {
     if let Err(_) = require_app_key(ctx, app_key, &format!("/api/{app_key}")) {
-        return Err(vec![HueProtocolError::unauthorized(format!("/api/{app_key}"))]);
+        return Err(vec![HueProtocolError::unauthorized(format!(
+            "/api/{app_key}"
+        ))]);
     }
     let lights = views::lights_map(&ctx.registry);
     let groups = views::groups_map(&ctx.registry);
@@ -140,12 +142,7 @@ pub fn get_light(ctx: &V1Context, app_key: &str, id: &str) -> ApiResult {
 ///
 /// Body schema (per dev-portal §1.6): `{on, bri, hue, sat, xy, ct, alert,
 /// effect, transitiontime, *_inc}`. We support `on`, `bri`, `xy`, `ct`.
-pub fn put_light_state(
-    ctx: &V1Context,
-    app_key: &str,
-    id: &str,
-    body: &Value,
-) -> Value {
+pub fn put_light_state(ctx: &V1Context, app_key: &str, id: &str, body: &Value) -> Value {
     let address = format!("/api/{app_key}/lights/{id}/state");
     if let Err(envelope) = require_app_key(ctx, app_key, &address) {
         return envelope;
@@ -388,12 +385,7 @@ mod tests {
             .registry
             .add_light(EmulatedLight::new_color_candle("Mutfak", ""));
         // Set on=true, bri=200.
-        let resp = put_light_state(
-            &ctx,
-            &key,
-            &id,
-            &json!({"on": true, "bri": 200}),
-        );
+        let resp = put_light_state(&ctx, &key, &id, &json!({"on": true, "bri": 200}));
         let arr = resp.as_array().unwrap();
         assert!(arr.iter().any(|v| v.get("success").is_some()));
         let snap = ctx.registry.light(&id).unwrap();

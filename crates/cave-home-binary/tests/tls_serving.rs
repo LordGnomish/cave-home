@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use cave_home_binary::node::LocalNode;
-use cave_home_binary::server::{run_until_on_listener, RuntimeConfig};
+use cave_home_binary::server::{RuntimeConfig, run_until_on_listener};
 use cave_home_binary::tls::TlsConfig;
 use cave_home_orchestration::role::NodeIntent;
 use rustls::pki_types::{CertificateDer, ServerName};
@@ -26,7 +26,13 @@ use tokio_rustls::TlsConnector;
 
 /// Generate a self-signed cert for `localhost`, write cert+key to `dir`, and
 /// return their paths plus the cert DER (for the client trust store).
-fn self_signed(dir: &std::path::Path) -> (std::path::PathBuf, std::path::PathBuf, CertificateDer<'static>) {
+fn self_signed(
+    dir: &std::path::Path,
+) -> (
+    std::path::PathBuf,
+    std::path::PathBuf,
+    CertificateDer<'static>,
+) {
     let key = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).expect("gen");
     let cert_der = CertificateDer::from(key.cert.der().to_vec());
     let cert_path = dir.join("server.crt");
@@ -90,9 +96,11 @@ async fn apiserver_serves_over_real_tls() {
         loop {
             if let Ok(tcp) = TcpStream::connect(addr).await {
                 if let Ok(mut tls) = connector.connect(domain.clone(), tcp).await {
-                    tls.write_all(b"GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
-                        .await
-                        .expect("write");
+                    tls.write_all(
+                        b"GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+                    )
+                    .await
+                    .expect("write");
                     let mut buf = Vec::new();
                     let _ = tls.read_to_end(&mut buf).await;
                     let text = String::from_utf8_lossy(&buf).into_owned();
@@ -114,7 +122,10 @@ async fn apiserver_serves_over_real_tls() {
     let connector2 = connector.clone();
     let pod = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"tls-pod"},"spec":{"containers":[{"name":"c","image":"nginx"}]}}"#;
     let tcp = TcpStream::connect(addr).await.expect("connect");
-    let mut tls = connector2.connect(domain.clone(), tcp).await.expect("handshake");
+    let mut tls = connector2
+        .connect(domain.clone(), tcp)
+        .await
+        .expect("handshake");
     let post = format!(
         "POST /api/v1/namespaces/default/pods HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         pod.len(),
@@ -128,5 +139,7 @@ async fn apiserver_serves_over_real_tls() {
     assert!(resp.contains("tls-pod"), "{resp}");
 
     let _ = stop_tx.send(true);
-    let _ = tokio::time::timeout(Duration::from_secs(5), server).await.expect("shuts down");
+    let _ = tokio::time::timeout(Duration::from_secs(5), server)
+        .await
+        .expect("shuts down");
 }

@@ -127,7 +127,9 @@ mod tests {
 
         // Most specific match.
         assert_eq!(
-            t.route(&name("host.corp.example.com")).expect("r").upstreams()[0],
+            t.route(&name("host.corp.example.com"))
+                .expect("r")
+                .upstreams()[0],
             IpAddr::V4(v4(10, 0, 0, 1))
         );
         // Falls to the next-most-specific.

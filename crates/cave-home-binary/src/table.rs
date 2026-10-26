@@ -27,7 +27,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use cave_home_apiserver_rs::gvk::GroupVersionResource;
-use cave_home_apiserver_rs::json::{obj, Value};
+use cave_home_apiserver_rs::json::{Value, obj};
 
 /// True if the client's `Accept` header requests the `Table` representation.
 #[must_use]
@@ -44,7 +44,9 @@ pub fn now_rfc3339() -> String {
 /// Seconds since the Unix epoch (0 if the clock is before 1970, which it is not).
 #[must_use]
 pub fn now_epoch() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 /// Render a Unix timestamp as `YYYY-MM-DDTHH:MM:SSZ`.
@@ -115,17 +117,26 @@ pub fn age_string(creation: Option<&str>, now: u64) -> String {
         format!("{}m", secs / 60)
     } else if secs < 86_400 {
         let (h, m) = (secs / 3600, (secs % 3600) / 60);
-        if m == 0 { format!("{h}h") } else { format!("{h}h{m}m") }
+        if m == 0 {
+            format!("{h}h")
+        } else {
+            format!("{h}h{m}m")
+        }
     } else {
         let (d, h) = (secs / 86_400, (secs % 86_400) / 3600);
-        if h == 0 { format!("{d}d") } else { format!("{d}d{h}h") }
+        if h == 0 {
+            format!("{d}d")
+        } else {
+            format!("{d}d{h}h")
+        }
     }
 }
 
 /// Render a result set as a `meta.k8s.io/v1` Table for the given resource.
 #[must_use]
 pub fn to_table(gvr: &GroupVersionResource, items: &[Value], now: u64) -> Value {
-    let (columns, rows): (Vec<&str>, Vec<Value>) = match (gvr.group.as_str(), gvr.resource.as_str()) {
+    let (columns, rows): (Vec<&str>, Vec<Value>) = match (gvr.group.as_str(), gvr.resource.as_str())
+    {
         ("", "pods") => (
             vec!["Name", "Ready", "Status", "Restarts", "Age"],
             items.iter().map(|p| row(pod_cells(p, now), p)).collect(),
@@ -136,11 +147,17 @@ pub fn to_table(gvr: &GroupVersionResource, items: &[Value], now: u64) -> Value 
         ),
         ("", "namespaces") => (
             vec!["Name", "Status", "Age"],
-            items.iter().map(|n| row(namespace_cells(n, now), n)).collect(),
+            items
+                .iter()
+                .map(|n| row(namespace_cells(n, now), n))
+                .collect(),
         ),
         _ => (
             vec!["Name", "Age"],
-            items.iter().map(|o| row(vec![name(o), age(o, now)], o)).collect(),
+            items
+                .iter()
+                .map(|o| row(vec![name(o), age(o, now)], o))
+                .collect(),
         ),
     };
     let column_definitions: Vec<Value> = columns
@@ -166,26 +183,47 @@ pub fn to_table(gvr: &GroupVersionResource, items: &[Value], now: u64) -> Value 
 /// One Table row: the pre-computed cells plus the full object.
 fn row(cells: Vec<String>, object: &Value) -> Value {
     obj([
-        ("cells", Value::Array(cells.into_iter().map(Value::from).collect())),
+        (
+            "cells",
+            Value::Array(cells.into_iter().map(Value::from).collect()),
+        ),
         ("object", object.clone()),
     ])
 }
 
 fn name(o: &Value) -> String {
-    o.pointer("metadata.name").and_then(Value::as_str).unwrap_or("").to_string()
+    o.pointer("metadata.name")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string()
 }
 
 fn age(o: &Value, now: u64) -> String {
-    age_string(o.pointer("metadata.creationTimestamp").and_then(Value::as_str), now)
+    age_string(
+        o.pointer("metadata.creationTimestamp")
+            .and_then(Value::as_str),
+        now,
+    )
 }
 
 /// `NAME READY STATUS RESTARTS AGE` for a pod.
 fn pod_cells(p: &Value, now: u64) -> Vec<String> {
-    let total = p.pointer("spec.containers").and_then(Value::as_array).map_or(0, <[_]>::len);
-    let statuses = p.pointer("status.containerStatuses").and_then(Value::as_array);
-    let ready = statuses.map_or(0, |cs| cs.iter().filter(|c| c.get("ready").and_then(Value::as_bool) == Some(true)).count());
+    let total = p
+        .pointer("spec.containers")
+        .and_then(Value::as_array)
+        .map_or(0, <[_]>::len);
+    let statuses = p
+        .pointer("status.containerStatuses")
+        .and_then(Value::as_array);
+    let ready = statuses.map_or(0, |cs| {
+        cs.iter()
+            .filter(|c| c.get("ready").and_then(Value::as_bool) == Some(true))
+            .count()
+    });
     let restarts: i64 = statuses.map_or(0, |cs| {
-        cs.iter().filter_map(|c| c.get("restartCount").and_then(as_i64)).sum()
+        cs.iter()
+            .filter_map(|c| c.get("restartCount").and_then(as_i64))
+            .sum()
     });
     let status = p
         .pointer("status.phase")
@@ -193,7 +231,13 @@ fn pod_cells(p: &Value, now: u64) -> Vec<String> {
         .filter(|s| !s.is_empty())
         .unwrap_or("Pending")
         .to_string();
-    vec![name(p), format!("{ready}/{total}"), status, restarts.to_string(), age(p, now)]
+    vec![
+        name(p),
+        format!("{ready}/{total}"),
+        status,
+        restarts.to_string(),
+        age(p, now),
+    ]
 }
 
 /// `NAME STATUS ROLES AGE VERSION` for a node.
@@ -213,12 +257,22 @@ fn node_cells(n: &Value, now: u64) -> Vec<String> {
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    vec![name(n), status, "control-plane".to_string(), age(n, now), version]
+    vec![
+        name(n),
+        status,
+        "control-plane".to_string(),
+        age(n, now),
+        version,
+    ]
 }
 
 /// `NAME STATUS AGE` for a namespace.
 fn namespace_cells(n: &Value, now: u64) -> Vec<String> {
-    let status = n.pointer("status.phase").and_then(Value::as_str).unwrap_or("Active").to_string();
+    let status = n
+        .pointer("status.phase")
+        .and_then(Value::as_str)
+        .unwrap_or("Active")
+        .to_string();
     vec![name(n), status, age(n, now)]
 }
 
@@ -238,7 +292,10 @@ mod tests {
     fn rfc3339_round_trips_through_epoch() {
         // A known instant: 2021-01-01T00:00:00Z = 1609459200.
         assert_eq!(rfc3339_from_epoch(1_609_459_200), "2021-01-01T00:00:00Z");
-        assert_eq!(epoch_from_rfc3339("2021-01-01T00:00:00Z"), Some(1_609_459_200));
+        assert_eq!(
+            epoch_from_rfc3339("2021-01-01T00:00:00Z"),
+            Some(1_609_459_200)
+        );
         let now = now_epoch();
         assert_eq!(epoch_from_rfc3339(&rfc3339_from_epoch(now)), Some(now));
     }
@@ -256,7 +313,9 @@ mod tests {
 
     #[test]
     fn wants_table_detects_the_accept_header() {
-        assert!(wants_table(Some("application/json;as=Table;v=v1;g=meta.k8s.io,application/json")));
+        assert!(wants_table(Some(
+            "application/json;as=Table;v=v1;g=meta.k8s.io,application/json"
+        )));
         assert!(!wants_table(Some("application/json")));
         assert!(!wants_table(None));
     }
@@ -267,9 +326,18 @@ mod tests {
             ("kind", Value::from("Pod")),
             (
                 "metadata",
-                obj([("name", Value::from(name)), ("creationTimestamp", Value::from(rfc3339_from_epoch(100)))]),
+                obj([
+                    ("name", Value::from(name)),
+                    ("creationTimestamp", Value::from(rfc3339_from_epoch(100))),
+                ]),
             ),
-            ("spec", obj([("containers", Value::Array(vec![obj([("name", Value::from("web"))])]))])),
+            (
+                "spec",
+                obj([(
+                    "containers",
+                    Value::Array(vec![obj([("name", Value::from("web"))])]),
+                )]),
+            ),
             (
                 "status",
                 obj([
@@ -298,10 +366,7 @@ mod tests {
             .map(|c| c.get("name").and_then(Value::as_str).unwrap())
             .collect();
         assert_eq!(cols, ["Name", "Ready", "Status", "Restarts", "Age"]);
-        let cells: Vec<&str> = table
-            .pointer("rows")
-            .and_then(Value::as_array)
-            .unwrap()[0]
+        let cells: Vec<&str> = table.pointer("rows").and_then(Value::as_array).unwrap()[0]
             .pointer("cells")
             .and_then(Value::as_array)
             .unwrap()
@@ -316,7 +381,13 @@ mod tests {
         let gvr = GroupVersionResource::new("", "v1", "pods");
         let p = obj([
             ("metadata", obj([("name", Value::from("x"))])),
-            ("spec", obj([("containers", Value::Array(vec![obj([("name", Value::from("c"))])]))])),
+            (
+                "spec",
+                obj([(
+                    "containers",
+                    Value::Array(vec![obj([("name", Value::from("c"))])]),
+                )]),
+            ),
         ]);
         let table = to_table(&gvr, &[p], 0);
         let cells = table.pointer("rows").and_then(Value::as_array).unwrap()[0]

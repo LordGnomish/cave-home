@@ -32,7 +32,10 @@ pub struct SceneEntityState {
 impl SceneEntityState {
     #[must_use]
     pub fn new(state: impl Into<String>) -> Self {
-        Self { state: state.into(), attributes: StateAttributes::new() }
+        Self {
+            state: state.into(),
+            attributes: StateAttributes::new(),
+        }
     }
 
     #[must_use]
@@ -108,7 +111,11 @@ impl SceneRegistry {
         let mut guard = self.inner.write();
         let existing: HashSet<String> = guard.scenes.keys().cloned().collect();
         let id = ensure_unique_string(&slug, &existing);
-        let scene = Scene { id: id.clone(), name, entity_states };
+        let scene = Scene {
+            id: id.clone(),
+            name,
+            entity_states,
+        };
         guard.scenes.insert(id, scene.clone());
         Ok(scene)
     }
@@ -133,7 +140,9 @@ impl SceneRegistry {
         states: &StateMachine,
         parent: &Context,
     ) -> Result<Vec<StateChange>, SceneError> {
-        let scene = self.get(id).ok_or_else(|| SceneError::UnknownId(id.to_owned()))?;
+        let scene = self
+            .get(id)
+            .ok_or_else(|| SceneError::UnknownId(id.to_owned()))?;
         Ok(scene.apply(states, parent))
     }
 }
@@ -161,8 +170,18 @@ mod tests {
     fn apply_writes_targets_and_shares_context() {
         let states = StateMachine::new(crate::event_bus::EventBus::new());
         // seed initial states
-        states.set(light("kitchen"), "on", StateAttributes::new(), Context::new());
-        states.set(light("lounge"), "off", StateAttributes::new(), Context::new());
+        states.set(
+            light("kitchen"),
+            "on",
+            StateAttributes::new(),
+            Context::new(),
+        );
+        states.set(
+            light("lounge"),
+            "off",
+            StateAttributes::new(),
+            Context::new(),
+        );
 
         let scene = Scene {
             id: "movie".into(),
@@ -177,14 +196,19 @@ mod tests {
         assert!(states.is_state(&light("kitchen"), "off"));
         assert!(states.is_state(&light("lounge"), "on"));
         assert_eq!(
-            states.get(&light("lounge")).map(|s| s.attributes["brightness"].clone()),
+            states
+                .get(&light("lounge"))
+                .map(|s| s.attributes["brightness"].clone()),
             Some(json!(40))
         );
         // every write shares one context that descends from the parent
         for ch in &changes {
             assert_eq!(ch.new_state.context.parent_id.as_ref(), Some(&parent.id));
         }
-        let ctx_ids: HashSet<String> = changes.iter().map(|c| c.new_state.context.id.clone()).collect();
+        let ctx_ids: HashSet<String> = changes
+            .iter()
+            .map(|c| c.new_state.context.id.clone())
+            .collect();
         assert_eq!(ctx_ids.len(), 1, "all writes share one context id");
     }
 
@@ -192,10 +216,24 @@ mod tests {
     fn apply_skips_entities_already_in_target_state() {
         let states = StateMachine::new(crate::event_bus::EventBus::new());
         // kitchen is already off — applying its "off" target is a no-op
-        states.set(light("kitchen"), "off", StateAttributes::new(), Context::new());
-        states.set(light("lounge"), "off", StateAttributes::new(), Context::new());
+        states.set(
+            light("kitchen"),
+            "off",
+            StateAttributes::new(),
+            Context::new(),
+        );
+        states.set(
+            light("lounge"),
+            "off",
+            StateAttributes::new(),
+            Context::new(),
+        );
 
-        let scene = Scene { id: "movie".into(), name: "Movie".into(), entity_states: movie_targets() };
+        let scene = Scene {
+            id: "movie".into(),
+            name: "Movie".into(),
+            entity_states: movie_targets(),
+        };
         let changes = scene.apply(&states, &Context::new());
         // only lounge changed (kitchen was already off)
         assert_eq!(changes.len(), 1);
@@ -209,7 +247,9 @@ mod tests {
         assert_eq!(scene.id, "movie_night");
 
         let states = StateMachine::new(crate::event_bus::EventBus::new());
-        let changes = reg.activate(&scene.id, &states, &Context::new()).expect("activate");
+        let changes = reg
+            .activate(&scene.id, &states, &Context::new())
+            .expect("activate");
         // both targets were fresh writes
         assert_eq!(changes.len(), 2);
         assert!(states.is_state(&light("kitchen"), "off"));
@@ -223,6 +263,9 @@ mod tests {
     #[test]
     fn empty_name_rejected() {
         let reg = SceneRegistry::new();
-        assert_eq!(reg.create("  ", BTreeMap::new()).unwrap_err(), SceneError::EmptyName);
+        assert_eq!(
+            reg.create("  ", BTreeMap::new()).unwrap_err(),
+            SceneError::EmptyName
+        );
     }
 }

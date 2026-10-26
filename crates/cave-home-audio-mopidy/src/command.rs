@@ -41,12 +41,18 @@ pub enum Command {
     /// `deleteid ID` — remove the song with a stable id.
     DeleteId(u64),
     /// `move FROM TO` — move a queued song from one position to another.
-    Move { from: usize, to: usize },
+    Move {
+        from: usize,
+        to: usize,
+    },
     Clear,
     /// `playlistinfo [POS]` — list the whole queue, or one entry.
     PlaylistInfo(Option<usize>),
     /// `seek POS TIME` — seek within the song at a queue position (seconds).
-    Seek { pos: usize, seconds: f64 },
+    Seek {
+        pos: usize,
+        seconds: f64,
+    },
     /// `seekcur TIME` — seek within the current song (seconds).
     SeekCur(f64),
     Random(bool),
@@ -246,7 +252,9 @@ pub fn parse(line: &str) -> Result<Command, ParseError> {
             Some(p) => Ok(Command::PlaylistInfo(Some(parse_usize("position", p)?))),
         },
         "seek" => {
-            let pos = args.first().ok_or(ParseError::MissingArgument("position"))?;
+            let pos = args
+                .first()
+                .ok_or(ParseError::MissingArgument("position"))?;
             let time = args.get(1).ok_or(ParseError::MissingArgument("time"))?;
             Ok(Command::Seek {
                 pos: parse_usize("position", pos)?,
@@ -311,7 +319,13 @@ mod tests {
     #[test]
     fn parses_move_and_seek() {
         assert_eq!(parse("move 0 3"), Ok(Command::Move { from: 0, to: 3 }));
-        assert_eq!(parse("seek 1 30"), Ok(Command::Seek { pos: 1, seconds: 30.0 }));
+        assert_eq!(
+            parse("seek 1 30"),
+            Ok(Command::Seek {
+                pos: 1,
+                seconds: 30.0
+            })
+        );
         assert_eq!(parse("seekcur 12.5"), Ok(Command::SeekCur(12.5)));
     }
 
@@ -342,7 +356,10 @@ mod tests {
 
     #[test]
     fn unterminated_quote_is_an_error_not_a_panic() {
-        assert_eq!(parse("add \"open ended"), Err(ParseError::UnterminatedQuote));
+        assert_eq!(
+            parse("add \"open ended"),
+            Err(ParseError::UnterminatedQuote)
+        );
     }
 
     #[test]
@@ -386,8 +403,14 @@ mod tests {
 
     #[test]
     fn negative_or_nonfinite_seek_is_rejected() {
-        assert!(matches!(parse("seekcur -5"), Err(ParseError::BadArgument { .. })));
-        assert!(matches!(parse("seekcur nan"), Err(ParseError::BadArgument { .. })));
+        assert!(matches!(
+            parse("seekcur -5"),
+            Err(ParseError::BadArgument { .. })
+        ));
+        assert!(matches!(
+            parse("seekcur nan"),
+            Err(ParseError::BadArgument { .. })
+        ));
     }
 
     #[test]

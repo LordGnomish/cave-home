@@ -274,7 +274,9 @@ impl Parser {
                 if args.is_empty() {
                     return Err(ParseError::EmptyArguments(name));
                 }
-                Ok(Rule::Host(args.into_iter().map(|h| h.to_ascii_lowercase()).collect()))
+                Ok(Rule::Host(
+                    args.into_iter().map(|h| h.to_ascii_lowercase()).collect(),
+                ))
             }
             "Path" => {
                 if args.is_empty() {
@@ -303,7 +305,10 @@ impl Parser {
                 let mut it = args.into_iter();
                 let nm = it.next().ok_or(ParseError::HeaderArity)?;
                 let val = it.next().ok_or(ParseError::HeaderArity)?;
-                Ok(Rule::Header { name: nm, value: val })
+                Ok(Rule::Header {
+                    name: nm,
+                    value: val,
+                })
             }
             other => Err(ParseError::UnknownMatcher(other.to_string())),
         }
@@ -368,7 +373,10 @@ mod tests {
 
     #[test]
     fn parses_path_and_pathprefix() {
-        assert_eq!(parse("Path(`/x`)").unwrap(), Rule::Path(vec!["/x".to_string()]));
+        assert_eq!(
+            parse("Path(`/x`)").unwrap(),
+            Rule::Path(vec!["/x".to_string()])
+        );
         assert_eq!(
             parse("PathPrefix(`/api`)").unwrap(),
             Rule::PathPrefix(vec!["/api".to_string()])
@@ -379,7 +387,10 @@ mod tests {
     fn parses_header() {
         assert_eq!(
             parse("Header(`X-Env`, `prod`)").unwrap(),
-            Rule::Header { name: "X-Env".to_string(), value: "prod".to_string() }
+            Rule::Header {
+                name: "X-Env".to_string(),
+                value: "prod".to_string()
+            }
         );
     }
 
@@ -428,7 +439,9 @@ mod tests {
         let r = parse("!!Method(`GET`)").unwrap();
         assert_eq!(
             r,
-            Rule::Not(Box::new(Rule::Not(Box::new(Rule::Method(vec!["GET".to_string()])))))
+            Rule::Not(Box::new(Rule::Not(Box::new(Rule::Method(vec![
+                "GET".to_string()
+            ])))))
         );
     }
 
@@ -447,7 +460,10 @@ mod tests {
 
     #[test]
     fn rejects_empty_arguments() {
-        assert_eq!(parse("Host()"), Err(ParseError::EmptyArguments("Host".to_string())));
+        assert_eq!(
+            parse("Host()"),
+            Err(ParseError::EmptyArguments("Host".to_string()))
+        );
     }
 
     #[test]

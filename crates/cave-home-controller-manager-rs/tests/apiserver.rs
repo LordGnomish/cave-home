@@ -44,7 +44,10 @@ fn update_replaces_and_delete_removes() {
     let mut p = api.create(Pod::new(ObjectMeta::new("web", "prod", "")));
     p.status.phase = PodPhase::Running;
     api.update(p);
-    assert_eq!(api.get("prod/web").map(|p| p.status.phase), Some(PodPhase::Running));
+    assert_eq!(
+        api.get("prod/web").map(|p| p.status.phase),
+        Some(PodPhase::Running)
+    );
     assert!(api.delete("prod/web").is_some());
     assert!(api.get("prod/web").is_none());
 }
@@ -52,9 +55,15 @@ fn update_replaces_and_delete_removes() {
 #[test]
 fn list_matching_filters_by_namespace_and_selector() {
     let mut api: Api<Pod> = Api::new("pod");
-    api.create(Pod::new(ObjectMeta::new("a", "prod", "").with_label("app", "web")));
-    api.create(Pod::new(ObjectMeta::new("b", "prod", "").with_label("app", "db")));
-    api.create(Pod::new(ObjectMeta::new("c", "stage", "").with_label("app", "web")));
+    api.create(Pod::new(
+        ObjectMeta::new("a", "prod", "").with_label("app", "web"),
+    ));
+    api.create(Pod::new(
+        ObjectMeta::new("b", "prod", "").with_label("app", "db"),
+    ));
+    api.create(Pod::new(
+        ObjectMeta::new("c", "stage", "").with_label("app", "web"),
+    ));
     let web_prod = api.list_matching("prod", &selector("web"));
     let names: Vec<_> = web_prod.iter().map(|p| p.meta().name.clone()).collect();
     assert_eq!(names, vec!["a"], "namespace AND selector both applied");
@@ -64,14 +73,22 @@ fn list_matching_filters_by_namespace_and_selector() {
 fn list_owned_by_returns_only_controller_owned_children() {
     let mut api: Api<Pod> = Api::new("pod");
     let owner = OwnerReference::to("ReplicaSet", "rs", "rs-uid").controller();
-    api.create(Pod::new(ObjectMeta::new("owned", "prod", "").with_owner(owner)));
+    api.create(Pod::new(
+        ObjectMeta::new("owned", "prod", "").with_owner(owner),
+    ));
     // A pod that merely *references* rs-uid but not as controller is not owned.
     let noncontroller = OwnerReference::to("ReplicaSet", "rs", "rs-uid");
-    api.create(Pod::new(ObjectMeta::new("ref-only", "prod", "").with_owner(noncontroller)));
+    api.create(Pod::new(
+        ObjectMeta::new("ref-only", "prod", "").with_owner(noncontroller),
+    ));
     api.create(Pod::new(ObjectMeta::new("orphan", "prod", "")));
     let children = api.list_owned_by("rs-uid");
     let names: Vec<_> = children.iter().map(|p| p.meta().name.clone()).collect();
-    assert_eq!(names, vec!["owned"], "only the controller-owned child is returned");
+    assert_eq!(
+        names,
+        vec!["owned"],
+        "only the controller-owned child is returned"
+    );
 }
 
 #[test]
@@ -86,6 +103,12 @@ fn cluster_bundles_typed_apis() {
         },
     ));
     assert!(!rs.meta().uid.is_empty());
-    assert_eq!(c.replicasets.get("prod/web").map(|r| r.spec.replicas), Some(3));
-    assert!(c.pods.list().is_empty(), "no pods until a controller creates them");
+    assert_eq!(
+        c.replicasets.get("prod/web").map(|r| r.spec.replicas),
+        Some(3)
+    );
+    assert!(
+        c.pods.list().is_empty(),
+        "no pods until a controller creates them"
+    );
 }

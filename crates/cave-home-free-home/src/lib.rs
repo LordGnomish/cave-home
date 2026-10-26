@@ -82,7 +82,7 @@ pub mod value;
 pub use command::{CommandError, SetDatapoint};
 pub use function::Function;
 pub use id::{ChannelId, DatapointId, DeviceSerial, Direction, IdError};
-pub use label::{action_phrase, Action, Lang};
+pub use label::{Action, Lang, action_phrase};
 pub use mapping::DeviceKind;
 pub use pairing::{Pairing, ValueShape};
 pub use topology::{Channel, Datapoint, Device, ParseError, SysAp};

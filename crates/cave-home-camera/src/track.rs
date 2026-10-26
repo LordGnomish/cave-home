@@ -14,7 +14,7 @@
 //! re-identification — which is exactly the slice that needs no model or video.
 
 use crate::detection::{Detection, Tick};
-use crate::geometry::{iou, BBox};
+use crate::geometry::{BBox, iou};
 use crate::label::ObjectLabel;
 
 /// A stable identifier for a tracked thing, unique within one [`Tracker`].
@@ -197,9 +197,15 @@ mod tests {
     #[test]
     fn overlapping_detection_continues_the_same_track() {
         let mut t = Tracker::new(0.3, 30);
-        let id0 = t.update(&[det(ObjectLabel::Person, BBox::new(0.0, 0.0, 10.0, 10.0), 0)], 0)[0];
+        let id0 = t.update(
+            &[det(ObjectLabel::Person, BBox::new(0.0, 0.0, 10.0, 10.0), 0)],
+            0,
+        )[0];
         // Next frame, box drifted a little but still overlaps strongly.
-        let id1 = t.update(&[det(ObjectLabel::Person, BBox::new(1.0, 0.0, 10.0, 10.0), 1)], 1)[0];
+        let id1 = t.update(
+            &[det(ObjectLabel::Person, BBox::new(1.0, 0.0, 10.0, 10.0), 1)],
+            1,
+        )[0];
         assert_eq!(id0, id1, "same thing keeps its id");
         assert_eq!(t.tracks().len(), 1);
         assert_eq!(t.tracks()[0].hits, 2);
@@ -210,9 +216,15 @@ mod tests {
     #[test]
     fn label_mismatch_does_not_associate() {
         let mut t = Tracker::new(0.1, 30);
-        let id0 = t.update(&[det(ObjectLabel::Person, BBox::new(0.0, 0.0, 10.0, 10.0), 0)], 0)[0];
+        let id0 = t.update(
+            &[det(ObjectLabel::Person, BBox::new(0.0, 0.0, 10.0, 10.0), 0)],
+            0,
+        )[0];
         // A car sitting exactly where the person was is NOT the person.
-        let id1 = t.update(&[det(ObjectLabel::Car, BBox::new(0.0, 0.0, 10.0, 10.0), 1)], 1)[0];
+        let id1 = t.update(
+            &[det(ObjectLabel::Car, BBox::new(0.0, 0.0, 10.0, 10.0), 1)],
+            1,
+        )[0];
         assert_ne!(id0, id1);
         // The person track ages but is still alive at age 1.
         assert_eq!(t.tracks().len(), 2);
@@ -247,7 +259,10 @@ mod tests {
     #[test]
     fn stale_track_is_retired_after_max_age() {
         let mut t = Tracker::new(0.3, 5);
-        t.update(&[det(ObjectLabel::Person, BBox::new(0.0, 0.0, 10.0, 10.0), 0)], 0);
+        t.update(
+            &[det(ObjectLabel::Person, BBox::new(0.0, 0.0, 10.0, 10.0), 0)],
+            0,
+        );
         assert_eq!(t.tracks().len(), 1);
         // Six ticks later with no detections: age 6 > max_age 5 -> retired.
         let ids = t.update(&[], 6);
@@ -258,12 +273,18 @@ mod tests {
     #[test]
     fn track_within_max_age_survives_a_gap() {
         let mut t = Tracker::new(0.3, 5);
-        let id0 = t.update(&[det(ObjectLabel::Person, BBox::new(0.0, 0.0, 10.0, 10.0), 0)], 0)[0];
+        let id0 = t.update(
+            &[det(ObjectLabel::Person, BBox::new(0.0, 0.0, 10.0, 10.0), 0)],
+            0,
+        )[0];
         // Empty frame at tick 3 (age 3 <= 5): survives.
         t.update(&[], 3);
         assert_eq!(t.tracks().len(), 1);
         // Reappears at the same place at tick 4 -> same id.
-        let id1 = t.update(&[det(ObjectLabel::Person, BBox::new(0.0, 0.0, 10.0, 10.0), 4)], 4)[0];
+        let id1 = t.update(
+            &[det(ObjectLabel::Person, BBox::new(0.0, 0.0, 10.0, 10.0), 4)],
+            4,
+        )[0];
         assert_eq!(id0, id1);
     }
 }

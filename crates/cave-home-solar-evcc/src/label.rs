@@ -94,9 +94,21 @@ mod tests {
 
     #[test]
     fn home_words_are_present() {
-        assert!(ChargeStatus::ChargingFromSun.message(Lang::En).contains("sun"));
-        assert!(ChargeStatus::ChargingFromSun.message(Lang::En).contains("car"));
-        assert!(ChargeStatus::ToppingUpForDeadline.message(Lang::En).contains("grid"));
+        assert!(
+            ChargeStatus::ChargingFromSun
+                .message(Lang::En)
+                .contains("sun")
+        );
+        assert!(
+            ChargeStatus::ChargingFromSun
+                .message(Lang::En)
+                .contains("car")
+        );
+        assert!(
+            ChargeStatus::ToppingUpForDeadline
+                .message(Lang::En)
+                .contains("grid")
+        );
     }
 
     #[test]

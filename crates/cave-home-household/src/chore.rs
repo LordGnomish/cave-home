@@ -176,7 +176,10 @@ mod tests {
     #[test]
     fn reminders_are_plain_language() {
         let due = Chore::new("Water the plants", 7, None);
-        assert_eq!(due.reminder(0, Lang::En), "Time to do: Water the plants — chore due");
+        assert_eq!(
+            due.reminder(0, Lang::En),
+            "Time to do: Water the plants — chore due"
+        );
         let done = Chore::new("Water the plants", 7, Some(100));
         assert_eq!(done.reminder(101, Lang::Tr), "Water the plants güncel");
     }

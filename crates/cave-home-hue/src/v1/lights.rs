@@ -143,10 +143,7 @@ impl Light {
     /// `aiohue.v1.lights.Light.colorgamut`.
     #[must_use]
     pub fn color_gamut(&self) -> Option<GamutType> {
-        let arr = self
-            .control_capabilities()?
-            .get("colorgamut")?
-            .as_array()?;
+        let arr = self.control_capabilities()?.get("colorgamut")?.as_array()?;
         if arr.len() != 3 {
             return None;
         }
@@ -169,15 +166,9 @@ impl Light {
     }
 
     /// `aiohue.v1.lights.Light.set_state` — change live state.
-    pub async fn set_state(
-        &self,
-        req: &dyn V1Request,
-        update: &LightStateUpdate,
-    ) -> HueResult<()> {
+    pub async fn set_state(&self, req: &dyn V1Request, update: &LightStateUpdate) -> HueResult<()> {
         let body = serde_json::to_value(update).unwrap_or(json!({}));
-        let _ = req
-            .put(&format!("lights/{}/state", self.id), body)
-            .await?;
+        let _ = req.put(&format!("lights/{}/state", self.id), body).await?;
         Ok(())
     }
 }

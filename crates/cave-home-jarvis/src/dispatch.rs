@@ -15,13 +15,13 @@
 //! Both paths converge on the one [`ToolRegistry`] / [`ToolExecutor`] surface,
 //! so a command behaves identically however it was understood.
 
-use cave_home_voice::{understand, CompiledIntent, Lang, Understanding};
+use cave_home_voice::{CompiledIntent, Lang, Understanding, understand};
 
 use crate::error::Result;
+use crate::llm::ToolCall;
 use crate::llm::{ChatMessage, ChatRequest, LlmClient};
 use crate::stt::Transcript;
-use crate::tools::{intent_to_tool_call, ToolExecutor, ToolRegistry, ToolResult};
-use crate::llm::ToolCall;
+use crate::tools::{ToolExecutor, ToolRegistry, ToolResult, intent_to_tool_call};
 
 /// Which path produced the outcome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,7 +58,10 @@ impl DispatchOutcome {
     /// The names of the tools that ran.
     #[must_use]
     pub fn executed_tools(&self) -> Vec<String> {
-        self.executed.iter().map(|(c, _)| c.name().to_string()).collect()
+        self.executed
+            .iter()
+            .map(|(c, _)| c.name().to_string())
+            .collect()
     }
 }
 
@@ -262,7 +265,10 @@ mod tests {
             DispatchConfig::default(),
         );
         let out = d
-            .dispatch(&transcript("turn the kitchen light on"), &DispatchContext::default())
+            .dispatch(
+                &transcript("turn the kitchen light on"),
+                &DispatchContext::default(),
+            )
             .await
             .unwrap();
         assert_eq!(out.path, DispatchPath::Nlu);
@@ -270,7 +276,11 @@ mod tests {
         assert_eq!(out.executed[0].0.arguments()["target"], "kitchen");
         assert_eq!(out.executed[0].0.arguments()["on"], true);
         assert!(out.reply.to_lowercase().contains("turning"));
-        assert_eq!(d.llm().request_count(), 0, "LLM should not be called on an NLU hit");
+        assert_eq!(
+            d.llm().request_count(),
+            0,
+            "LLM should not be called on an NLU hit"
+        );
     }
 
     #[tokio::test]
@@ -278,7 +288,10 @@ mod tests {
         // Acceptance #3: free-form utterance -> LLM tool call -> execute ->
         // feed result back -> final spoken answer.
         let llm = MockLlm::new()
-            .call_tool("set_temperature", json!({"target": "office", "celsius": 22}))
+            .call_tool(
+                "set_temperature",
+                json!({"target": "office", "celsius": 22}),
+            )
             .reply("Done — I've set the office to 22 degrees.");
         let exec = MockToolExecutor::new();
         let d = Dispatcher::new(
@@ -292,7 +305,10 @@ mod tests {
         let out = d
             .dispatch(
                 &transcript("it's a bit chilly in here, warm up the office please"),
-                &DispatchContext { room: Some("office".into()), speaker: Some("Burak".into()) },
+                &DispatchContext {
+                    room: Some("office".into()),
+                    speaker: Some("Burak".into()),
+                },
             )
             .await
             .unwrap();
@@ -305,7 +321,12 @@ mod tests {
         assert_eq!(d.llm().request_count(), 2);
         // The second turn must carry the tool result + the room-aware system prompt.
         let second = &d.llm().requests.lock()[1];
-        assert!(second.messages.iter().any(|m| m.tool_name.as_deref() == Some("set_temperature")));
+        assert!(
+            second
+                .messages
+                .iter()
+                .any(|m| m.tool_name.as_deref() == Some("set_temperature"))
+        );
         assert!(second.messages[0].content.contains("office"));
     }
 
@@ -320,7 +341,10 @@ mod tests {
             DispatchConfig::default(),
         );
         let out = d
-            .dispatch(&transcript("how many planets are there"), &DispatchContext::default())
+            .dispatch(
+                &transcript("how many planets are there"),
+                &DispatchContext::default(),
+            )
             .await
             .unwrap();
         assert_eq!(out.path, DispatchPath::Llm);
@@ -342,7 +366,10 @@ mod tests {
             DispatchConfig::default(),
         );
         let out = d
-            .dispatch(&transcript("teleport me to mars"), &DispatchContext::default())
+            .dispatch(
+                &transcript("teleport me to mars"),
+                &DispatchContext::default(),
+            )
             .await
             .unwrap();
         assert_eq!(out.path, DispatchPath::Llm);

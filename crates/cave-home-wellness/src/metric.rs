@@ -251,17 +251,35 @@ mod tests {
 
     #[test]
     fn heart_rate_range_boundaries() {
-        assert_eq!(HeartRate::new(HeartRate::MIN_BPM - 1), Err(MetricError::TooLow));
-        assert_eq!(HeartRate::new(HeartRate::MIN_BPM).map(HeartRate::bpm), Ok(20));
+        assert_eq!(
+            HeartRate::new(HeartRate::MIN_BPM - 1),
+            Err(MetricError::TooLow)
+        );
+        assert_eq!(
+            HeartRate::new(HeartRate::MIN_BPM).map(HeartRate::bpm),
+            Ok(20)
+        );
         assert_eq!(HeartRate::new(60).map(HeartRate::bpm), Ok(60));
-        assert_eq!(HeartRate::new(HeartRate::MAX_BPM).map(HeartRate::bpm), Ok(250));
-        assert_eq!(HeartRate::new(HeartRate::MAX_BPM + 1), Err(MetricError::TooHigh));
+        assert_eq!(
+            HeartRate::new(HeartRate::MAX_BPM).map(HeartRate::bpm),
+            Ok(250)
+        );
+        assert_eq!(
+            HeartRate::new(HeartRate::MAX_BPM + 1),
+            Err(MetricError::TooHigh)
+        );
     }
 
     #[test]
     fn sleep_duration_minutes_and_hours() {
-        assert_eq!(SleepDuration::from_minutes(0).map(SleepDuration::minutes), Ok(0));
-        assert_eq!(SleepDuration::from_hours(8).map(SleepDuration::minutes), Ok(480));
+        assert_eq!(
+            SleepDuration::from_minutes(0).map(SleepDuration::minutes),
+            Ok(0)
+        );
+        assert_eq!(
+            SleepDuration::from_hours(8).map(SleepDuration::minutes),
+            Ok(480)
+        );
         assert_eq!(
             SleepDuration::from_minutes(SleepDuration::MAX_MINUTES).map(SleepDuration::minutes),
             Ok(1440)
@@ -287,7 +305,10 @@ mod tests {
         assert_eq!(BodyWeight::new(f64::NAN), Err(MetricError::NotFinite));
         assert_eq!(BodyWeight::new(f64::INFINITY), Err(MetricError::NotFinite));
         assert_eq!(BodyWeight::new(0.5), Err(MetricError::TooLow));
-        assert_eq!(BodyWeight::new(BodyWeight::MAX_KG + 1.0), Err(MetricError::TooHigh));
+        assert_eq!(
+            BodyWeight::new(BodyWeight::MAX_KG + 1.0),
+            Err(MetricError::TooHigh)
+        );
         let kg = BodyWeight::new(72.5).expect("72.5 kg is in range").kg();
         assert!((kg - 72.5).abs() < 1e-9);
     }

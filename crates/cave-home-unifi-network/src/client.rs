@@ -81,7 +81,10 @@ impl NetworkClient {
     pub fn wireless(mut self, ssid: impl Into<String>, access_point: impl Into<String>) -> Self {
         let ap = access_point.into();
         self.uplink_device = Some(ap.clone());
-        self.connection = ConnectionKind::Wireless { ssid: ssid.into(), access_point: ap };
+        self.connection = ConnectionKind::Wireless {
+            ssid: ssid.into(),
+            access_point: ap,
+        };
         self
     }
 

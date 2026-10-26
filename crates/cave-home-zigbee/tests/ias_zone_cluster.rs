@@ -6,8 +6,8 @@
 //! vectors hand-computed from the ZCL §8.2 command/attribute tables.
 
 use cave_home_zigbee::ias_zone::{
-    attribute_id, command_id, notification_id, EnrollResponseCode, IasZoneCommand,
-    ZoneEnrollRequest, ZoneStatus, ZoneStatusChangeNotification, ZoneType, IAS_ZONE_CLUSTER_ID,
+    EnrollResponseCode, IAS_ZONE_CLUSTER_ID, IasZoneCommand, ZoneEnrollRequest, ZoneStatus,
+    ZoneStatusChangeNotification, ZoneType, attribute_id, command_id, notification_id,
 };
 
 #[test]
@@ -48,7 +48,9 @@ fn zone_type_known_values() {
 
 #[test]
 fn zone_type_round_trips() {
-    for raw in [0x0000u16, 0x000d, 0x0015, 0x0028, 0x002a, 0x002b, 0x0226, 0xffff, 0x1234] {
+    for raw in [
+        0x0000u16, 0x000d, 0x0015, 0x0028, 0x002a, 0x002b, 0x0226, 0xffff, 0x1234,
+    ] {
         assert_eq!(ZoneType::from_u16(raw).to_u16(), raw);
     }
 }
@@ -96,10 +98,7 @@ fn parse_zone_status_change_notification() {
     assert_eq!(n.zone_id, 0x0a);
     assert_eq!(n.delay, 0);
     // round-trip
-    assert_eq!(
-        ZoneStatusChangeNotification::parse(&n.encode()).unwrap(),
-        n
-    );
+    assert_eq!(ZoneStatusChangeNotification::parse(&n.encode()).unwrap(), n);
 }
 
 #[test]

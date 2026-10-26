@@ -20,7 +20,9 @@ use serde_json::json;
 
 use cave_home_unifi_network::{Command, NetworkClient, NetworkDevice, PoeMode};
 
-use super::types::{Envelope, HealthSubsystem, NetworkEvent, Site, WireClient, WireDevice, WireEvent};
+use super::types::{
+    Envelope, HealthSubsystem, NetworkEvent, Site, WireClient, WireDevice, WireEvent,
+};
 use crate::client::ConsoleClient;
 use crate::error::{Result, UnifiError};
 use crate::transport::{HttpMethod, HttpRequest, HttpTransport};
@@ -104,8 +106,7 @@ impl<'a, T: HttpTransport> NetworkApi<'a, T> {
     /// Transport / HTTP / decode errors, or an `rc=error` envelope.
     pub async fn health(&self, site: &str) -> Result<Vec<HealthSubsystem>> {
         let url = self.client.console().network_site_url(site, "stat/health");
-        let env: Envelope<HealthSubsystem> =
-            self.client.get_json(url, "network/health").await?;
+        let env: Envelope<HealthSubsystem> = self.client.get_json(url, "network/health").await?;
         env.into_data()
     }
 
@@ -117,8 +118,7 @@ impl<'a, T: HttpTransport> NetworkApi<'a, T> {
         }
         let url = self.client.console().network_site_url(site, "cmd/stamgr");
         let body = json!({ "cmd": cmd, "mac": mac });
-        let _: Envelope<serde_json::Value> =
-            self.client.post_json(url, &body, endpoint).await?;
+        let _: Envelope<serde_json::Value> = self.client.post_json(url, &body, endpoint).await?;
         Ok(())
     }
 
@@ -135,7 +135,8 @@ impl<'a, T: HttpTransport> NetworkApi<'a, T> {
     /// # Errors
     /// Invalid MAC, transport / HTTP / decode errors, or an `rc=error` envelope.
     pub async fn unblock_client(&self, site: &str, mac: &str) -> Result<()> {
-        self.stamgr(site, "unblock-sta", mac, "network/unblock").await
+        self.stamgr(site, "unblock-sta", mac, "network/unblock")
+            .await
     }
 
     /// Reconnect ("kick") a client by MAC (`cmd/stamgr` `kick-sta`).
@@ -143,7 +144,8 @@ impl<'a, T: HttpTransport> NetworkApi<'a, T> {
     /// # Errors
     /// Invalid MAC, transport / HTTP / decode errors, or an `rc=error` envelope.
     pub async fn reconnect_client(&self, site: &str, mac: &str) -> Result<()> {
-        self.stamgr(site, "kick-sta", mac, "network/reconnect").await
+        self.stamgr(site, "kick-sta", mac, "network/reconnect")
+            .await
     }
 
     /// Set a switch port's PoE mode (`PUT rest/device/{id}` with a single
@@ -252,11 +254,7 @@ mod tests {
             ]}"#
             .to_vec(),
         ));
-        let client = ConsoleClient::new(
-            Console::legacy("h"),
-            t,
-            Credentials::api_key("KEY"),
-        );
+        let client = ConsoleClient::new(Console::legacy("h"), t, Credentials::api_key("KEY"));
         let api = NetworkApi::new(&client);
         let clients = api.clients("default").await.unwrap();
         assert_eq!(clients.len(), 1);
@@ -267,12 +265,11 @@ mod tests {
     #[tokio::test]
     async fn block_client_posts_stamgr_cmd() {
         let t = MockTransport::new();
-        t.push(HttpResponse::json(200, br#"{"meta":{"rc":"ok"},"data":[]}"#.to_vec()));
-        let client = ConsoleClient::new(
-            Console::legacy("h"),
-            t,
-            Credentials::api_key("KEY"),
-        );
+        t.push(HttpResponse::json(
+            200,
+            br#"{"meta":{"rc":"ok"},"data":[]}"#.to_vec(),
+        ));
+        let client = ConsoleClient::new(Console::legacy("h"), t, Credentials::api_key("KEY"));
         let api = NetworkApi::new(&client);
         api.block_client("default", "aa:bb:cc").await.unwrap();
     }
@@ -292,11 +289,7 @@ mod tests {
             200,
             br#"{"meta":{"rc":"error","msg":"api.err.NoPermission"},"data":[]}"#.to_vec(),
         ));
-        let client = ConsoleClient::new(
-            Console::legacy("h"),
-            t,
-            Credentials::api_key("KEY"),
-        );
+        let client = ConsoleClient::new(Console::legacy("h"), t, Credentials::api_key("KEY"));
         let api = NetworkApi::new(&client);
         let err = api.clients("default").await.unwrap_err();
         assert!(err.to_string().contains("api.err.NoPermission"));
@@ -306,16 +299,20 @@ mod tests {
     async fn execute_dispatches_domain_command() {
         let t = MockTransport::new();
         // two ok acks for two commands
-        t.set_fallback(HttpResponse::json(200, br#"{"meta":{"rc":"ok"},"data":[]}"#.to_vec()));
-        let client = ConsoleClient::new(
-            Console::legacy("h"),
-            t,
-            Credentials::api_key("KEY"),
-        );
+        t.set_fallback(HttpResponse::json(
+            200,
+            br#"{"meta":{"rc":"ok"},"data":[]}"#.to_vec(),
+        ));
+        let client = ConsoleClient::new(Console::legacy("h"), t, Credentials::api_key("KEY"));
         let api = NetworkApi::new(&client);
-        api.execute("default", &Command::BlockClient { mac: "aa:bb".into() })
-            .await
-            .unwrap();
+        api.execute(
+            "default",
+            &Command::BlockClient {
+                mac: "aa:bb".into(),
+            },
+        )
+        .await
+        .unwrap();
         api.execute(
             "default",
             &Command::SetPoe {

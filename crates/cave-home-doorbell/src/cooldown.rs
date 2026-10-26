@@ -70,7 +70,9 @@ impl CooldownGate {
     /// A fresh gate that has accepted nothing yet.
     #[must_use]
     pub const fn new() -> Self {
-        Self { last_accepted: None }
+        Self {
+            last_accepted: None,
+        }
     }
 
     /// The tick of the last accepted signal, if any.

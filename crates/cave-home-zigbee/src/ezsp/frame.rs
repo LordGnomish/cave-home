@@ -53,7 +53,11 @@ impl EzspFrameControl {
     #[must_use]
     pub const fn to_bytes(self) -> [u8; 2] {
         let lo: u8 = if self.response { 0x80 } else { 0x00 }
-            | if self.network_index_request { 0x40 } else { 0x00 };
+            | if self.network_index_request {
+                0x40
+            } else {
+                0x00
+            };
         // UG100 v8: hi byte carries EZSP frame format version.
         // 0x01 marks v8 extended format.
         let hi: u8 = 0x01;

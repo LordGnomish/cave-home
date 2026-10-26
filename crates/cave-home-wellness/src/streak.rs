@@ -5,7 +5,7 @@
 //! was met. No clock, no storage — the persistent on-device history store that
 //! feeds these is deferred to phase-1b (see the parity manifest).
 
-use crate::goal::{progress, Goal};
+use crate::goal::{Goal, progress};
 use crate::metric::DailyMetrics;
 
 /// The longest run of consecutive goal-met days anywhere in the series.

@@ -180,6 +180,9 @@ mod tests {
         let gw = GatewayClient::new(t, "https://powerwall.local").with_token("tok");
         gw.get_power_flow().await.unwrap();
         let reqs = gw.transport().requests.lock();
-        assert!(reqs.iter().all(|r| r.url.starts_with("https://powerwall.local")));
+        assert!(
+            reqs.iter()
+                .all(|r| r.url.starts_with("https://powerwall.local"))
+        );
     }
 }

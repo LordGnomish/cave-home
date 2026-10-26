@@ -84,7 +84,9 @@ impl ColorMode {
             0x00 => Ok(Self::CurrentHueAndSaturation),
             0x01 => Ok(Self::CurrentXy),
             0x02 => Ok(Self::ColorTemperatureMireds),
-            other => Err(ZigbeeError::Zcl(format!("reserved color mode 0x{other:02x}"))),
+            other => Err(ZigbeeError::Zcl(format!(
+                "reserved color mode 0x{other:02x}"
+            ))),
         }
     }
 
@@ -123,7 +125,9 @@ impl HueDirection {
             0x01 => Ok(Self::LongestDistance),
             0x02 => Ok(Self::Up),
             0x03 => Ok(Self::Down),
-            other => Err(ZigbeeError::Zcl(format!("reserved hue direction 0x{other:02x}"))),
+            other => Err(ZigbeeError::Zcl(format!(
+                "reserved hue direction 0x{other:02x}"
+            ))),
         }
     }
 
@@ -160,7 +164,9 @@ impl ColorMoveMode {
             0x00 => Ok(Self::Stop),
             0x01 => Ok(Self::Up),
             0x03 => Ok(Self::Down),
-            other => Err(ZigbeeError::Zcl(format!("reserved color move mode 0x{other:02x}"))),
+            other => Err(ZigbeeError::Zcl(format!(
+                "reserved color move mode 0x{other:02x}"
+            ))),
         }
     }
 
@@ -193,7 +199,9 @@ impl ColorStepMode {
         match v {
             0x01 => Ok(Self::Up),
             0x03 => Ok(Self::Down),
-            other => Err(ZigbeeError::Zcl(format!("reserved color step mode 0x{other:02x}"))),
+            other => Err(ZigbeeError::Zcl(format!(
+                "reserved color step mode 0x{other:02x}"
+            ))),
         }
     }
 
@@ -519,9 +527,10 @@ impl ColorControlState {
                 mode, step_size, ..
             } => {
                 self.current_saturation = match mode {
-                    ColorStepMode::Up => {
-                        self.current_saturation.saturating_add(*step_size).min(MAX_COMPONENT)
-                    }
+                    ColorStepMode::Up => self
+                        .current_saturation
+                        .saturating_add(*step_size)
+                        .min(MAX_COMPONENT),
                     ColorStepMode::Down => self.current_saturation.saturating_sub(*step_size),
                 };
                 self.color_mode = ColorMode::CurrentHueAndSaturation;

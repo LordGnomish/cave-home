@@ -54,13 +54,19 @@ use cave_home_zwave::{Command, CommandClass, ThermostatMode, ZwaveError};
 fn roundtrip(cmd: Command) {
     let bytes = cmd.encode();
     let back = Command::decode(&bytes).expect("re-decodes");
-    assert_eq!(back, cmd, "round-trip mismatch for {cmd:?} via {bytes:02x?}");
+    assert_eq!(
+        back, cmd,
+        "round-trip mismatch for {cmd:?} via {bytes:02x?}"
+    );
 }
 
 #[test]
 fn command_class_id_maps_to_thermostat_mode() {
     // 0x40 is THERMOSTAT_MODE.
-    assert_eq!(CommandClass::from_u8(0x40), Some(CommandClass::ThermostatMode));
+    assert_eq!(
+        CommandClass::from_u8(0x40),
+        Some(CommandClass::ThermostatMode)
+    );
     assert_eq!(CommandClass::ThermostatMode.to_u8(), 0x40);
 }
 
@@ -143,7 +149,9 @@ fn set_and_report_roundtrip() {
     roundtrip(Command::ThermostatModeSet(ThermostatMode::Auto));
     roundtrip(Command::ThermostatModeSet(ThermostatMode::EnergySaveHeat));
     roundtrip(Command::ThermostatModeSet(ThermostatMode::EnergySaveCool));
-    roundtrip(Command::ThermostatModeSet(ThermostatMode::ManufacturerSpecific));
+    roundtrip(Command::ThermostatModeSet(
+        ThermostatMode::ManufacturerSpecific,
+    ));
 
     // Report round-trips likewise.
     roundtrip(Command::ThermostatModeReport(ThermostatMode::Heat));

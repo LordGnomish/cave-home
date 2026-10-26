@@ -10,8 +10,8 @@
 
 use std::io::Write as _;
 
-use flate2::write::{DeflateEncoder, GzEncoder};
 use flate2::Compression;
+use flate2::write::{DeflateEncoder, GzEncoder};
 
 /// A supported content encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,9 +94,17 @@ fn parse_q_milli(s: &str) -> u32 {
 
 /// Media-type prefixes/values that are already compressed and not worth re-encoding.
 const PRECOMPRESSED: &[&str] = &[
-    "image/", "video/", "audio/", "application/zip", "application/gzip",
-    "application/x-gzip", "application/x-7z-compressed", "application/x-rar-compressed",
-    "application/zstd", "application/br", "font/woff",
+    "image/",
+    "video/",
+    "audio/",
+    "application/zip",
+    "application/gzip",
+    "application/x-gzip",
+    "application/x-7z-compressed",
+    "application/x-rar-compressed",
+    "application/zstd",
+    "application/br",
+    "font/woff",
 ];
 
 /// Whether a body of `content_type` / `content_length` is worth compressing:
@@ -108,7 +116,12 @@ pub fn should_compress(content_type: &str, content_length: Option<u64>, min_size
             return false;
         }
     }
-    let ct = content_type.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    let ct = content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
     !PRECOMPRESSED.iter().any(|p| ct.starts_with(p))
 }
 
@@ -152,7 +165,10 @@ mod tests {
 
     #[test]
     fn negotiate_honours_q_values() {
-        assert_eq!(negotiate(Some("gzip;q=0.5, deflate;q=1.0"), SUPPORTED), Encoding::Deflate);
+        assert_eq!(
+            negotiate(Some("gzip;q=0.5, deflate;q=1.0"), SUPPORTED),
+            Encoding::Deflate
+        );
     }
 
     #[test]
@@ -168,7 +184,11 @@ mod tests {
 
     #[test]
     fn should_compress_text_above_threshold() {
-        assert!(should_compress("text/html; charset=utf-8", Some(5000), 1024));
+        assert!(should_compress(
+            "text/html; charset=utf-8",
+            Some(5000),
+            1024
+        ));
     }
 
     #[test]

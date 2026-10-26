@@ -65,4 +65,4 @@ pub use machine::{CommandError, Display, MediaCommand};
 pub use playback::PlaybackState;
 pub use power::PowerState;
 pub use source::{App, AppCapability, Source, SourceCatalog};
-pub use volume::{Volume, MAX_VOLUME};
+pub use volume::{MAX_VOLUME, Volume};

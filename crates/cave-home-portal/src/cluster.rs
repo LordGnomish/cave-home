@@ -45,9 +45,18 @@ pub fn subsystem_views() -> Vec<View> {
         View::developer(
             "Workloads",
             "apps",
-            vec![Card::WorkloadList, Card::Logs { entity_id: "kube-system".into() }],
+            vec![
+                Card::WorkloadList,
+                Card::Logs {
+                    entity_id: "kube-system".into(),
+                },
+            ],
         ),
-        View::developer("Networking", "lan", vec![Card::ServiceLb, Card::IngressRoutes]),
+        View::developer(
+            "Networking",
+            "lan",
+            vec![Card::ServiceLb, Card::IngressRoutes],
+        ),
         View::developer("Storage", "database", vec![Card::StorageStatus]),
         View::developer("Security", "shield", vec![Card::SecurityStatus]),
     ]
@@ -62,13 +71,20 @@ mod tests {
     #[test]
     fn mounts_all_five_subsystem_pages() {
         let titles: Vec<_> = subsystem_views().iter().map(|v| v.title.clone()).collect();
-        assert_eq!(titles, ["Cluster", "Workloads", "Networking", "Storage", "Security"]);
+        assert_eq!(
+            titles,
+            ["Cluster", "Workloads", "Networking", "Storage", "Security"]
+        );
     }
 
     #[test]
     fn every_subsystem_page_is_developer_only() {
         for view in subsystem_views() {
-            assert!(view.developer_only, "{} must be a developer page", view.title);
+            assert!(
+                view.developer_only,
+                "{} must be a developer page",
+                view.title
+            );
         }
     }
 
@@ -87,7 +103,11 @@ mod tests {
         let home = Home::new();
         let base = auto_dashboard(&home, Lang::En).views.len();
         let operator = operator_dashboard(&home, Lang::En);
-        assert_eq!(operator.views.len(), base + 5, "the five subsystem pages must be appended");
+        assert_eq!(
+            operator.views.len(),
+            base + 5,
+            "the five subsystem pages must be appended"
+        );
         assert!(operator.views.iter().any(|v| v.title == "Cluster"));
     }
 
@@ -98,7 +118,13 @@ mod tests {
             dash.push_view(view);
         }
         let resident = dash.for_mode(ViewMode::resident(Surface::Portal));
-        assert!(!resident.has_developer_content(), "no orchestration internals may leak to residents");
-        assert!(resident.views.is_empty(), "all subsystem pages are developer-only");
+        assert!(
+            !resident.has_developer_content(),
+            "no orchestration internals may leak to residents"
+        );
+        assert!(
+            resident.views.is_empty(),
+            "all subsystem pages are developer-only"
+        );
     }
 }

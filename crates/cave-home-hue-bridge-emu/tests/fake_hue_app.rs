@@ -49,7 +49,12 @@ async fn fake_hue_app_pairs_then_toggles_light_and_observes_eventstream() {
     );
     let post_arr = post.as_array().unwrap();
     let success = post_arr[0].get("success").unwrap();
-    let app_key = success.get("username").unwrap().as_str().unwrap().to_string();
+    let app_key = success
+        .get("username")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string();
     let clientkey = success.get("clientkey").unwrap().as_str().unwrap();
     assert_eq!(app_key.len(), 40, "username = 40 hex chars per docs");
     assert_eq!(clientkey.len(), 32, "clientkey = 32 hex chars per docs");
@@ -63,12 +68,7 @@ async fn fake_hue_app_pairs_then_toggles_light_and_observes_eventstream() {
     let mut sub = ctx.registry.subscribe();
 
     // ----- Step 6: fake app turns the light on.
-    let put_resp = put_light_state(
-        &ctx,
-        &app_key,
-        &light_id,
-        &json!({"on": true, "bri": 254}),
-    );
+    let put_resp = put_light_state(&ctx, &app_key, &light_id, &json!({"on": true, "bri": 254}));
     let acks = put_resp.as_array().unwrap();
     assert!(acks.iter().any(|v| v.get("success").is_some()));
 
@@ -129,9 +129,11 @@ async fn v2_full_resource_dump_includes_documented_types() {
     let _ = ctx
         .registry
         .add_light(EmulatedLight::new_color_candle("L", ""));
-    let _ = ctx.registry.add_group(
-        cave_home_hue_bridge_emu::registry::EmulatedGroup::new_room("Salon", ""),
-    );
+    let _ = ctx
+        .registry
+        .add_group(cave_home_hue_bridge_emu::registry::EmulatedGroup::new_room(
+            "Salon", "",
+        ));
     let env = cave_home_hue_bridge_emu::api::v2::get_all_resources(&ctx, Some(&key));
     // Every resource carries a `type` field — verify required types are in there.
     let types: std::collections::HashSet<&str> = env

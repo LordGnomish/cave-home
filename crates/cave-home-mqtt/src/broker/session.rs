@@ -63,8 +63,10 @@ impl Session {
     /// Add or replace a subscription by topic filter. Returns `true` if a
     /// subscription for the same filter already existed (§3.8.4).
     pub fn add_subscription(&mut self, sub: SubscriptionV5) -> bool {
-        if let Some(existing) =
-            self.subscriptions.iter_mut().find(|s| s.topic_filter == sub.topic_filter)
+        if let Some(existing) = self
+            .subscriptions
+            .iter_mut()
+            .find(|s| s.topic_filter == sub.topic_filter)
         {
             *existing = sub;
             true

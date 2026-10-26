@@ -271,8 +271,14 @@ mod tests {
     #[test]
     fn assign_reserved_rejected() {
         let mut ip = ipam24();
-        assert_eq!(ip.assign(v4("10.42.5.0")), Err(IpamError::Reserved(v4("10.42.5.0"))));
-        assert_eq!(ip.assign(v4("10.42.5.1")), Err(IpamError::Reserved(v4("10.42.5.1"))));
+        assert_eq!(
+            ip.assign(v4("10.42.5.0")),
+            Err(IpamError::Reserved(v4("10.42.5.0")))
+        );
+        assert_eq!(
+            ip.assign(v4("10.42.5.1")),
+            Err(IpamError::Reserved(v4("10.42.5.1")))
+        );
     }
 
     #[test]

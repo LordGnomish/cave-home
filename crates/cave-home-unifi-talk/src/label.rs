@@ -85,8 +85,11 @@ mod tests {
     use super::*;
 
     const LANGS: [Lang; 3] = [Lang::En, Lang::De, Lang::Tr];
-    const KINDS: [DeviceKind; 3] =
-        [DeviceKind::Doorbell, DeviceKind::Intercom, DeviceKind::DeskPhone];
+    const KINDS: [DeviceKind; 3] = [
+        DeviceKind::Doorbell,
+        DeviceKind::Intercom,
+        DeviceKind::DeskPhone,
+    ];
     const SETTLED: [CallState; 5] = [
         CallState::Ringing,
         CallState::Active,
@@ -107,7 +110,10 @@ mod tests {
         ];
         for state in states {
             for lang in LANGS {
-                assert!(!for_state(state, lang).is_empty(), "{state:?}/{lang:?} empty");
+                assert!(
+                    !for_state(state, lang).is_empty(),
+                    "{state:?}/{lang:?} empty"
+                );
             }
         }
     }
@@ -135,7 +141,10 @@ mod tests {
 
     #[test]
     fn missed_from_embeds_the_caller_in_each_language() {
-        assert_eq!(missed_from("the gate", Lang::En), "Missed call from the gate");
+        assert_eq!(
+            missed_from("the gate", Lang::En),
+            "Missed call from the gate"
+        );
         assert!(missed_from("the gate", Lang::De).contains("the gate"));
         assert!(missed_from("the gate", Lang::Tr).contains("the gate"));
     }
@@ -152,10 +161,29 @@ mod tests {
         // Charter §6.3 / ADR-009: the call UI must never surface protocol,
         // transport, codec or controller terms.
         const BANNED: &[&str] = &[
-            "SIP", "INVITE", "RTP", "RTCP", "VoIP", "codec", "G.711", "G.722",
-            "WebRTC", "WebSocket", "REST", "MQTT", "entity_id", "entity id",
-            "PSTN", "trunk", "Ubiquiti", "UniFi", "controller", "PBX",
-            "pod", "kubelet", "namespace",
+            "SIP",
+            "INVITE",
+            "RTP",
+            "RTCP",
+            "VoIP",
+            "codec",
+            "G.711",
+            "G.722",
+            "WebRTC",
+            "WebSocket",
+            "REST",
+            "MQTT",
+            "entity_id",
+            "entity id",
+            "PSTN",
+            "trunk",
+            "Ubiquiti",
+            "UniFi",
+            "controller",
+            "PBX",
+            "pod",
+            "kubelet",
+            "namespace",
         ];
         let mut texts: Vec<String> = Vec::new();
         for lang in LANGS {

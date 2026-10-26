@@ -23,7 +23,11 @@ impl Ingredient {
     pub fn new(name: impl Into<String>, amount: f64) -> Self {
         Self {
             name: name.into(),
-            amount: if amount.is_finite() { amount.max(0.0) } else { 0.0 },
+            amount: if amount.is_finite() {
+                amount.max(0.0)
+            } else {
+                0.0
+            },
         }
     }
 
@@ -102,7 +106,10 @@ impl RecipeCheck {
         }
         let missing = self.shortfall.len();
         match lang {
-            Lang::En => format!("{} needs {missing} more thing(s) from the shop", recipe.name()),
+            Lang::En => format!(
+                "{} needs {missing} more thing(s) from the shop",
+                recipe.name()
+            ),
             Lang::De => format!("Für {} fehlen noch {missing} Sache(n)", recipe.name()),
             Lang::Tr => format!("{} için {missing} şey eksik", recipe.name()),
         }
@@ -158,9 +165,22 @@ mod tests {
     fn basket() -> Vec<Product> {
         vec![
             Product::new("Eggs", QuantityUnit::Piece, 6.0, 0.0, None).unwrap(),
-            Product::new("Flour", QuantityUnit::Grams { step: 500.0 }, 1000.0, 0.0, None).unwrap(),
-            Product::new("Milk", QuantityUnit::Millilitres { step: 1000.0 }, 200.0, 0.0, None)
-                .unwrap(),
+            Product::new(
+                "Flour",
+                QuantityUnit::Grams { step: 500.0 },
+                1000.0,
+                0.0,
+                None,
+            )
+            .unwrap(),
+            Product::new(
+                "Milk",
+                QuantityUnit::Millilitres { step: 1000.0 },
+                200.0,
+                0.0,
+                None,
+            )
+            .unwrap(),
         ]
     }
 
@@ -195,7 +215,11 @@ mod tests {
         assert_eq!(eggs.name(), "Eggs");
         assert_eq!(eggs.amount(), 4.0);
         let milk = &check.shortfall()[1];
-        assert_eq!(milk.amount(), 1000.0, "300 ml short rounds up to a 1 L carton");
+        assert_eq!(
+            milk.amount(),
+            1000.0,
+            "300 ml short rounds up to a 1 L carton"
+        );
     }
 
     #[test]
@@ -211,6 +235,9 @@ mod tests {
     fn summary_is_plain_language() {
         let recipe = Recipe::new("Pancakes", vec![Ingredient::new("Eggs", 2.0)]);
         let ok = can_make(&recipe, &basket());
-        assert_eq!(ok.summary(&recipe, Lang::En), "You have everything for Pancakes");
+        assert_eq!(
+            ok.summary(&recipe, Lang::En),
+            "You have everything for Pancakes"
+        );
     }
 }

@@ -4,13 +4,15 @@
 //! `#[cfg(target_os = "linux")]` and only verifies wiring (does NOT actually
 //! mutate iptables — that requires root and is a Phase 1b CI concern).
 
-use cave_home_kube_proxy_rs::iptables::executor::{IptablesExecutor, MockExecutor};
 use cave_home_kube_proxy_rs::iptables::errors::ProxierError;
+use cave_home_kube_proxy_rs::iptables::executor::{IptablesExecutor, MockExecutor};
 
 #[tokio::test]
 async fn mock_executor_records_restore_input() {
     let mock = MockExecutor::new();
-    mock.restore("*nat\n:KUBE-SERVICES - [0:0]\nCOMMIT\n").await.expect("ok");
+    mock.restore("*nat\n:KUBE-SERVICES - [0:0]\nCOMMIT\n")
+        .await
+        .expect("ok");
     let inputs = mock.recorded_inputs();
     assert_eq!(inputs.len(), 1);
     assert!(inputs[0].contains("KUBE-SERVICES"));

@@ -20,7 +20,7 @@
 //! ready), so a rollout converges over several reconciles — exactly the
 //! upstream behaviour, driven here by the run loop calling `reconcile` again.
 
-use crate::apis::{template_hash, Cluster, Deployment, ReplicaSet, ReplicaSetSpec};
+use crate::apis::{Cluster, Deployment, ReplicaSet, ReplicaSetSpec, template_hash};
 use crate::reconcile::Outcome;
 use crate::types::{Object, ObjectMeta, OwnerReference};
 
@@ -64,8 +64,18 @@ impl DeploymentController {
             crate::apis::DeploymentStrategy::Recreate => {
                 reconcile_recreate(&deploy, &new_rs, &old_rs, cluster);
             }
-            crate::apis::DeploymentStrategy::RollingUpdate { max_unavailable, max_surge } => {
-                reconcile_rolling(&deploy, &new_rs, &old_rs, max_unavailable, max_surge, cluster);
+            crate::apis::DeploymentStrategy::RollingUpdate {
+                max_unavailable,
+                max_surge,
+            } => {
+                reconcile_rolling(
+                    &deploy,
+                    &new_rs,
+                    &old_rs,
+                    max_unavailable,
+                    max_surge,
+                    cluster,
+                );
             }
         }
 
@@ -81,21 +91,30 @@ fn create_new_rs(deploy: &Deployment, hash: &str, cluster: &mut Cluster) -> Repl
     let mut selector = deploy.spec.selector.clone();
     selector.insert(POD_TEMPLATE_HASH.to_owned(), hash.to_owned());
     let mut template = deploy.spec.template.clone();
-    template.labels.insert(POD_TEMPLATE_HASH.to_owned(), hash.to_owned());
+    template
+        .labels
+        .insert(POD_TEMPLATE_HASH.to_owned(), hash.to_owned());
 
-    let mut meta = ObjectMeta::new(&format!("{}-{hash}", deploy.meta.name), &deploy.meta.namespace, "");
+    let mut meta = ObjectMeta::new(
+        &format!("{}-{hash}", deploy.meta.name),
+        &deploy.meta.namespace,
+        "",
+    );
     meta.labels = template.labels.clone();
-    meta.owner_references = vec![OwnerReference::to(
-        "Deployment",
-        &deploy.meta.name,
-        &deploy.meta.uid,
-    )
-    .controller()
-    .blocking()];
+    meta.owner_references = vec![
+        OwnerReference::to("Deployment", &deploy.meta.name, &deploy.meta.uid)
+            .controller()
+            .blocking(),
+    ];
 
-    cluster
-        .replicasets
-        .create(ReplicaSet::new(meta, ReplicaSetSpec { replicas: 0, selector, template }))
+    cluster.replicasets.create(ReplicaSet::new(
+        meta,
+        ReplicaSetSpec {
+            replicas: 0,
+            selector,
+            template,
+        },
+    ))
 }
 
 /// `Recreate`: scale all old RSes to 0, hold the new RS at 0 until the old pods
@@ -140,11 +159,14 @@ fn reconcile_rolling(
     }
 
     // --- scale up new (NewRSNewReplicas) ---
-    let total_spec: i32 = old_rs.iter().map(|rs| rs.spec.replicas).sum::<i32>() + new_rs.spec.replicas;
+    let total_spec: i32 =
+        old_rs.iter().map(|rs| rs.spec.replicas).sum::<i32>() + new_rs.spec.replicas;
     let max_total = desired + max_surge;
     let mut new_replicas = new_rs.spec.replicas;
     if total_spec < max_total {
-        let scale_up = (max_total - total_spec).min(desired - new_rs.spec.replicas).max(0);
+        let scale_up = (max_total - total_spec)
+            .min(desired - new_rs.spec.replicas)
+            .max(0);
         new_replicas = new_rs.spec.replicas + scale_up;
         if new_replicas != new_rs.spec.replicas {
             scale(new_rs, new_replicas, cluster);
@@ -152,8 +174,11 @@ fn reconcile_rolling(
     }
 
     // --- scale down old (reconcileOldReplicaSets) ---
-    let available: i32 =
-        old_rs.iter().map(|rs| rs.status.available_replicas).sum::<i32>() + new_rs.status.available_replicas;
+    let available: i32 = old_rs
+        .iter()
+        .map(|rs| rs.status.available_replicas)
+        .sum::<i32>()
+        + new_rs.status.available_replicas;
     let min_available = (desired - max_unavailable).max(0);
     // Unavailable pods already committed to the new RS (its spec exceeds what's
     // observed available) must be reserved before cutting old capacity.

@@ -98,12 +98,7 @@ pub fn get_light(ctx: &V1Context, app_key: Option<&str>, uuid: &str) -> Envelope
 }
 
 /// `PUT /clip/v2/resource/light/<uuid>` — accepts the published LightPut body.
-pub fn put_light(
-    ctx: &V1Context,
-    app_key: Option<&str>,
-    uuid: &str,
-    body: &Value,
-) -> Envelope {
+pub fn put_light(ctx: &V1Context, app_key: Option<&str>, uuid: &str, body: &Value) -> Envelope {
     if let Err(e) = check_app_key(ctx, app_key) {
         return e;
     }
@@ -168,12 +163,7 @@ pub fn get_scenes(ctx: &V1Context, app_key: Option<&str>) -> Envelope {
 }
 
 /// `PUT /clip/v2/resource/scene/<uuid>` — supports `{recall: {action: "active"}}`.
-pub fn put_scene(
-    ctx: &V1Context,
-    app_key: Option<&str>,
-    uuid: &str,
-    body: &Value,
-) -> Envelope {
+pub fn put_scene(ctx: &V1Context, app_key: Option<&str>, uuid: &str, body: &Value) -> Envelope {
     if let Err(e) = check_app_key(ctx, app_key) {
         return e;
     }
@@ -416,7 +406,14 @@ mod tests {
             .iter()
             .filter_map(|v| v.get("type").and_then(Value::as_str))
             .collect();
-        for needle in ["bridge", "light", "device", "room", "grouped_light", "scene"] {
+        for needle in [
+            "bridge",
+            "light",
+            "device",
+            "room",
+            "grouped_light",
+            "scene",
+        ] {
             assert!(types.contains(needle), "missing type: {needle}");
         }
     }

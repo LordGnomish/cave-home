@@ -73,6 +73,6 @@ pub mod label;
 pub mod sun_position;
 
 pub use array::{ArrayError, PvArray};
-pub use forecast::{forecast_day, instant_at, DailyForecast, ForecastError, Instant, Site};
-pub use label::{daily_summary, peak_time_phrase, Lang, SolarOutlook};
-pub use sun_position::{daylight_hours, sun_position_at, SunPosition};
+pub use forecast::{DailyForecast, ForecastError, Instant, Site, forecast_day, instant_at};
+pub use label::{Lang, SolarOutlook, daily_summary, peak_time_phrase};
+pub use sun_position::{SunPosition, daylight_hours, sun_position_at};

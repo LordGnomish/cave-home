@@ -35,7 +35,12 @@ fn admit(c: &mut Cluster, name: &str) {
 }
 
 fn pod_names(c: &Cluster) -> Vec<String> {
-    let mut v: Vec<String> = c.pods.list().iter().map(|p| p.meta().name.clone()).collect();
+    let mut v: Vec<String> = c
+        .pods
+        .list()
+        .iter()
+        .map(|p| p.meta().name.clone())
+        .collect();
     v.sort();
     v
 }
@@ -51,11 +56,19 @@ fn creates_the_first_ordinal_then_waits_for_readiness() {
 
     // Ordinal 1 must not appear until 0 is ready.
     ctrl.reconcile("prod/db", &mut c, 1);
-    assert_eq!(pod_names(&c), vec!["db-0"], "no progress while 0 is not ready");
+    assert_eq!(
+        pod_names(&c),
+        vec!["db-0"],
+        "no progress while 0 is not ready"
+    );
 
     admit(&mut c, "db-0");
     ctrl.reconcile("prod/db", &mut c, 2);
-    assert_eq!(pod_names(&c), vec!["db-0", "db-1"], "ordinal 1 created once 0 is ready");
+    assert_eq!(
+        pod_names(&c),
+        vec!["db-0", "db-1"],
+        "ordinal 1 created once 0 is ready"
+    );
 }
 
 #[test]
@@ -89,7 +102,11 @@ fn scales_down_highest_ordinal_first() {
     c.statefulsets.update(s);
 
     ctrl.reconcile("prod/db", &mut c, 11);
-    assert_eq!(pod_names(&c), vec!["db-0", "db-1"], "highest ordinal (db-2) removed first");
+    assert_eq!(
+        pod_names(&c),
+        vec!["db-0", "db-1"],
+        "highest ordinal (db-2) removed first"
+    );
     ctrl.reconcile("prod/db", &mut c, 12);
     assert_eq!(pod_names(&c), vec!["db-0"], "then db-1");
 }
@@ -149,7 +166,12 @@ fn sts_with_pvc(replicas: i32, templates: &[&str]) -> StatefulSet {
 }
 
 fn pvc_names(c: &Cluster) -> Vec<String> {
-    let mut v: Vec<String> = c.pvcs.list().iter().map(|p| p.meta().name.clone()).collect();
+    let mut v: Vec<String> = c
+        .pvcs
+        .list()
+        .iter()
+        .map(|p| p.meta().name.clone())
+        .collect();
     v.sort();
     v
 }
@@ -161,7 +183,11 @@ fn creates_one_pvc_per_template_per_ordinal() {
     let mut ctrl = StatefulSetController::new();
     // Ordinal 0 + its PVCs appear; the claim name is "<template>-<sts>-<ordinal>".
     ctrl.reconcile("prod/db", &mut c, 0);
-    assert_eq!(pvc_names(&c), vec!["data-db-0", "logs-db-0"], "PVCs for ordinal 0");
+    assert_eq!(
+        pvc_names(&c),
+        vec!["data-db-0", "logs-db-0"],
+        "PVCs for ordinal 0"
+    );
     admit(&mut c, "db-0");
     ctrl.reconcile("prod/db", &mut c, 1);
     assert_eq!(
@@ -188,7 +214,11 @@ fn pvcs_survive_scale_down() {
     c.statefulsets.update(s);
     ctrl.reconcile("prod/db", &mut c, 2);
     assert_eq!(pod_names(&c), vec!["db-0"], "db-1 pod removed");
-    assert_eq!(pvc_names(&c), vec!["data-db-0", "data-db-1"], "PVC for db-1 retained");
+    assert_eq!(
+        pvc_names(&c),
+        vec!["data-db-0", "data-db-1"],
+        "PVC for db-1 retained"
+    );
 }
 
 // --- podManagementPolicy: Parallel --------------------------------------
@@ -209,7 +239,11 @@ fn parallel_policy_creates_all_ordinals_at_once() {
     let mut ctrl = StatefulSetController::new();
     // No readiness gating: a single reconcile brings up all three ordinals.
     ctrl.reconcile("prod/db", &mut c, 0);
-    assert_eq!(pod_names(&c), vec!["db-0", "db-1", "db-2"], "Parallel creates all at once");
+    assert_eq!(
+        pod_names(&c),
+        vec!["db-0", "db-1", "db-2"],
+        "Parallel creates all at once"
+    );
 }
 
 #[test]
@@ -234,5 +268,9 @@ fn parallel_policy_deletes_all_surplus_at_once() {
     s.spec.replicas = 1;
     c.statefulsets.update(s);
     ctrl.reconcile("prod/db", &mut c, 1);
-    assert_eq!(pod_names(&c), vec!["db-0"], "Parallel removes db-1 and db-2 in one pass");
+    assert_eq!(
+        pod_names(&c),
+        vec!["db-0"],
+        "Parallel removes db-1 and db-2 in one pass"
+    );
 }

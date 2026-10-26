@@ -7,8 +7,8 @@
 
 use std::sync::Arc;
 
-use cave_home_tesla::fleet_api::client::{FleetClient, ManualClock, MockTransport};
 use cave_home_tesla::fleet_api::Region;
+use cave_home_tesla::fleet_api::client::{FleetClient, ManualClock, MockTransport};
 use cave_home_tesla::metrics::Metrics;
 use cave_home_tesla::{DateRange, EnergyProvider, OpMode, TeslaProvider};
 
@@ -32,7 +32,10 @@ fn provider() -> (TeslaProvider<MockTransport>, Arc<ManualClock>) {
         .route("/operation", 200, r#"{"response":{"result":true}}"#);
     let clock = Arc::new(ManualClock::new(0));
     let client = FleetClient::new(t, Region::Europe).with_token("AT-test");
-    (TeslaProvider::new(client, 42, clock.clone()).with_retries(0), clock)
+    (
+        TeslaProvider::new(client, 42, clock.clone()).with_retries(0),
+        clock,
+    )
 }
 
 #[tokio::test]
@@ -68,9 +71,10 @@ async fn commands_backup_reserve_and_mode() {
     p.set_operation_mode(OpMode::SelfConsumption).await.unwrap();
     let reqs = p.client().transport().requests.lock();
     assert!(reqs.iter().any(|r| r.url.ends_with("/backup")));
-    assert!(reqs
-        .iter()
-        .any(|r| r.body.as_deref().unwrap_or("").contains("self_consumption")));
+    assert!(
+        reqs.iter()
+            .any(|r| r.body.as_deref().unwrap_or("").contains("self_consumption"))
+    );
 }
 
 #[tokio::test]
@@ -87,7 +91,9 @@ async fn serves_cache_through_a_cloud_blip() {
     let (p, clock) = provider();
     // Prime, then knock the cloud over within the cache TTL.
     let _ = p.get_power_flow().await.unwrap();
-    p.client().transport().set_failure(Some("cloud down".into()));
+    p.client()
+        .transport()
+        .set_failure(Some("cloud down".into()));
     clock.advance(60_000);
     let flow = p.get_power_flow().await.unwrap();
     assert!((flow.pv_watts - 4200.0).abs() < f64::EPSILON);

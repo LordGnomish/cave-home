@@ -167,7 +167,9 @@ mod tests {
         c.refresh_all(1000);
         assert_eq!(
             DrainPlan::new(&c).can_drain("hub-1"),
-            Err(DrainError::WouldStrandHome { id: "hub-1".to_owned() })
+            Err(DrainError::WouldStrandHome {
+                id: "hub-1".to_owned()
+            })
         );
     }
 
@@ -178,7 +180,9 @@ mod tests {
         c.refresh_all(1000);
         assert_eq!(
             DrainPlan::new(&c).can_drain("hub-1"),
-            Err(DrainError::WouldStrandHome { id: "hub-1".to_owned() })
+            Err(DrainError::WouldStrandHome {
+                id: "hub-1".to_owned()
+            })
         );
     }
 
@@ -200,7 +204,9 @@ mod tests {
         c.refresh_all(1000);
         assert_eq!(
             DrainPlan::new(&c).can_drain("hub-2"),
-            Err(DrainError::WouldStrandHome { id: "hub-2".to_owned() })
+            Err(DrainError::WouldStrandHome {
+                id: "hub-2".to_owned()
+            })
         );
     }
 
@@ -209,7 +215,9 @@ mod tests {
         let c = cluster();
         assert_eq!(
             DrainPlan::new(&c).can_drain("ghost"),
-            Err(DrainError::UnknownNode { id: "ghost".to_owned() })
+            Err(DrainError::UnknownNode {
+                id: "ghost".to_owned()
+            })
         );
     }
 

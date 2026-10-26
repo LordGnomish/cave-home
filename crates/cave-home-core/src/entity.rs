@@ -265,7 +265,11 @@ mod tests {
 
     #[test]
     fn snapshot_folds_friendly_name_and_standard_attrs() {
-        let l = Light { on: true, brightness: 200, reachable: true };
+        let l = Light {
+            on: true,
+            brightness: 200,
+            reachable: true,
+        };
         let (state, attrs) = l.state_snapshot();
         assert_eq!(state, "on");
         // friendly_name comes from name()
@@ -283,7 +287,11 @@ mod tests {
 
     #[test]
     fn unavailable_entity_snapshots_to_unavailable_with_no_attrs() {
-        let l = Light { on: true, brightness: 200, reachable: false };
+        let l = Light {
+            on: true,
+            brightness: 200,
+            reachable: false,
+        };
         let (state, attrs) = l.state_snapshot();
         assert_eq!(state, STATE_UNAVAILABLE);
         assert!(attrs.is_empty());

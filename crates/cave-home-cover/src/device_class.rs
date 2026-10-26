@@ -52,20 +52,32 @@ impl Features {
     /// A bare contact-closure garage relay looks like this.
     #[must_use]
     pub const fn minimal() -> Self {
-        Self { set_position: false, tilt: false, stop: false }
+        Self {
+            set_position: false,
+            tilt: false,
+            stop: false,
+        }
     }
 
     /// Position-capable and stoppable, but no tilt — a roller shade / shutter.
     #[must_use]
     pub const fn positionable() -> Self {
-        Self { set_position: true, tilt: false, stop: true }
+        Self {
+            set_position: true,
+            tilt: false,
+            stop: true,
+        }
     }
 
     /// The full feature set: position, tilt and stop — a motorised venetian
     /// blind.
     #[must_use]
     pub const fn full() -> Self {
-        Self { set_position: true, tilt: true, stop: true }
+        Self {
+            set_position: true,
+            tilt: true,
+            stop: true,
+        }
     }
 }
 
@@ -78,7 +90,11 @@ impl DeviceClass {
         match self {
             // Most consumer garage openers are open/close/stop with no position
             // feedback.
-            Self::Garage | Self::Gate => Features { set_position: false, tilt: false, stop: true },
+            Self::Garage | Self::Gate => Features {
+                set_position: false,
+                tilt: false,
+                stop: true,
+            },
             // Venetian-style blinds tilt; treat the blind class as fully
             // featured by default.
             Self::Blind => Features::full(),

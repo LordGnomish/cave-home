@@ -22,10 +22,10 @@
 
 use std::path::Path;
 
-use cave_home_kubelet_rs::cri::remote::streaming::ExecRequest;
-use cave_home_kubelet_rs::cri::remote::RemoteCriClient;
-use cave_home_kubelet_rs::cri::types as t;
 use cave_home_kubelet_rs::cri::CriClient;
+use cave_home_kubelet_rs::cri::remote::RemoteCriClient;
+use cave_home_kubelet_rs::cri::remote::streaming::ExecRequest;
+use cave_home_kubelet_rs::cri::types as t;
 
 fn socket_path() -> String {
     std::env::var("CAVE_CRI_CONTAINERD_SOCK")
@@ -80,7 +80,11 @@ async fn real_containerd_pod_bringup() {
     // ImageService surface: the pulled image lists, and the image filesystem
     // reports non-trivial usage.
     let images = client.list_images(None).await.expect("ListImages");
-    assert!(images.iter().any(|i| i.repo_tags.iter().any(|t| t.contains("busybox"))));
+    assert!(
+        images
+            .iter()
+            .any(|i| i.repo_tags.iter().any(|t| t.contains("busybox")))
+    );
     let fs = client.image_fs_info().await.expect("ImageFsInfo");
     eprintln!("image fs: {fs:?}");
 

@@ -179,8 +179,7 @@ impl<T: HttpTransport> ConsoleClient<T> {
             return Ok(resp);
         }
         metrics.record_error(resp.status);
-        let message =
-            extract_message(&resp).unwrap_or_else(|| format!("HTTP {}", resp.status));
+        let message = extract_message(&resp).unwrap_or_else(|| format!("HTTP {}", resp.status));
         Err(UnifiError::from_status(
             resp.status,
             message,
@@ -271,7 +270,12 @@ mod tests {
         assert!(!client.is_authenticated());
         client.login().await.unwrap();
         assert!(client.is_authenticated());
-        assert!(client.metrics().render_prometheus().contains("unifi_logins_total 1"));
+        assert!(
+            client
+                .metrics()
+                .render_prometheus()
+                .contains("unifi_logins_total 1")
+        );
     }
 
     #[tokio::test]
@@ -285,10 +289,12 @@ mod tests {
         let err = client.login().await.unwrap_err();
         assert!(matches!(err, UnifiError::Login(_)));
         assert!(err.to_string().contains("api.err.Invalid"));
-        assert!(client
-            .metrics()
-            .render_prometheus()
-            .contains("unifi_login_failures_total 1"));
+        assert!(
+            client
+                .metrics()
+                .render_prometheus()
+                .contains("unifi_login_failures_total 1")
+        );
     }
 
     #[tokio::test]
@@ -321,8 +327,7 @@ mod tests {
                 .with_header("Set-Cookie", "csrf_token=cx; Path=/"),
         );
         t.push(HttpResponse::json(200, br#"{"ok":true}"#.to_vec()));
-        let client =
-            ConsoleClient::new(Console::legacy("h"), t, Credentials::password("a", "b"));
+        let client = ConsoleClient::new(Console::legacy("h"), t, Credentials::password("a", "b"));
         client.login().await.unwrap();
         let resp = client
             .send(
@@ -344,7 +349,10 @@ mod tests {
                 .with_header("x-csrf-token", "c1"),
         );
         // first data call -> 401 (cookie expired)
-        t.push(HttpResponse::json(401, br#"{"meta":{"msg":"LoginRequired"}}"#.to_vec()));
+        t.push(HttpResponse::json(
+            401,
+            br#"{"meta":{"msg":"LoginRequired"}}"#.to_vec(),
+        ));
         // re-login
         t.push(
             HttpResponse::json(200, b"{}".to_vec())
@@ -402,7 +410,9 @@ mod tests {
             .await
             .unwrap_err();
         match err {
-            UnifiError::Http { status, message, .. } => {
+            UnifiError::Http {
+                status, message, ..
+            } => {
                 assert_eq!(status, 500);
                 assert_eq!(message, "server boom");
             }

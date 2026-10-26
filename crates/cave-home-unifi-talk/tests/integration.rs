@@ -8,9 +8,9 @@
 
 use cave_home_unifi_talk::routing::RoutingPrefs;
 use cave_home_unifi_talk::{
-    BusinessHours, CallDirection, CallEvent, CallLog, CallMachine, CallRecord, CallState,
-    DeviceId, DeviceKind, Disposition, Extension, ExtensionError, Lang, Minute, RingStrategy,
-    RouteOutcome, TalkDevice, label, route_call,
+    BusinessHours, CallDirection, CallEvent, CallLog, CallMachine, CallRecord, CallState, DeviceId,
+    DeviceKind, Disposition, Extension, ExtensionError, Lang, Minute, RingStrategy, RouteOutcome,
+    TalkDevice, label, route_call,
 };
 
 #[test]
@@ -21,13 +21,21 @@ fn front_door_call_answered_and_logged_end_to_end() {
 
     // Midday, no DND: routing rings the extension.
     let hours = BusinessHours::new(Minute::at(8, 0).unwrap(), Minute::at(22, 0).unwrap());
-    let route =
-        route_call(&ext, &RoutingPrefs::default(), hours, Minute::at(12, 0).unwrap(), false);
+    let route = route_call(
+        &ext,
+        &RoutingPrefs::default(),
+        hours,
+        Minute::at(12, 0).unwrap(),
+        false,
+    );
     assert!(matches!(route, RouteOutcome::Ring(_)));
 
     // The intercom rings; the household sees a friendly line.
     let mut call = CallMachine::new(30, Disposition::Voicemail);
-    assert_eq!(call.apply(CallEvent::Incoming, 0).unwrap(), CallState::Ringing);
+    assert_eq!(
+        call.apply(CallEvent::Incoming, 0).unwrap(),
+        CallState::Ringing
+    );
     assert_eq!(
         label::incoming_from_device(door.kind(), Lang::En),
         "The front-door intercom is calling"
@@ -40,7 +48,13 @@ fn front_door_call_answered_and_logged_end_to_end() {
 
     // The call lands in the history with the talk time.
     let mut log = CallLog::with_capacity(50);
-    log.record(CallRecord::answered("Front door", "200", CallDirection::Incoming, 45, 0));
+    log.record(CallRecord::answered(
+        "Front door",
+        "200",
+        CallDirection::Incoming,
+        45,
+        0,
+    ));
     assert_eq!(log.missed_count(), 0);
     assert_eq!(log.total_talk_time(), 45);
 }
@@ -51,8 +65,13 @@ fn after_hours_unanswered_call_rolls_to_voicemail_and_logs_history() {
     let hours = BusinessHours::new(Minute::at(8, 0).unwrap(), Minute::at(22, 0).unwrap());
 
     // 23:30 is after hours: a non-emergency call does not ring.
-    let route =
-        route_call(&ext, &RoutingPrefs::default(), hours, Minute::at(23, 30).unwrap(), false);
+    let route = route_call(
+        &ext,
+        &RoutingPrefs::default(),
+        hours,
+        Minute::at(23, 30).unwrap(),
+        false,
+    );
     assert_eq!(route, RouteOutcome::Voicemail);
 
     // Model the unanswered ring rolling to voicemail.
@@ -71,7 +90,10 @@ fn after_hours_unanswered_call_rolls_to_voicemail_and_logs_history() {
         1000,
     ));
     assert_eq!(log.missed_count(), 0);
-    assert_eq!(label::missed_from("the gate", Lang::En), "Missed call from the gate");
+    assert_eq!(
+        label::missed_from("the gate", Lang::En),
+        "Missed call from the gate"
+    );
 }
 
 #[test]

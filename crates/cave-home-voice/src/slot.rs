@@ -216,7 +216,10 @@ mod tests {
     #[test]
     fn resolve_number_slot_in_range() {
         let kind = SlotKind::Number { min: 0, max: 100 };
-        assert_eq!(resolve(&kind, "fifty", Lang::En), Some(SlotValue::Number(50)));
+        assert_eq!(
+            resolve(&kind, "fifty", Lang::En),
+            Some(SlotValue::Number(50))
+        );
         assert_eq!(resolve(&kind, "75", Lang::En), Some(SlotValue::Number(75)));
     }
 

@@ -13,14 +13,8 @@ use clap::Command;
 pub fn cmd() -> Command {
     Command::new("water")
         .about("Smart-water meters and leak sensors")
-        .subcommand(
-            Command::new("status")
-                .about("Show today's water usage + meter health")
-        )
-        .subcommand(
-            Command::new("leaks")
-                .about("List active leak alerts")
-        )
+        .subcommand(Command::new("status").about("Show today's water usage + meter health"))
+        .subcommand(Command::new("leaks").about("List active leak alerts"))
 }
 
 pub fn run() -> i32 {
@@ -35,7 +29,10 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
+        let names: Vec<_> = c
+            .get_subcommands()
+            .map(|s| s.get_name().to_string())
+            .collect();
         for sub in ["status", "leaks"] {
             assert!(
                 names.iter().any(|n| n == sub),

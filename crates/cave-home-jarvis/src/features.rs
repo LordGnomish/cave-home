@@ -125,7 +125,9 @@ impl MelFilterBank {
     pub fn new(n_fft: usize, n_mels: usize, sample_rate: u32, fmin: f32, fmax: f32) -> Self {
         let bins = n_fft / 2 + 1;
         if n_mels == 0 || bins == 0 {
-            return Self { filters: Vec::new() };
+            return Self {
+                filters: Vec::new(),
+            };
         }
         #[allow(clippy::cast_precision_loss)]
         let sr = sample_rate as f32;

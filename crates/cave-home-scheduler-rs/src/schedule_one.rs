@@ -139,7 +139,8 @@ pub fn schedule_one_limited(
     if feasible.is_empty() {
         // ---------- PostFilter (preemption) ----------
         for plugin in registry.post_filters() {
-            let (nominee, status) = plugin.post_filter(&mut state, pod, &nodes, &failures, registry);
+            let (nominee, status) =
+                plugin.post_filter(&mut state, pod, &nodes, &failures, registry);
             if status.is_success() && nominee.is_some() {
                 return ScheduleResult {
                     suggested_host: None,
@@ -356,7 +357,10 @@ mod tests {
             "RejectAll"
         }
         fn pre_filter(&self, _: &mut CycleState, _: &Pod) -> (Option<PreFilterResult>, Status) {
-            (None, Status::unschedulable(self.name(), "pod rejected pre-filter"))
+            (
+                None,
+                Status::unschedulable(self.name(), "pod rejected pre-filter"),
+            )
         }
     }
 

@@ -40,7 +40,11 @@ fn varint_encode_matches_protobuf_vectors() {
         let mut out = Vec::new();
         varint::encode(*value, &mut out);
         assert_eq!(out, *expect, "encode({value})");
-        assert_eq!(varint::encoded_len(*value), expect.len(), "encoded_len({value})");
+        assert_eq!(
+            varint::encoded_len(*value),
+            expect.len(),
+            "encoded_len({value})"
+        );
     }
 }
 
@@ -84,7 +88,10 @@ fn frame_encode_matches_reference_bytes() {
     let payload = vec![0x12, 0x03, 0x61, 0x62, 0x63];
     let frame = ApiFrame::new(1, payload);
     // 00 (preamble) | 05 (len) | 01 (type) | 12 03 61 62 63 (payload)
-    assert_eq!(frame.encode(), vec![0x00, 0x05, 0x01, 0x12, 0x03, 0x61, 0x62, 0x63]);
+    assert_eq!(
+        frame.encode(),
+        vec![0x00, 0x05, 0x01, 0x12, 0x03, 0x61, 0x62, 0x63]
+    );
 }
 
 #[test]

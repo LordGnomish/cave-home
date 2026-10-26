@@ -175,7 +175,10 @@ mod tests {
 
     #[test]
     fn api_groups_report_preferred_version() {
-        let apps = api_groups().into_iter().find(|g| g.name == "apps").expect("apps group");
+        let apps = api_groups()
+            .into_iter()
+            .find(|g| g.name == "apps")
+            .expect("apps group");
         assert_eq!(apps.preferred_version.version, "v1");
         assert_eq!(apps.preferred_version.group_version, "apps/v1");
         assert!(apps.versions.iter().any(|v| v.group_version == "apps/v1"));
@@ -202,7 +205,10 @@ mod tests {
     #[test]
     fn apps_resources_include_deployments_and_not_core() {
         let res = api_resources("apps", "v1");
-        assert!(res.iter().any(|r| r.name == "deployments" && r.kind == "Deployment"));
+        assert!(
+            res.iter()
+                .any(|r| r.name == "deployments" && r.kind == "Deployment")
+        );
         // Core resources must not leak into the apps group.
         assert!(!res.iter().any(|r| r.name == "pods"));
     }
@@ -211,7 +217,16 @@ mod tests {
     fn resources_carry_the_standard_verb_set() {
         let res = api_resources("", "v1");
         let pod = res.iter().find(|r| r.name == "pods").expect("pods");
-        for v in ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"] {
+        for v in [
+            "get",
+            "list",
+            "watch",
+            "create",
+            "update",
+            "patch",
+            "delete",
+            "deletecollection",
+        ] {
             assert!(pod.verbs.iter().any(|x| x == v), "missing verb {v}");
         }
     }

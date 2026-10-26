@@ -113,9 +113,7 @@ mod tests {
         let mut a = bus.subscribe();
         let mut b = bus.subscribe();
         assert_eq!(bus.subscriber_count(), 2);
-        bus.publish(ZigbeeEvent::DeviceLeft {
-            device_ieee: 0x42,
-        });
+        bus.publish(ZigbeeEvent::DeviceLeft { device_ieee: 0x42 });
         let ea = a.recv().await.unwrap();
         let eb = b.recv().await.unwrap();
         assert_eq!(ea, eb);

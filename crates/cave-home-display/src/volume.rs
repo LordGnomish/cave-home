@@ -32,7 +32,11 @@ impl Volume {
     #[must_use]
     pub const fn new(level: u8) -> Self {
         Self {
-            level: if level > MAX_VOLUME { MAX_VOLUME } else { level },
+            level: if level > MAX_VOLUME {
+                MAX_VOLUME
+            } else {
+                level
+            },
             muted: false,
             cap: None,
         }
@@ -168,7 +172,11 @@ mod tests {
     #[test]
     fn set_level_clamps_to_cap() {
         let v = Volume::with_cap(10, 40);
-        assert_eq!(v.set_level(90).level(), 40, "above-cap request clamps to cap");
+        assert_eq!(
+            v.set_level(90).level(),
+            40,
+            "above-cap request clamps to cap"
+        );
         assert_eq!(v.set_level(30).level(), 30, "below-cap request is exact");
         assert_eq!(v.set_level(40).level(), 40, "exactly at cap is allowed");
     }

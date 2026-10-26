@@ -12,9 +12,9 @@
 //! * Ties are broken deterministically; here we break by router name to keep
 //!   selection stable and reproducible.
 
-use crate::request::RequestDescriptor;
-use crate::rule::{parse, ParseError, Rule};
 use crate::matcher::matches;
+use crate::request::RequestDescriptor;
+use crate::rule::{ParseError, Rule, parse};
 
 /// A configured HTTP router.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,14 +143,21 @@ mod tests {
 
     #[test]
     fn explicit_priority_overrides_default() {
-        let r = Router::new("r", "Host(`a`)", "svc").unwrap().with_priority(5000);
+        let r = Router::new("r", "Host(`a`)", "svc")
+            .unwrap()
+            .with_priority(5000);
         assert_eq!(r.effective_priority(), 5000);
     }
 
     #[test]
     fn longest_rule_wins_by_default() {
         let broad = Router::new("broad", "PathPrefix(`/`)", "s1").unwrap();
-        let specific = Router::new("specific", "Host(`example.com`) && PathPrefix(`/api`)", "s2").unwrap();
+        let specific = Router::new(
+            "specific",
+            "Host(`example.com`) && PathPrefix(`/api`)",
+            "s2",
+        )
+        .unwrap();
         let routers = [broad, specific];
         let chosen = select(&routers, &req(), None).unwrap();
         assert_eq!(chosen.name, "specific");
@@ -158,8 +165,15 @@ mod tests {
 
     #[test]
     fn explicit_priority_beats_longer_rule() {
-        let broad = Router::new("broad", "PathPrefix(`/`)", "s1").unwrap().with_priority(10_000);
-        let specific = Router::new("specific", "Host(`example.com`) && PathPrefix(`/api`)", "s2").unwrap();
+        let broad = Router::new("broad", "PathPrefix(`/`)", "s1")
+            .unwrap()
+            .with_priority(10_000);
+        let specific = Router::new(
+            "specific",
+            "Host(`example.com`) && PathPrefix(`/api`)",
+            "s2",
+        )
+        .unwrap();
         let routers = [broad, specific];
         let chosen = select(&routers, &req(), None).unwrap();
         assert_eq!(chosen.name, "broad");

@@ -86,19 +86,19 @@ pub mod rule;
 
 pub use config::{ConfigError, DynamicConfig, Route};
 pub use gateway::{
-    translate_routes, GatewayError, GatewayTranslation, GwHeaderMatch, GwPathMatch, GwServiceRef,
-    HttpBackendRef, HttpRoute, HttpRouteMatch, HttpRouteRule,
+    GatewayError, GatewayTranslation, GwHeaderMatch, GwPathMatch, GwServiceRef, HttpBackendRef,
+    HttpRoute, HttpRouteMatch, HttpRouteRule, translate_routes,
 };
 pub use ingress::{
-    translate_ingresses, BackendRef, HttpPath, Ingress, IngressBackend, IngressError, IngressRule,
-    IngressTls, PathType, ServicePort, Translation,
+    BackendRef, HttpPath, Ingress, IngressBackend, IngressError, IngressRule, IngressTls, PathType,
+    ServicePort, Translation, translate_ingresses,
 };
 pub use loadbalancer::{LoadBalancer, Server, Service, StickyPick};
 pub use matcher::matches;
 pub use middleware::{Applied, Middleware, MiddlewareChain};
 pub use request::{RequestDescriptor, ResponseDescriptor};
-pub use router::{select, Router};
-pub use rule::{parse, ParseError, Rule};
+pub use router::{Router, select};
+pub use rule::{ParseError, Rule, parse};
 
 // ── Real runtime (feature = "runtime", default-on) ───────────────────────────
 //

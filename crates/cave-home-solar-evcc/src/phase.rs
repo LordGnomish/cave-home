@@ -62,7 +62,9 @@ pub fn decide_phases(
     current: PhaseCount,
     margin_w: f64,
 ) -> Result<PhaseCount, EvccError> {
-    if !surplus_w.is_finite() || !min_amps.is_finite() || !voltage.is_finite()
+    if !surplus_w.is_finite()
+        || !min_amps.is_finite()
+        || !voltage.is_finite()
         || !margin_w.is_finite()
     {
         return Err(EvccError::NotFinite);

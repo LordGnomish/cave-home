@@ -54,14 +54,12 @@ impl MotionController {
 
     /// Enable / disable a motion sensor. Source:
     /// `MotionController.set_enabled` — PUTs `{"enabled": <bool>}`.
-    pub async fn set_enabled(
-        &self,
-        req: &dyn V2Request,
-        id: &str,
-        enabled: bool,
-    ) -> HueResult<()> {
+    pub async fn set_enabled(&self, req: &dyn V2Request, id: &str, enabled: bool) -> HueResult<()> {
         let _ = req
-            .put(&format!("resource/motion/{id}"), json!({ "enabled": enabled }))
+            .put(
+                &format!("resource/motion/{id}"),
+                json!({ "enabled": enabled }),
+            )
             .await?;
         Ok(())
     }

@@ -52,7 +52,7 @@ fn expect_len(bytes: &[u8], want: usize, what: &str) -> Result<()> {
 /// up/down, 1.009 open/close, …) share this encoding; the meaning of `true`
 /// is given by the sub-type, which the codec is agnostic to.
 pub mod dpt1 {
-    use super::{conv, Result};
+    use super::{Result, conv};
 
     /// Encode a boolean to its 1-bit value (`0` or `1`), the small payload that
     /// rides inside the telegram's application byte.
@@ -83,7 +83,7 @@ pub mod dpt1 {
 /// `bit1 = control`, `bit0 = value`. When `control` is `false` the value is a
 /// non-binding suggestion; when `true` it is a priority command.
 pub mod dpt2 {
-    use super::{conv, Result};
+    use super::{Result, conv};
 
     /// A controlled boolean: the underlying on/off plus whether it is a
     /// priority ("control") command.
@@ -124,7 +124,7 @@ pub mod dpt2 {
 /// `bit3 = direction` (1 = up/brighter, 0 = down/darker), `bits2..0 = step
 /// code` (0 = break/stop, 1..=7 = step intervals).
 pub mod dpt3 {
-    use super::{conv, Result};
+    use super::{Result, conv};
 
     /// Travel direction of a relative control step.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -199,7 +199,7 @@ pub mod dpt3 {
 /// (5.010, `0..=255`). Scaling/angle map a real range linearly across `0..=255`
 /// with round-half-up rounding (matching ETS / xknx).
 pub mod dpt5 {
-    use super::{conv, Result};
+    use super::{Result, conv};
 
     /// DPT 5.001 — encode a percentage `0.0..=100.0` to a byte.
     ///
@@ -261,7 +261,7 @@ pub mod dpt5 {
 
 /// DPT 6.x — 1-byte signed integer (two's complement, `-128..=127`).
 pub mod dpt6 {
-    use super::{expect_len, Result};
+    use super::{Result, expect_len};
 
     /// Encode a signed 8-bit value.
     #[must_use]
@@ -285,7 +285,7 @@ pub mod dpt6 {
 
 /// DPT 7.x — 2-byte unsigned integer, big-endian (`0..=65535`).
 pub mod dpt7 {
-    use super::{expect_len, Result};
+    use super::{Result, expect_len};
 
     /// Encode a `u16` big-endian.
     #[must_use]
@@ -305,7 +305,7 @@ pub mod dpt7 {
 
 /// DPT 8.x — 2-byte signed integer, big-endian (`-32768..=32767`).
 pub mod dpt8 {
-    use super::{expect_len, Result};
+    use super::{Result, expect_len};
 
     /// Encode an `i16` big-endian.
     #[must_use]
@@ -341,7 +341,7 @@ pub mod dpt8 {
 /// 12-bit quantity formed by the sign bit and the 11 mantissa bits. The full
 /// representable range is roughly `-671088.64 ..= 670760.96`.
 pub mod dpt9 {
-    use super::{conv, expect_len, Result};
+    use super::{Result, conv, expect_len};
 
     /// The smallest value DPT 9 can represent.
     pub const MIN: f64 = -671_088.64;
@@ -426,7 +426,7 @@ pub mod dpt9 {
 ///   byte2: bits 5..0 = second (0..=59)   (bits 7..6 reserved, 0)
 /// ```
 pub mod dpt10 {
-    use super::{conv, expect_len, Result};
+    use super::{Result, conv, expect_len};
 
     /// A wall-clock time, with an optional day-of-week (`0` = unspecified).
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -501,7 +501,7 @@ pub mod dpt10 {
 ///                      90..=99 => 1990..=1999
 /// ```
 pub mod dpt11 {
-    use super::{conv, expect_len, Result};
+    use super::{Result, conv, expect_len};
 
     /// A calendar date.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -573,7 +573,7 @@ pub mod dpt11 {
 
 /// DPT 12.x — 4-byte unsigned integer, big-endian.
 pub mod dpt12 {
-    use super::{expect_len, Result};
+    use super::{Result, expect_len};
 
     /// Encode a `u32` big-endian.
     #[must_use]
@@ -593,7 +593,7 @@ pub mod dpt12 {
 
 /// DPT 13.x — 4-byte signed integer, big-endian.
 pub mod dpt13 {
-    use super::{expect_len, Result};
+    use super::{Result, expect_len};
 
     /// Encode an `i32` big-endian.
     #[must_use]
@@ -617,7 +617,7 @@ pub mod dpt13 {
 
 /// DPT 14.x — IEEE-754 single-precision float, big-endian.
 pub mod dpt14 {
-    use super::{conv, expect_len, Result};
+    use super::{Result, conv, expect_len};
 
     /// Encode an `f32` big-endian.
     ///
@@ -653,7 +653,7 @@ pub mod dpt14 {
 /// DPT 16.x — a fixed 14-byte character string (16.000 ASCII, 16.001 latin-1),
 /// null-padded on the right.
 pub mod dpt16 {
-    use super::{conv, Result};
+    use super::{Result, conv};
 
     /// The fixed payload width in bytes.
     pub const LEN: usize = 14;
@@ -760,11 +760,13 @@ mod tests {
     #[test]
     fn dpt3_rejects_over_range() {
         use dpt3::{Control, Direction};
-        assert!(dpt3::encode(Control {
-            direction: Direction::Up,
-            step_code: 8
-        })
-        .is_err());
+        assert!(
+            dpt3::encode(Control {
+                direction: Direction::Up,
+                step_code: 8
+            })
+            .is_err()
+        );
         assert!(dpt3::decode(0b10000).is_err());
     }
 
@@ -900,7 +902,10 @@ mod tests {
     // ---- DPT 12 / 13 ----------------------------------------------------
     #[test]
     fn dpt12_unsigned32_roundtrip() {
-        assert_eq!(dpt12::decode(&dpt12::encode(0xDEAD_BEEF)).unwrap(), 0xDEAD_BEEF);
+        assert_eq!(
+            dpt12::decode(&dpt12::encode(0xDEAD_BEEF)).unwrap(),
+            0xDEAD_BEEF
+        );
         assert!(dpt12::decode(&[1, 2, 3]).is_err());
     }
 
@@ -918,7 +923,10 @@ mod tests {
         let v = core::f32::consts::PI;
         let bytes = dpt14::encode(v).unwrap();
         assert!((dpt14::decode(&bytes).unwrap() - v).abs() < 1e-6);
-        assert_eq!(dpt14::decode(&dpt14::encode(-42.5).unwrap()).unwrap(), -42.5);
+        assert_eq!(
+            dpt14::decode(&dpt14::encode(-42.5).unwrap()).unwrap(),
+            -42.5
+        );
     }
 
     #[test]
@@ -961,13 +969,15 @@ mod tests {
 
     #[test]
     fn dpt10_time_rejects() {
-        assert!(dpt10::encode(dpt10::Time {
-            day: 8,
-            hour: 0,
-            minute: 0,
-            second: 0
-        })
-        .is_err());
+        assert!(
+            dpt10::encode(dpt10::Time {
+                day: 8,
+                hour: 0,
+                minute: 0,
+                second: 0
+            })
+            .is_err()
+        );
         assert!(dpt10::decode(&[0, 0]).is_err());
     }
 
@@ -997,18 +1007,22 @@ mod tests {
 
     #[test]
     fn dpt11_date_rejects() {
-        assert!(dpt11::encode(dpt11::Date {
-            day: 0,
-            month: 1,
-            year: 2024
-        })
-        .is_err());
-        assert!(dpt11::encode(dpt11::Date {
-            day: 1,
-            month: 1,
-            year: 1899
-        })
-        .is_err());
+        assert!(
+            dpt11::encode(dpt11::Date {
+                day: 0,
+                month: 1,
+                year: 2024
+            })
+            .is_err()
+        );
+        assert!(
+            dpt11::encode(dpt11::Date {
+                day: 1,
+                month: 1,
+                year: 1899
+            })
+            .is_err()
+        );
         assert!(dpt11::decode(&[1, 1]).is_err());
     }
 }

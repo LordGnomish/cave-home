@@ -167,14 +167,10 @@ impl ApsmePrimitive {
                 ..
             } => {
                 if !(1..=240).contains(src_endpoint) {
-                    return Err(ZigbeeError::Network(
-                        "src_endpoint must be 1..=240".into(),
-                    ));
+                    return Err(ZigbeeError::Network("src_endpoint must be 1..=240".into()));
                 }
                 if !(1..=240).contains(dst_endpoint) {
-                    return Err(ZigbeeError::Network(
-                        "dst_endpoint must be 1..=240".into(),
-                    ));
+                    return Err(ZigbeeError::Network("dst_endpoint must be 1..=240".into()));
                 }
                 if *cluster_id == 0xffff {
                     return Err(ZigbeeError::Network("cluster_id 0xffff reserved".into()));

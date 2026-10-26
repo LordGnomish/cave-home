@@ -36,7 +36,9 @@ pub const DEFAULT_CLEAR_SKY_TRANSMITTANCE: f64 = 0.75;
 #[must_use]
 pub fn extraterrestrial_normal_w_m2(day_of_year: u16) -> f64 {
     let g = 2.0 * PI * (f64::from(day_of_year) - 1.0) / 365.0;
-    let eccentricity = 1.000_110 + 0.034_221 * g.cos() + 0.001_280 * g.sin()
+    let eccentricity = 1.000_110
+        + 0.034_221 * g.cos()
+        + 0.001_280 * g.sin()
         + 0.000_719 * (2.0 * g).cos()
         + 0.000_077 * (2.0 * g).sin();
     SOLAR_CONSTANT_W_M2 * eccentricity
@@ -120,8 +122,14 @@ mod tests {
         // aphelion (~day 185). Both within a few percent of the solar constant.
         let jan = extraterrestrial_normal_w_m2(3);
         let jul = extraterrestrial_normal_w_m2(185);
-        assert!(jan > SOLAR_CONSTANT_W_M2, "perihelion {jan} should exceed constant");
-        assert!(jul < SOLAR_CONSTANT_W_M2, "aphelion {jul} should be below constant");
+        assert!(
+            jan > SOLAR_CONSTANT_W_M2,
+            "perihelion {jan} should exceed constant"
+        );
+        assert!(
+            jul < SOLAR_CONSTANT_W_M2,
+            "aphelion {jul} should be below constant"
+        );
         // The full swing is about 6.8% peak-to-peak.
         close(jan, 1361.0 * 1.034, 3.0);
         close(jul, 1361.0 * 0.966, 3.0);
@@ -153,13 +161,22 @@ mod tests {
 
     #[test]
     fn dni_is_zero_at_night() {
-        assert_eq!(clear_sky_dni_w_m2(-5.0, 172, DEFAULT_CLEAR_SKY_TRANSMITTANCE), 0.0);
-        assert_eq!(clear_sky_dni_w_m2(0.0, 172, DEFAULT_CLEAR_SKY_TRANSMITTANCE), 0.0);
+        assert_eq!(
+            clear_sky_dni_w_m2(-5.0, 172, DEFAULT_CLEAR_SKY_TRANSMITTANCE),
+            0.0
+        );
+        assert_eq!(
+            clear_sky_dni_w_m2(0.0, 172, DEFAULT_CLEAR_SKY_TRANSMITTANCE),
+            0.0
+        );
     }
 
     #[test]
     fn ghi_is_zero_at_night() {
-        assert_eq!(clear_sky_ghi_w_m2(-1.0, 172, DEFAULT_CLEAR_SKY_TRANSMITTANCE), 0.0);
+        assert_eq!(
+            clear_sky_ghi_w_m2(-1.0, 172, DEFAULT_CLEAR_SKY_TRANSMITTANCE),
+            0.0
+        );
     }
 
     #[test]

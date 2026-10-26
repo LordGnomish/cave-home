@@ -28,7 +28,7 @@ use std::path::Path;
 use rusqlite::Connection;
 
 use crate::backend::{contains, key_str, like_pattern, resolve_read, validate_range};
-use crate::dialect::{Dialect, Driver, COMPACT_REV_KEY};
+use crate::dialect::{COMPACT_REV_KEY, Dialect, Driver};
 use crate::error::{KineError, Result};
 use crate::range::{RangeRequest, RangeResponse};
 use crate::revision::Revision;
@@ -70,7 +70,8 @@ impl SqliteStore {
         let dialect = Dialect::new(Driver::Sqlite);
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
             .map_err(backend)?;
-        conn.execute(&dialect.create_table_sql(), []).map_err(backend)?;
+        conn.execute(&dialect.create_table_sql(), [])
+            .map_err(backend)?;
         for ix in dialect.index_sqls() {
             conn.execute(&ix, []).map_err(backend)?;
         }
@@ -336,10 +337,14 @@ impl SqliteStore {
     /// # Errors
     /// [`KineError::Backend`] on a query failure.
     pub fn db_size(&self) -> Result<i64> {
-        let pages: i64 =
-            self.conn.query_row("PRAGMA page_count", [], |r| r.get(0)).map_err(backend)?;
-        let page_size: i64 =
-            self.conn.query_row("PRAGMA page_size", [], |r| r.get(0)).map_err(backend)?;
+        let pages: i64 = self
+            .conn
+            .query_row("PRAGMA page_count", [], |r| r.get(0))
+            .map_err(backend)?;
+        let page_size: i64 = self
+            .conn
+            .query_row("PRAGMA page_size", [], |r| r.get(0))
+            .map_err(backend)?;
         Ok(pages.saturating_mul(page_size))
     }
 
@@ -370,7 +375,10 @@ impl SqliteStore {
         let read_rev = resolve_read(req.revision, header)?;
         let floor = self.compacted_revision()?;
         if req.revision != 0 && req.revision < floor {
-            return Err(KineError::Compacted { requested: req.revision, compacted: floor });
+            return Err(KineError::Compacted {
+                requested: req.revision,
+                compacted: floor,
+            });
         }
 
         let mut rows = self.list_rows(req, read_rev)?;
@@ -382,13 +390,22 @@ impl SqliteStore {
         } else {
             (rows, false)
         };
-        Ok(RangeResponse { revision: read_rev, kvs, more, count })
+        Ok(RangeResponse {
+            revision: read_rev,
+            kvs,
+            more,
+            count,
+        })
     }
 
     /// Run the latest-row-per-key list query for `req` at `read_rev`.
     fn list_rows(&self, req: &RangeRequest, read_rev: Revision) -> Result<Vec<Row>> {
         let at_rev = req.revision != 0;
-        let sql = if at_rev { self.dialect.list_revision_sql() } else { self.dialect.list_current_sql() };
+        let sql = if at_rev {
+            self.dialect.list_revision_sql()
+        } else {
+            self.dialect.list_current_sql()
+        };
         let pattern = like_pattern(req);
         let mut stmt = self.conn.prepare(&sql).map_err(backend)?;
 
@@ -429,23 +446,39 @@ impl SqliteStore {
     /// # Errors
     /// [`KineError::NegativeRevision`] / [`KineError::Compacted`], filter
     /// validation, or [`KineError::Backend`].
-    pub fn watch_after(&self, filter: &RangeRequest, start_revision: Revision) -> Result<Vec<WatchEvent>> {
+    pub fn watch_after(
+        &self,
+        filter: &RangeRequest,
+        start_revision: Revision,
+    ) -> Result<Vec<WatchEvent>> {
         if start_revision < 0 {
-            return Err(KineError::NegativeRevision { revision: start_revision });
+            return Err(KineError::NegativeRevision {
+                revision: start_revision,
+            });
         }
         let floor = self.compacted_revision()?;
         if start_revision != 0 && start_revision < floor {
-            return Err(KineError::Compacted { requested: start_revision, compacted: floor });
+            return Err(KineError::Compacted {
+                requested: start_revision,
+                compacted: floor,
+            });
         }
         validate_range(filter)?;
 
         let pattern = like_pattern(filter);
-        let mut stmt = self.conn.prepare(&self.dialect.after_sql()).map_err(backend)?;
+        let mut stmt = self
+            .conn
+            .prepare(&self.dialect.after_sql())
+            .map_err(backend)?;
         let rows: rusqlite::Result<Vec<WatchEvent>> = stmt
             .query_map(rusqlite::params![pattern, start_revision], |r| {
                 let deleted = r.get::<_, i64>(5)? != 0;
                 Ok(WatchEvent {
-                    kind: if deleted { EventKind::Delete } else { EventKind::Put },
+                    kind: if deleted {
+                        EventKind::Delete
+                    } else {
+                        EventKind::Put
+                    },
                     key: r.get::<_, String>(3)?.into_bytes(),
                     value: r.get(9)?,
                     // projection index 10 is kv.old_value — the prev_kv value.
@@ -474,16 +507,26 @@ impl SqliteStore {
         }
         let current = self.current_revision()?;
         if target > current {
-            return Err(KineError::CompactFutureRevision { requested: target, current });
+            return Err(KineError::CompactFutureRevision {
+                requested: target,
+                current,
+            });
         }
         let floor = self.compacted_revision()?;
         if target <= floor {
-            return Err(KineError::CompactionNotForward { requested: target, current: floor });
+            return Err(KineError::CompactionNotForward {
+                requested: target,
+                current: floor,
+            });
         }
 
         let before: i64 = self
             .conn
-            .query_row("SELECT COUNT(*) FROM kine WHERE name <> ?", [COMPACT_REV_KEY], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM kine WHERE name <> ?",
+                [COMPACT_REV_KEY],
+                |r| r.get(0),
+            )
             .map_err(backend)?;
 
         // Delete rows at/below target that are NOT the surviving live row of
@@ -504,12 +547,17 @@ impl SqliteStore {
             rusqlite::params![COMPACT_REV_KEY, target],
         )
         .map_err(backend)?;
-        tx.execute(&self.dialect.update_compact_sql(), [target]).map_err(backend)?;
+        tx.execute(&self.dialect.update_compact_sql(), [target])
+            .map_err(backend)?;
         tx.commit().map_err(backend)?;
 
         let after: i64 = self
             .conn
-            .query_row("SELECT COUNT(*) FROM kine WHERE name <> ?", [COMPACT_REV_KEY], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM kine WHERE name <> ?",
+                [COMPACT_REV_KEY],
+                |r| r.get(0),
+            )
             .map_err(backend)?;
         let removed = usize::try_from(before - after).unwrap_or(0);
         Ok(crate::compact::CompactReport {
@@ -524,7 +572,9 @@ impl SqliteStore {
 /// be used directly as a `Result::map_err` argument.
 #[allow(clippy::needless_pass_by_value)]
 fn backend(e: rusqlite::Error) -> KineError {
-    KineError::Backend { message: e.to_string() }
+    KineError::Backend {
+        message: e.to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -565,7 +615,10 @@ mod tests {
         let mut s = store();
         s.create(b"a", b"1", 0).unwrap();
         assert_eq!(s.create(b"a", b"2", 0).unwrap(), None);
-        assert_eq!(s.range(&RangeRequest::key(b"a")).unwrap().kvs[0].value, b"1");
+        assert_eq!(
+            s.range(&RangeRequest::key(b"a")).unwrap().kvs[0].value,
+            b"1"
+        );
         assert_eq!(s.current_revision().unwrap(), 1);
     }
 
@@ -689,7 +742,9 @@ mod tests {
     #[test]
     fn explicit_interval_is_half_open() {
         let s = seeded();
-        let resp = s.range(&RangeRequest::interval(b"/reg/a", b"/reg/c")).unwrap();
+        let resp = s
+            .range(&RangeRequest::interval(b"/reg/a", b"/reg/c"))
+            .unwrap();
         assert_eq!(keys(&resp), vec![b"/reg/a".to_vec(), b"/reg/b".to_vec()]);
     }
 
@@ -712,7 +767,10 @@ mod tests {
         let mut s = store();
         s.create(b"k", b"v1", 0).unwrap(); // 1
         s.update(b"k", b"v2", 0).unwrap(); // 2
-        assert_eq!(s.range(&RangeRequest::key(b"k")).unwrap().kvs[0].value, b"v2");
+        assert_eq!(
+            s.range(&RangeRequest::key(b"k")).unwrap().kvs[0].value,
+            b"v2"
+        );
         let past = s.range(&RangeRequest::key(b"k").at_revision(1)).unwrap();
         assert_eq!(past.kvs[0].value, b"v1");
         assert_eq!(past.revision, 1);
@@ -730,7 +788,9 @@ mod tests {
     #[test]
     fn limit_truncates_and_sets_more_with_full_count() {
         let s = seeded();
-        let resp = s.range(&RangeRequest::prefix(b"/reg/").with_limit(2)).unwrap();
+        let resp = s
+            .range(&RangeRequest::prefix(b"/reg/").with_limit(2))
+            .unwrap();
         assert_eq!(resp.kvs.len(), 2);
         assert!(resp.more);
         assert_eq!(resp.count, 3);
@@ -744,7 +804,10 @@ mod tests {
         s.create(b"k", b"v", 0).unwrap();
         assert_eq!(
             s.range(&RangeRequest::key(b"k").at_revision(99)),
-            Err(KineError::FutureRevision { requested: 99, current: 1 })
+            Err(KineError::FutureRevision {
+                requested: 99,
+                current: 1
+            })
         );
     }
 
@@ -803,7 +866,10 @@ mod tests {
         let report = s.compact(2).unwrap();
         assert_eq!(report.compacted, 2);
         assert!(report.removed >= 1);
-        assert_eq!(s.range(&RangeRequest::key(b"k")).unwrap().kvs[0].value, b"v3");
+        assert_eq!(
+            s.range(&RangeRequest::key(b"k")).unwrap().kvs[0].value,
+            b"v3"
+        );
     }
 
     #[test]
@@ -816,7 +882,9 @@ mod tests {
         // physically gone
         let n: i64 = s
             .conn
-            .query_row("SELECT COUNT(*) FROM kine WHERE name = 'k'", [], |r| r.get(0))
+            .query_row("SELECT COUNT(*) FROM kine WHERE name = 'k'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(n, 0);
     }
@@ -830,7 +898,10 @@ mod tests {
         s.compact(2).unwrap();
         assert_eq!(
             s.range(&RangeRequest::key(b"k").at_revision(1)),
-            Err(KineError::Compacted { requested: 1, compacted: 2 })
+            Err(KineError::Compacted {
+                requested: 1,
+                compacted: 2
+            })
         );
     }
 
@@ -842,7 +913,10 @@ mod tests {
         s.compact(2).unwrap();
         assert_eq!(
             s.compact(2),
-            Err(KineError::CompactionNotForward { requested: 2, current: 2 })
+            Err(KineError::CompactionNotForward {
+                requested: 2,
+                current: 2
+            })
         );
     }
 
@@ -852,7 +926,10 @@ mod tests {
         s.create(b"k", b"v", 0).unwrap();
         assert_eq!(
             s.compact(50),
-            Err(KineError::CompactFutureRevision { requested: 50, current: 1 })
+            Err(KineError::CompactFutureRevision {
+                requested: 50,
+                current: 1
+            })
         );
     }
 
@@ -916,7 +993,10 @@ mod tests {
         assert!(s.range(&RangeRequest::key(b"/a")).unwrap().kvs.is_empty());
         assert!(s.range(&RangeRequest::key(b"/b")).unwrap().kvs.is_empty());
         // the unleased key is untouched
-        assert_eq!(s.range(&RangeRequest::key(b"/c")).unwrap().kvs[0].value, b"3");
+        assert_eq!(
+            s.range(&RangeRequest::key(b"/c")).unwrap().kvs[0].value,
+            b"3"
+        );
     }
 
     #[test]
@@ -933,7 +1013,8 @@ mod tests {
         let empty = s.db_size().unwrap();
         assert!(empty > 0, "an initialised db occupies pages");
         for i in 0..200 {
-            s.put(format!("/reg/{i}").as_bytes(), &vec![b'x'; 256], 0).unwrap();
+            s.put(format!("/reg/{i}").as_bytes(), &vec![b'x'; 256], 0)
+                .unwrap();
         }
         assert!(s.db_size().unwrap() > empty, "writes grow the file");
     }
@@ -954,7 +1035,13 @@ mod tests {
         assert!(after <= before, "VACUUM never grows the file");
         assert!(reclaimed >= 0);
         // the surviving live rows are intact after the rebuild
-        assert_eq!(s.range(&RangeRequest::key(b"/hot")).unwrap().kvs[0].value, b"v499");
-        assert_eq!(s.range(&RangeRequest::key(b"/keep")).unwrap().kvs[0].value, b"final");
+        assert_eq!(
+            s.range(&RangeRequest::key(b"/hot")).unwrap().kvs[0].value,
+            b"v499"
+        );
+        assert_eq!(
+            s.range(&RangeRequest::key(b"/keep")).unwrap().kvs[0].value,
+            b"final"
+        );
     }
 }

@@ -325,7 +325,10 @@ mod tests {
         let rev = s.create(b"a", b"3", 0).unwrap(); // rev 3, new generation
         assert_eq!(rev, Some(3));
         let row = s.get_live(b"a").unwrap();
-        assert_eq!(row.create_revision, 3, "recreated key gets a fresh create_revision");
+        assert_eq!(
+            row.create_revision, 3,
+            "recreated key gets a fresh create_revision"
+        );
         assert_eq!(row.mod_revision, 3);
     }
 

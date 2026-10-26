@@ -121,7 +121,11 @@ impl Trigger {
     pub fn matches(&self, event: &Event) -> bool {
         match self {
             Self::Event { event_type } => &event.event_type == event_type,
-            Self::State { entity_id, from, to } => {
+            Self::State {
+                entity_id,
+                from,
+                to,
+            } => {
                 let Some(change) = StateChangePayload::parse(event) else {
                     return false;
                 };
@@ -145,7 +149,11 @@ impl Trigger {
                 }
                 true
             }
-            Self::NumericState { entity_id, above, below } => {
+            Self::NumericState {
+                entity_id,
+                above,
+                below,
+            } => {
                 let Some(change) = StateChangePayload::parse(event) else {
                     return false;
                 };
@@ -174,9 +182,11 @@ impl Condition {
             Self::State { entity_id, state } => {
                 states.get(entity_id).is_some_and(|s| &s.state == state)
             }
-            Self::NumericState { entity_id, above, below } => {
-                numeric_value(states, entity_id).is_some_and(|v| within_band(v, *above, *below))
-            }
+            Self::NumericState {
+                entity_id,
+                above,
+                below,
+            } => numeric_value(states, entity_id).is_some_and(|v| within_band(v, *above, *below)),
             Self::Template { template: tmpl } => template
                 .render(tmpl)
                 .is_ok_and(|rendered| render_truthy(&rendered)),
@@ -255,7 +265,12 @@ impl Action {
     /// domain/service names are malformed.
     fn to_service_call(&self, parent: &Context) -> Option<ServiceCall> {
         match self {
-            Self::CallService { domain, service, data, target } => {
+            Self::CallService {
+                domain,
+                service,
+                data,
+                target,
+            } => {
                 let mut data = data.clone();
                 if let Some(entity_id) = target {
                     if let Some(map) = data.as_object_mut() {
@@ -359,22 +374,31 @@ mod tests {
 
     #[test]
     fn event_trigger_matches_by_type() {
-        let t = Trigger::Event { event_type: "my_event".into() };
+        let t = Trigger::Event {
+            event_type: "my_event".into(),
+        };
         assert!(t.matches(&Event::local("my_event", json!({}))));
         assert!(!t.matches(&Event::local("other", json!({}))));
     }
 
     #[test]
     fn state_trigger_honours_from_to_filters() {
-        let to_on = Trigger::State { entity_id: light("kitchen"), from: None, to: Some("on".into()) };
+        let to_on = Trigger::State {
+            entity_id: light("kitchen"),
+            from: None,
+            to: Some("on".into()),
+        };
         assert!(to_on.matches(&state_changed("light.kitchen", Some("off"), "on")));
         // wrong target value
         assert!(!to_on.matches(&state_changed("light.kitchen", Some("off"), "off")));
         // wrong entity
         assert!(!to_on.matches(&state_changed("light.hall", Some("off"), "on")));
 
-        let off_to_on =
-            Trigger::State { entity_id: light("kitchen"), from: Some("off".into()), to: Some("on".into()) };
+        let off_to_on = Trigger::State {
+            entity_id: light("kitchen"),
+            from: Some("off".into()),
+            to: Some("on".into()),
+        };
         assert!(off_to_on.matches(&state_changed("light.kitchen", Some("off"), "on")));
         // from filter fails (was unavailable, not off)
         assert!(!off_to_on.matches(&state_changed("light.kitchen", Some("unavailable"), "on")));
@@ -382,7 +406,11 @@ mod tests {
 
     #[test]
     fn state_trigger_no_filters_fires_on_real_change_only() {
-        let any = Trigger::State { entity_id: light("kitchen"), from: None, to: None };
+        let any = Trigger::State {
+            entity_id: light("kitchen"),
+            from: None,
+            to: None,
+        };
         assert!(any.matches(&state_changed("light.kitchen", Some("off"), "on")));
         // same old==new value is not a change
         assert!(!any.matches(&state_changed("light.kitchen", Some("on"), "on")));
@@ -411,16 +439,32 @@ mod tests {
     fn conditions_state_numeric_template_and_bool_ops() {
         let states = StateMachine::new(EventBus::new());
         let tmpl = TemplateEngine::new(states.clone());
-        states.set(light("kitchen"), "on", StateAttributes::new(), Context::new());
+        states.set(
+            light("kitchen"),
+            "on",
+            StateAttributes::new(),
+            Context::new(),
+        );
         let temp = EntityId::new("sensor", "temp").expect("id");
         states.set(temp.clone(), "23.5", StateAttributes::new(), Context::new());
 
-        let c_state = Condition::State { entity_id: light("kitchen"), state: "on".into() };
+        let c_state = Condition::State {
+            entity_id: light("kitchen"),
+            state: "on".into(),
+        };
         assert!(c_state.evaluate(&states, &tmpl));
 
-        let c_num = Condition::NumericState { entity_id: temp.clone(), above: Some(20.0), below: Some(25.0) };
+        let c_num = Condition::NumericState {
+            entity_id: temp.clone(),
+            above: Some(20.0),
+            below: Some(25.0),
+        };
         assert!(c_num.evaluate(&states, &tmpl));
-        let c_num_out = Condition::NumericState { entity_id: temp, above: Some(24.0), below: None };
+        let c_num_out = Condition::NumericState {
+            entity_id: temp,
+            above: Some(24.0),
+            below: None,
+        };
         assert!(!c_num_out.evaluate(&states, &tmpl));
 
         let c_tmpl = Condition::Template {
@@ -437,7 +481,10 @@ mod tests {
         }));
         assert!(not.evaluate(&states, &tmpl));
         let or = Condition::Or(vec![
-            Condition::State { entity_id: light("kitchen"), state: "off".into() },
+            Condition::State {
+                entity_id: light("kitchen"),
+                state: "off".into(),
+            },
             c_state,
         ]);
         assert!(or.evaluate(&states, &tmpl));
@@ -450,7 +497,11 @@ mod tests {
         // "turn on the fan when the kitchen light comes on"
         engine.add_rule(AutomationRule::new(
             "fan_on_light",
-            Trigger::State { entity_id: light("kitchen"), from: None, to: Some("on".into()) },
+            Trigger::State {
+                entity_id: light("kitchen"),
+                from: None,
+                to: Some("on".into()),
+            },
             Action::CallService {
                 domain: "fan".into(),
                 service: "turn_on".into(),
@@ -485,7 +536,11 @@ mod tests {
         );
         let mut rule = AutomationRule::new(
             "notify_at_night",
-            Trigger::State { entity_id: light("kitchen"), from: None, to: Some("on".into()) },
+            Trigger::State {
+                entity_id: light("kitchen"),
+                from: None,
+                to: Some("on".into()),
+            },
             notify_action(),
         );
         rule.conditions = vec![Condition::State {

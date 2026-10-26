@@ -407,7 +407,10 @@ mod tests {
     fn parses_nested_and_whitespace() {
         let v = Json::parse(" { \"id\" : 8 , \"params\" : [ 1 , 2 ] } ").expect("parse");
         assert_eq!(v.get("id").and_then(Json::as_int), Some(8));
-        assert_eq!(v.get("params").and_then(Json::as_arr).map(<[_]>::len), Some(2));
+        assert_eq!(
+            v.get("params").and_then(Json::as_arr).map(<[_]>::len),
+            Some(2)
+        );
     }
 
     #[test]

@@ -71,8 +71,6 @@ pub use chart::{
     VersionPolicy,
 };
 pub use hash::{fnv1a64, short_hex};
-pub use job::{build_args, Operation};
-pub use reconcile::{
-    backoff_secs, decide, Action, FailureClass, FailureReason, ReleaseState,
-};
-pub use values::{merge_layers, Value};
+pub use job::{Operation, build_args};
+pub use reconcile::{Action, FailureClass, FailureReason, ReleaseState, backoff_secs, decide};
+pub use values::{Value, merge_layers};

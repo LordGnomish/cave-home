@@ -101,12 +101,12 @@ pub mod zone;
 
 pub use config::{CameraConfig, RecordMode};
 pub use detection::{
-    classify_motion, is_stationary_by_overlap, Detection, Motion, Tick, ZoneAnchor,
+    Detection, Motion, Tick, ZoneAnchor, classify_motion, is_stationary_by_overlap,
 };
-pub use geometry::{iou, BBox, Point, Polygon, PolygonError};
-pub use label::{nothing_unusual, seen_at, Lang, ObjectLabel};
+pub use geometry::{BBox, Point, Polygon, PolygonError, iou};
+pub use label::{Lang, ObjectLabel, nothing_unusual, seen_at};
 pub use policy::{
-    classify_retention, ClipAction, ClipPolicy, Debounce, Retention, SECONDS_PER_DAY,
+    ClipAction, ClipPolicy, Debounce, Retention, SECONDS_PER_DAY, classify_retention,
 };
 pub use track::{TrackId, TrackedObject, Tracker};
-pub use zone::{filter, Zone};
+pub use zone::{Zone, filter};

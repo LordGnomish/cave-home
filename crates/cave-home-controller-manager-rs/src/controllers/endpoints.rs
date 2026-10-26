@@ -41,13 +41,13 @@ impl EndpointsController {
         addresses.sort();
         addresses.dedup();
 
-        let ep = cluster
-            .endpoints
-            .get(key)
-            .map_or_else(|| Endpoints::new(ObjectMeta::new(&svc.meta.name, ns, "")), |mut e| {
+        let ep = cluster.endpoints.get(key).map_or_else(
+            || Endpoints::new(ObjectMeta::new(&svc.meta.name, ns, "")),
+            |mut e| {
                 e.addresses.clear();
                 e
-            });
+            },
+        );
         let mut ep = ep;
         ep.addresses = addresses;
         // create() assigns a UID on first write; update() replaces thereafter.

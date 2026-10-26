@@ -79,12 +79,18 @@ impl ThermostatClient {
             .ok_or_else(|| MatterError::NotFound(format!("thermostat {:?}", node)))?;
         let delta_centi = i16::from(delta_tenths_c) * 10;
         if matches!(mode, SetpointMode::Heat | SetpointMode::Both) {
-            entry.heating_setpoint_centi_c =
-                clamp_setpoint(entry.heating_setpoint_centi_c.saturating_add(delta_centi), self.min_centi_c, self.max_centi_c);
+            entry.heating_setpoint_centi_c = clamp_setpoint(
+                entry.heating_setpoint_centi_c.saturating_add(delta_centi),
+                self.min_centi_c,
+                self.max_centi_c,
+            );
         }
         if matches!(mode, SetpointMode::Cool | SetpointMode::Both) {
-            entry.cooling_setpoint_centi_c =
-                clamp_setpoint(entry.cooling_setpoint_centi_c.saturating_add(delta_centi), self.min_centi_c, self.max_centi_c);
+            entry.cooling_setpoint_centi_c = clamp_setpoint(
+                entry.cooling_setpoint_centi_c.saturating_add(delta_centi),
+                self.min_centi_c,
+                self.max_centi_c,
+            );
         }
         Ok(*entry)
     }
@@ -168,9 +174,10 @@ mod tests {
     #[test]
     fn unknown_node_errors() {
         let c = ThermostatClient::new();
-        assert!(c
-            .setpoint_raise_lower(NodeId(99), SetpointMode::Heat, 1)
-            .is_err());
+        assert!(
+            c.setpoint_raise_lower(NodeId(99), SetpointMode::Heat, 1)
+                .is_err()
+        );
     }
 
     #[test]

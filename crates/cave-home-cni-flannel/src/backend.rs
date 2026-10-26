@@ -68,8 +68,7 @@ impl std::str::FromStr for MacAddr {
             if count >= 6 {
                 return Err(MacParseError(s.to_owned()));
             }
-            let byte =
-                u8::from_str_radix(part, 16).map_err(|_| MacParseError(s.to_owned()))?;
+            let byte = u8::from_str_radix(part, 16).map_err(|_| MacParseError(s.to_owned()))?;
             // Reject "1" vs "01" ambiguity-free: require exactly 1-2 hex chars.
             if part.is_empty() || part.len() > 2 {
                 return Err(MacParseError(s.to_owned()));
@@ -306,7 +305,10 @@ mod tests {
 
     #[test]
     fn backend_type_names_match_flannel() {
-        assert_eq!(BackendConfig::Vxlan(VxlanConfig::default()).type_name(), "vxlan");
+        assert_eq!(
+            BackendConfig::Vxlan(VxlanConfig::default()).type_name(),
+            "vxlan"
+        );
         assert_eq!(BackendConfig::HostGw.type_name(), "host-gw");
         assert_eq!(
             BackendConfig::Wireguard(WireguardConfig::default()).type_name(),

@@ -34,7 +34,11 @@ impl AntiFlapTimer {
         } else {
             0.0
         };
-        Self { required_s, held_s: 0.0, current: None }
+        Self {
+            required_s,
+            held_s: 0.0,
+            current: None,
+        }
     }
 
     /// Feed an observation: `condition` is the present truth (e.g. "there is

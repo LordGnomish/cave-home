@@ -49,7 +49,11 @@ pub enum Command {
     /// Force a client to reconnect ("kick" it off Wi-Fi).
     ReconnectClient { mac: String },
     /// Set the `PoE` mode of a switch port.
-    SetPoe { device_id: String, port: u16, mode: PoeMode },
+    SetPoe {
+        device_id: String,
+        port: u16,
+        mode: PoeMode,
+    },
     /// Enable or disable a wireless network.
     SetWlanEnabled { wlan: String, enabled: bool },
     /// Enable or disable a port-forward rule.
@@ -95,7 +99,9 @@ pub fn block_client(client: &NetworkClient) -> Result<Command, ControlError> {
     if client.is_blocked() {
         return Err(ControlError::AlreadyInState);
     }
-    Ok(Command::BlockClient { mac: client.mac().to_string() })
+    Ok(Command::BlockClient {
+        mac: client.mac().to_string(),
+    })
 }
 
 /// Unblock a client. Rejected if the client is not currently blocked.
@@ -106,7 +112,9 @@ pub fn unblock_client(client: &NetworkClient) -> Result<Command, ControlError> {
     if !client.is_blocked() {
         return Err(ControlError::AlreadyInState);
     }
-    Ok(Command::UnblockClient { mac: client.mac().to_string() })
+    Ok(Command::UnblockClient {
+        mac: client.mac().to_string(),
+    })
 }
 
 /// Reconnect ("kick") a wireless client so it re-associates.
@@ -120,7 +128,9 @@ pub fn reconnect_client(client: &NetworkClient) -> Result<Command, ControlError>
     if !client.is_wireless() {
         return Err(ControlError::WrongConnectionKind);
     }
-    Ok(Command::ReconnectClient { mac: client.mac().to_string() })
+    Ok(Command::ReconnectClient {
+        mac: client.mac().to_string(),
+    })
 }
 
 /// Set the `PoE` mode of a switch port.
@@ -132,11 +142,7 @@ pub fn reconnect_client(client: &NetworkClient) -> Result<Command, ControlError>
 /// - [`ControlError::NotASwitch`] if `device` is not a switch.
 /// - [`ControlError::UnknownPort`] if `port` is not present on the device.
 /// - [`ControlError::PortNotPoeCapable`] if the port cannot deliver `PoE`.
-pub fn set_poe(
-    device: &NetworkDevice,
-    port: u16,
-    mode: PoeMode,
-) -> Result<Command, ControlError> {
+pub fn set_poe(device: &NetworkDevice, port: u16, mode: PoeMode) -> Result<Command, ControlError> {
     if device.kind() != DeviceKind::Switch {
         return Err(ControlError::NotASwitch);
     }
@@ -146,25 +152,38 @@ pub fn set_poe(
     if !p.poe_capable {
         return Err(ControlError::PortNotPoeCapable(port));
     }
-    Ok(Command::SetPoe { device_id: device.id().to_string(), port, mode })
+    Ok(Command::SetPoe {
+        device_id: device.id().to_string(),
+        port,
+        mode,
+    })
 }
 
 /// Enable or disable a wireless network by name.
 #[must_use]
 pub fn set_wlan_enabled(wlan: impl Into<String>, enabled: bool) -> Command {
-    Command::SetWlanEnabled { wlan: wlan.into(), enabled }
+    Command::SetWlanEnabled {
+        wlan: wlan.into(),
+        enabled,
+    }
 }
 
 /// Enable or disable a port-forward rule by name.
 #[must_use]
 pub fn set_port_forward_enabled(rule: impl Into<String>, enabled: bool) -> Command {
-    Command::SetPortForwardEnabled { rule: rule.into(), enabled }
+    Command::SetPortForwardEnabled {
+        rule: rule.into(),
+        enabled,
+    }
 }
 
 /// Turn a device's status LED on or off.
 #[must_use]
 pub fn set_device_led(device: &NetworkDevice, on: bool) -> Command {
-    Command::SetDeviceLed { device_id: device.id().to_string(), on }
+    Command::SetDeviceLed {
+        device_id: device.id().to_string(),
+        on,
+    }
 }
 
 #[cfg(test)]
@@ -173,10 +192,8 @@ mod tests {
     use crate::device::SwitchPort;
 
     fn switch_with_ports() -> NetworkDevice {
-        NetworkDevice::new("sw-1", "Switch", "aa:00", DeviceKind::Switch).with_ports(vec![
-            SwitchPort::new(1, true),
-            SwitchPort::new(2, false),
-        ])
+        NetworkDevice::new("sw-1", "Switch", "aa:00", DeviceKind::Switch)
+            .with_ports(vec![SwitchPort::new(1, true), SwitchPort::new(2, false)])
     }
 
     #[test]
@@ -184,7 +201,9 @@ mod tests {
         let c = NetworkClient::new("aa:bb", "Tablet").wireless("Home", "ap-1");
         assert_eq!(
             block_client(&c).unwrap(),
-            Command::BlockClient { mac: "aa:bb".to_string() }
+            Command::BlockClient {
+                mac: "aa:bb".to_string()
+            }
         );
         let blocked = c.blocked();
         assert_eq!(block_client(&blocked), Err(ControlError::AlreadyInState));
@@ -197,18 +216,25 @@ mod tests {
         let blocked = c.blocked();
         assert_eq!(
             unblock_client(&blocked).unwrap(),
-            Command::UnblockClient { mac: "aa:bb".to_string() }
+            Command::UnblockClient {
+                mac: "aa:bb".to_string()
+            }
         );
     }
 
     #[test]
     fn reconnect_only_for_wireless() {
         let wired = NetworkClient::new("aa:bb", "Desktop").wired_to("sw-1");
-        assert_eq!(reconnect_client(&wired), Err(ControlError::WrongConnectionKind));
+        assert_eq!(
+            reconnect_client(&wired),
+            Err(ControlError::WrongConnectionKind)
+        );
         let wifi = NetworkClient::new("aa:bb", "Laptop").wireless("Home", "ap-1");
         assert_eq!(
             reconnect_client(&wifi).unwrap(),
-            Command::ReconnectClient { mac: "aa:bb".to_string() }
+            Command::ReconnectClient {
+                mac: "aa:bb".to_string()
+            }
         );
     }
 
@@ -217,20 +243,30 @@ mod tests {
         let sw = switch_with_ports();
         assert_eq!(
             set_poe(&sw, 1, PoeMode::On).unwrap(),
-            Command::SetPoe { device_id: "sw-1".to_string(), port: 1, mode: PoeMode::On }
+            Command::SetPoe {
+                device_id: "sw-1".to_string(),
+                port: 1,
+                mode: PoeMode::On
+            }
         );
     }
 
     #[test]
     fn set_poe_rejects_unknown_port() {
         let sw = switch_with_ports();
-        assert_eq!(set_poe(&sw, 99, PoeMode::Auto), Err(ControlError::UnknownPort(99)));
+        assert_eq!(
+            set_poe(&sw, 99, PoeMode::Auto),
+            Err(ControlError::UnknownPort(99))
+        );
     }
 
     #[test]
     fn set_poe_rejects_non_poe_port() {
         let sw = switch_with_ports();
-        assert_eq!(set_poe(&sw, 2, PoeMode::On), Err(ControlError::PortNotPoeCapable(2)));
+        assert_eq!(
+            set_poe(&sw, 2, PoeMode::On),
+            Err(ControlError::PortNotPoeCapable(2))
+        );
     }
 
     #[test]
@@ -244,11 +280,17 @@ mod tests {
     fn wlan_and_port_forward_toggles() {
         assert_eq!(
             set_wlan_enabled("Guest", false),
-            Command::SetWlanEnabled { wlan: "Guest".to_string(), enabled: false }
+            Command::SetWlanEnabled {
+                wlan: "Guest".to_string(),
+                enabled: false
+            }
         );
         assert_eq!(
             set_port_forward_enabled("Web server", true),
-            Command::SetPortForwardEnabled { rule: "Web server".to_string(), enabled: true }
+            Command::SetPortForwardEnabled {
+                rule: "Web server".to_string(),
+                enabled: true
+            }
         );
     }
 
@@ -257,7 +299,10 @@ mod tests {
         let sw = switch_with_ports();
         assert_eq!(
             set_device_led(&sw, false),
-            Command::SetDeviceLed { device_id: "sw-1".to_string(), on: false }
+            Command::SetDeviceLed {
+                device_id: "sw-1".to_string(),
+                on: false
+            }
         );
     }
 

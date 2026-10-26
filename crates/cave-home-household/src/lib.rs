@@ -68,13 +68,13 @@ pub mod recipe;
 pub mod shopping;
 pub mod stock;
 
-pub use chore::{due_chores, Chore};
-pub use expiry::{report, ExpiryEntry, ExpiryReport, Freshness};
+pub use chore::{Chore, due_chores};
+pub use expiry::{ExpiryEntry, ExpiryReport, Freshness, report};
 pub use label::Lang;
 pub use product::{Product, ProductError, QuantityUnit};
-pub use recipe::{can_make, Ingredient, Recipe, RecipeCheck};
-pub use shopping::{below_min, merge, ShoppingItem};
-pub use stock::{consume, open, purchase, StockError};
+pub use recipe::{Ingredient, Recipe, RecipeCheck, can_make};
+pub use shopping::{ShoppingItem, below_min, merge};
+pub use stock::{StockError, consume, open, purchase};
 
 #[cfg(test)]
 mod tests {
@@ -87,9 +87,21 @@ mod tests {
     #[test]
     fn ui_strings_carry_no_implementation_jargon() {
         const BANNED: &[&str] = &[
-            "Grocy", "SKU", "foreign key", "stock entry", "REST", "endpoint",
-            "MQTT", "entity_id", "Zigbee", "Z-Wave", "barcode", "database",
-            "PHP", "pod", "kubelet",
+            "Grocy",
+            "SKU",
+            "foreign key",
+            "stock entry",
+            "REST",
+            "endpoint",
+            "MQTT",
+            "entity_id",
+            "Zigbee",
+            "Z-Wave",
+            "barcode",
+            "database",
+            "PHP",
+            "pod",
+            "kubelet",
         ];
         let langs = Lang::ALL;
         let mut strings: Vec<String> = Vec::new();
@@ -192,7 +204,10 @@ mod tests {
         // Pancakes need 3 eggs + 1 L milk; the fresh stock can't quite cover milk.
         let recipe = Recipe::new(
             "Pancakes",
-            vec![Ingredient::new("Eggs", 3.0), Ingredient::new("Milk", 1000.0)],
+            vec![
+                Ingredient::new("Eggs", 3.0),
+                Ingredient::new("Milk", 1000.0),
+            ],
         );
         let check = can_make(&recipe, &pantry);
         assert!(!check.can_make(), "only 300 ml milk on hand");

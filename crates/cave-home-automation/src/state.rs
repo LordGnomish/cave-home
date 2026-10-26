@@ -14,9 +14,7 @@ use time::OffsetDateTime;
 
 use crate::context::Context;
 use crate::error::{HassError, HassResult};
-use crate::event_bus::{
-    EVENT_STATE_CHANGED, EVENT_STATE_REPORTED, Event, EventBus, EventOrigin,
-};
+use crate::event_bus::{EVENT_STATE_CHANGED, EVENT_STATE_REPORTED, Event, EventBus, EventOrigin};
 
 /// HA's `MAX_LENGTH_STATE_STATE` (255 chars).
 ///
@@ -150,7 +148,12 @@ impl State {
         map.insert("state".into(), Value::String(self.state.clone()));
         map.insert(
             "attributes".into(),
-            Value::Object(self.attributes.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
+            Value::Object(
+                self.attributes
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+            ),
         );
         map.insert(
             "last_changed".into(),
@@ -536,7 +539,9 @@ impl StateMachine {
         }
 
         let attributes = if same_attr {
-            old_state.as_ref().map_or(attributes, |p| p.attributes.clone())
+            old_state
+                .as_ref()
+                .map_or(attributes, |p| p.attributes.clone())
         } else {
             attributes
         };
@@ -619,10 +624,7 @@ mod tests {
         assert_eq!(map.get("entity_id").unwrap(), &Value::from("light.kitchen"));
         assert_eq!(map.get("state").unwrap(), &Value::from("on"));
         assert_eq!(
-            map.get("attributes")
-                .unwrap()
-                .get("brightness")
-                .unwrap(),
+            map.get("attributes").unwrap().get("brightness").unwrap(),
             &Value::from(200)
         );
 
@@ -640,7 +642,10 @@ mod tests {
             .unwrap();
         assert!(sm.is_state("light.kitchen", "on"));
         assert!(sm.entity_ids(None).contains(&"light.kitchen".into()));
-        assert!(sm.entity_ids(Some("light")).contains(&"light.kitchen".into()));
+        assert!(
+            sm.entity_ids(Some("light"))
+                .contains(&"light.kitchen".into())
+        );
         assert!(sm.entity_ids(Some("switch")).is_empty());
         assert!(sm.async_remove("light.kitchen", None));
         assert!(sm.get("light.kitchen").is_none());

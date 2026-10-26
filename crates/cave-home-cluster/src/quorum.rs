@@ -54,10 +54,12 @@ pub fn status(cluster: &Cluster) -> ClusterStatus {
 
     // Primary is alive. Operational only if it is fully Healthy AND every
     // configured node is healthy (full redundancy). Any shortfall is Degraded.
-    let primary_healthy =
-        primary.map(crate::node::Node::health) == Some(NodeHealth::Healthy);
+    let primary_healthy = primary.map(crate::node::Node::health) == Some(NodeHealth::Healthy);
 
-    let has_backup_role = cluster.nodes().iter().any(|n| n.role() == NodeRole::BackupHub);
+    let has_backup_role = cluster
+        .nodes()
+        .iter()
+        .any(|n| n.role() == NodeRole::BackupHub);
     let backup_healthy = cluster.healthy_backup().is_some();
 
     let all_member_nodes_healthy = cluster

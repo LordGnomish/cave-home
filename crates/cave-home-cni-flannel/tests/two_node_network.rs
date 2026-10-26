@@ -170,7 +170,10 @@ fn vxlan_cross_node_pod_traffic_is_encapsulated_to_the_right_peer() {
     assert_eq!(lease_b.subnet, cidr("10.42.1.0/24"));
 
     let (ip_a, ip_b) = (v4("192.168.1.1"), v4("192.168.1.2"));
-    let (mac_a, mac_b) = (MacAddr::new([0x0a, 0, 0, 0, 0, 1]), MacAddr::new([0x0a, 0, 0, 0, 0, 2]));
+    let (mac_a, mac_b) = (
+        MacAddr::new([0x0a, 0, 0, 0, 0, 1]),
+        MacAddr::new([0x0a, 0, 0, 0, 0, 2]),
+    );
 
     let peer_b = PeerLease {
         node: "node-b".to_owned(),
@@ -317,16 +320,15 @@ fn hostgw_cross_node_pod_traffic_uses_direct_route() {
     .expect("backend a");
     let mut nw_a = be_a.register("node-a".to_owned());
     let mut dp_a = MockDatapath::new();
-    nw_a
-        .handle_event(
-            &mut dp_a,
-            &LeaseEvent::Added(PeerLease {
-                node: "node-b".to_owned(),
-                subnet: sn_b,
-                data: NodeBackendData::HostGw { public_ip: ip_b },
-            }),
-        )
-        .expect("program b");
+    nw_a.handle_event(
+        &mut dp_a,
+        &LeaseEvent::Added(PeerLease {
+            node: "node-b".to_owned(),
+            subnet: sn_b,
+            data: NodeBackendData::HostGw { public_ip: ip_b },
+        }),
+    )
+    .expect("program b");
 
     let node_a = NodeKernel::from_ops(sn_a, &dp_a.ops);
     // pod on A -> pod on B: directly routed via B's underlay IP, no encap.

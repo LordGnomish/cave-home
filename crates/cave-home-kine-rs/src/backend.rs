@@ -22,8 +22,9 @@ pub fn key_str(key: &[u8]) -> Result<String> {
     if key.is_empty() {
         return Err(KineError::EmptyKey);
     }
-    String::from_utf8(key.to_vec())
-        .map_err(|_| KineError::Backend { message: "key is not valid UTF-8".into() })
+    String::from_utf8(key.to_vec()).map_err(|_| KineError::Backend {
+        message: "key is not valid UTF-8".into(),
+    })
 }
 
 /// The `LIKE` pattern for a request's interval: exact for a point get, `p%` for a
@@ -86,13 +87,18 @@ pub fn validate_range(req: &RangeRequest) -> Result<()> {
 /// Resolve a request revision against the header (mirrors `Clock::resolve_read`).
 pub const fn resolve_read(requested: Revision, header: Revision) -> Result<Revision> {
     if requested < 0 {
-        return Err(KineError::NegativeRevision { revision: requested });
+        return Err(KineError::NegativeRevision {
+            revision: requested,
+        });
     }
     if requested == 0 {
         return Ok(header);
     }
     if requested > header {
-        return Err(KineError::FutureRevision { requested, current: header });
+        return Err(KineError::FutureRevision {
+            requested,
+            current: header,
+        });
     }
     Ok(requested)
 }
@@ -104,7 +110,10 @@ mod tests {
     #[test]
     fn key_str_rejects_empty_and_non_utf8() {
         assert_eq!(key_str(b""), Err(KineError::EmptyKey));
-        assert!(matches!(key_str(&[0xff, 0xfe]), Err(KineError::Backend { .. })));
+        assert!(matches!(
+            key_str(&[0xff, 0xfe]),
+            Err(KineError::Backend { .. })
+        ));
         assert_eq!(key_str(b"/reg/a").unwrap(), "/reg/a");
     }
 
@@ -113,7 +122,10 @@ mod tests {
         assert_eq!(like_pattern(&RangeRequest::key(b"/a")), "/a");
         assert_eq!(like_pattern(&RangeRequest::prefix(b"/ns/")), "/ns/%");
         assert_eq!(like_pattern(&RangeRequest::all()), "%");
-        assert_eq!(like_pattern(&RangeRequest::interval(b"/a/x", b"/a/z")), "/a/%");
+        assert_eq!(
+            like_pattern(&RangeRequest::interval(b"/a/x", b"/a/z")),
+            "/a/%"
+        );
     }
 
     #[test]
@@ -128,14 +140,29 @@ mod tests {
     fn resolve_read_guards_future_and_negative_revisions() {
         assert_eq!(resolve_read(0, 5), Ok(5));
         assert_eq!(resolve_read(3, 5), Ok(3));
-        assert_eq!(resolve_read(9, 5), Err(KineError::FutureRevision { requested: 9, current: 5 }));
-        assert_eq!(resolve_read(-1, 5), Err(KineError::NegativeRevision { revision: -1 }));
+        assert_eq!(
+            resolve_read(9, 5),
+            Err(KineError::FutureRevision {
+                requested: 9,
+                current: 5
+            })
+        );
+        assert_eq!(
+            resolve_read(-1, 5),
+            Err(KineError::NegativeRevision { revision: -1 })
+        );
     }
 
     #[test]
     fn validate_range_rejects_empty_key_and_inverted_interval() {
-        assert_eq!(validate_range(&RangeRequest::key(b"")), Err(KineError::EmptyKey));
-        assert_eq!(validate_range(&RangeRequest::interval(b"/z", b"/a")), Err(KineError::InvalidRange));
+        assert_eq!(
+            validate_range(&RangeRequest::key(b"")),
+            Err(KineError::EmptyKey)
+        );
+        assert_eq!(
+            validate_range(&RangeRequest::interval(b"/z", b"/a")),
+            Err(KineError::InvalidRange)
+        );
         assert!(validate_range(&RangeRequest::all()).is_ok());
     }
 }

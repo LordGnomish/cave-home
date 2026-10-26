@@ -196,7 +196,7 @@ mod tests {
     use super::*;
     use crate::credential::Credential;
     use crate::label::Lang;
-    use crate::schedule::{minute_of_week, Schedule, Window};
+    use crate::schedule::{Schedule, Window, minute_of_week};
 
     fn enrolled_pin(pin: &str) -> EnrolledCredential {
         let c = Credential::pin(pin).expect("valid pin");
@@ -228,7 +228,13 @@ mod tests {
     fn granted_when_everything_lines_up() {
         let mut p = policy_with_alice();
         let cred = Credential::pin("1234").expect("valid");
-        let d = p.decide("alice", &cred, &front_door(), minute_of_week(0, 9, 0), false);
+        let d = p.decide(
+            "alice",
+            &cred,
+            &front_door(),
+            minute_of_week(0, 9, 0),
+            false,
+        );
         assert!(d.granted);
         assert_eq!(d.reason, None);
     }
@@ -246,7 +252,13 @@ mod tests {
     fn unknown_person_is_unknown_credential() {
         let mut p = policy_with_alice();
         let cred = Credential::pin("1234").expect("valid");
-        let d = p.decide("mallory", &cred, &front_door(), minute_of_week(0, 9, 0), false);
+        let d = p.decide(
+            "mallory",
+            &cred,
+            &front_door(),
+            minute_of_week(0, 9, 0),
+            false,
+        );
         assert_eq!(d.reason, Some(DenyReason::UnknownCredential));
     }
 
@@ -254,7 +266,13 @@ mod tests {
     fn wrong_pin_is_unknown_credential() {
         let mut p = policy_with_alice();
         let cred = Credential::pin("9999").expect("valid");
-        let d = p.decide("alice", &cred, &front_door(), minute_of_week(0, 9, 0), false);
+        let d = p.decide(
+            "alice",
+            &cred,
+            &front_door(),
+            minute_of_week(0, 9, 0),
+            false,
+        );
         assert_eq!(d.reason, Some(DenyReason::UnknownCredential));
     }
 
@@ -262,7 +280,13 @@ mod tests {
     fn wrong_kind_is_unknown_credential() {
         let mut p = policy_with_alice();
         let card = Credential::nfc_card("0a1b2c3d").expect("valid");
-        let d = p.decide("alice", &card, &front_door(), minute_of_week(0, 9, 0), false);
+        let d = p.decide(
+            "alice",
+            &card,
+            &front_door(),
+            minute_of_week(0, 9, 0),
+            false,
+        );
         assert_eq!(d.reason, Some(DenyReason::UnknownCredential));
     }
 
@@ -280,7 +304,13 @@ mod tests {
         let mut p = policy_with_alice();
         let cred = Credential::pin("1234").expect("valid");
         // Monday 20:00 is past the 18:00 window end.
-        let d = p.decide("alice", &cred, &front_door(), minute_of_week(0, 20, 0), false);
+        let d = p.decide(
+            "alice",
+            &cred,
+            &front_door(),
+            minute_of_week(0, 20, 0),
+            false,
+        );
         assert_eq!(d.reason, Some(DenyReason::OutsideSchedule));
     }
 
@@ -289,7 +319,13 @@ mod tests {
         // Even an unknown person gets the lockdown reason, not unknown-credential.
         let mut p = policy_with_alice();
         let cred = Credential::pin("0000").expect("valid");
-        let d = p.decide("nobody", &cred, &front_door(), minute_of_week(0, 9, 0), true);
+        let d = p.decide(
+            "nobody",
+            &cred,
+            &front_door(),
+            minute_of_week(0, 9, 0),
+            true,
+        );
         assert_eq!(d.reason, Some(DenyReason::LockedDown));
     }
 
@@ -297,7 +333,9 @@ mod tests {
     fn decision_maps_to_messages() {
         assert_eq!(
             AccessDecision::granted().message("Front door"),
-            AccessMessage::AccessGranted { door: "Front door".into() }
+            AccessMessage::AccessGranted {
+                door: "Front door".into()
+            }
         );
         assert_eq!(
             AccessDecision::denied(DenyReason::OutsideSchedule).message("Front door"),
@@ -329,7 +367,13 @@ mod tests {
             Permission::new(enrolled_pin("4321"), vec![front_door()], Schedule::always()),
         );
         let cred = Credential::pin("4321").expect("valid");
-        let d = p.decide("owner", &cred, &front_door(), minute_of_week(6, 3, 0), false);
+        let d = p.decide(
+            "owner",
+            &cred,
+            &front_door(),
+            minute_of_week(6, 3, 0),
+            false,
+        );
         assert!(d.granted, "24/7 access should grant at Sunday 03:00");
     }
 }

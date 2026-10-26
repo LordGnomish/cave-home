@@ -31,7 +31,7 @@ use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{watch, Mutex};
+use tokio::sync::{Mutex, watch};
 
 use cave_home_apiserver_rs::gvk::GroupVersionResource;
 use cave_home_apiserver_rs::registry::Registry;
@@ -104,7 +104,7 @@ pub fn seeded_registry(node: &LocalNode) -> SharedRegistry {
 /// A minimal `Namespace` object in the `Active` phase, stamped with a creation
 /// time so its Age renders.
 fn namespace_object(name: &str) -> cave_home_apiserver_rs::json::Value {
-    use cave_home_apiserver_rs::json::{obj, Value};
+    use cave_home_apiserver_rs::json::{Value, obj};
     let mut ns = obj([
         ("apiVersion", Value::from("v1")),
         ("kind", Value::from("Namespace")),
@@ -119,7 +119,9 @@ fn namespace_object(name: &str) -> cave_home_apiserver_rs::json::Value {
 fn stamp_creation(object: &mut cave_home_apiserver_rs::json::Value) {
     use cave_home_apiserver_rs::json::Value;
     if let Value::Object(map) = object {
-        let meta = map.entry("metadata".to_string()).or_insert_with(Value::object);
+        let meta = map
+            .entry("metadata".to_string())
+            .or_insert_with(Value::object);
         if let Value::Object(m) = meta {
             m.entry("creationTimestamp".to_string())
                 .or_insert_with(|| Value::from(crate::table::now_rfc3339()));
@@ -132,7 +134,9 @@ fn stamp_creation(object: &mut cave_home_apiserver_rs::json::Value) {
 /// # Errors
 /// Propagates [`cave_home_orchestration::bringup::OrderError`] if the role's
 /// component graph is unsatisfiable (cannot happen with the built-in graph).
-pub fn planned_order(intent: NodeIntent) -> Result<Vec<Component>, cave_home_orchestration::bringup::OrderError> {
+pub fn planned_order(
+    intent: NodeIntent,
+) -> Result<Vec<Component>, cave_home_orchestration::bringup::OrderError> {
     let components = intent.components();
     let external = intent.external_prerequisites();
     let plan = BringUpPlan::compute_with_external(&components, &external)?;
@@ -164,14 +168,21 @@ where
 ///
 /// # Errors
 /// I/O errors from accepting on the listen socket.
-pub async fn run_until_on_listener<S>(cfg: RuntimeConfig, listener: TcpListener, shutdown: S) -> std::io::Result<()>
+pub async fn run_until_on_listener<S>(
+    cfg: RuntimeConfig,
+    listener: TcpListener,
+    shutdown: S,
+) -> std::io::Result<()>
 where
     S: std::future::Future<Output = ()> + Send + 'static,
 {
     let registry = seeded_registry(&cfg.node);
 
     let order = planned_order(cfg.intent).map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("bring-up plan failed: {e:?}"))
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("bring-up plan failed: {e:?}"),
+        )
     })?;
     log_line(&format!(
         "bring-up order: {}",
@@ -185,7 +196,11 @@ where
     log_line(&format!(
         "apiserver listening on {} ({})",
         listener.local_addr()?,
-        if tls_listener.is_some() { "https" } else { "http" }
+        if tls_listener.is_some() {
+            "https"
+        } else {
+            "http"
+        }
     ));
 
     // The top-level shutdown flag the caller's future drives: it stops the accept
@@ -202,7 +217,13 @@ where
     let mut supervisors = Vec::new();
     for component in &order {
         let (stop_tx, stop_rx) = watch::channel(false);
-        let handle = spawn_supervisor(*component, registry.clone(), cfg.node.clone(), cfg.reconcile_interval, stop_rx);
+        let handle = spawn_supervisor(
+            *component,
+            registry.clone(),
+            cfg.node.clone(),
+            cfg.reconcile_interval,
+            stop_rx,
+        );
         supervisors.push((*component, stop_tx, handle));
     }
 
@@ -254,7 +275,7 @@ pub async fn run(cfg: RuntimeConfig) -> std::io::Result<()> {
 async fn wait_for_shutdown_signal() {
     #[cfg(unix)]
     {
-        use tokio::signal::unix::{signal, SignalKind};
+        use tokio::signal::unix::{SignalKind, signal};
         match signal(SignalKind::terminate()) {
             Ok(mut term) => {
                 tokio::select! {
@@ -400,7 +421,9 @@ where
     }
 
     let Ok(req) = http::HttpRequest::parse(&buf) else {
-        stream.write_all(&http::HttpResponse::text(400, "bad request").to_bytes()).await?;
+        stream
+            .write_all(&http::HttpResponse::text(400, "bad request").to_bytes())
+            .await?;
         return stream.flush().await;
     };
 
@@ -452,7 +475,9 @@ where
         Ok(rp) => rp,
         Err(s) => {
             let body = format!("watch rejected: {}", s.message);
-            stream.write_all(&http::HttpResponse::text(s.code, body).to_bytes()).await?;
+            stream
+                .write_all(&http::HttpResponse::text(s.code, body).to_bytes())
+                .await?;
             return stream.flush().await;
         }
     };
@@ -477,12 +502,22 @@ where
         for ev in events {
             last_rv = last_rv.max(ev.resource_version);
             if let Some(ns) = &ns_filter {
-                if ev.object.pointer("metadata.namespace").and_then(cave_home_apiserver_rs::json::Value::as_str) != Some(ns.as_str()) {
+                if ev
+                    .object
+                    .pointer("metadata.namespace")
+                    .and_then(cave_home_apiserver_rs::json::Value::as_str)
+                    != Some(ns.as_str())
+                {
                     continue;
                 }
             }
             if let Some(name) = &name_filter {
-                if ev.object.pointer("metadata.name").and_then(cave_home_apiserver_rs::json::Value::as_str) != Some(name.as_str()) {
+                if ev
+                    .object
+                    .pointer("metadata.name")
+                    .and_then(cave_home_apiserver_rs::json::Value::as_str)
+                    != Some(name.as_str())
+                {
                     continue;
                 }
             }
@@ -510,21 +545,24 @@ where
 
 /// Render one watch event as a newline-terminated `{"type":..,"object":..}` line.
 fn watch_event_frame(ev: &cave_home_apiserver_rs::registry::WatchEvent) -> String {
-    use cave_home_apiserver_rs::json::{obj, Value};
+    use cave_home_apiserver_rs::json::{Value, obj};
     use cave_home_apiserver_rs::registry::WatchEventKind;
     let kind = match ev.kind {
         WatchEventKind::Added => "ADDED",
         WatchEventKind::Modified => "MODIFIED",
         WatchEventKind::Deleted => "DELETED",
     };
-    let mut frame = obj([("type", Value::from(kind)), ("object", ev.object.clone())]).to_json_string();
+    let mut frame =
+        obj([("type", Value::from(kind)), ("object", ev.object.clone())]).to_json_string();
     frame.push('\n');
     frame
 }
 
 /// Write one HTTP chunk (`<hex-len>\r\n<bytes>\r\n`) and flush it.
 async fn write_chunk<S: AsyncWrite + Unpin>(stream: &mut S, bytes: &[u8]) -> std::io::Result<()> {
-    stream.write_all(format!("{:x}\r\n", bytes.len()).as_bytes()).await?;
+    stream
+        .write_all(format!("{:x}\r\n", bytes.len()).as_bytes())
+        .await?;
     stream.write_all(bytes).await?;
     stream.write_all(b"\r\n").await?;
     stream.flush().await
@@ -619,7 +657,10 @@ enum Reconcile {
     /// The single-node scheduler: binds unscheduled pods to this node.
     Scheduler(String),
     /// The node kubelet: drives bound pods through the (mock) CRI to Running.
-    Kubelet { node_name: String, runtime: crate::lifecycle::PodRuntime },
+    Kubelet {
+        node_name: String,
+        runtime: crate::lifecycle::PodRuntime,
+    },
     /// Validates the ingress routing table via the real traefik core.
     Traefik,
     /// Reconciles `LoadBalancer` services via the real klipper/servicelb core.
@@ -635,7 +676,9 @@ impl Reconcile {
     fn for_component(component: Component, node: LocalNode) -> Self {
         match component {
             Component::Kine | Component::Apiserver => Self::Passive,
-            Component::ControllerManager => Self::NodeHeartbeat(Box::new(NodeHeartbeatLoop::new(node))),
+            Component::ControllerManager => {
+                Self::NodeHeartbeat(Box::new(NodeHeartbeatLoop::new(node)))
+            }
             Component::Scheduler => Self::Scheduler(node.name),
             Component::Kubelet => Self::Kubelet {
                 node_name: node.name,
@@ -672,19 +715,30 @@ impl Reconcile {
             }
             Self::Traefik => {
                 // Build and validate the ingress table (real traefik core).
-                if let Ok(router) = cave_home_traefik_rs::router::Router::new("portal", "Host(`portal.cave.home`)", "portal-svc") {
+                if let Ok(router) = cave_home_traefik_rs::router::Router::new(
+                    "portal",
+                    "Host(`portal.cave.home`)",
+                    "portal-svc",
+                ) {
                     let service = cave_home_traefik_rs::loadbalancer::Service::new(
                         "portal-svc",
-                        vec![cave_home_traefik_rs::loadbalancer::Server::new("http://127.0.0.1:8123")],
+                        vec![cave_home_traefik_rs::loadbalancer::Server::new(
+                            "http://127.0.0.1:8123",
+                        )],
                         cave_home_traefik_rs::loadbalancer::LoadBalancer::WeightedRoundRobin,
                     );
-                    let _ = cave_home_traefik_rs::config::DynamicConfig::build(vec![router], vec![service], vec![]);
+                    let _ = cave_home_traefik_rs::config::DynamicConfig::build(
+                        vec![router],
+                        vec![service],
+                        vec![],
+                    );
                 }
             }
             Self::ServiceLb(ip) => {
                 // Reconcile LoadBalancer services (real klipper/servicelb core).
                 if let Ok(addr) = ip.parse() {
-                    let node = cave_home_klipper_lb_rs::node::Node::new("self").with_internal_ip(addr);
+                    let node =
+                        cave_home_klipper_lb_rs::node::Node::new("self").with_internal_ip(addr);
                     let ctx = cave_home_klipper_lb_rs::controller::ReconcileContext::default();
                     let _ = cave_home_klipper_lb_rs::controller::reconcile(&[], &[node], &ctx);
                 }
@@ -726,7 +780,12 @@ impl NodeHeartbeatLoop {
             self.queue.add(&self.key);
             self.seeded = true;
         }
-        let _ = cave_home_controller_manager_rs::reconcile::step(&mut self.reconciler, &mut self.queue, reg, now);
+        let _ = cave_home_controller_manager_rs::reconcile::step(
+            &mut self.reconciler,
+            &mut self.queue,
+            reg,
+            now,
+        );
     }
 }
 
@@ -739,7 +798,11 @@ struct NodeHeartbeat {
 impl cave_home_controller_manager_rs::reconcile::Reconciler for NodeHeartbeat {
     type Context = Registry;
 
-    fn reconcile(&mut self, _key: &str, reg: &mut Registry) -> cave_home_controller_manager_rs::reconcile::Outcome {
+    fn reconcile(
+        &mut self,
+        _key: &str,
+        reg: &mut Registry,
+    ) -> cave_home_controller_manager_rs::reconcile::Outcome {
         let nodes = GroupVersionResource::new("", "v1", "nodes");
         if reg.get(&nodes, "", &self.node.name).is_err() {
             let _ = reg.create(&nodes, self.node.to_object());
@@ -766,8 +829,14 @@ mod tests {
     #[test]
     fn bring_up_order_starts_storage_before_apiserver() {
         let order = planned_order(NodeIntent::PrimaryHub).expect("plan");
-        let kine = order.iter().position(|c| *c == Component::Kine).expect("kine");
-        let api = order.iter().position(|c| *c == Component::Apiserver).expect("apiserver");
+        let kine = order
+            .iter()
+            .position(|c| *c == Component::Kine)
+            .expect("kine");
+        let api = order
+            .iter()
+            .position(|c| *c == Component::Apiserver)
+            .expect("apiserver");
         assert!(kine < api, "kine must precede apiserver: {order:?}");
     }
 
@@ -792,7 +861,10 @@ mod tests {
         let _ = reg.delete(&nodes, "", "hub-01");
         assert!(reg.get(&nodes, "", "hub-01").is_err());
         hb.reconcile_once(&mut reg, 2);
-        assert!(reg.get(&nodes, "", "hub-01").is_ok(), "heartbeat must re-register the node");
+        assert!(
+            reg.get(&nodes, "", "hub-01").is_ok(),
+            "heartbeat must re-register the node"
+        );
     }
 
     #[tokio::test]
@@ -828,14 +900,20 @@ mod tests {
             tls: None,
         };
         let result = tokio::time::timeout(Duration::from_secs(5), run_until(cfg, async {})).await;
-        assert!(result.is_ok(), "run_until did not return within the timeout");
-        assert!(result.expect("timed out").is_ok(), "run_until returned an error");
+        assert!(
+            result.is_ok(),
+            "run_until did not return within the timeout"
+        );
+        assert!(
+            result.expect("timed out").is_ok(),
+            "run_until returned an error"
+        );
     }
 
     #[tokio::test]
     async fn supervised_component_restarts_after_panics_without_losing_the_store() {
-        use std::sync::atomic::{AtomicU32, Ordering};
         use std::sync::Arc as StdArc;
+        use std::sync::atomic::{AtomicU32, Ordering};
 
         // A registry seeded with the local node — the shared cluster state that
         // must survive a component crash-looping and being restarted.
@@ -874,13 +952,26 @@ mod tests {
                                 let _ = reg.create(
                                     &pods,
                                     cave_home_apiserver_rs::json::obj([
-                                        ("apiVersion", cave_home_apiserver_rs::json::Value::from("v1")),
+                                        (
+                                            "apiVersion",
+                                            cave_home_apiserver_rs::json::Value::from("v1"),
+                                        ),
                                         ("kind", cave_home_apiserver_rs::json::Value::from("Pod")),
                                         (
                                             "metadata",
                                             cave_home_apiserver_rs::json::obj([
-                                                ("name", cave_home_apiserver_rs::json::Value::from("marker")),
-                                                ("namespace", cave_home_apiserver_rs::json::Value::from("default")),
+                                                (
+                                                    "name",
+                                                    cave_home_apiserver_rs::json::Value::from(
+                                                        "marker",
+                                                    ),
+                                                ),
+                                                (
+                                                    "namespace",
+                                                    cave_home_apiserver_rs::json::Value::from(
+                                                        "default",
+                                                    ),
+                                                ),
                                             ]),
                                         ),
                                     ]),
@@ -909,7 +1000,10 @@ mod tests {
             if runs.load(Ordering::SeqCst) >= 3 {
                 break;
             }
-            assert!(tokio::time::Instant::now() < deadline, "component never reached steady run");
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "component never reached steady run"
+            );
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
 
@@ -917,9 +1011,15 @@ mod tests {
         // the steady run's marker landed in the *same* registry.
         {
             let reg = registry.lock().await;
-            assert!(reg.get(&nodes, "", "hub-01").is_ok(), "seeded node lost across restarts");
+            assert!(
+                reg.get(&nodes, "", "hub-01").is_ok(),
+                "seeded node lost across restarts"
+            );
             let pods = GroupVersionResource::new("", "v1", "pods");
-            assert!(reg.get(&pods, "default", "marker").is_ok(), "steady run did not see the shared store");
+            assert!(
+                reg.get(&pods, "default", "marker").is_ok(),
+                "steady run did not see the shared store"
+            );
         }
         assert!(!sup.is_finished(), "supervisor stays up after recovering");
 
@@ -941,26 +1041,32 @@ mod tests {
         // both the reverse order *and* that teardown is sequential (each fully
         // stops before the next is signalled).
         let order = ["a", "b", "c"];
-        let stop_log: StdArc<TokioMutex<Vec<&'static str>>> = StdArc::new(TokioMutex::new(Vec::new()));
+        let stop_log: StdArc<TokioMutex<Vec<&'static str>>> =
+            StdArc::new(TokioMutex::new(Vec::new()));
 
         let mut supervisors = Vec::new();
         for id in order {
             let (stop_tx, stop_rx) = watch::channel(false);
             let log = stop_log.clone();
             let handle = tokio::spawn(async move {
-                crate::supervisor::run(id, crate::supervisor::RestartPolicy::default(), stop_rx, move |mut sd| {
-                    let log = log.clone();
-                    async move {
-                        while !*sd.borrow() {
-                            if sd.changed().await.is_err() {
-                                break;
+                crate::supervisor::run(
+                    id,
+                    crate::supervisor::RestartPolicy::default(),
+                    stop_rx,
+                    move |mut sd| {
+                        let log = log.clone();
+                        async move {
+                            while !*sd.borrow() {
+                                if sd.changed().await.is_err() {
+                                    break;
+                                }
                             }
+                            // Record this component as stopped.
+                            log.lock().await.push(id);
+                            Ok::<(), &str>(())
                         }
-                        // Record this component as stopped.
-                        log.lock().await.push(id);
-                        Ok::<(), &str>(())
-                    }
-                })
+                    },
+                )
                 .await
             });
             supervisors.push((id, stop_tx, handle));
@@ -972,19 +1078,29 @@ mod tests {
         // Teardown exactly as `run_until` does: reverse order, signal then await.
         for (_id, stop_tx, handle) in supervisors.into_iter().rev() {
             let _ = stop_tx.send(true);
-            let _ = tokio::time::timeout(Duration::from_secs(1), handle).await.expect("stops");
+            let _ = tokio::time::timeout(Duration::from_secs(1), handle)
+                .await
+                .expect("stops");
         }
 
         let log = stop_log.lock().await;
-        assert_eq!(*log, vec!["c", "b", "a"], "components must stop in reverse bring-up order");
+        assert_eq!(
+            *log,
+            vec!["c", "b", "a"],
+            "components must stop in reverse bring-up order"
+        );
     }
 
     #[test]
     fn query_param_parses_and_detects_watch() {
-        assert_eq!(query_param("watch=true&resourceVersion=8", "resourceVersion"), Some("8"));
+        assert_eq!(
+            query_param("watch=true&resourceVersion=8", "resourceVersion"),
+            Some("8")
+        );
         assert_eq!(query_param("watch=true", "watch"), Some("true"));
         assert_eq!(query_param("a=1&b=2", "c"), None);
-        let watch_req = http::HttpRequest::parse(b"GET /api/v1/pods?watch=true HTTP/1.1\r\n\r\n").unwrap();
+        let watch_req =
+            http::HttpRequest::parse(b"GET /api/v1/pods?watch=true HTTP/1.1\r\n\r\n").unwrap();
         assert!(is_watch_request(&watch_req));
         let plain = http::HttpRequest::parse(b"GET /api/v1/pods HTTP/1.1\r\n\r\n").unwrap();
         assert!(!is_watch_request(&plain));
@@ -1010,13 +1126,22 @@ mod tests {
             let mut reg = registry.lock().await;
             let pods = GroupVersionResource::new("", "v1", "pods");
             let pod = cave_home_apiserver_rs::json::obj([
-                ("apiVersion", cave_home_apiserver_rs::json::Value::from("v1")),
+                (
+                    "apiVersion",
+                    cave_home_apiserver_rs::json::Value::from("v1"),
+                ),
                 ("kind", cave_home_apiserver_rs::json::Value::from("Pod")),
                 (
                     "metadata",
                     cave_home_apiserver_rs::json::obj([
-                        ("name", cave_home_apiserver_rs::json::Value::from("watchpod")),
-                        ("namespace", cave_home_apiserver_rs::json::Value::from("default")),
+                        (
+                            "name",
+                            cave_home_apiserver_rs::json::Value::from("watchpod"),
+                        ),
+                        (
+                            "namespace",
+                            cave_home_apiserver_rs::json::Value::from("default"),
+                        ),
                     ]),
                 ),
             ]);
@@ -1052,7 +1177,7 @@ mod tests {
 
     #[tokio::test]
     async fn watch_keeps_streaming_subsequent_modifications() {
-        use cave_home_apiserver_rs::json::{obj, Value};
+        use cave_home_apiserver_rs::json::{Value, obj};
         let registry = seeded_registry(&node());
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("addr");
@@ -1074,7 +1199,13 @@ mod tests {
                 obj([
                     ("apiVersion", Value::from("v1")),
                     ("kind", Value::from("Pod")),
-                    ("metadata", obj([("name", Value::from("p1")), ("namespace", Value::from("default"))])),
+                    (
+                        "metadata",
+                        obj([
+                            ("name", Value::from("p1")),
+                            ("namespace", Value::from("default")),
+                        ]),
+                    ),
                     ("spec", obj([])),
                 ]),
             )
@@ -1086,14 +1217,24 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(400)).await;
         {
             let mut reg = registry.lock().await;
-            reg.patch_merge(&pods, "default", "p1", &obj([("spec", obj([("nodeName", Value::from("hub-01"))]))]))
-                .expect("bind");
+            reg.patch_merge(
+                &pods,
+                "default",
+                "p1",
+                &obj([("spec", obj([("nodeName", Value::from("hub-01"))]))]),
+            )
+            .expect("bind");
         }
         tokio::time::sleep(Duration::from_millis(400)).await;
         {
             let mut reg = registry.lock().await;
-            reg.patch_merge(&pods, "default", "p1", &obj([("status", obj([("phase", Value::from("Running"))]))]))
-                .expect("run");
+            reg.patch_merge(
+                &pods,
+                "default",
+                "p1",
+                &obj([("status", obj([("phase", Value::from("Running"))]))]),
+            )
+            .expect("run");
         }
 
         let collected = tokio::time::timeout(Duration::from_secs(5), async {
@@ -1114,7 +1255,10 @@ mod tests {
         .await
         .expect("modifications within timeout");
         assert!(collected.contains("\"type\":\"ADDED\""), "{collected}");
-        assert!(collected.matches("\"type\":\"MODIFIED\"").count() >= 2, "{collected}");
+        assert!(
+            collected.matches("\"type\":\"MODIFIED\"").count() >= 2,
+            "{collected}"
+        );
         assert!(collected.contains("\"phase\":\"Running\""), "{collected}");
 
         let _ = tx.send(true);

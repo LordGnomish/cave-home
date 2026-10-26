@@ -86,9 +86,19 @@ mod tests {
 
         assert_eq!(rec.node_id(), "hub-kitchen");
         assert_eq!(rec.port(), 8123);
-        assert_eq!(rec.ptr.instance.to_dotted(), "hub-kitchen._cavehome._tcp.local");
+        assert_eq!(
+            rec.ptr.instance.to_dotted(),
+            "hub-kitchen._cavehome._tcp.local"
+        );
         assert_eq!(rec.txt.role, NodeRole::Primary);
-        assert_eq!(rec.txt.version, Version { major: 1, minor: 4, patch: 0 });
+        assert_eq!(
+            rec.txt.version,
+            Version {
+                major: 1,
+                minor: 4,
+                patch: 0
+            }
+        );
         assert_eq!(rec.ttl, DEFAULT_TTL_SECS);
         assert_eq!(rec.addresses().len(), 1);
     }

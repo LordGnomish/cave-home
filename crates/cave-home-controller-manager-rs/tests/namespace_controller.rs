@@ -26,7 +26,14 @@ fn active_namespace_is_left_alone() {
 
     assert_eq!(ctrl.reconcile("live", &mut c, 0), Outcome::Done);
     assert!(c.pods.get("live/p").is_some(), "content untouched");
-    assert!(c.namespaces.get("live").unwrap().meta.finalizers.contains(&NAMESPACE_FINALIZER.to_owned()));
+    assert!(
+        c.namespaces
+            .get("live")
+            .unwrap()
+            .meta
+            .finalizers
+            .contains(&NAMESPACE_FINALIZER.to_owned())
+    );
 }
 
 #[test]
@@ -35,18 +42,31 @@ fn terminating_namespace_deletes_its_content_first() {
     c.namespaces.create(terminating_ns("doomed"));
     c.pods.create(Pod::new(ObjectMeta::new("p1", "doomed", "")));
     c.pods.create(Pod::new(ObjectMeta::new("p2", "doomed", "")));
-    c.replicasets.create(ReplicaSet::new(ObjectMeta::new("rs", "doomed", ""), ReplicaSetSpec::default()));
+    c.replicasets.create(ReplicaSet::new(
+        ObjectMeta::new("rs", "doomed", ""),
+        ReplicaSetSpec::default(),
+    ));
     // A pod in another namespace must survive.
-    c.pods.create(Pod::new(ObjectMeta::new("safe", "other", "")));
+    c.pods
+        .create(Pod::new(ObjectMeta::new("safe", "other", "")));
     let mut ctrl = NamespaceController::new();
 
     ctrl.reconcile("doomed", &mut c, 200);
-    assert!(c.pods.get("doomed/p1").is_none() && c.pods.get("doomed/p2").is_none(), "pods purged");
+    assert!(
+        c.pods.get("doomed/p1").is_none() && c.pods.get("doomed/p2").is_none(),
+        "pods purged"
+    );
     assert!(c.replicasets.get("doomed/rs").is_none(), "RS purged");
-    assert!(c.pods.get("other/safe").is_some(), "other namespace untouched");
+    assert!(
+        c.pods.get("other/safe").is_some(),
+        "other namespace untouched"
+    );
     // Finalizer not yet removed in the same pass that still saw content.
     let ns = c.namespaces.get("doomed").unwrap();
-    assert!(ns.meta.finalizers.contains(&NAMESPACE_FINALIZER.to_owned()), "finalizer waits for empty");
+    assert!(
+        ns.meta.finalizers.contains(&NAMESPACE_FINALIZER.to_owned()),
+        "finalizer waits for empty"
+    );
 }
 
 #[test]
@@ -56,7 +76,10 @@ fn empty_terminating_namespace_drops_the_finalizer() {
     let mut ctrl = NamespaceController::new();
     ctrl.reconcile("doomed", &mut c, 200);
     let ns = c.namespaces.get("doomed").unwrap();
-    assert!(!ns.meta.finalizers.contains(&NAMESPACE_FINALIZER.to_owned()), "finalizer removed when empty");
+    assert!(
+        !ns.meta.finalizers.contains(&NAMESPACE_FINALIZER.to_owned()),
+        "finalizer removed when empty"
+    );
 }
 
 #[test]
@@ -66,9 +89,23 @@ fn drains_then_finalizes_over_two_reconciles() {
     c.pods.create(Pod::new(ObjectMeta::new("p", "doomed", "")));
     let mut ctrl = NamespaceController::new();
     ctrl.reconcile("doomed", &mut c, 200); // deletes content
-    assert!(c.namespaces.get("doomed").unwrap().meta.finalizers.contains(&NAMESPACE_FINALIZER.to_owned()));
+    assert!(
+        c.namespaces
+            .get("doomed")
+            .unwrap()
+            .meta
+            .finalizers
+            .contains(&NAMESPACE_FINALIZER.to_owned())
+    );
     ctrl.reconcile("doomed", &mut c, 201); // now empty -> finalize
-    assert!(c.namespaces.get("doomed").unwrap().meta.finalizers.is_empty());
+    assert!(
+        c.namespaces
+            .get("doomed")
+            .unwrap()
+            .meta
+            .finalizers
+            .is_empty()
+    );
 }
 
 #[test]

@@ -16,16 +16,10 @@ pub fn cmd() -> Command {
         .subcommand(
             Command::new("say")
                 .about("Speak a phrase out loud")
-                .arg(Arg::new("text").long("text").required(true))
+                .arg(Arg::new("text").long("text").required(true)),
         )
-        .subcommand(
-            Command::new("listen")
-                .about("Listen and transcribe one utterance")
-        )
-        .subcommand(
-            Command::new("wake")
-                .about("Show wake-word state")
-        )
+        .subcommand(Command::new("listen").about("Listen and transcribe one utterance"))
+        .subcommand(Command::new("wake").about("Show wake-word state"))
 }
 
 pub fn run() -> i32 {
@@ -40,7 +34,10 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
+        let names: Vec<_> = c
+            .get_subcommands()
+            .map(|s| s.get_name().to_string())
+            .collect();
         for sub in ["say", "listen", "wake"] {
             assert!(
                 names.iter().any(|n| n == sub),

@@ -20,16 +20,14 @@ use async_trait::async_trait;
 use parking_lot::Mutex;
 use tokio::sync::mpsc;
 
-use cave_home_apiserver_rs::json::{obj, Value};
+use cave_home_apiserver_rs::json::{Value, obj};
 use cave_home_apiserver_rs::{GroupVersionResource, Registry};
 
 use cave_home_scheduler_rs::source_sink::{
     EventStream, NodeEvent, NodeEventStream, PodEvent, Result, SchedulerSink, SchedulerSource,
     SourceSinkError,
 };
-use cave_home_scheduler_rs::{
-    Container, Node, ObjectMeta, Pod, Quantity, ResourceName, Scheduler,
-};
+use cave_home_scheduler_rs::{Container, Node, ObjectMeta, Pod, Quantity, ResourceName, Scheduler};
 
 // ---------------------------------------------------------------------------
 // Shared apiserver store + GVRs
@@ -92,19 +90,39 @@ fn node_value(name: &str, cpu_m: i64) -> Value {
 fn value_to_pod(v: &Value) -> Pod {
     let mut p = Pod::default();
     p.metadata = ObjectMeta {
-        namespace: v.pointer("metadata.namespace").and_then(Value::as_str).unwrap_or("").into(),
-        name: v.pointer("metadata.name").and_then(Value::as_str).unwrap_or("").into(),
+        namespace: v
+            .pointer("metadata.namespace")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .into(),
+        name: v
+            .pointer("metadata.name")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .into(),
         // The apiserver stamps a uid on create; mirror it so the cache's
         // assumed-pod / forget bookkeeping keys correctly.
-        uid: v.pointer("metadata.uid").and_then(Value::as_str).unwrap_or("").into(),
+        uid: v
+            .pointer("metadata.uid")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .into(),
         ..Default::default()
     };
-    p.spec.node_name = v.pointer("spec.nodeName").and_then(Value::as_str).unwrap_or("").into();
-    if let Some(cpu) = v.pointer("spec.containers").and_then(Value::as_array).and_then(|cs| {
-        cs.first()
-            .and_then(|c| c.pointer("resources.requests.cpu"))
-            .and_then(number_i64)
-    }) {
+    p.spec.node_name = v
+        .pointer("spec.nodeName")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .into();
+    if let Some(cpu) = v
+        .pointer("spec.containers")
+        .and_then(Value::as_array)
+        .and_then(|cs| {
+            cs.first()
+                .and_then(|c| c.pointer("resources.requests.cpu"))
+                .and_then(number_i64)
+        })
+    {
         let mut c = Container::default();
         c.resources
             .requests
@@ -117,7 +135,11 @@ fn value_to_pod(v: &Value) -> Pod {
 /// apiserver Node `Value` → scheduler-typed `Node`.
 fn value_to_node(v: &Value) -> Node {
     let mut n = Node::default();
-    n.metadata.name = v.pointer("metadata.name").and_then(Value::as_str).unwrap_or("").into();
+    n.metadata.name = v
+        .pointer("metadata.name")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .into();
     if let Some(cpu) = v.pointer("status.allocatable.cpu").and_then(number_i64) {
         n.status
             .allocatable
@@ -229,10 +251,16 @@ impl SchedulerSink for ApiserverSink {
 
 /// Small extension: mutable object-field access on the apiserver `Value`.
 trait PointerMut {
-    fn pointer_mut_object(&mut self, key: &str) -> Option<&mut std::collections::BTreeMap<String, Value>>;
+    fn pointer_mut_object(
+        &mut self,
+        key: &str,
+    ) -> Option<&mut std::collections::BTreeMap<String, Value>>;
 }
 impl PointerMut for Value {
-    fn pointer_mut_object(&mut self, key: &str) -> Option<&mut std::collections::BTreeMap<String, Value>> {
+    fn pointer_mut_object(
+        &mut self,
+        key: &str,
+    ) -> Option<&mut std::collections::BTreeMap<String, Value>> {
         match self {
             Value::Object(m) => m.get_mut(key).and_then(|v| match v {
                 Value::Object(inner) => Some(inner),
@@ -259,7 +287,9 @@ fn seed_store() -> Store {
 #[tokio::test]
 async fn scheduler_reads_and_binds_through_the_real_apiserver_registry() {
     let store = seed_store();
-    let src = Arc::new(ApiserverSource { store: store.clone() });
+    let src = Arc::new(ApiserverSource {
+        store: store.clone(),
+    });
     let events = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::new(ApiserverSink {
         store: store.clone(),
@@ -268,7 +298,11 @@ async fn scheduler_reads_and_binds_through_the_real_apiserver_registry() {
 
     let sched = Scheduler::new(src.clone(), sink.clone());
     sched.sync().await.unwrap();
-    let outcome = sched.run_once().await.unwrap().expect("a pod was scheduled");
+    let outcome = sched
+        .run_once()
+        .await
+        .unwrap()
+        .expect("a pod was scheduled");
     assert_eq!(outcome.pod_full_name, "default/alpha");
 
     // Read the Pod back OUT of the apiserver: the binding must be persisted.
@@ -283,10 +317,12 @@ async fn scheduler_reads_and_binds_through_the_real_apiserver_registry() {
     );
 
     // A Scheduled event was recorded against the pod.
-    assert!(events
-        .lock()
-        .iter()
-        .any(|(p, r, _)| p == "default/alpha" && r == "Scheduled"));
+    assert!(
+        events
+            .lock()
+            .iter()
+            .any(|(p, r, _)| p == "default/alpha" && r == "Scheduled")
+    );
 }
 
 #[tokio::test]
@@ -303,7 +339,9 @@ async fn apiserver_round_trip_lists_only_unscheduled_pods() {
         }
         g.create(&pods_gvr(), v).unwrap();
     }
-    let src = ApiserverSource { store: store.clone() };
+    let src = ApiserverSource {
+        store: store.clone(),
+    };
     let pending = src.list_pending_pods().await.unwrap();
     let names: Vec<&str> = pending.iter().map(|p| p.metadata.name.as_str()).collect();
     assert_eq!(names, vec!["alpha"], "only the unscheduled pod is pending");

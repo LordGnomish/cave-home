@@ -39,7 +39,10 @@ pub struct SetupError {
 
 impl SetupError {
     pub fn new(domain: impl Into<String>, reason: impl Into<String>) -> Self {
-        Self { domain: domain.into(), reason: reason.into() }
+        Self {
+            domain: domain.into(),
+            reason: reason.into(),
+        }
     }
 }
 
@@ -60,7 +63,11 @@ impl Manifest {
     /// A manifest with just a domain and name.
     #[must_use]
     pub fn new(domain: impl Into<String>, name: impl Into<String>) -> Self {
-        Self { domain: domain.into(), name: name.into(), ..Self::default() }
+        Self {
+            domain: domain.into(),
+            name: name.into(),
+            ..Self::default()
+        }
     }
 
     /// Builder: set hard dependencies.
@@ -236,7 +243,9 @@ impl IntegrationLoader {
             match integration.setup(ctx) {
                 Ok(true) => report.set_up.push(domain),
                 Ok(false) => {
-                    report.failed.insert(domain, "setup returned false".to_owned());
+                    report
+                        .failed
+                        .insert(domain, "setup returned false".to_owned());
                 }
                 Err(err) => {
                     report.failed.insert(domain, err.reason);
@@ -260,8 +269,8 @@ mod tests {
     use crate::context::Context;
     use crate::service::Service;
     use crate::state::{EntityId, StateAttributes};
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// A test integration that records the order it was set up in and can be
     /// told to fail.
@@ -304,21 +313,34 @@ mod tests {
         })
     }
 
-    fn harness() -> (Arc<AtomicUsize>, Arc<parking_lot::Mutex<Vec<(String, usize)>>>) {
-        (Arc::new(AtomicUsize::new(0)), Arc::new(parking_lot::Mutex::new(Vec::new())))
+    fn harness() -> (
+        Arc<AtomicUsize>,
+        Arc<parking_lot::Mutex<Vec<(String, usize)>>>,
+    ) {
+        (
+            Arc::new(AtomicUsize::new(0)),
+            Arc::new(parking_lot::Mutex::new(Vec::new())),
+        )
     }
 
     #[test]
     fn register_rejects_duplicate_domain() {
         let (c, o) = harness();
         let mut loader = IntegrationLoader::new();
-        loader.register(recorder(Manifest::new("hue", "Hue"), &c, &o, false)).expect("first");
+        loader
+            .register(recorder(Manifest::new("hue", "Hue"), &c, &o, false))
+            .expect("first");
         assert_eq!(
-            loader.register(recorder(Manifest::new("hue", "Hue2"), &c, &o, false)).unwrap_err(),
+            loader
+                .register(recorder(Manifest::new("hue", "Hue2"), &c, &o, false))
+                .unwrap_err(),
             LoaderError::DuplicateDomain("hue".into())
         );
         assert_eq!(loader.domains(), BTreeSet::from(["hue".to_owned()]));
-        assert_eq!(loader.manifest("hue").map(|m| m.name.clone()), Some("Hue".into()));
+        assert_eq!(
+            loader.manifest("hue").map(|m| m.name.clone()),
+            Some("Hue".into())
+        );
     }
 
     #[test]
@@ -326,9 +348,25 @@ mod tests {
         let (c, o) = harness();
         let mut loader = IntegrationLoader::new();
         // light depends on hue; hue depends on network
-        loader.register(recorder(Manifest::new("light", "Light").with_dependencies(&["hue"]), &c, &o, false)).expect("a");
-        loader.register(recorder(Manifest::new("hue", "Hue").with_dependencies(&["network"]), &c, &o, false)).expect("b");
-        loader.register(recorder(Manifest::new("network", "Net"), &c, &o, false)).expect("c");
+        loader
+            .register(recorder(
+                Manifest::new("light", "Light").with_dependencies(&["hue"]),
+                &c,
+                &o,
+                false,
+            ))
+            .expect("a");
+        loader
+            .register(recorder(
+                Manifest::new("hue", "Hue").with_dependencies(&["network"]),
+                &c,
+                &o,
+                false,
+            ))
+            .expect("b");
+        loader
+            .register(recorder(Manifest::new("network", "Net"), &c, &o, false))
+            .expect("c");
 
         let order = loader.setup_order().expect("order");
         let pos = |d: &str| order.iter().position(|x| x == d).expect("present");
@@ -341,8 +379,17 @@ mod tests {
         let (c, o) = harness();
         let mut loader = IntegrationLoader::new();
         // recorder depends-after history; history is present → ordered
-        loader.register(recorder(Manifest::new("recorder", "Rec").with_after_dependencies(&["history", "absent"]), &c, &o, false)).expect("a");
-        loader.register(recorder(Manifest::new("history", "Hist"), &c, &o, false)).expect("b");
+        loader
+            .register(recorder(
+                Manifest::new("recorder", "Rec").with_after_dependencies(&["history", "absent"]),
+                &c,
+                &o,
+                false,
+            ))
+            .expect("a");
+        loader
+            .register(recorder(Manifest::new("history", "Hist"), &c, &o, false))
+            .expect("b");
         let order = loader.setup_order().expect("order");
         let pos = |d: &str| order.iter().position(|x| x == d).expect("present");
         assert!(pos("history") < pos("recorder"));
@@ -354,10 +401,20 @@ mod tests {
     fn setup_order_missing_hard_dependency_errors() {
         let (c, o) = harness();
         let mut loader = IntegrationLoader::new();
-        loader.register(recorder(Manifest::new("light", "Light").with_dependencies(&["nope"]), &c, &o, false)).expect("a");
+        loader
+            .register(recorder(
+                Manifest::new("light", "Light").with_dependencies(&["nope"]),
+                &c,
+                &o,
+                false,
+            ))
+            .expect("a");
         assert_eq!(
             loader.setup_order().unwrap_err(),
-            LoaderError::MissingDependency { domain: "light".into(), dependency: "nope".into() }
+            LoaderError::MissingDependency {
+                domain: "light".into(),
+                dependency: "nope".into()
+            }
         );
     }
 
@@ -365,17 +422,43 @@ mod tests {
     fn setup_order_detects_cycle() {
         let (c, o) = harness();
         let mut loader = IntegrationLoader::new();
-        loader.register(recorder(Manifest::new("a", "A").with_dependencies(&["b"]), &c, &o, false)).expect("a");
-        loader.register(recorder(Manifest::new("b", "B").with_dependencies(&["a"]), &c, &o, false)).expect("b");
-        assert!(matches!(loader.setup_order().unwrap_err(), LoaderError::DependencyCycle(_)));
+        loader
+            .register(recorder(
+                Manifest::new("a", "A").with_dependencies(&["b"]),
+                &c,
+                &o,
+                false,
+            ))
+            .expect("a");
+        loader
+            .register(recorder(
+                Manifest::new("b", "B").with_dependencies(&["a"]),
+                &c,
+                &o,
+                false,
+            ))
+            .expect("b");
+        assert!(matches!(
+            loader.setup_order().unwrap_err(),
+            LoaderError::DependencyCycle(_)
+        ));
     }
 
     #[test]
     fn setup_all_runs_in_order_and_touches_core_context() {
         let (c, o) = harness();
         let mut loader = IntegrationLoader::new();
-        loader.register(recorder(Manifest::new("hue", "Hue").with_dependencies(&["network"]), &c, &o, false)).expect("a");
-        loader.register(recorder(Manifest::new("network", "Net"), &c, &o, false)).expect("b");
+        loader
+            .register(recorder(
+                Manifest::new("hue", "Hue").with_dependencies(&["network"]),
+                &c,
+                &o,
+                false,
+            ))
+            .expect("a");
+        loader
+            .register(recorder(Manifest::new("network", "Net"), &c, &o, false))
+            .expect("b");
 
         let ctx = CoreContext::new();
         let report = loader.setup_all(&ctx).expect("report");
@@ -396,8 +479,17 @@ mod tests {
         let (c, o) = harness();
         let mut loader = IntegrationLoader::new();
         // network fails; hue depends on it and must be skipped (not called)
-        loader.register(recorder(Manifest::new("network", "Net"), &c, &o, true)).expect("a");
-        loader.register(recorder(Manifest::new("hue", "Hue").with_dependencies(&["network"]), &c, &o, false)).expect("b");
+        loader
+            .register(recorder(Manifest::new("network", "Net"), &c, &o, true))
+            .expect("a");
+        loader
+            .register(recorder(
+                Manifest::new("hue", "Hue").with_dependencies(&["network"]),
+                &c,
+                &o,
+                false,
+            ))
+            .expect("b");
 
         let ctx = CoreContext::new();
         let report = loader.setup_all(&ctx).expect("report");
@@ -414,8 +506,12 @@ mod tests {
     fn setup_all_continues_past_independent_failure() {
         let (c, o) = harness();
         let mut loader = IntegrationLoader::new();
-        loader.register(recorder(Manifest::new("broken", "Broken"), &c, &o, true)).expect("a");
-        loader.register(recorder(Manifest::new("fine", "Fine"), &c, &o, false)).expect("b");
+        loader
+            .register(recorder(Manifest::new("broken", "Broken"), &c, &o, true))
+            .expect("a");
+        loader
+            .register(recorder(Manifest::new("fine", "Fine"), &c, &o, false))
+            .expect("b");
 
         let ctx = CoreContext::new();
         let report = loader.setup_all(&ctx).expect("report");

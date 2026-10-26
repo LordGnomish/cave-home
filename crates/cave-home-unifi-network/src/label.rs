@@ -122,15 +122,30 @@ mod tests {
 
     #[test]
     fn blocked_and_unblocked_use_friendly_name() {
-        assert_eq!(client_blocked("Kid's tablet", Lang::En), "Kid's tablet is blocked");
-        assert_eq!(client_blocked("Kinder-Tablet", Lang::De), "Kinder-Tablet ist gesperrt");
-        assert_eq!(client_unblocked("Telefon", Lang::Tr), "Telefon yeniden çevrimiçi");
+        assert_eq!(
+            client_blocked("Kid's tablet", Lang::En),
+            "Kid's tablet is blocked"
+        );
+        assert_eq!(
+            client_blocked("Kinder-Tablet", Lang::De),
+            "Kinder-Tablet ist gesperrt"
+        );
+        assert_eq!(
+            client_unblocked("Telefon", Lang::Tr),
+            "Telefon yeniden çevrimiçi"
+        );
     }
 
     #[test]
     fn internet_status_three_langs() {
-        assert_eq!(internet_status(InternetState::Up, Lang::En), "Internet is up");
-        assert_eq!(internet_status(InternetState::NoUplink, Lang::De), "Internet ist weg");
+        assert_eq!(
+            internet_status(InternetState::Up, Lang::En),
+            "Internet is up"
+        );
+        assert_eq!(
+            internet_status(InternetState::NoUplink, Lang::De),
+            "Internet ist weg"
+        );
         assert_eq!(
             internet_status(InternetState::GatewayDown, Lang::Tr),
             "İnternet kutusu kapalı"
@@ -141,7 +156,10 @@ mod tests {
     fn summary_sentence_reads_like_a_person() {
         let s = summarize(&[], &[], &[]);
         let sentence = summary_sentence(&s, true, Lang::En);
-        assert_eq!(sentence, "0 devices connected. Guest Wi-Fi is on. The internet box is offline");
+        assert_eq!(
+            sentence,
+            "0 devices connected. Guest Wi-Fi is on. The internet box is offline"
+        );
     }
 
     #[test]
@@ -150,9 +168,22 @@ mod tests {
         // / addressing terms. We scan every user-facing string this module can
         // produce in all three languages.
         const BANNED: &[&str] = &[
-            "controller", "WebSocket", "REST", "API", "MAC", "SSID", "VLAN",
-            "PoE", "port", "subnet", "uplink", "MQTT", "Zigbee", "entity_id",
-            "pod", "kubelet",
+            "controller",
+            "WebSocket",
+            "REST",
+            "API",
+            "MAC",
+            "SSID",
+            "VLAN",
+            "PoE",
+            "port",
+            "subnet",
+            "uplink",
+            "MQTT",
+            "Zigbee",
+            "entity_id",
+            "pod",
+            "kubelet",
         ];
         let names = ["Tablet", "Phone"];
         let mut texts: Vec<String> = Vec::new();
@@ -161,7 +192,11 @@ mod tests {
             texts.push(devices_connected(12, lang));
             texts.push(guest_wifi_state(true, lang).to_string());
             texts.push(guest_wifi_state(false, lang).to_string());
-            for st in [InternetState::Up, InternetState::NoUplink, InternetState::GatewayDown] {
+            for st in [
+                InternetState::Up,
+                InternetState::NoUplink,
+                InternetState::GatewayDown,
+            ] {
                 texts.push(internet_status(st, lang).to_string());
             }
             for n in names {

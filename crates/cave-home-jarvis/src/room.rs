@@ -137,13 +137,18 @@ mod tests {
     #[test]
     fn devices_in_room_are_listed() {
         let r = registry().with_device("mic-living-2", "living room");
-        assert_eq!(r.devices_in("living room"), vec!["mic-living", "mic-living-2"]);
+        assert_eq!(
+            r.devices_in("living room"),
+            vec!["mic-living", "mic-living-2"]
+        );
         assert_eq!(r.len(), 4);
     }
 
     #[test]
     fn context_carries_room_and_speaker() {
-        let ctx = registry().context_for("mic-kitchen", Some("Sanja".into())).unwrap();
+        let ctx = registry()
+            .context_for("mic-kitchen", Some("Sanja".into()))
+            .unwrap();
         assert_eq!(ctx.room.as_deref(), Some("kitchen"));
         assert_eq!(ctx.speaker.as_deref(), Some("Sanja"));
     }
@@ -152,12 +157,18 @@ mod tests {
     fn deictic_target_resolves_to_room() {
         let r = registry();
         assert_eq!(r.resolve_target("mic-office", "here").unwrap(), "office");
-        assert_eq!(r.resolve_target("mic-office", "this room").unwrap(), "office");
+        assert_eq!(
+            r.resolve_target("mic-office", "this room").unwrap(),
+            "office"
+        );
     }
 
     #[test]
     fn explicit_target_is_unchanged() {
         let r = registry();
-        assert_eq!(r.resolve_target("mic-office", "the garage").unwrap(), "the garage");
+        assert_eq!(
+            r.resolve_target("mic-office", "the garage").unwrap(),
+            "the garage"
+        );
     }
 }

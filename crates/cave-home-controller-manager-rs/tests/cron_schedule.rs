@@ -2,7 +2,7 @@
 //! Unit tests for the 5-field cron expression parser + next-fire computation
 //! (`robfig/cron` standard-parser semantics, as used by `pkg/controller/cronjob`).
 
-use cave_home_controller_manager_rs::schedule::{CronSchedule, CronError};
+use cave_home_controller_manager_rs::schedule::{CronError, CronSchedule};
 
 /// 2021-01-01T00:00:00Z — a known Friday — as epoch seconds.
 const FRIDAY_2021: i64 = 1_609_459_200;
@@ -101,22 +101,46 @@ fn leap_year_february_29_is_reachable() {
 
 #[test]
 fn rejects_wrong_field_count() {
-    assert!(matches!(CronSchedule::parse("* * * *"), Err(CronError::FieldCount(4))));
-    assert!(matches!(CronSchedule::parse("* * * * * *"), Err(CronError::FieldCount(6))));
+    assert!(matches!(
+        CronSchedule::parse("* * * *"),
+        Err(CronError::FieldCount(4))
+    ));
+    assert!(matches!(
+        CronSchedule::parse("* * * * * *"),
+        Err(CronError::FieldCount(6))
+    ));
 }
 
 #[test]
 fn rejects_out_of_range_values() {
-    assert!(CronSchedule::parse("60 * * * *").is_err(), "minute 60 is out of range");
-    assert!(CronSchedule::parse("* 24 * * *").is_err(), "hour 24 is out of range");
-    assert!(CronSchedule::parse("* * 0 * *").is_err(), "day-of-month 0 is out of range");
-    assert!(CronSchedule::parse("* * * 13 *").is_err(), "month 13 is out of range");
-    assert!(CronSchedule::parse("* * * * 8").is_err(), "day-of-week 8 is out of range");
+    assert!(
+        CronSchedule::parse("60 * * * *").is_err(),
+        "minute 60 is out of range"
+    );
+    assert!(
+        CronSchedule::parse("* 24 * * *").is_err(),
+        "hour 24 is out of range"
+    );
+    assert!(
+        CronSchedule::parse("* * 0 * *").is_err(),
+        "day-of-month 0 is out of range"
+    );
+    assert!(
+        CronSchedule::parse("* * * 13 *").is_err(),
+        "month 13 is out of range"
+    );
+    assert!(
+        CronSchedule::parse("* * * * 8").is_err(),
+        "day-of-week 8 is out of range"
+    );
 }
 
 #[test]
 fn rejects_inverted_ranges_and_garbage() {
-    assert!(CronSchedule::parse("5-3 * * * *").is_err(), "inverted range");
+    assert!(
+        CronSchedule::parse("5-3 * * * *").is_err(),
+        "inverted range"
+    );
     assert!(CronSchedule::parse("x * * * *").is_err(), "non-numeric");
     assert!(CronSchedule::parse("*/0 * * * *").is_err(), "zero step");
 }

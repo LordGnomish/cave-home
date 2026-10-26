@@ -62,13 +62,9 @@ impl NodeRole {
     pub fn default_components(self) -> BTreeSet<Component> {
         match self {
             Self::Hub => Component::ALL.into_iter().collect(),
-            Self::Secondary => [
-                Component::Orchestration,
-                Component::Broker,
-                Component::Core,
-            ]
-            .into_iter()
-            .collect(),
+            Self::Secondary => [Component::Orchestration, Component::Broker, Component::Core]
+                .into_iter()
+                .collect(),
             Self::Ml => [Component::Orchestration, Component::Cameras]
                 .into_iter()
                 .collect(),
@@ -253,7 +249,10 @@ impl fmt::Display for ConfigError {
                 "the home's name `{n}` is not allowed — use letters, numbers and dashes"
             ),
             Self::BadDataDir(d) => {
-                write!(f, "the data folder `{d}` must be a full path starting with /")
+                write!(
+                    f,
+                    "the data folder `{d}` must be a full path starting with /"
+                )
             }
             Self::BadBindAddr(a) => write!(f, "the network address `{a}` is empty"),
             Self::BadPort => write!(f, "the network port must be between 1 and 65535"),
@@ -262,7 +261,10 @@ impl fmt::Display for ConfigError {
                 "a camera-helper node must have the Cameras feature turned on, or it has nothing to do"
             ),
             Self::NoComponents => {
-                write!(f, "no home features are turned on — this node would do nothing")
+                write!(
+                    f,
+                    "no home features are turned on — this node would do nothing"
+                )
             }
             Self::MissingOrchestration => write!(
                 f,
@@ -300,7 +302,12 @@ impl Config {
         env: &ConfigLayer,
         flags: &ConfigLayer,
     ) -> Result<Self, ConfigError> {
-        Self::from_layers(&[ConfigLayer::defaults(), file.clone(), env.clone(), flags.clone()])
+        Self::from_layers(&[
+            ConfigLayer::defaults(),
+            file.clone(),
+            env.clone(),
+            flags.clone(),
+        ])
     }
 
     fn resolve(merged: ConfigLayer) -> Result<Self, ConfigError> {
@@ -356,8 +363,8 @@ impl Config {
         }
         // Charter §5: pillars run in-process under the orchestration layer, so
         // it must be present whenever any other pillar is enabled.
-        let only_orchestration = self.components.len() == 1
-            && self.components.contains(&Component::Orchestration);
+        let only_orchestration =
+            self.components.len() == 1 && self.components.contains(&Component::Orchestration);
         if !self.components.contains(&Component::Orchestration) && !only_orchestration {
             return Err(ConfigError::MissingOrchestration);
         }
@@ -392,9 +399,8 @@ mod tests {
         let mut file = ConfigLayer::empty(Layer::File);
         file.node_name = Some("livingroom".to_string());
         file.bind_port = Some(9000);
-        let cfg =
-            Config::resolve_standard(&file, &ConfigLayer::empty(Layer::Env), &flags_layer())
-                .expect("valid");
+        let cfg = Config::resolve_standard(&file, &ConfigLayer::empty(Layer::Env), &flags_layer())
+            .expect("valid");
         assert_eq!(cfg.node_name, "livingroom");
         assert_eq!(cfg.bind_port, 9000);
         // Untouched fields fall back to defaults.
@@ -410,7 +416,11 @@ mod tests {
         env.bind_port = Some(9100);
         let cfg = Config::resolve_standard(&file, &env, &flags_layer()).expect("valid");
         assert_eq!(cfg.bind_port, 9100, "env beats file");
-        assert_eq!(cfg.log_level, LogLevel::Warn, "file value kept where env silent");
+        assert_eq!(
+            cfg.log_level,
+            LogLevel::Warn,
+            "file value kept where env silent"
+        );
     }
 
     #[test]

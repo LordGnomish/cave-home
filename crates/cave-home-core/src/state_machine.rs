@@ -40,7 +40,10 @@ pub struct StateMachine {
 impl StateMachine {
     #[must_use]
     pub fn new(bus: EventBus) -> Self {
-        Self { inner: Arc::new(RwLock::new(HashMap::new())), bus }
+        Self {
+            inner: Arc::new(RwLock::new(HashMap::new())),
+            bus,
+        }
     }
 
     pub fn get(&self, id: &EntityId) -> Option<State> {
@@ -93,9 +96,18 @@ impl StateMachine {
             "old_state": old,
             "new_state": state,
         });
-        self.bus.fire(Event::new(EVENT_STATE_CHANGED, payload, EventOrigin::Local, context));
+        self.bus.fire(Event::new(
+            EVENT_STATE_CHANGED,
+            payload,
+            EventOrigin::Local,
+            context,
+        ));
 
-        Some(StateChange { entity_id: id, old_state: old, new_state: state })
+        Some(StateChange {
+            entity_id: id,
+            old_state: old,
+            new_state: state,
+        })
     }
 
     pub fn remove(&self, id: &EntityId) -> Option<State> {
@@ -147,22 +159,49 @@ mod tests {
         let (_id, mut rx) = bus.listen(EVENT_STATE_CHANGED);
         let m = StateMachine::new(bus);
 
-        let first = m.set(light_kitchen(), "on", StateAttributes::new(), Context::new()).expect("emit");
+        let first = m
+            .set(
+                light_kitchen(),
+                "on",
+                StateAttributes::new(),
+                Context::new(),
+            )
+            .expect("emit");
         assert!(first.old_state.is_none());
-        assert_eq!(rx.recv().await.expect("evt").data["entity_id"], "light.kitchen");
+        assert_eq!(
+            rx.recv().await.expect("evt").data["entity_id"],
+            "light.kitchen"
+        );
 
         // byte-identical set must not emit
-        assert!(m.set(light_kitchen(), "on", StateAttributes::new(), Context::new()).is_none());
+        assert!(
+            m.set(
+                light_kitchen(),
+                "on",
+                StateAttributes::new(),
+                Context::new()
+            )
+            .is_none()
+        );
     }
 
     #[tokio::test]
     async fn attribute_only_change_keeps_last_changed_but_updates_last_updated() {
         let m = StateMachine::new(EventBus::new());
-        let first = m.set(light_kitchen(), "on", StateAttributes::new(), Context::new()).expect("emit");
+        let first = m
+            .set(
+                light_kitchen(),
+                "on",
+                StateAttributes::new(),
+                Context::new(),
+            )
+            .expect("emit");
         let lc = first.new_state.last_changed;
         let mut attrs = StateAttributes::new();
         attrs.insert("brightness".into(), json!(128));
-        let second = m.set(light_kitchen(), "on", attrs, Context::new()).expect("attr emit");
+        let second = m
+            .set(light_kitchen(), "on", attrs, Context::new())
+            .expect("attr emit");
         // last_changed carries forward (value did not change) ...
         assert_eq!(second.new_state.last_changed, lc);
         // ... but last_updated is at least the carried last_changed (it was
@@ -175,10 +214,19 @@ mod tests {
     #[tokio::test]
     async fn value_change_resets_last_changed_and_carries_context() {
         let m = StateMachine::new(EventBus::new());
-        let on = m.set(light_kitchen(), "on", StateAttributes::new(), Context::new()).expect("on");
+        let on = m
+            .set(
+                light_kitchen(),
+                "on",
+                StateAttributes::new(),
+                Context::new(),
+            )
+            .expect("on");
         let lc_on = on.new_state.last_changed;
         let ctx = Context::with_user("alice");
-        let off = m.set(light_kitchen(), "off", StateAttributes::new(), ctx.clone()).expect("off");
+        let off = m
+            .set(light_kitchen(), "off", StateAttributes::new(), ctx.clone())
+            .expect("off");
         // a real value change advances last_changed beyond the previous one
         assert!(off.new_state.last_changed >= lc_on);
         assert_eq!(off.old_state.as_ref().map(|s| s.state.as_str()), Some("on"));
@@ -193,7 +241,8 @@ mod tests {
         assert!(m.get(&id).is_none());
         assert!(!m.is_state(&id, "on"));
 
-        m.set(id.clone(), "on", StateAttributes::new(), Context::new()).expect("set");
+        m.set(id.clone(), "on", StateAttributes::new(), Context::new())
+            .expect("set");
         assert!(m.is_state(&id, "on"));
         assert!(!m.is_state(&id, "off"));
         assert_eq!(m.get(&id).map(|s| s.state), Some("on".to_owned()));
@@ -208,9 +257,24 @@ mod tests {
     fn entity_ids_all_and_domain_query() {
         let m = StateMachine::new(EventBus::new());
         let ctx = Context::new();
-        m.set(EntityId::new("light", "kitchen").expect("id"), "on", StateAttributes::new(), ctx.clone());
-        m.set(EntityId::new("light", "hall").expect("id"), "off", StateAttributes::new(), ctx.clone());
-        m.set(EntityId::new("lock", "front").expect("id"), "locked", StateAttributes::new(), ctx);
+        m.set(
+            EntityId::new("light", "kitchen").expect("id"),
+            "on",
+            StateAttributes::new(),
+            ctx.clone(),
+        );
+        m.set(
+            EntityId::new("light", "hall").expect("id"),
+            "off",
+            StateAttributes::new(),
+            ctx.clone(),
+        );
+        m.set(
+            EntityId::new("lock", "front").expect("id"),
+            "locked",
+            StateAttributes::new(),
+            ctx,
+        );
 
         // entity_ids() returns every tracked id (order-independent).
         let mut all_ids = m.entity_ids();

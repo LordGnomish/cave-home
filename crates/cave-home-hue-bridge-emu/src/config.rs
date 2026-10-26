@@ -96,10 +96,7 @@ impl BridgeIdentity {
     /// Reference: Hue developer-portal "Bridge discovery" — UPnP UDN format.
     #[must_use]
     pub fn ssdp_udn(&self) -> String {
-        format!(
-            "uuid:2f402f80-da50-11e1-9b23-{}",
-            self.mac.replace(':', "")
-        )
+        format!("uuid:2f402f80-da50-11e1-9b23-{}", self.mac.replace(':', ""))
     }
 }
 

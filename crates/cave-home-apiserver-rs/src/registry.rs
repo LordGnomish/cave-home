@@ -113,17 +113,23 @@ impl Registry {
         gvk::is_namespaced(gvr).ok_or_else(|| {
             Status::new(
                 StatusReason::NotFound,
-                format!("the server could not find the requested resource ({})", gvr.resource),
+                format!(
+                    "the server could not find the requested resource ({})",
+                    gvr.resource
+                ),
             )
         })
     }
 
     fn record(&mut self, gvr: &GroupVersionResource, kind: WatchEventKind, object: Value, rv: u64) {
-        self.history.entry(gvr.clone()).or_default().push(WatchEvent {
-            kind,
-            object,
-            resource_version: rv,
-        });
+        self.history
+            .entry(gvr.clone())
+            .or_default()
+            .push(WatchEvent {
+                kind,
+                object,
+                resource_version: rv,
+            });
     }
 
     /// CREATE: reject a duplicate name (`AlreadyExists` 409). Assigns uid,
@@ -144,7 +150,12 @@ impl Registry {
             )));
         }
         let key = store_key(&m.namespace, &m.name);
-        if self.stores.get(gvr).map(|s| s.contains_key(&key)).unwrap_or(false) {
+        if self
+            .stores
+            .get(gvr)
+            .map(|s| s.contains_key(&key))
+            .unwrap_or(false)
+        {
             return Err(Status::already_exists(format!(
                 "{} \"{}\" already exists",
                 gvr.resource, m.name
@@ -195,7 +206,9 @@ impl Registry {
             .get(gvr)
             .and_then(|s| s.get(&key))
             .cloned()
-            .ok_or_else(|| Status::not_found(format!("{} \"{}\" not found", gvr.resource, incoming.name)))?;
+            .ok_or_else(|| {
+                Status::not_found(format!("{} \"{}\" not found", gvr.resource, incoming.name))
+            })?;
         let current = meta::read_meta(&existing);
 
         // Optimistic concurrency: the client must supply the current rv.
@@ -248,7 +261,9 @@ impl Registry {
             .get(gvr)
             .and_then(|s| s.get(&key))
             .cloned()
-            .ok_or_else(|| Status::not_found(format!("{} \"{}\" not found", gvr.resource, incoming.name)))?;
+            .ok_or_else(|| {
+                Status::not_found(format!("{} \"{}\" not found", gvr.resource, incoming.name))
+            })?;
         let current = meta::read_meta(&stored);
 
         // Optimistic concurrency: the client must supply the current rv.
@@ -479,7 +494,12 @@ impl Registry {
 
     /// Convenience: read metadata of a stored object (None if absent).
     #[must_use]
-    pub fn meta_of(&self, gvr: &GroupVersionResource, namespace: &str, name: &str) -> Option<ObjectMeta> {
+    pub fn meta_of(
+        &self,
+        gvr: &GroupVersionResource,
+        namespace: &str,
+        name: &str,
+    ) -> Option<ObjectMeta> {
         self.stores
             .get(gvr)
             .and_then(|s| s.get(&store_key(namespace, name)))
@@ -497,10 +517,10 @@ mod tests {
     }
 
     fn pod(ns: &str, name: &str) -> Value {
-        obj([("metadata", obj([
-            ("name", Value::from(name)),
-            ("namespace", Value::from(ns)),
-        ]))])
+        obj([(
+            "metadata",
+            obj([("name", Value::from(name)), ("namespace", Value::from(ns))]),
+        )])
     }
 
     #[test]
@@ -534,7 +554,10 @@ mod tests {
     fn unknown_resource_is_not_found() {
         let r = Registry::new();
         let gvr = GroupVersionResource::new("x.io", "v1", "widgets");
-        assert_eq!(r.get(&gvr, "default", "a").unwrap_err().reason, StatusReason::NotFound);
+        assert_eq!(
+            r.get(&gvr, "default", "a").unwrap_err().reason,
+            StatusReason::NotFound
+        );
     }
 
     #[test]
@@ -543,12 +566,15 @@ mod tests {
         let created = r.create(&pods(), pod("default", "nginx")).expect("create");
         // Stale: pretend client still holds rv "0".
         let mut stale = created.clone();
-        meta::write_meta(&mut stale, &ObjectMeta {
-            name: "nginx".into(),
-            namespace: "default".into(),
-            resource_version: "999".into(),
-            ..ObjectMeta::default()
-        });
+        meta::write_meta(
+            &mut stale,
+            &ObjectMeta {
+                name: "nginx".into(),
+                namespace: "default".into(),
+                resource_version: "999".into(),
+                ..ObjectMeta::default()
+            },
+        );
         let err = r.update(&pods(), stale).expect_err("conflict");
         assert_eq!(err.reason, StatusReason::Conflict);
         assert_eq!(err.code, 409);
@@ -588,14 +614,23 @@ mod tests {
     fn delete_with_finalizers_sets_deletion_timestamp_and_keeps_object() {
         let mut r = Registry::new();
         let mut o = pod("default", "p");
-        o.insert("metadata", obj([
-            ("name", Value::from("p")),
-            ("namespace", Value::from("default")),
-            ("finalizers", Value::Array(vec![Value::from("foregroundDeletion")])),
-        ]));
+        o.insert(
+            "metadata",
+            obj([
+                ("name", Value::from("p")),
+                ("namespace", Value::from("default")),
+                (
+                    "finalizers",
+                    Value::Array(vec![Value::from("foregroundDeletion")]),
+                ),
+            ]),
+        );
         r.create(&pods(), o).expect("create");
         let (obj_after, removed) = r.delete(&pods(), "default", "p").expect("delete");
-        assert!(!removed, "object must NOT be removed while finalizers present");
+        assert!(
+            !removed,
+            "object must NOT be removed while finalizers present"
+        );
         assert!(meta::read_meta(&obj_after).is_being_deleted());
         // Still gettable.
         assert!(r.get(&pods(), "default", "p").is_ok());
@@ -605,11 +640,17 @@ mod tests {
     fn delete_after_finalizers_cleared_removes_object() {
         let mut r = Registry::new();
         let mut o = pod("default", "p");
-        o.insert("metadata", obj([
-            ("name", Value::from("p")),
-            ("namespace", Value::from("default")),
-            ("finalizers", Value::Array(vec![Value::from("foregroundDeletion")])),
-        ]));
+        o.insert(
+            "metadata",
+            obj([
+                ("name", Value::from("p")),
+                ("namespace", Value::from("default")),
+                (
+                    "finalizers",
+                    Value::Array(vec![Value::from("foregroundDeletion")]),
+                ),
+            ]),
+        );
         let created = r.create(&pods(), o).expect("create");
         r.delete(&pods(), "default", "p").expect("mark");
 
@@ -617,7 +658,8 @@ mod tests {
         let mut cleared = r.get(&pods(), "default", "p").expect("get");
         let mut m = meta::read_meta(&cleared);
         m.finalizers.clear();
-        m.resource_version = meta::read_meta(&r.get(&pods(), "default", "p").unwrap()).resource_version;
+        m.resource_version =
+            meta::read_meta(&r.get(&pods(), "default", "p").unwrap()).resource_version;
         let _ = created;
         meta::write_meta(&mut cleared, &m);
         r.update(&pods(), cleared).expect("clear finalizers");
@@ -643,7 +685,9 @@ mod tests {
         o.insert("spec", obj([("replicas", Value::from(1_i64))]));
         r.create(&pods(), o).expect("create");
         let patch = obj([("spec", obj([("replicas", Value::from(5_i64))]))]);
-        let out = r.patch_merge(&pods(), "default", "p", &patch).expect("patch");
+        let out = r
+            .patch_merge(&pods(), "default", "p", &patch)
+            .expect("patch");
         assert_eq!(out.pointer("spec.replicas"), Some(&Value::from(5_i64)));
         assert_eq!(meta::read_meta(&out).generation, 2);
     }
@@ -652,11 +696,14 @@ mod tests {
     fn list_filters_by_label_selector() {
         let mut r = Registry::new();
         let mut a = pod("default", "a");
-        a.insert("metadata", obj([
-            ("name", Value::from("a")),
-            ("namespace", Value::from("default")),
-            ("labels", obj([("app", Value::from("web"))])),
-        ]));
+        a.insert(
+            "metadata",
+            obj([
+                ("name", Value::from("a")),
+                ("namespace", Value::from("default")),
+                ("labels", obj([("app", Value::from("web"))])),
+            ]),
+        );
         r.create(&pods(), a).expect("a");
         r.create(&pods(), pod("default", "b")).expect("b");
 
@@ -684,7 +731,10 @@ mod tests {
         for n in ["a", "b", "c", "d", "e"] {
             r.create(&pods(), pod("default", n)).expect("create");
         }
-        let mut opts = ListOptions { limit: 2, ..ListOptions::default() };
+        let mut opts = ListOptions {
+            limit: 2,
+            ..ListOptions::default()
+        };
         let page1 = r.list(&pods(), &opts).expect("page1");
         assert_eq!(page1.items.len(), 2);
         assert_eq!(meta::read_meta(&page1.items[0]).name, "a");
@@ -706,7 +756,10 @@ mod tests {
         let mut r = Registry::new();
         r.create(&pods(), pod("ns1", "a")).expect("a");
         r.create(&pods(), pod("ns2", "b")).expect("b");
-        let opts = ListOptions { namespace: Some("ns1".into()), ..ListOptions::default() };
+        let opts = ListOptions {
+            namespace: Some("ns1".into()),
+            ..ListOptions::default()
+        };
         let res = r.list(&pods(), &opts).expect("list");
         assert_eq!(res.items.len(), 1);
         assert_eq!(meta::read_meta(&res.items[0]).namespace, "ns1");
@@ -733,14 +786,20 @@ mod tests {
         let kinds: Vec<_> = events.iter().map(|e| e.kind).collect();
         assert_eq!(
             kinds,
-            vec![WatchEventKind::Added, WatchEventKind::Modified, WatchEventKind::Deleted]
+            vec![
+                WatchEventKind::Added,
+                WatchEventKind::Modified,
+                WatchEventKind::Deleted
+            ]
         );
     }
 
     #[test]
     fn create_rejects_missing_name() {
         let mut r = Registry::new();
-        let err = r.create(&pods(), obj([("metadata", Value::object())])).expect_err("no name");
+        let err = r
+            .create(&pods(), obj([("metadata", Value::object())]))
+            .expect_err("no name");
         assert_eq!(err.reason, StatusReason::Invalid);
     }
 
@@ -762,7 +821,10 @@ mod tests {
         // Spec is preserved from the stored object, not the client's submission.
         assert_eq!(out.pointer("spec.replicas"), Some(&Value::from(1_i64)));
         // Status is taken from the submission.
-        assert_eq!(out.pointer("status.readyReplicas"), Some(&Value::from(1_i64)));
+        assert_eq!(
+            out.pointer("status.readyReplicas"),
+            Some(&Value::from(1_i64))
+        );
     }
 
     #[test]
@@ -786,12 +848,15 @@ mod tests {
         let mut r = Registry::new();
         let created = r.create(&pods(), pod("default", "web")).expect("create");
         let mut stale = created.clone();
-        meta::write_meta(&mut stale, &ObjectMeta {
-            name: "web".into(),
-            namespace: "default".into(),
-            resource_version: "999".into(),
-            ..ObjectMeta::default()
-        });
+        meta::write_meta(
+            &mut stale,
+            &ObjectMeta {
+                name: "web".into(),
+                namespace: "default".into(),
+                resource_version: "999".into(),
+                ..ObjectMeta::default()
+            },
+        );
         stale.insert("status", obj([("ready", Value::from(true))]));
         let err = r.update_status(&pods(), stale).expect_err("conflict");
         assert_eq!(err.reason, StatusReason::Conflict);

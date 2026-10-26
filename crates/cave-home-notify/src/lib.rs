@@ -73,6 +73,6 @@ pub mod topic;
 pub use label::Lang;
 pub use notification::{Attachment, ClickAction, DedupKey, Notification, Tick};
 pub use priority::Priority;
-pub use route::{route, Channel, Delivery, DeliveryPlan, Subscriber};
+pub use route::{Channel, Delivery, DeliveryPlan, Subscriber, route};
 pub use throttle::{DedupCache, RateLimiter};
 pub use topic::{Topic, TopicError};

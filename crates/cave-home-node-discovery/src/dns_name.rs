@@ -5,7 +5,7 @@
 //! length-prefixed form, terminated by the zero-length root label. Names are
 //! compared case-insensitively (DNS is ASCII-case-insensitive, RFC 4343).
 
-use crate::label::{decode_label, encode_label, LabelError, MAX_LABEL_LEN};
+use crate::label::{LabelError, MAX_LABEL_LEN, decode_label, encode_label};
 
 /// The maximum length of an encoded name on the wire, including the root byte
 /// (RFC 1035 §2.3.4).

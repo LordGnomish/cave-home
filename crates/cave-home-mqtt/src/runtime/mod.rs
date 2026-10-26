@@ -15,11 +15,11 @@ use crate::v5::packet::PacketV5;
 use frame::{read_packet, write_packet};
 use std::collections::HashMap;
 use std::io;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 use tokio_rustls::TlsAcceptor;
 
 /// A message bound for one connection's writer task.
@@ -88,7 +88,10 @@ impl Hub {
                         let _ = old_tx.send(ConnMsg::Close);
                     }
                 }
-                Action::Send { client_id: cid, packet } => {
+                Action::Send {
+                    client_id: cid,
+                    packet,
+                } => {
                     if let PacketV5::ConnAck(ack) = packet {
                         client_id = Some(cid.clone());
                         accepted = ack.reason_code == crate::v5::reason::ReasonCode::Success;
@@ -104,7 +107,10 @@ impl Hub {
             return None;
         }
         let conn_id = self.next_conn.fetch_add(1, Ordering::Relaxed);
-        self.conns.lock().await.insert(client_id.clone(), (conn_id, tx.clone()));
+        self.conns
+            .lock()
+            .await
+            .insert(client_id.clone(), (conn_id, tx.clone()));
         Some((client_id, conn_id))
     }
 
@@ -192,7 +198,9 @@ pub struct Server {
 
 impl Server {
     pub fn new(broker: Broker) -> Self {
-        Self { hub: Hub::new(broker) }
+        Self {
+            hub: Hub::new(broker),
+        }
     }
 
     /// Accept plain MQTT-over-TCP connections (default port 1883).

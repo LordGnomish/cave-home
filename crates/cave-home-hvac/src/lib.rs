@@ -51,11 +51,11 @@ pub mod mode;
 pub mod setpoint;
 pub mod temperature;
 
-pub use control::{decide, DecideError, Tolerance, ToleranceError};
+pub use control::{DecideError, Tolerance, ToleranceError, decide};
 pub use label::Lang;
 pub use mode::{FanMode, HvacAction, HvacMode, PresetMode};
 pub use setpoint::{Capabilities, CapabilityError, Setpoint, SetpointError};
 pub use temperature::{
-    celsius_to_fahrenheit, fahrenheit_to_celsius, Temperature, TemperatureError, MAX_CELSIUS,
-    MIN_CELSIUS,
+    MAX_CELSIUS, MIN_CELSIUS, Temperature, TemperatureError, celsius_to_fahrenheit,
+    fahrenheit_to_celsius,
 };

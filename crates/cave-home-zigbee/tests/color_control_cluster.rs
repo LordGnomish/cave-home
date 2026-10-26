@@ -6,8 +6,8 @@
 //! Wire vectors hand-computed from the ZCL §3.2.11 command tables.
 
 use cave_home_zigbee::color_control::{
-    attribute_id, command_id, ColorCommand, ColorControlState, ColorMode, ColorMoveMode,
-    ColorStepMode, HueDirection, COLOR_CONTROL_CLUSTER_ID,
+    COLOR_CONTROL_CLUSTER_ID, ColorCommand, ColorControlState, ColorMode, ColorMoveMode,
+    ColorStepMode, HueDirection, attribute_id, command_id,
 };
 
 #[test]
@@ -111,8 +111,11 @@ fn parse_step_hue() {
 #[test]
 fn parse_move_to_hue_and_saturation() {
     // §3.2.11.7: hue (u8) + saturation (u8) + transition_time (u16 LE).
-    let cmd =
-        ColorCommand::parse(command_id::MOVE_TO_HUE_AND_SATURATION, &[0x20, 0xfe, 0x14, 0x00]).unwrap();
+    let cmd = ColorCommand::parse(
+        command_id::MOVE_TO_HUE_AND_SATURATION,
+        &[0x20, 0xfe, 0x14, 0x00],
+    )
+    .unwrap();
     assert_eq!(
         cmd,
         ColorCommand::MoveToHueAndSaturation {
@@ -127,8 +130,11 @@ fn parse_move_to_hue_and_saturation() {
 fn parse_move_to_color() {
     // §3.2.11.8: color_x (u16 LE) + color_y (u16 LE) + transition_time (u16 LE).
     // x = 0x4ccc, y = 0x3333, t = 0x000a.
-    let cmd =
-        ColorCommand::parse(command_id::MOVE_TO_COLOR, &[0xcc, 0x4c, 0x33, 0x33, 0x0a, 0x00]).unwrap();
+    let cmd = ColorCommand::parse(
+        command_id::MOVE_TO_COLOR,
+        &[0xcc, 0x4c, 0x33, 0x33, 0x0a, 0x00],
+    )
+    .unwrap();
     assert_eq!(
         cmd,
         ColorCommand::MoveToColor {
@@ -143,8 +149,11 @@ fn parse_move_to_color() {
 fn parse_move_to_color_temperature() {
     // §3.2.11.11: color_temp_mireds (u16 LE) + transition_time (u16 LE).
     // 0x00fa = 250 mireds (4000 K), t = 0x0005.
-    let cmd =
-        ColorCommand::parse(command_id::MOVE_TO_COLOR_TEMPERATURE, &[0xfa, 0x00, 0x05, 0x00]).unwrap();
+    let cmd = ColorCommand::parse(
+        command_id::MOVE_TO_COLOR_TEMPERATURE,
+        &[0xfa, 0x00, 0x05, 0x00],
+    )
+    .unwrap();
     assert_eq!(
         cmd,
         ColorCommand::MoveToColorTemperature {

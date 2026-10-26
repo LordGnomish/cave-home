@@ -26,7 +26,12 @@ fn job(completions: i32, parallelism: i32, backoff: i32) -> Job {
 }
 
 fn finish_pods(c: &mut Cluster, job_uid: &str, phase: PodPhase, count: usize) {
-    let pods: Vec<_> = c.pods.list_owned_by(job_uid).into_iter().take(count).collect();
+    let pods: Vec<_> = c
+        .pods
+        .list_owned_by(job_uid)
+        .into_iter()
+        .take(count)
+        .collect();
     for mut p in pods {
         p.status.phase = phase;
         c.pods.update(p);
@@ -50,7 +55,11 @@ fn job_does_not_exceed_remaining_completions() {
     let j = c.jobs.create(job(3, 5, 6)); // parallelism 5 > completions 3
     let mut ctrl = JobController::new();
     ctrl.reconcile("prod/batch", &mut c, 0);
-    assert_eq!(c.pods.list_owned_by(&j.meta().uid).len(), 3, "capped at completions");
+    assert_eq!(
+        c.pods.list_owned_by(&j.meta().uid).len(),
+        3,
+        "capped at completions"
+    );
 }
 
 #[test]
@@ -62,7 +71,12 @@ fn job_backfills_after_successes() {
     finish_pods(&mut c, &j.meta().uid, PodPhase::Succeeded, 2);
     // Remove the succeeded pods from "active" by leaving them terminal; reconcile.
     ctrl.reconcile("prod/batch", &mut c, 1);
-    let active = c.pods.list_owned_by(&j.meta().uid).into_iter().filter(|p| p.is_active()).count();
+    let active = c
+        .pods
+        .list_owned_by(&j.meta().uid)
+        .into_iter()
+        .filter(|p| p.is_active())
+        .count();
     assert_eq!(active, 1, "one more pod to reach 3 completions");
     assert_eq!(c.jobs.get("prod/batch").unwrap().status.succeeded, 2);
 }
@@ -93,7 +107,14 @@ fn job_fails_after_backoff_limit() {
     assert!(failed.status.failed_final, "job marked failed");
     assert_eq!(failed.status.finished_at, Some(50));
     // No active pods remain on a failed job.
-    assert_eq!(c.pods.list_owned_by(&j.meta().uid).iter().filter(|p| p.is_active()).count(), 0);
+    assert_eq!(
+        c.pods
+            .list_owned_by(&j.meta().uid)
+            .iter()
+            .filter(|p| p.is_active())
+            .count(),
+        0
+    );
 }
 
 #[test]
@@ -107,7 +128,10 @@ fn completed_job_is_idempotent() {
     let before = c.jobs.get("prod/batch").unwrap();
     ctrl.reconcile("prod/batch", &mut c, 20);
     let after = c.jobs.get("prod/batch").unwrap();
-    assert_eq!(before.status.finished_at, after.status.finished_at, "finish time not bumped again");
+    assert_eq!(
+        before.status.finished_at, after.status.finished_at,
+        "finish time not bumped again"
+    );
 }
 
 #[test]

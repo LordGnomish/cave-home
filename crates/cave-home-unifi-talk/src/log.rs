@@ -97,7 +97,10 @@ impl CallLog {
     /// A log that retains at most `cap` most-recent records.
     #[must_use]
     pub const fn with_capacity(cap: usize) -> Self {
-        Self { records: Vec::new(), cap }
+        Self {
+            records: Vec::new(),
+            cap,
+        }
     }
 
     /// Append a record, evicting the oldest if the cap would be exceeded.
@@ -170,16 +173,29 @@ mod tests {
             CallState::Voicemail,
             100,
         );
-        assert!(!r.is_missed(), "a voicemail was answered by the machine, not missed");
+        assert!(
+            !r.is_missed(),
+            "a voicemail was answered by the machine, not missed"
+        );
     }
 
     #[test]
     fn log_keeps_records_in_order() {
         let mut log = CallLog::with_capacity(8);
         log.record(CallRecord::unanswered(
-            "Gate", "101", CallDirection::Incoming, CallState::Missed, 1,
+            "Gate",
+            "101",
+            CallDirection::Incoming,
+            CallState::Missed,
+            1,
         ));
-        log.record(CallRecord::answered("101", "Kitchen", CallDirection::Outgoing, 10, 3));
+        log.record(CallRecord::answered(
+            "101",
+            "Kitchen",
+            CallDirection::Outgoing,
+            10,
+            3,
+        ));
         assert_eq!(log.records().len(), 2);
         assert_eq!(log.records()[0].started_at, 1);
         assert_eq!(log.latest().map(|r| r.started_at), Some(3));
@@ -189,7 +205,13 @@ mod tests {
     fn log_evicts_oldest_past_cap() {
         let mut log = CallLog::with_capacity(2);
         for t in 1..=3 {
-            log.record(CallRecord::answered("a", "b", CallDirection::Incoming, 1, t));
+            log.record(CallRecord::answered(
+                "a",
+                "b",
+                CallDirection::Incoming,
+                1,
+                t,
+            ));
         }
         assert_eq!(log.records().len(), 2);
         assert_eq!(log.records()[0].started_at, 2, "oldest (t=1) evicted");
@@ -198,7 +220,13 @@ mod tests {
     #[test]
     fn zero_cap_records_nothing() {
         let mut log = CallLog::with_capacity(0);
-        log.record(CallRecord::answered("a", "b", CallDirection::Incoming, 1, 1));
+        log.record(CallRecord::answered(
+            "a",
+            "b",
+            CallDirection::Incoming,
+            1,
+            1,
+        ));
         assert!(log.records().is_empty());
         assert_eq!(log.latest(), None);
     }
@@ -207,12 +235,32 @@ mod tests {
     fn missed_count_and_total_talk_time() {
         let mut log = CallLog::with_capacity(8);
         log.record(CallRecord::unanswered(
-            "Gate", "101", CallDirection::Incoming, CallState::Missed, 1,
+            "Gate",
+            "101",
+            CallDirection::Incoming,
+            CallState::Missed,
+            1,
         ));
-        log.record(CallRecord::answered("101", "102", CallDirection::Outgoing, 30, 2));
-        log.record(CallRecord::answered("Gate", "101", CallDirection::Incoming, 12, 3));
+        log.record(CallRecord::answered(
+            "101",
+            "102",
+            CallDirection::Outgoing,
+            30,
+            2,
+        ));
+        log.record(CallRecord::answered(
+            "Gate",
+            "101",
+            CallDirection::Incoming,
+            12,
+            3,
+        ));
         log.record(CallRecord::unanswered(
-            "Gate", "101", CallDirection::Incoming, CallState::Missed, 4,
+            "Gate",
+            "101",
+            CallDirection::Incoming,
+            CallState::Missed,
+            4,
         ));
         assert_eq!(log.missed_count(), 2);
         assert_eq!(log.total_talk_time(), 42);

@@ -89,20 +89,31 @@ impl KineBackend {
     /// A backend over a fresh, empty kine store.
     #[must_use]
     pub fn new() -> Self {
-        Self { store: Store::new() }
+        Self {
+            store: Store::new(),
+        }
     }
 }
 
 fn internal(msg: impl std::fmt::Display) -> Status {
-    Status::new(StatusReason::InternalError, format!("kine backend error: {msg}"))
+    Status::new(
+        StatusReason::InternalError,
+        format!("kine backend error: {msg}"),
+    )
 }
 
 #[allow(clippy::cast_sign_loss)] // kine revisions are monotonic and non-negative
 impl Backend for KineBackend {
     fn create(&mut self, key: &str, value: &[u8]) -> Result<u64> {
-        match self.store.create(key.as_bytes(), value, 0).map_err(internal)? {
+        match self
+            .store
+            .create(key.as_bytes(), value, 0)
+            .map_err(internal)?
+        {
             Some(rev) => Ok(rev as u64),
-            None => Err(Status::already_exists(format!("key {key:?} already exists"))),
+            None => Err(Status::already_exists(format!(
+                "key {key:?} already exists"
+            ))),
         }
     }
 
@@ -111,14 +122,22 @@ impl Backend for KineBackend {
     }
 
     fn update(&mut self, key: &str, value: &[u8]) -> Result<u64> {
-        match self.store.update(key.as_bytes(), value, 0).map_err(internal)? {
+        match self
+            .store
+            .update(key.as_bytes(), value, 0)
+            .map_err(internal)?
+        {
             Some(rev) => Ok(rev as u64),
             None => Err(Status::not_found(format!("key {key:?} not found"))),
         }
     }
 
     fn delete(&mut self, key: &str) -> Result<bool> {
-        Ok(self.store.delete(key.as_bytes()).map_err(internal)?.is_some())
+        Ok(self
+            .store
+            .delete(key.as_bytes())
+            .map_err(internal)?
+            .is_some())
     }
 
     fn list(&self, prefix: &str) -> Result<Vec<(String, Vec<u8>)>> {
@@ -162,9 +181,15 @@ mod tests {
             "/registry/pods/default/nginx"
         );
         let nodes = GroupVersionResource::new("", "v1", "nodes");
-        assert_eq!(registry_key(&nodes, "", "worker-1"), "/registry/nodes/worker-1");
+        assert_eq!(
+            registry_key(&nodes, "", "worker-1"),
+            "/registry/nodes/worker-1"
+        );
         // Collection prefix (no name).
-        assert_eq!(registry_key(&pods(), "default", ""), "/registry/pods/default");
+        assert_eq!(
+            registry_key(&pods(), "default", ""),
+            "/registry/pods/default"
+        );
     }
 
     #[test]
@@ -173,7 +198,10 @@ mod tests {
         let key = registry_key(&pods(), "default", "nginx");
         let rev = b.create(&key, b"{\"kind\":\"Pod\"}").expect("create");
         assert!(rev >= 1);
-        assert_eq!(b.get(&key).expect("get").as_deref(), Some(&b"{\"kind\":\"Pod\"}"[..]));
+        assert_eq!(
+            b.get(&key).expect("get").as_deref(),
+            Some(&b"{\"kind\":\"Pod\"}"[..])
+        );
         assert_eq!(b.revision(), rev);
     }
 
@@ -199,7 +227,9 @@ mod tests {
     #[test]
     fn update_missing_is_not_found() {
         let mut b = KineBackend::new();
-        let err = b.update("/registry/pods/default/ghost", b"x").expect_err("missing");
+        let err = b
+            .update("/registry/pods/default/ghost", b"x")
+            .expect_err("missing");
         assert_eq!(err.reason, StatusReason::NotFound);
     }
 
@@ -217,12 +247,18 @@ mod tests {
     #[test]
     fn list_by_prefix_returns_sorted_live_rows() {
         let mut b = KineBackend::new();
-        b.create(&registry_key(&pods(), "default", "b"), b"B").expect("b");
-        b.create(&registry_key(&pods(), "default", "a"), b"A").expect("a");
-        b.create(&registry_key(&pods(), "other", "c"), b"C").expect("c");
+        b.create(&registry_key(&pods(), "default", "b"), b"B")
+            .expect("b");
+        b.create(&registry_key(&pods(), "default", "a"), b"A")
+            .expect("a");
+        b.create(&registry_key(&pods(), "other", "c"), b"C")
+            .expect("c");
         let in_default = b.list("/registry/pods/default").expect("list");
         let keys: Vec<&str> = in_default.iter().map(|(k, _)| k.as_str()).collect();
-        assert_eq!(keys, vec!["/registry/pods/default/a", "/registry/pods/default/b"]);
+        assert_eq!(
+            keys,
+            vec!["/registry/pods/default/a", "/registry/pods/default/b"]
+        );
         // The whole-resource prefix sees all three.
         assert_eq!(b.list("/registry/pods").expect("all").len(), 3);
     }

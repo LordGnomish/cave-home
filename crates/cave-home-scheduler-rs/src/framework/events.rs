@@ -136,7 +136,8 @@ mod tests {
     fn cluster_event_matches_same_resource_and_overlapping_action() {
         // An unschedulable pod registered to wake on NodeAdd should match a
         // concrete NodeAdd event.
-        let registered = ClusterEvent::new(Gvk::Node, ActionType::ADD | ActionType::UPDATE_NODE_TAINT);
+        let registered =
+            ClusterEvent::new(Gvk::Node, ActionType::ADD | ActionType::UPDATE_NODE_TAINT);
         let occurred = ClusterEvent::new(Gvk::Node, ActionType::ADD);
         assert!(registered.matches(&occurred));
     }

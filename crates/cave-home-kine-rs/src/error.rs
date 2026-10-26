@@ -72,7 +72,10 @@ pub enum KineError {
 impl core::fmt::Display for KineError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::Compacted { requested, compacted } => write!(
+            Self::Compacted {
+                requested,
+                compacted,
+            } => write!(
                 f,
                 "mvcc: required revision has been compacted (requested {requested}, compacted {compacted})"
             ),
@@ -92,13 +95,9 @@ impl core::fmt::Display for KineError {
                 "compact revision {requested} is a future revision (current {current})"
             ),
             Self::EmptyKey => f.write_str("etcdserver: key is not provided"),
-            Self::InvalidRange => {
-                f.write_str("etcdserver: range_end must sort after key")
-            }
+            Self::InvalidRange => f.write_str("etcdserver: range_end must sort after key"),
             Self::NegativeLimit { limit } => write!(f, "limit {limit} is negative"),
-            Self::InvalidLeaseId => {
-                f.write_str("etcdserver: lease id 0 is reserved for no-lease")
-            }
+            Self::InvalidLeaseId => f.write_str("etcdserver: lease id 0 is reserved for no-lease"),
             Self::InvalidTtl { ttl_seconds } => {
                 write!(f, "lease TTL {ttl_seconds}s must be positive")
             }
@@ -106,9 +105,7 @@ impl core::fmt::Display for KineError {
             Self::TxnCompareTypeMismatch => {
                 f.write_str("etcdserver: compare operand does not match its target")
             }
-            Self::TxnDuplicateKey => {
-                f.write_str("etcdserver: duplicate key given in txn request")
-            }
+            Self::TxnDuplicateKey => f.write_str("etcdserver: duplicate key given in txn request"),
         }
     }
 }

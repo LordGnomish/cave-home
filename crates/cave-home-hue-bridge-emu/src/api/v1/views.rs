@@ -10,7 +10,9 @@
 
 use crate::config::BridgeIdentity;
 use crate::pairing::PairingService;
-use crate::registry::{BridgeRegistry, EmulatedGroup, EmulatedLight, EmulatedScene, EmulatedSensor};
+use crate::registry::{
+    BridgeRegistry, EmulatedGroup, EmulatedLight, EmulatedScene, EmulatedSensor,
+};
 use serde_json::{Map, Value, json};
 
 /// Short anonymous config — `GET /api/config`. Reference: §7.2.
@@ -53,7 +55,10 @@ pub fn full_config(identity: &BridgeIdentity, pairing: &PairingService) -> Value
         Value::Bool(pairing.is_link_button_pressed()),
     );
     obj.insert("portalservices".into(), Value::Bool(false));
-    obj.insert("portalconnection".into(), Value::String("disconnected".into()));
+    obj.insert(
+        "portalconnection".into(),
+        Value::String("disconnected".into()),
+    );
     obj.insert("zigbeechannel".into(), Value::from(25));
     obj.insert("ipaddress".into(), Value::String(identity.host.clone()));
     obj.insert("netmask".into(), Value::String("255.255.255.0".into()));
@@ -257,7 +262,13 @@ mod tests {
         l.on = true;
         l.brightness = 50.0;
         let v = light_view(&l);
-        let bri = v.get("state").unwrap().get("bri").unwrap().as_i64().unwrap();
+        let bri = v
+            .get("state")
+            .unwrap()
+            .get("bri")
+            .unwrap()
+            .as_i64()
+            .unwrap();
         assert!(bri >= 126 && bri <= 128, "bri = {bri} expected ~127");
     }
 

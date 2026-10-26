@@ -14,7 +14,7 @@
 use std::sync::{Arc, RwLock};
 
 use crate::config::{ConfigError, DynamicConfig};
-use crate::ingress::{translate_ingresses, Ingress, IngressBackend, IngressError};
+use crate::ingress::{Ingress, IngressBackend, IngressError, translate_ingresses};
 use crate::loadbalancer::Server;
 
 /// An error reconciling Ingress objects into a config snapshot.
@@ -54,7 +54,9 @@ where
 {
     let translation =
         translate_ingresses(ingresses, controller_class).map_err(ReconcileError::Translate)?;
-    translation.into_config(resolve).map_err(ReconcileError::Build)
+    translation
+        .into_config(resolve)
+        .map_err(ReconcileError::Build)
 }
 
 /// A thread-safe holder for the live config, swapped atomically on reconcile.
@@ -67,19 +69,27 @@ impl ConfigHolder {
     /// Wrap an initial config.
     #[must_use]
     pub fn new(config: DynamicConfig) -> Self {
-        Self { inner: RwLock::new(Arc::new(config)) }
+        Self {
+            inner: RwLock::new(Arc::new(config)),
+        }
     }
 
     /// Load the current config snapshot (cheap `Arc` clone).
     #[must_use]
     pub fn load(&self) -> Arc<DynamicConfig> {
-        let guard = self.inner.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let guard = self
+            .inner
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         guard.clone()
     }
 
     /// Atomically replace the live config.
     pub fn store(&self, config: DynamicConfig) {
-        let mut guard = self.inner.write().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut guard = self
+            .inner
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         *guard = Arc::new(config);
     }
 }

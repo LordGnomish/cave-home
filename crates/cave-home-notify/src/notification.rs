@@ -200,7 +200,10 @@ mod tests {
             });
         assert_eq!(n.priority(), Priority::High);
         assert_eq!(n.tags(), ["security", "door"]);
-        assert_eq!(n.click(), Some(&ClickAction::OpenView("front-door".to_owned())));
+        assert_eq!(
+            n.click(),
+            Some(&ClickAction::OpenView("front-door".to_owned()))
+        );
         assert_eq!(n.attachment().map(|a| a.name.as_str()), Some("snap.jpg"));
     }
 
@@ -209,8 +212,8 @@ mod tests {
         let a = Notification::new(topic("leak"), "Leak", "Kitchen", 10)
             .with_priority(Priority::Max)
             .with_tags(["x".to_owned()]);
-        let b = Notification::new(topic("leak"), "Leak", "Kitchen", 9999)
-            .with_priority(Priority::Min);
+        let b =
+            Notification::new(topic("leak"), "Leak", "Kitchen", 9999).with_priority(Priority::Min);
         assert_eq!(a.dedup_key(), b.dedup_key());
     }
 

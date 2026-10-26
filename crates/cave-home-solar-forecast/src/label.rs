@@ -126,7 +126,10 @@ mod tests {
     fn outlook_bands_from_cloud_cover() {
         assert_eq!(SolarOutlook::from_cloud_cover(0.0), SolarOutlook::Sunny);
         assert_eq!(SolarOutlook::from_cloud_cover(0.2), SolarOutlook::Sunny);
-        assert_eq!(SolarOutlook::from_cloud_cover(0.5), SolarOutlook::PartlyCloudy);
+        assert_eq!(
+            SolarOutlook::from_cloud_cover(0.5),
+            SolarOutlook::PartlyCloudy
+        );
         assert_eq!(SolarOutlook::from_cloud_cover(0.9), SolarOutlook::Cloudy);
         // Out-of-range cover is clamped, not panicked on.
         assert_eq!(SolarOutlook::from_cloud_cover(-1.0), SolarOutlook::Sunny);
@@ -135,7 +138,11 @@ mod tests {
 
     #[test]
     fn all_outlooks_have_three_language_headlines() {
-        for outlook in [SolarOutlook::Sunny, SolarOutlook::PartlyCloudy, SolarOutlook::Cloudy] {
+        for outlook in [
+            SolarOutlook::Sunny,
+            SolarOutlook::PartlyCloudy,
+            SolarOutlook::Cloudy,
+        ] {
             for lang in [Lang::En, Lang::De, Lang::Tr] {
                 assert!(!outlook.headline(lang).is_empty());
             }
@@ -170,12 +177,29 @@ mod tests {
     fn ui_strings_carry_no_implementation_jargon() {
         // Charter §6.3: the UI must never surface engineering terms.
         const BANNED: &[&str] = &[
-            "W/m²", "DNI", "GHI", "irradiance", "azimuth", "kWp", "kWh",
-            "declination", "air mass", "MQTT", "entity_id", "API", "PVGIS",
-            "transmittance", "derate", "plane-of-array",
+            "W/m²",
+            "DNI",
+            "GHI",
+            "irradiance",
+            "azimuth",
+            "kWp",
+            "kWh",
+            "declination",
+            "air mass",
+            "MQTT",
+            "entity_id",
+            "API",
+            "PVGIS",
+            "transmittance",
+            "derate",
+            "plane-of-array",
         ];
         let f = forecast(0.0, 12.0);
-        for outlook in [SolarOutlook::Sunny, SolarOutlook::PartlyCloudy, SolarOutlook::Cloudy] {
+        for outlook in [
+            SolarOutlook::Sunny,
+            SolarOutlook::PartlyCloudy,
+            SolarOutlook::Cloudy,
+        ] {
             for lang in [Lang::En, Lang::De, Lang::Tr] {
                 let text = format!(
                     "{} {} {}",

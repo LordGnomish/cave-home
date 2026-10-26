@@ -50,9 +50,10 @@ impl SchedulerCache {
     /// Upstream: `Cache.AddNode`.
     pub fn add_node(&self, node: Node) {
         let mut g = self.inner.write();
-        let info = g.nodes.entry(node.metadata.name.clone()).or_insert_with(|| {
-            NodeInfo::new(node.clone())
-        });
+        let info = g
+            .nodes
+            .entry(node.metadata.name.clone())
+            .or_insert_with(|| NodeInfo::new(node.clone()));
         info.set_node(node);
     }
 

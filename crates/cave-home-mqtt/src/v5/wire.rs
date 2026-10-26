@@ -62,7 +62,9 @@ pub(crate) fn get_u8(buf: &mut &[u8]) -> Result<u8, Error> {
 
 pub(crate) fn get_u16(buf: &mut &[u8]) -> Result<u16, Error> {
     if buf.len() < 2 {
-        return Err(Error::Underflow { needed: 2 - buf.len() });
+        return Err(Error::Underflow {
+            needed: 2 - buf.len(),
+        });
     }
     let v = u16::from_be_bytes([buf[0], buf[1]]);
     buf.advance(2);
@@ -71,7 +73,9 @@ pub(crate) fn get_u16(buf: &mut &[u8]) -> Result<u16, Error> {
 
 pub(crate) fn get_u32(buf: &mut &[u8]) -> Result<u32, Error> {
     if buf.len() < 4 {
-        return Err(Error::Underflow { needed: 4 - buf.len() });
+        return Err(Error::Underflow {
+            needed: 4 - buf.len(),
+        });
     }
     let v = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]);
     buf.advance(4);
@@ -89,7 +93,9 @@ pub(crate) fn get_var_int(buf: &mut &[u8]) -> Result<u32, Error> {
 pub(crate) fn get_string(buf: &mut &[u8]) -> Result<String, Error> {
     let len = get_u16(buf)? as usize;
     if buf.len() < len {
-        return Err(Error::Underflow { needed: len - buf.len() });
+        return Err(Error::Underflow {
+            needed: len - buf.len(),
+        });
     }
     let s = std::str::from_utf8(&buf[..len])
         .map_err(|_| Error::BadUtf8)?
@@ -102,7 +108,9 @@ pub(crate) fn get_string(buf: &mut &[u8]) -> Result<String, Error> {
 pub(crate) fn get_binary(buf: &mut &[u8]) -> Result<Bytes, Error> {
     let len = get_u16(buf)? as usize;
     if buf.len() < len {
-        return Err(Error::Underflow { needed: len - buf.len() });
+        return Err(Error::Underflow {
+            needed: len - buf.len(),
+        });
     }
     let b = Bytes::copy_from_slice(&buf[..len]);
     buf.advance(len);

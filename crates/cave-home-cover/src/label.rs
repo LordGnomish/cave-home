@@ -195,11 +195,21 @@ mod tests {
     #[test]
     fn open_and_closed_sentences_read_naturally() {
         assert_eq!(
-            status_sentence(DeviceClass::Garage, CoverState::Open, Position::OPEN, Lang::En),
+            status_sentence(
+                DeviceClass::Garage,
+                CoverState::Open,
+                Position::OPEN,
+                Lang::En
+            ),
             "The garage door is open."
         );
         assert_eq!(
-            status_sentence(DeviceClass::Garage, CoverState::Closed, Position::CLOSED, Lang::En),
+            status_sentence(
+                DeviceClass::Garage,
+                CoverState::Closed,
+                Position::CLOSED,
+                Lang::En
+            ),
             "The garage door is closed."
         );
     }

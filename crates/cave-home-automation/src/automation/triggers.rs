@@ -116,7 +116,11 @@ impl Trigger {
         sm: Option<&std::sync::Arc<crate::state::StateMachine>>,
     ) -> HassResult<bool> {
         match self {
-            Self::State { entity_id, from, to } => {
+            Self::State {
+                entity_id,
+                from,
+                to,
+            } => {
                 if event.event_type != crate::event_bus::EVENT_STATE_CHANGED {
                     return Ok(false);
                 }
@@ -150,7 +154,10 @@ impl Trigger {
                 }
                 Ok(true)
             }
-            Self::Event { event_type, event_data } => {
+            Self::Event {
+                event_type,
+                event_data,
+            } => {
                 if &event.event_type != event_type {
                     return Ok(false);
                 }
@@ -159,7 +166,11 @@ impl Trigger {
                 }
                 Ok(true)
             }
-            Self::NumericState { entity_id, above, below } => {
+            Self::NumericState {
+                entity_id,
+                above,
+                below,
+            } => {
                 if event.event_type != crate::event_bus::EVENT_STATE_CHANGED {
                     return Ok(false);
                 }
@@ -225,7 +236,11 @@ impl Trigger {
             Self::Time { at } => parse_hms(at).is_some_and(|(h, m, s)| {
                 tick.hour() == h && tick.minute() == m && tick.second() == s
             }),
-            Self::TimePattern { hours, minutes, seconds } => {
+            Self::TimePattern {
+                hours,
+                minutes,
+                seconds,
+            } => {
                 let h_ok = hours
                     .as_deref()
                     .is_none_or(|h| cron_match(h, u32::from(tick.hour()), 23));
@@ -275,9 +290,10 @@ fn json_subset(expected: &Value, actual: &Value) -> bool {
         (Value::Object(e), Value::Object(a)) => e
             .iter()
             .all(|(k, ev)| a.get(k).is_some_and(|av| json_subset(ev, av))),
-        (Value::Array(e), Value::Array(a)) => e.iter().enumerate().all(|(i, ev)| {
-            a.get(i).is_some_and(|av| json_subset(ev, av))
-        }),
+        (Value::Array(e), Value::Array(a)) => e
+            .iter()
+            .enumerate()
+            .all(|(i, ev)| a.get(i).is_some_and(|av| json_subset(ev, av))),
         _ => expected == actual,
     }
 }

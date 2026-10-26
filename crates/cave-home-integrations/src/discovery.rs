@@ -37,7 +37,11 @@ impl Discovered {
     /// A signal from a given transport with a service key.
     #[must_use]
     pub fn new(transport: Transport, key: impl Into<String>) -> Self {
-        Self { transport, key: key.into(), properties: Vec::new() }
+        Self {
+            transport,
+            key: key.into(),
+            properties: Vec::new(),
+        }
     }
 
     /// Shorthand for an mDNS signal.
@@ -132,7 +136,11 @@ pub fn candidates(
             let already_configured = entries
                 .iter()
                 .any(|e| e.domain() == domain && e.unique_id() == Some(unique_id.as_str()));
-            Candidate { domain, unique_id, already_configured }
+            Candidate {
+                domain,
+                unique_id,
+                already_configured,
+            }
         })
         .collect()
 }
@@ -218,7 +226,10 @@ mod tests {
         let all = candidates(&r, std::slice::from_ref(&existing), &found);
         assert!(all[0].already_configured);
         let news = new_candidates(&r, std::slice::from_ref(&existing), &found);
-        assert!(news.is_empty(), "an already-added device must not be re-offered");
+        assert!(
+            news.is_empty(),
+            "an already-added device must not be re-offered"
+        );
     }
 
     #[test]

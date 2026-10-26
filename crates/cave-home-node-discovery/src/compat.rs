@@ -136,12 +136,26 @@ mod tests {
 
     #[test]
     fn parses_basic_version() {
-        assert_eq!(v("1.4.0"), Version { major: 1, minor: 4, patch: 0 });
+        assert_eq!(
+            v("1.4.0"),
+            Version {
+                major: 1,
+                minor: 4,
+                patch: 0
+            }
+        );
     }
 
     #[test]
     fn parses_v_prefix() {
-        assert_eq!(v("v2.10.3"), Version { major: 2, minor: 10, patch: 3 });
+        assert_eq!(
+            v("v2.10.3"),
+            Version {
+                major: 2,
+                minor: 10,
+                patch: 3
+            }
+        );
     }
 
     #[test]
@@ -172,14 +186,23 @@ mod tests {
 
     #[test]
     fn same_minor_is_compatible_regardless_of_patch() {
-        assert_eq!(compatibility(v("1.4.0"), v("1.4.9")), Compatibility::Compatible);
+        assert_eq!(
+            compatibility(v("1.4.0"), v("1.4.9")),
+            Compatibility::Compatible
+        );
         assert!(version_is_compatible(v("1.4.0"), v("1.4.9")));
     }
 
     #[test]
     fn one_minor_gap_is_upgrade_nudge() {
-        assert_eq!(compatibility(v("1.5.0"), v("1.4.2")), Compatibility::Upgrade);
-        assert_eq!(compatibility(v("1.4.2"), v("1.5.0")), Compatibility::Upgrade);
+        assert_eq!(
+            compatibility(v("1.5.0"), v("1.4.2")),
+            Compatibility::Upgrade
+        );
+        assert_eq!(
+            compatibility(v("1.4.2"), v("1.5.0")),
+            Compatibility::Upgrade
+        );
         assert!(Compatibility::Upgrade.may_interoperate());
     }
 

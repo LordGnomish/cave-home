@@ -161,8 +161,7 @@ mod tests {
     fn ui_strings_carry_no_implementation_jargon() {
         // Charter §6.3: the UI must never surface protocol/cluster terms.
         const BANNED: &[&str] = &[
-            "AQI", "PM2.5", "PM10", "ppm", "ppb", "MQTT", "Zigbee", "µg",
-            "pod", "kubelet",
+            "AQI", "PM2.5", "PM10", "ppm", "ppb", "MQTT", "Zigbee", "µg", "pod", "kubelet",
         ];
         for cat in [
             AirCategory::Good,

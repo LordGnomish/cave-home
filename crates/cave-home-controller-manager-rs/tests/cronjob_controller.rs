@@ -45,9 +45,16 @@ fn first_reconcile_starts_a_job_at_the_first_scheduled_minute() {
     let cj = c.cronjobs.create(cronjob(ConcurrencyPolicy::Allow, false));
     let mut ctrl = CronJobController::new();
     assert_eq!(ctrl.reconcile("prod/nightly", &mut c, 100), Outcome::Done);
-    assert_eq!(c.jobs.list_owned_by(&cj.meta().uid).len(), 1, "one job started");
+    assert_eq!(
+        c.jobs.list_owned_by(&cj.meta().uid).len(),
+        1,
+        "one job started"
+    );
     // Most recent fire at/<=100 from base 0 is second 60.
-    assert_eq!(c.cronjobs.get("prod/nightly").unwrap().last_scheduled, Some(60));
+    assert_eq!(
+        c.cronjobs.get("prod/nightly").unwrap().last_scheduled,
+        Some(60)
+    );
 }
 
 #[test]
@@ -57,7 +64,11 @@ fn not_due_does_nothing() {
     let mut ctrl = CronJobController::new();
     ctrl.reconcile("prod/nightly", &mut c, 100); // started, last_scheduled=60
     ctrl.reconcile("prod/nightly", &mut c, 119); // before the next minute (120)
-    assert_eq!(c.jobs.list_owned_by(&cj.meta().uid).len(), 1, "no extra job before the period elapses");
+    assert_eq!(
+        c.jobs.list_owned_by(&cj.meta().uid).len(),
+        1,
+        "no extra job before the period elapses"
+    );
 }
 
 #[test]
@@ -67,7 +78,11 @@ fn due_again_after_the_period_starts_another() {
     let mut ctrl = CronJobController::new();
     ctrl.reconcile("prod/nightly", &mut c, 100); // fire at 60
     ctrl.reconcile("prod/nightly", &mut c, 100 + PERIOD); // fire at 120
-    assert_eq!(c.jobs.list_owned_by(&cj.meta().uid).len(), 2, "second run started");
+    assert_eq!(
+        c.jobs.list_owned_by(&cj.meta().uid).len(),
+        2,
+        "second run started"
+    );
 }
 
 #[test]
@@ -76,7 +91,11 @@ fn suspended_cronjob_never_starts() {
     let cj = c.cronjobs.create(cronjob(ConcurrencyPolicy::Allow, true));
     let mut ctrl = CronJobController::new();
     ctrl.reconcile("prod/nightly", &mut c, 100);
-    assert_eq!(c.jobs.list_owned_by(&cj.meta().uid).len(), 0, "suspended: no job");
+    assert_eq!(
+        c.jobs.list_owned_by(&cj.meta().uid).len(),
+        0,
+        "suspended: no job"
+    );
 }
 
 #[test]
@@ -86,20 +105,39 @@ fn forbid_skips_while_a_job_is_active() {
     let mut ctrl = CronJobController::new();
     ctrl.reconcile("prod/nightly", &mut c, 100); // run 1 active
     ctrl.reconcile("prod/nightly", &mut c, 100 + PERIOD); // due, but run 1 still active
-    assert_eq!(active_jobs(&c, &cj.meta().uid), 1, "Forbid does not start a concurrent run");
+    assert_eq!(
+        active_jobs(&c, &cj.meta().uid),
+        1,
+        "Forbid does not start a concurrent run"
+    );
 }
 
 #[test]
 fn replace_deletes_the_active_run_then_starts_a_new_one() {
     let mut c = Cluster::new();
-    let cj = c.cronjobs.create(cronjob(ConcurrencyPolicy::Replace, false));
+    let cj = c
+        .cronjobs
+        .create(cronjob(ConcurrencyPolicy::Replace, false));
     let mut ctrl = CronJobController::new();
     ctrl.reconcile("prod/nightly", &mut c, 100);
-    let first: Vec<_> = c.jobs.list_owned_by(&cj.meta().uid).iter().map(|j| j.meta().uid.clone()).collect();
+    let first: Vec<_> = c
+        .jobs
+        .list_owned_by(&cj.meta().uid)
+        .iter()
+        .map(|j| j.meta().uid.clone())
+        .collect();
     ctrl.reconcile("prod/nightly", &mut c, 100 + PERIOD);
-    let now_jobs: Vec<_> = c.jobs.list_owned_by(&cj.meta().uid).iter().map(|j| j.meta().uid.clone()).collect();
+    let now_jobs: Vec<_> = c
+        .jobs
+        .list_owned_by(&cj.meta().uid)
+        .iter()
+        .map(|j| j.meta().uid.clone())
+        .collect();
     assert_eq!(active_jobs(&c, &cj.meta().uid), 1, "exactly one active run");
-    assert!(!now_jobs.contains(&first[0]), "the previous run was replaced");
+    assert!(
+        !now_jobs.contains(&first[0]),
+        "the previous run was replaced"
+    );
 }
 
 #[test]
@@ -109,7 +147,11 @@ fn allow_starts_even_with_an_active_run() {
     let mut ctrl = CronJobController::new();
     ctrl.reconcile("prod/nightly", &mut c, 100);
     ctrl.reconcile("prod/nightly", &mut c, 100 + PERIOD);
-    assert_eq!(active_jobs(&c, &cj.meta().uid), 2, "Allow permits concurrent runs");
+    assert_eq!(
+        active_jobs(&c, &cj.meta().uid),
+        2,
+        "Allow permits concurrent runs"
+    );
 }
 
 #[test]
@@ -122,10 +164,17 @@ fn missed_run_past_the_starting_deadline_is_skipped() {
     ctrl.reconcile("prod/nightly", &mut c, 65); // run 1 at scheduled=60
     // Next fire is at 120, but we only reconcile at 200 (80s late > 10s deadline).
     ctrl.reconcile("prod/nightly", &mut c, 200);
-    assert_eq!(c.jobs.list_owned_by(&cj.meta().uid).len(), 1, "the late run is skipped");
+    assert_eq!(
+        c.jobs.list_owned_by(&cj.meta().uid).len(),
+        1,
+        "the late run is skipped"
+    );
     // The schedule still advances to the most-recent slot (180) so we don't keep
     // retrying the missed one.
-    assert_eq!(c.cronjobs.get("prod/nightly").unwrap().last_scheduled, Some(180));
+    assert_eq!(
+        c.cronjobs.get("prod/nightly").unwrap().last_scheduled,
+        Some(180)
+    );
 }
 
 #[test]
@@ -144,18 +193,32 @@ fn daily_schedule_fires_once_a_day_at_the_right_hour() {
     let cj = c.cronjobs.create(
         CronJob::new(
             ObjectMeta::new("backup", "prod", ""),
-            CronJobSpec { schedule: "0 3 * * *".to_owned(), ..CronJobSpec::default() },
+            CronJobSpec {
+                schedule: "0 3 * * *".to_owned(),
+                ..CronJobSpec::default()
+            },
         )
         .created_at(FRI),
     );
     let mut ctrl = CronJobController::new();
     // Reconcile at 02:00 — before 03:00, nothing due.
     ctrl.reconcile("prod/backup", &mut c, (FRI + 2 * HOUR) as u64);
-    assert_eq!(c.jobs.list_owned_by(&cj.meta().uid).len(), 0, "not due before 03:00");
+    assert_eq!(
+        c.jobs.list_owned_by(&cj.meta().uid).len(),
+        0,
+        "not due before 03:00"
+    );
     // Reconcile at 04:00 — 03:00 fired.
     ctrl.reconcile("prod/backup", &mut c, (FRI + 4 * HOUR) as u64);
-    assert_eq!(c.jobs.list_owned_by(&cj.meta().uid).len(), 1, "the 03:00 run started");
-    assert_eq!(c.cronjobs.get("prod/backup").unwrap().last_scheduled, Some(FRI + 3 * HOUR));
+    assert_eq!(
+        c.jobs.list_owned_by(&cj.meta().uid).len(),
+        1,
+        "the 03:00 run started"
+    );
+    assert_eq!(
+        c.cronjobs.get("prod/backup").unwrap().last_scheduled,
+        Some(FRI + 3 * HOUR)
+    );
 }
 
 #[test]
@@ -166,30 +229,37 @@ fn a_single_reconcile_starts_at_most_one_job_even_after_many_missed_slots() {
     let cj = c.cronjobs.create(cronjob(ConcurrencyPolicy::Allow, false));
     let mut ctrl = CronJobController::new();
     ctrl.reconcile("prod/nightly", &mut c, 3600); // an hour of missed minutes
-    assert_eq!(c.jobs.list_owned_by(&cj.meta().uid).len(), 1, "one job, not 60");
-    assert_eq!(c.cronjobs.get("prod/nightly").unwrap().last_scheduled, Some(3600));
+    assert_eq!(
+        c.jobs.list_owned_by(&cj.meta().uid).len(),
+        1,
+        "one job, not 60"
+    );
+    assert_eq!(
+        c.cronjobs.get("prod/nightly").unwrap().last_scheduled,
+        Some(3600)
+    );
 }
 
 #[test]
 fn successful_jobs_history_limit_prunes_oldest_completed_runs() {
     let mut c = Cluster::new();
-    let cj = c.cronjobs.create(
-        CronJob::new(
-            ObjectMeta::new("nightly", "prod", ""),
-            CronJobSpec {
-                schedule: "* * * * *".to_owned(),
-                successful_jobs_history_limit: 2,
-                ..CronJobSpec::default()
-            },
-        ),
-    );
+    let cj = c.cronjobs.create(CronJob::new(
+        ObjectMeta::new("nightly", "prod", ""),
+        CronJobSpec {
+            schedule: "* * * * *".to_owned(),
+            successful_jobs_history_limit: 2,
+            ..CronJobSpec::default()
+        },
+    ));
     let owner = cj.meta().uid.clone();
     // Seed three completed Jobs with distinct finish times, owned by the CronJob.
     for (i, finish) in [10_i64, 20, 30].into_iter().enumerate() {
         let mut meta = ObjectMeta::new(&format!("nightly-old{i}"), "prod", "");
         meta.owner_references = vec![
-            cave_home_controller_manager_rs::types::OwnerReference::to("CronJob", "nightly", &owner)
-                .controller(),
+            cave_home_controller_manager_rs::types::OwnerReference::to(
+                "CronJob", "nightly", &owner,
+            )
+            .controller(),
         ];
         let mut j = Job::new(meta, JobSpec::default());
         j.status.complete = true;
@@ -217,9 +287,16 @@ fn unparseable_schedule_never_fires() {
     let mut c = Cluster::new();
     let cj = c.cronjobs.create(CronJob::new(
         ObjectMeta::new("broken", "prod", ""),
-        CronJobSpec { schedule: "not a schedule".to_owned(), ..CronJobSpec::default() },
+        CronJobSpec {
+            schedule: "not a schedule".to_owned(),
+            ..CronJobSpec::default()
+        },
     ));
     let mut ctrl = CronJobController::new();
     assert_eq!(ctrl.reconcile("prod/broken", &mut c, 99_999), Outcome::Done);
-    assert_eq!(c.jobs.list_owned_by(&cj.meta().uid).len(), 0, "no run from a bad schedule");
+    assert_eq!(
+        c.jobs.list_owned_by(&cj.meta().uid).len(),
+        0,
+        "no run from a bad schedule"
+    );
 }

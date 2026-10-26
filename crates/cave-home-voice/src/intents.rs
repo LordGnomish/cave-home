@@ -124,7 +124,10 @@ const SPECS: &[IntentSpec] = &[
         sentences: &[
             (Lang::En, "set [the] {name} [light] to {level} percent"),
             (Lang::En, "dim [the] {name} [light] to {level} percent"),
-            (Lang::De, "stelle [das] [licht] [im] {name} auf {level} prozent"),
+            (
+                Lang::De,
+                "stelle [das] [licht] [im] {name} auf {level} prozent",
+            ),
             (Lang::Tr, "{name} ışığını yüzde {level} yap"),
         ],
     },
@@ -228,7 +231,7 @@ pub fn builtin_intents_with(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::matcher::{match_intent, MatchOutcome};
+    use crate::matcher::{MatchOutcome, match_intent};
     use crate::slot::SlotValue;
 
     fn matched(utt: &str) -> (String, BTreeMap<String, SlotValue>) {
@@ -242,7 +245,11 @@ mod tests {
     #[test]
     fn all_builtins_compile() {
         let intents = builtin_intents().expect("compile");
-        assert!(intents.len() >= 25, "expected a full set, got {}", intents.len());
+        assert!(
+            intents.len() >= 25,
+            "expected a full set, got {}",
+            intents.len()
+        );
     }
 
     #[test]
@@ -314,7 +321,10 @@ mod tests {
         let (id, slots) = matched("what's the bedroom temperature");
         assert_eq!(id, "query.temperature");
         assert_eq!(slots["name"], SlotValue::Text("bedroom".into()));
-        assert_eq!(matched("wie warm ist es im wohnzimmer").0, "query.temperature");
+        assert_eq!(
+            matched("wie warm ist es im wohnzimmer").0,
+            "query.temperature"
+        );
     }
 
     #[test]

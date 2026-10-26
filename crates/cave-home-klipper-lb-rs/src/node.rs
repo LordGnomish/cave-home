@@ -112,10 +112,7 @@ impl Node {
 /// Output preserves input order, so callers get a stable, deterministic set
 /// that can be diffed across reconciles (node add/remove recompute).
 #[must_use]
-pub fn select_nodes<'a>(
-    nodes: &'a [Node],
-    selector: &BTreeMap<String, String>,
-) -> Vec<&'a Node> {
+pub fn select_nodes<'a>(nodes: &'a [Node], selector: &BTreeMap<String, String>) -> Vec<&'a Node> {
     nodes
         .iter()
         .filter(|n| n.is_eligible() && n.matches_selector(selector))
@@ -183,7 +180,9 @@ mod tests {
     fn select_nodes_filters_unready_cordoned_and_unmatched() {
         let nodes = vec![
             Node::new("ready").with_label("role", "lb"),
-            Node::new("cordoned").schedulable(false).with_label("role", "lb"),
+            Node::new("cordoned")
+                .schedulable(false)
+                .with_label("role", "lb"),
             Node::new("down").ready(false).with_label("role", "lb"),
             Node::new("nolabel"),
         ];
@@ -228,7 +227,9 @@ mod tests {
     fn advertise_ip_prefers_external_then_internal_then_none() {
         assert_eq!(Node::new("a").advertise_ip(), None);
         assert_eq!(
-            Node::new("a").with_internal_ip(ip("10.0.0.1")).advertise_ip(),
+            Node::new("a")
+                .with_internal_ip(ip("10.0.0.1"))
+                .advertise_ip(),
             Some(ip("10.0.0.1"))
         );
         assert_eq!(

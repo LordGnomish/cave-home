@@ -149,7 +149,11 @@ impl RestartLedger {
     /// A fresh ledger for `policy` with no recorded failures.
     #[must_use]
     pub const fn new(policy: RestartPolicy) -> Self {
-        Self { policy, failures: Vec::new(), consecutive: 0 }
+        Self {
+            policy,
+            failures: Vec::new(),
+            consecutive: 0,
+        }
     }
 
     /// Record a failure observed at monotonic time `now`, pruning any failures
@@ -293,8 +297,8 @@ fn log_line(msg: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     #[test]
     fn backoff_doubles_then_clamps() {
@@ -329,7 +333,10 @@ mod tests {
         assert!(ledger.may_restart(Duration::from_secs(2)));
         // A third failure inside the window exceeds the budget of 2.
         ledger.record_failure(Duration::from_secs(3));
-        assert!(!ledger.may_restart(Duration::from_secs(3)), "3 failures > budget 2");
+        assert!(
+            !ledger.may_restart(Duration::from_secs(3)),
+            "3 failures > budget 2"
+        );
     }
 
     #[test]
@@ -344,7 +351,10 @@ mod tests {
         assert!(!ledger.may_restart(Duration::from_secs(2)));
         // Much later, the old failures have aged out: a fresh failure is alone.
         ledger.record_failure(Duration::from_secs(100));
-        assert!(ledger.may_restart(Duration::from_secs(100)), "old failures aged out");
+        assert!(
+            ledger.may_restart(Duration::from_secs(100)),
+            "old failures aged out"
+        );
     }
 
     #[test]
@@ -397,7 +407,11 @@ mod tests {
 
         // Let the paused clock advance through both backoffs.
         tokio::time::sleep(Duration::from_secs(1)).await;
-        assert_eq!(calls.load(Ordering::SeqCst), 3, "fail, fail, then steady run");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            3,
+            "fail, fail, then steady run"
+        );
         assert!(!sup.is_finished(), "steady run keeps the supervisor alive");
         sup.abort();
     }
@@ -423,7 +437,11 @@ mod tests {
 
         assert_eq!(exit, SupervisedExit::CrashLooped);
         // budget 3 → 4 failures observed (the 4th exceeds the budget).
-        assert_eq!(calls.load(Ordering::SeqCst), 4, "tries budget+1 then gives up");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            4,
+            "tries budget+1 then gives up"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -454,7 +472,11 @@ mod tests {
             .expect("supervisor returns promptly")
             .expect("join");
         assert_eq!(exit, SupervisedExit::ShutdownRequested);
-        assert_eq!(body_started.load(Ordering::SeqCst), 1, "body ran exactly once");
+        assert_eq!(
+            body_started.load(Ordering::SeqCst),
+            1,
+            "body ran exactly once"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -466,7 +488,10 @@ mod tests {
             .with_max_restarts(100)
             .with_base_backoff(Duration::from_secs(30));
         let sup = tokio::spawn(async move {
-            run("svc", policy, rx, move |_sd| async move { Err::<(), &str>("fail") }).await
+            run("svc", policy, rx, move |_sd| async move {
+                Err::<(), &str>("fail")
+            })
+            .await
         });
         // First failure happens immediately; we're now inside a 30s backoff.
         tokio::time::sleep(Duration::from_millis(10)).await;

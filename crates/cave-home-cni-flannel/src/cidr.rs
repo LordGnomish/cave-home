@@ -374,7 +374,10 @@ mod tests {
     fn rejects_overlong_prefix_v4() {
         assert_eq!(
             Cidr::new(v4("10.0.0.0"), 33),
-            Err(CidrError::PrefixTooLong { prefix: 33, max: 32 })
+            Err(CidrError::PrefixTooLong {
+                prefix: 33,
+                max: 32
+            })
         );
     }
 
@@ -443,16 +446,28 @@ mod tests {
 
     #[test]
     fn address_count_v4() {
-        assert_eq!(Cidr::from_str("10.42.0.0/24").expect("c").address_count(), 256);
-        assert_eq!(Cidr::from_str("10.0.0.0/16").expect("c").address_count(), 65_536);
+        assert_eq!(
+            Cidr::from_str("10.42.0.0/24").expect("c").address_count(),
+            256
+        );
+        assert_eq!(
+            Cidr::from_str("10.0.0.0/16").expect("c").address_count(),
+            65_536
+        );
         assert_eq!(Cidr::from_str("1.2.3.4/32").expect("c").address_count(), 1);
     }
 
     #[test]
     fn address_count_v6_saturates() {
         // /0 of v6 is 2^128 which does not fit in u128 → saturate.
-        assert_eq!(Cidr::from_str("::/0").expect("c").address_count(), u128::MAX);
-        assert_eq!(Cidr::from_str("fd00::/120").expect("c").address_count(), 256);
+        assert_eq!(
+            Cidr::from_str("::/0").expect("c").address_count(),
+            u128::MAX
+        );
+        assert_eq!(
+            Cidr::from_str("fd00::/120").expect("c").address_count(),
+            256
+        );
     }
 
     #[test]

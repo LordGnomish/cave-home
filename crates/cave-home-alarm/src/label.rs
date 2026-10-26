@@ -81,7 +81,9 @@ impl AlarmState {
             (Self::Pending, Lang::De) => "Gib jetzt deinen Code ein, um den Alarm auszuschalten.",
             (Self::Pending, Lang::Tr) => "Alarmı kapatmak için şimdi kodunuzu girin.",
             (Self::Triggered, Lang::En) => "Check the house and turn the alarm off with your code.",
-            (Self::Triggered, Lang::De) => "Sieh im Haus nach und schalte den Alarm mit deinem Code aus.",
+            (Self::Triggered, Lang::De) => {
+                "Sieh im Haus nach und schalte den Alarm mit deinem Code aus."
+            }
             (Self::Triggered, Lang::Tr) => "Evi kontrol edin ve kodunuzla alarmı kapatın.",
         }
     }
@@ -142,10 +144,29 @@ mod tests {
         // state-machine terms. "the house" / "away mode" — never "zone GPIO",
         // "MQTT", "entity_id".
         const BANNED: &[&str] = &[
-            "AlarmDecoder", "Honeywell", "DSC", "Bosch", "ELK", "Z-Wave",
-            "Zigbee", "MQTT", "GPIO", "entity_id", "Pending", "Triggered",
-            "Disarmed", "Armed", "node", "API", "token", "sensor", "Sensor",
-            "RTSP", "USB", "panel", "Panel",
+            "AlarmDecoder",
+            "Honeywell",
+            "DSC",
+            "Bosch",
+            "ELK",
+            "Z-Wave",
+            "Zigbee",
+            "MQTT",
+            "GPIO",
+            "entity_id",
+            "Pending",
+            "Triggered",
+            "Disarmed",
+            "Armed",
+            "node",
+            "API",
+            "token",
+            "sensor",
+            "Sensor",
+            "RTSP",
+            "USB",
+            "panel",
+            "Panel",
         ];
         for s in ALL_STATES {
             for lang in [Lang::En, Lang::De, Lang::Tr] {

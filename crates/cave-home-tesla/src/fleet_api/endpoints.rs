@@ -205,12 +205,18 @@ mod tests {
             Region::Europe.base_url(),
             "https://fleet-api.prd.eu.vn.cloud.tesla.com"
         );
-        assert_eq!(Region::China.base_url(), "https://fleet-api.prd.cn.vn.cloud.tesla.cn");
+        assert_eq!(
+            Region::China.base_url(),
+            "https://fleet-api.prd.cn.vn.cloud.tesla.cn"
+        );
     }
 
     #[test]
     fn region_parses_from_config_key() {
-        assert_eq!(Region::from_key("na"), Some(Region::NorthAmericaAsiaPacific));
+        assert_eq!(
+            Region::from_key("na"),
+            Some(Region::NorthAmericaAsiaPacific)
+        );
         assert_eq!(Region::from_key("eu"), Some(Region::Europe));
         assert_eq!(Region::from_key("cn"), Some(Region::China));
         assert_eq!(Region::from_key("mars"), None);
@@ -260,7 +266,11 @@ mod tests {
 
     #[test]
     fn backup_reserve_is_a_post_with_body() {
-        let r = EnergyEndpoint::SetBackupReserve { site_id: 3, percent: 25 }.request();
+        let r = EnergyEndpoint::SetBackupReserve {
+            site_id: 3,
+            percent: 25,
+        }
+        .request();
         assert_eq!(r.method, HttpMethod::Post);
         assert_eq!(r.path, "/api/1/energy_sites/3/backup");
         let body = r.body.unwrap();
@@ -283,7 +293,11 @@ mod tests {
 
     #[test]
     fn storm_mode_post_body() {
-        let r = EnergyEndpoint::SetStormMode { site_id: 3, enabled: true }.request();
+        let r = EnergyEndpoint::SetStormMode {
+            site_id: 3,
+            enabled: true,
+        }
+        .request();
         let v: serde_json::Value = serde_json::from_str(&r.body.unwrap()).unwrap();
         assert_eq!(v["enabled"], true);
         assert_eq!(r.path, "/api/1/energy_sites/3/storm_mode");

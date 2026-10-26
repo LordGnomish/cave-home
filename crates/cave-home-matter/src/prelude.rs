@@ -19,6 +19,6 @@ pub use crate::group_key::{GroupDataProvider, GroupId, GroupInfo, GroupKeySet};
 pub use crate::ota::{OtaRequestor, OtaState};
 pub use crate::pase::PaseSession;
 pub use crate::setup_payload::{
-    parse_manual_pairing_code, parse_qr_payload, CommissioningFlow,
-    RendezvousInformationFlags, SetupPayload,
+    CommissioningFlow, RendezvousInformationFlags, SetupPayload, parse_manual_pairing_code,
+    parse_qr_payload,
 };

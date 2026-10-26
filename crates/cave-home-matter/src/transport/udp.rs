@@ -59,9 +59,9 @@ impl UdpTransport {
 #[async_trait]
 impl Transport for UdpTransport {
     async fn send(&self, peer: &str, frame: &[u8]) -> Result<()> {
-        let addr: SocketAddr = peer.parse().map_err(|e| {
-            MatterError::Transport(format!("UDP send: bad peer {peer:?}: {e}"))
-        })?;
+        let addr: SocketAddr = peer
+            .parse()
+            .map_err(|e| MatterError::Transport(format!("UDP send: bad peer {peer:?}: {e}")))?;
         self.socket
             .send_to(frame, addr)
             .await
@@ -88,8 +88,12 @@ mod tests {
 
     #[tokio::test]
     async fn udp_send_recv_round_trip() {
-        let server = UdpTransport::bind("127.0.0.1:0").await.expect("bind server");
-        let client = UdpTransport::bind("127.0.0.1:0").await.expect("bind client");
+        let server = UdpTransport::bind("127.0.0.1:0")
+            .await
+            .expect("bind server");
+        let client = UdpTransport::bind("127.0.0.1:0")
+            .await
+            .expect("bind client");
         let server_addr = server.local_addr().expect("local").to_string();
         let payload = b"hello matter";
         client.send(&server_addr, payload).await.expect("send");

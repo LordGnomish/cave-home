@@ -3,12 +3,12 @@
 //! decision (port of rancher/local-path-provisioner v0.0.36 `createHelperPod`'s
 //! pure command/env/args/name construction). References API not yet implemented.
 
+use cave_home_orchestration::local_path_provisioner::ProvisionerConfig;
 use cave_home_orchestration::local_path_provisioner::config::{ActionType, StorageClassConfig};
 use cave_home_orchestration::local_path_provisioner::helper::{
-    build_helper_command, HelperError, VolumeOptions, DEFAULT_SETUP_SCRIPT, DEFAULT_TEARDOWN_SCRIPT,
+    DEFAULT_SETUP_SCRIPT, DEFAULT_TEARDOWN_SCRIPT, HelperError, VolumeOptions, build_helper_command,
 };
 use cave_home_orchestration::local_path_provisioner::provision::VolumeMode;
-use cave_home_orchestration::local_path_provisioner::ProvisionerConfig;
 
 fn local() -> StorageClassConfig {
     StorageClassConfig::canonicalize(&[("node1", &["/opt/lpp"][..])], "").unwrap()
@@ -29,19 +29,26 @@ fn create_uses_default_setup_command_when_unset() {
     let cfg = ProvisionerConfig::new(local(), 0);
     let cmd = build_helper_command(ActionType::Create, "helper-pod", &opts(), &cfg, false).unwrap();
     // Upstream: provisionCmd defaults to ["/bin/sh", "/script/setup"].
-    assert_eq!(cmd.command, vec!["/bin/sh".to_string(), "/script/setup".to_string()]);
+    assert_eq!(
+        cmd.command,
+        vec!["/bin/sh".to_string(), "/script/setup".to_string()]
+    );
 }
 
 #[test]
 fn delete_uses_default_teardown_command_when_unset() {
     let cfg = ProvisionerConfig::new(local(), 0);
     let cmd = build_helper_command(ActionType::Delete, "helper-pod", &opts(), &cfg, false).unwrap();
-    assert_eq!(cmd.command, vec!["/bin/sh".to_string(), "/script/teardown".to_string()]);
+    assert_eq!(
+        cmd.command,
+        vec!["/bin/sh".to_string(), "/script/teardown".to_string()]
+    );
 }
 
 #[test]
 fn custom_setup_teardown_commands_are_used_verbatim() {
-    let cfg = ProvisionerConfig::new(local(), 0).with_commands("/custom/setup.sh", "/custom/tear.sh");
+    let cfg =
+        ProvisionerConfig::new(local(), 0).with_commands("/custom/setup.sh", "/custom/tear.sh");
     let c = build_helper_command(ActionType::Create, "helper-pod", &opts(), &cfg, false).unwrap();
     assert_eq!(c.command, vec!["/custom/setup.sh".to_string()]);
     let d = build_helper_command(ActionType::Delete, "helper-pod", &opts(), &cfg, false).unwrap();
@@ -53,7 +60,10 @@ fn env_triplet_matches_upstream() {
     let cfg = ProvisionerConfig::new(local(), 0);
     let cmd = build_helper_command(ActionType::Create, "helper-pod", &opts(), &cfg, false).unwrap();
     // VOL_DIR = join(parentDir, volumeDir) = the cleaned volume path.
-    assert_eq!(cmd.env_var("VOL_DIR"), Some("/opt/lpp/pvc-123_default_data"));
+    assert_eq!(
+        cmd.env_var("VOL_DIR"),
+        Some("/opt/lpp/pvc-123_default_data")
+    );
     assert_eq!(cmd.env_var("VOL_MODE"), Some("Filesystem"));
     assert_eq!(cmd.env_var("VOL_SIZE_BYTES"), Some("1024"));
 }

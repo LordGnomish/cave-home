@@ -13,14 +13,8 @@ use clap::Command;
 pub fn cmd() -> Command {
     Command::new("mobile")
         .about("Companion-app devices")
-        .subcommand(
-            Command::new("list")
-                .about("List paired phones / tablets")
-        )
-        .subcommand(
-            Command::new("pair")
-                .about("Show pairing code + QR")
-        )
+        .subcommand(Command::new("list").about("List paired phones / tablets"))
+        .subcommand(Command::new("pair").about("Show pairing code + QR"))
 }
 
 pub fn run() -> i32 {
@@ -35,7 +29,10 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
+        let names: Vec<_> = c
+            .get_subcommands()
+            .map(|s| s.get_name().to_string())
+            .collect();
         for sub in ["list", "pair"] {
             assert!(
                 names.iter().any(|n| n == sub),

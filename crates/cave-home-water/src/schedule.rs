@@ -48,13 +48,22 @@ impl RunPlan {
             (true, Lang::De) => "Im Moment ist nichts zu bewässern.".to_string(),
             (true, Lang::Tr) => "Şu anda sulanacak bir yer yok.".to_string(),
             (false, Lang::En) => {
-                format!("Watering {} spots for about {minutes} minutes.", self.steps.len())
+                format!(
+                    "Watering {} spots for about {minutes} minutes.",
+                    self.steps.len()
+                )
             }
             (false, Lang::De) => {
-                format!("Bewässere {} Stellen für etwa {minutes} Minuten.", self.steps.len())
+                format!(
+                    "Bewässere {} Stellen für etwa {minutes} Minuten.",
+                    self.steps.len()
+                )
             }
             (false, Lang::Tr) => {
-                format!("{} yer yaklaşık {minutes} dakika sulanıyor.", self.steps.len())
+                format!(
+                    "{} yer yaklaşık {minutes} dakika sulanıyor.",
+                    self.steps.len()
+                )
             }
         }
     }
@@ -83,13 +92,16 @@ where
             });
         }
     }
-    RunPlan { steps, total_seconds: total }
+    RunPlan {
+        steps,
+        total_seconds: total,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decision::{decide, SkipReason};
+    use crate::decision::{SkipReason, decide};
     use crate::zone::ZoneState;
 
     fn zone(id: u32, name: &str, secs: u32) -> Zone {
@@ -103,9 +115,15 @@ mod tests {
         let terrace = zone(3, "Terrace pots", 300);
         let dry = Some(10.0);
         let plan = plan_run([
-            (&front, decide(&front, ZoneState::Idle, dry, false, 100, true)),
+            (
+                &front,
+                decide(&front, ZoneState::Idle, dry, false, 100, true),
+            ),
             (&beds, decide(&beds, ZoneState::Idle, dry, false, 100, true)),
-            (&terrace, decide(&terrace, ZoneState::Idle, dry, false, 100, true)),
+            (
+                &terrace,
+                decide(&terrace, ZoneState::Idle, dry, false, 100, true),
+            ),
         ]);
         assert_eq!(plan.steps.len(), 3);
         assert_eq!(plan.steps[0].zone_id, 1);
@@ -153,7 +171,10 @@ mod tests {
         let beds = zone(2, "Vegetable beds", 900);
         let dry = Some(10.0);
         let plan = plan_run([
-            (&front, decide(&front, ZoneState::Idle, dry, false, 100, true)),
+            (
+                &front,
+                decide(&front, ZoneState::Idle, dry, false, 100, true),
+            ),
             (&beds, decide(&beds, ZoneState::Idle, dry, false, 100, true)),
         ]);
         // 1500 s -> 25 minutes, 2 spots.
@@ -164,7 +185,10 @@ mod tests {
 
     #[test]
     fn empty_plan_summary_is_friendly() {
-        let plan = RunPlan { steps: Vec::new(), total_seconds: 0 };
+        let plan = RunPlan {
+            steps: Vec::new(),
+            total_seconds: 0,
+        };
         assert_eq!(plan.summary(Lang::En), "Nothing to water right now.");
     }
 }

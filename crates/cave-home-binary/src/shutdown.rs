@@ -7,8 +7,8 @@
 //! planning** — the actual stop calls + signal handling live in
 //! [`server`](crate::server) / [`supervisor`](crate::supervisor).
 
-use crate::bootstrap::Plan;
 use crate::Component;
+use crate::bootstrap::Plan;
 
 /// An ordered graceful-shutdown plan (the bring-up order, reversed).
 #[derive(Debug, Clone, PartialEq, Eq)]

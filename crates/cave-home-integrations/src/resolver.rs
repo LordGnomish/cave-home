@@ -35,7 +35,11 @@ impl core::fmt::Display for ResolveError {
                 write!(f, "{domain} needs {missing}, which is not installed")
             }
             Self::Cycle { domains } => {
-                write!(f, "these depend on each other in a loop: {}", domains.join(", "))
+                write!(
+                    f,
+                    "these depend on each other in a loop: {}",
+                    domains.join(", ")
+                )
             }
         }
     }
@@ -104,7 +108,9 @@ pub fn resolve_setup_order(
             .iter()
             .filter(|d| {
                 registry.get(d).is_none_or(|integ| {
-                    edges(integ).iter().all(|dep| output.contains(dep) || !in_set(dep))
+                    edges(integ)
+                        .iter()
+                        .all(|dep| output.contains(dep) || !in_set(dep))
                 })
             })
             .cloned()
@@ -221,7 +227,12 @@ mod tests {
         r.register(Integration::new("a", "A").depends_on("b"));
         r.register(Integration::new("b", "B").depends_on("a"));
         let err = resolve_setup_order(&r, &["a", "b"]).unwrap_err();
-        assert_eq!(err, ResolveError::Cycle { domains: vec!["a".into(), "b".into()] });
+        assert_eq!(
+            err,
+            ResolveError::Cycle {
+                domains: vec!["a".into(), "b".into()]
+            }
+        );
     }
 
     #[test]

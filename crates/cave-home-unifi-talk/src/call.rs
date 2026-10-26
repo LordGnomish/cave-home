@@ -138,7 +138,12 @@ impl CallMachine {
     /// next advances time to (or past) the ring's start tick.
     #[must_use]
     pub const fn new(ring_timeout: Tick, disposition: Disposition) -> Self {
-        Self { state: CallState::Idle, ring_timeout, disposition, ringing_since: None }
+        Self {
+            state: CallState::Idle,
+            ring_timeout,
+            disposition,
+            ringing_since: None,
+        }
     }
 
     #[must_use]
@@ -214,10 +219,9 @@ impl CallMachine {
             // local leg ends.
             (CallState::Active | CallState::Held, CallEvent::Transfer(_)) => CallState::Ended,
             // A connected call is hung up.
-            (
-                CallState::Connecting | CallState::Active | CallState::Held,
-                CallEvent::Hangup,
-            ) => CallState::Ended,
+            (CallState::Connecting | CallState::Active | CallState::Held, CallEvent::Hangup) => {
+                CallState::Ended
+            }
             // Everything else is illegal.
             _ => return Err(CallError::IllegalTransition),
         };
@@ -291,7 +295,10 @@ impl Conference {
     /// zero or one is clamped up to one (a conference of nobody is meaningless).
     #[must_use]
     pub fn new(max_size: usize) -> Self {
-        Self { members: Vec::new(), max_size: max_size.max(1) }
+        Self {
+            members: Vec::new(),
+            max_size: max_size.max(1),
+        }
     }
 
     /// A standard three-way conference.
@@ -364,7 +371,10 @@ mod tests {
         assert_eq!(m.state(), CallState::Idle);
         assert_eq!(m.apply(CallEvent::Incoming, 0).unwrap(), CallState::Ringing);
         assert_eq!(m.ringing_since(), Some(0));
-        assert_eq!(m.apply(CallEvent::Answer, 4).unwrap(), CallState::Connecting);
+        assert_eq!(
+            m.apply(CallEvent::Answer, 4).unwrap(),
+            CallState::Connecting
+        );
         assert_eq!(m.ringing_since(), None);
         assert_eq!(m.apply(CallEvent::Connected, 5).unwrap(), CallState::Active);
         assert_eq!(m.apply(CallEvent::Hangup, 90).unwrap(), CallState::Ended);
@@ -375,7 +385,10 @@ mod tests {
     fn outgoing_call_rings_then_connects() {
         let mut m = CallMachine::new(30, Disposition::Missed);
         assert_eq!(m.apply(CallEvent::Outgoing, 0).unwrap(), CallState::Ringing);
-        assert_eq!(m.apply(CallEvent::Answer, 2).unwrap(), CallState::Connecting);
+        assert_eq!(
+            m.apply(CallEvent::Answer, 2).unwrap(),
+            CallState::Connecting
+        );
         assert_eq!(m.apply(CallEvent::Connected, 3).unwrap(), CallState::Active);
     }
 
@@ -403,7 +416,10 @@ mod tests {
         let mut m = CallMachine::new(30, Disposition::Voicemail);
         m.apply(CallEvent::Incoming, 0).unwrap();
         // Still only ringing — nothing to hold.
-        assert_eq!(m.apply(CallEvent::Hold, 1), Err(CallError::IllegalTransition));
+        assert_eq!(
+            m.apply(CallEvent::Hold, 1),
+            Err(CallError::IllegalTransition)
+        );
     }
 
     #[test]
@@ -412,7 +428,10 @@ mod tests {
         m.apply(CallEvent::Incoming, 0).unwrap();
         m.apply(CallEvent::Answer, 1).unwrap();
         m.apply(CallEvent::Connected, 2).unwrap();
-        assert_eq!(m.apply(CallEvent::Resume, 3), Err(CallError::IllegalTransition));
+        assert_eq!(
+            m.apply(CallEvent::Resume, 3),
+            Err(CallError::IllegalTransition)
+        );
     }
 
     // ---- transfer ----------------------------------------------------------
@@ -424,7 +443,8 @@ mod tests {
         m.apply(CallEvent::Answer, 1).unwrap();
         m.apply(CallEvent::Connected, 2).unwrap();
         assert_eq!(
-            m.apply(CallEvent::Transfer(TransferKind::Blind), 5).unwrap(),
+            m.apply(CallEvent::Transfer(TransferKind::Blind), 5)
+                .unwrap(),
             CallState::Ended
         );
     }
@@ -437,7 +457,8 @@ mod tests {
         m.apply(CallEvent::Connected, 2).unwrap();
         m.apply(CallEvent::Hold, 3).unwrap();
         assert_eq!(
-            m.apply(CallEvent::Transfer(TransferKind::Attended), 6).unwrap(),
+            m.apply(CallEvent::Transfer(TransferKind::Attended), 6)
+                .unwrap(),
             CallState::Ended
         );
     }
@@ -474,7 +495,10 @@ mod tests {
     fn timeout_event_path_matches_disposition() {
         let mut m = CallMachine::new(30, Disposition::Voicemail);
         m.apply(CallEvent::Incoming, 0).unwrap();
-        assert_eq!(m.apply(CallEvent::Timeout, 31).unwrap(), CallState::Voicemail);
+        assert_eq!(
+            m.apply(CallEvent::Timeout, 31).unwrap(),
+            CallState::Voicemail
+        );
     }
 
     #[test]
@@ -496,7 +520,10 @@ mod tests {
         let mut m = CallMachine::new(30, Disposition::Voicemail);
         m.apply(CallEvent::Incoming, 0).unwrap();
         // Past the timeout window, but no tick has resolved it yet.
-        assert_eq!(m.apply(CallEvent::Answer, 999).unwrap(), CallState::Connecting);
+        assert_eq!(
+            m.apply(CallEvent::Answer, 999).unwrap(),
+            CallState::Connecting
+        );
     }
 
     #[test]
@@ -513,7 +540,10 @@ mod tests {
     #[test]
     fn answering_when_idle_is_illegal() {
         let mut m = CallMachine::new(30, Disposition::Voicemail);
-        assert_eq!(m.apply(CallEvent::Answer, 0), Err(CallError::IllegalTransition));
+        assert_eq!(
+            m.apply(CallEvent::Answer, 0),
+            Err(CallError::IllegalTransition)
+        );
     }
 
     #[test]
@@ -521,14 +551,20 @@ mod tests {
         let mut m = CallMachine::new(30, Disposition::Voicemail);
         m.apply(CallEvent::Incoming, 0).unwrap();
         // A ringing call is rejected, not hung up.
-        assert_eq!(m.apply(CallEvent::Hangup, 1), Err(CallError::IllegalTransition));
+        assert_eq!(
+            m.apply(CallEvent::Hangup, 1),
+            Err(CallError::IllegalTransition)
+        );
     }
 
     #[test]
     fn double_incoming_is_illegal() {
         let mut m = CallMachine::new(30, Disposition::Voicemail);
         m.apply(CallEvent::Incoming, 0).unwrap();
-        assert_eq!(m.apply(CallEvent::Incoming, 1), Err(CallError::IllegalTransition));
+        assert_eq!(
+            m.apply(CallEvent::Incoming, 1),
+            Err(CallError::IllegalTransition)
+        );
     }
 
     #[test]
@@ -536,7 +572,10 @@ mod tests {
         let mut m = CallMachine::new(30, Disposition::Voicemail);
         m.apply(CallEvent::Incoming, 0).unwrap();
         m.apply(CallEvent::Reject, 1).unwrap();
-        assert_eq!(m.apply(CallEvent::Answer, 2), Err(CallError::IllegalTransition));
+        assert_eq!(
+            m.apply(CallEvent::Answer, 2),
+            Err(CallError::IllegalTransition)
+        );
         m.reset();
         assert_eq!(m.state(), CallState::Idle);
         assert_eq!(m.apply(CallEvent::Incoming, 3).unwrap(), CallState::Ringing);

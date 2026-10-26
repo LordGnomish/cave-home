@@ -26,8 +26,8 @@
 #![allow(clippy::result_large_err, clippy::significant_drop_tightening)]
 
 use std::pin::Pin;
-use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::sync::Mutex;
@@ -36,8 +36,10 @@ use tonic::{Code, Request, Response, Status, Streaming};
 
 use crate::error::KineError;
 use crate::lease::{LeaseTable, UnixSeconds};
-use crate::range::{prefix_successor, RangeEnd, RangeRequest as KineRange, RangeResponse as KineRangeResp};
 use crate::metrics::KineMetrics;
+use crate::range::{
+    RangeEnd, RangeRequest as KineRange, RangeResponse as KineRangeResp, prefix_successor,
+};
 use crate::sqlite::SqliteStore;
 use crate::store::Row;
 use crate::watch::{EventKind, WatchEvent};
@@ -49,16 +51,17 @@ pub mod etcdserverpb {
 }
 
 use etcdserverpb::{
+    CompactionRequest, CompactionResponse, Compare, DeleteRangeRequest, DeleteRangeResponse, Event,
+    KeyValue, LeaseGrantRequest, LeaseGrantResponse, LeaseKeepAliveRequest, LeaseKeepAliveResponse,
+    LeaseRevokeRequest, LeaseRevokeResponse, LeaseTimeToLiveRequest, LeaseTimeToLiveResponse,
+    PutRequest, PutResponse, RangeRequest, RangeResponse, RequestOp, ResponseHeader, ResponseOp,
+    StatusRequest, StatusResponse, TxnRequest, TxnResponse, WatchCreateRequest, WatchRequest,
+    WatchResponse,
     kv_server::{Kv, KvServer},
     lease_server::{Lease, LeaseServer},
     maintenance_server::{Maintenance, MaintenanceServer},
-    watch_request, watch_server::{Watch, WatchServer},
-    request_op, response_op, CompactionRequest, CompactionResponse, Compare, DeleteRangeRequest,
-    DeleteRangeResponse, Event, KeyValue, LeaseGrantRequest, LeaseGrantResponse,
-    LeaseKeepAliveRequest, LeaseKeepAliveResponse, LeaseRevokeRequest, LeaseRevokeResponse,
-    LeaseTimeToLiveRequest, LeaseTimeToLiveResponse, PutRequest, PutResponse, RangeRequest,
-    RangeResponse, RequestOp, ResponseHeader, ResponseOp, StatusRequest, StatusResponse, TxnRequest,
-    TxnResponse, WatchCreateRequest, WatchRequest, WatchResponse,
+    request_op, response_op, watch_request,
+    watch_server::{Watch, WatchServer},
 };
 
 /// A pluggable wall-clock source for lease TTLs, in whole Unix seconds. Injected
@@ -322,7 +325,12 @@ impl KineServer {
             let store = self.store.lock().await;
             store.current_revision().map_err(status)?
         };
-        Ok(ResponseHeader { cluster_id: 0, member_id: 0, revision: rev, raft_term: 0 })
+        Ok(ResponseHeader {
+            cluster_id: 0,
+            member_id: 0,
+            revision: rev,
+            raft_term: 0,
+        })
     }
 
     /// Execute a [`RangeRequest`] under the lock and shape the etcd response.
@@ -336,7 +344,10 @@ impl KineServer {
     /// Execute a put under the lock, optionally capturing the previous kv.
     async fn do_put(&self, req: &PutRequest) -> Result<PutResponse, Status> {
         if req.key.is_empty() {
-            return Err(Status::new(Code::InvalidArgument, "etcdserver: key is not provided"));
+            return Err(Status::new(
+                Code::InvalidArgument,
+                "etcdserver: key is not provided",
+            ));
         }
         let mut store = self.store.lock().await;
 
@@ -365,14 +376,26 @@ impl KineServer {
         store.put(&req.key, &value, lease).map_err(status)?;
         let revision = store.current_revision().map_err(status)?;
         Ok(PutResponse {
-            header: Some(ResponseHeader { cluster_id: 0, member_id: 0, revision, raft_term: 0 }),
-            prev_kv: if req.prev_kv { prev.as_ref().map(row_to_kv) } else { None },
+            header: Some(ResponseHeader {
+                cluster_id: 0,
+                member_id: 0,
+                revision,
+                raft_term: 0,
+            }),
+            prev_kv: if req.prev_kv {
+                prev.as_ref().map(row_to_kv)
+            } else {
+                None
+            },
         })
     }
 
     /// Execute a delete-range under the lock: tombstone every live key in the
     /// interval, counting deletions and (optionally) returning prev kvs.
-    async fn do_delete_range(&self, req: &DeleteRangeRequest) -> Result<DeleteRangeResponse, Status> {
+    async fn do_delete_range(
+        &self,
+        req: &DeleteRangeRequest,
+    ) -> Result<DeleteRangeResponse, Status> {
         let selector = to_kine_range_bytes(&req.key, &req.range_end)?;
         let mut store = self.store.lock().await;
         let victims = store.range(&selector).map_err(status)?.kvs;
@@ -389,7 +412,12 @@ impl KineServer {
         }
         let revision = store.current_revision().map_err(status)?;
         Ok(DeleteRangeResponse {
-            header: Some(ResponseHeader { cluster_id: 0, member_id: 0, revision, raft_term: 0 }),
+            header: Some(ResponseHeader {
+                cluster_id: 0,
+                member_id: 0,
+                revision,
+                raft_term: 0,
+            }),
             deleted,
             prev_kvs,
         })
@@ -398,17 +426,22 @@ impl KineServer {
 
 #[tonic::async_trait]
 impl Kv for KineServer {
-    async fn range(&self, request: Request<RangeRequest>) -> Result<Response<RangeResponse>, Status> {
+    async fn range(
+        &self,
+        request: Request<RangeRequest>,
+    ) -> Result<Response<RangeResponse>, Status> {
         let start = Instant::now();
         let result = self.do_range(request.get_ref()).await;
-        self.metrics.record_request("range", start.elapsed().as_secs_f64(), result.is_ok());
+        self.metrics
+            .record_request("range", start.elapsed().as_secs_f64(), result.is_ok());
         result.map(Response::new)
     }
 
     async fn put(&self, request: Request<PutRequest>) -> Result<Response<PutResponse>, Status> {
         let start = Instant::now();
         let result = self.do_put(request.get_ref()).await;
-        self.metrics.record_request("put", start.elapsed().as_secs_f64(), result.is_ok());
+        self.metrics
+            .record_request("put", start.elapsed().as_secs_f64(), result.is_ok());
         result.map(Response::new)
     }
 
@@ -418,14 +451,16 @@ impl Kv for KineServer {
     ) -> Result<Response<DeleteRangeResponse>, Status> {
         let start = Instant::now();
         let result = self.do_delete_range(request.get_ref()).await;
-        self.metrics.record_request("delete", start.elapsed().as_secs_f64(), result.is_ok());
+        self.metrics
+            .record_request("delete", start.elapsed().as_secs_f64(), result.is_ok());
         result.map(Response::new)
     }
 
     async fn txn(&self, request: Request<TxnRequest>) -> Result<Response<TxnResponse>, Status> {
         let start = Instant::now();
         let result = self.do_txn(request.into_inner()).await;
-        self.metrics.record_request("txn", start.elapsed().as_secs_f64(), result.is_ok());
+        self.metrics
+            .record_request("txn", start.elapsed().as_secs_f64(), result.is_ok());
         result.map(Response::new)
     }
 
@@ -435,7 +470,8 @@ impl Kv for KineServer {
     ) -> Result<Response<CompactionResponse>, Status> {
         let start = Instant::now();
         let result = self.do_compact(request.into_inner()).await;
-        self.metrics.record_request("compact", start.elapsed().as_secs_f64(), result.is_ok());
+        self.metrics
+            .record_request("compact", start.elapsed().as_secs_f64(), result.is_ok());
         result.map(Response::new)
     }
 }
@@ -461,7 +497,11 @@ impl KineServer {
         for op in ops {
             responses.push(self.exec_op(op).await?);
         }
-        Ok(TxnResponse { header: Some(self.header().await?), succeeded, responses })
+        Ok(TxnResponse {
+            header: Some(self.header().await?),
+            succeeded,
+            responses,
+        })
     }
 
     /// Compact the store and record the rows removed into the metrics.
@@ -473,7 +513,12 @@ impl KineServer {
         };
         self.metrics.record_compaction(removed as u64);
         Ok(CompactionResponse {
-            header: Some(ResponseHeader { cluster_id: 0, member_id: 0, revision, raft_term: 0 }),
+            header: Some(ResponseHeader {
+                cluster_id: 0,
+                member_id: 0,
+                revision,
+                raft_term: 0,
+            }),
         })
     }
 
@@ -492,7 +537,9 @@ impl KineServer {
             }
             None => return Err(Status::new(Code::InvalidArgument, "empty txn op")),
         };
-        Ok(ResponseOp { response: Some(response) })
+        Ok(ResponseOp {
+            response: Some(response),
+        })
     }
 }
 
@@ -510,7 +557,10 @@ pub struct CompactionConfig {
 impl Default for CompactionConfig {
     fn default() -> Self {
         // kine's defaults: a 5-minute interval, keeping the last ~1000 revisions.
-        Self { retain: 1000, interval: Duration::from_secs(300) }
+        Self {
+            retain: 1000,
+            interval: Duration::from_secs(300),
+        }
     }
 }
 
@@ -523,10 +573,16 @@ impl KineServer {
     ///
     /// # Errors
     /// An etcd `Status` if the backend compaction fails.
-    pub async fn compact_retaining(&self, retain: i64) -> Result<Option<crate::compact::CompactReport>, Status> {
+    pub async fn compact_retaining(
+        &self,
+        retain: i64,
+    ) -> Result<Option<crate::compact::CompactReport>, Status> {
         let (current, floor) = {
             let store = self.store.lock().await;
-            (store.current_revision().map_err(status)?, store.compacted_revision().map_err(status)?)
+            (
+                store.current_revision().map_err(status)?,
+                store.compacted_revision().map_err(status)?,
+            )
         };
         let target = current - retain.max(0);
         if target <= 0 || target <= floor {
@@ -584,12 +640,23 @@ impl KineServer {
 
 #[tonic::async_trait]
 impl Maintenance for KineServer {
-    async fn status(&self, _request: Request<StatusRequest>) -> Result<Response<StatusResponse>, Status> {
+    async fn status(
+        &self,
+        _request: Request<StatusRequest>,
+    ) -> Result<Response<StatusResponse>, Status> {
         let (header, db_size) = {
             let store = self.store.lock().await;
             let rev = store.current_revision().map_err(status)?;
             let size = store.db_size().map_err(status)?;
-            (ResponseHeader { cluster_id: 0, member_id: 0, revision: rev, raft_term: 0 }, size)
+            (
+                ResponseHeader {
+                    cluster_id: 0,
+                    member_id: 0,
+                    revision: rev,
+                    raft_term: 0,
+                },
+                size,
+            )
         };
         Ok(Response::new(StatusResponse {
             header: Some(header),
@@ -613,8 +680,11 @@ impl Maintenance for KineServer {
             let store = self.store.lock().await;
             store.defragment().map_err(status)?
         };
-        self.metrics.record_defragment(u64::try_from(reclaimed).unwrap_or(0));
-        Ok(Response::new(etcdserverpb::DefragmentResponse { header: Some(self.header().await?) }))
+        self.metrics
+            .record_defragment(u64::try_from(reclaimed).unwrap_or(0));
+        Ok(Response::new(etcdserverpb::DefragmentResponse {
+            header: Some(self.header().await?),
+        }))
     }
 }
 
@@ -623,9 +693,17 @@ impl KineServer {
     /// server allocate one; a non-zero id is honoured verbatim (etcd's
     /// `LeaseGrant`). Rejects a non-positive TTL.
     async fn do_lease_grant(&self, ttl: i64, id: i64) -> Result<LeaseGrantResponse, Status> {
-        let lease_id = if id == 0 { self.next_lease_id.fetch_add(1, Ordering::Relaxed) } else { id };
+        let lease_id = if id == 0 {
+            self.next_lease_id.fetch_add(1, Ordering::Relaxed)
+        } else {
+            id
+        };
         let now = (self.clock)();
-        self.leases.lock().await.grant(lease_id, ttl, now).map_err(status)?;
+        self.leases
+            .lock()
+            .await
+            .grant(lease_id, ttl, now)
+            .map_err(status)?;
         Ok(LeaseGrantResponse {
             header: Some(self.header().await?),
             id: lease_id,
@@ -639,10 +717,19 @@ impl KineServer {
     async fn do_lease_revoke(&self, id: i64) -> Result<LeaseRevokeResponse, Status> {
         let existed = self.leases.lock().await.revoke(id).is_some();
         if !existed {
-            return Err(Status::new(Code::NotFound, "etcdserver: requested lease not found"));
+            return Err(Status::new(
+                Code::NotFound,
+                "etcdserver: requested lease not found",
+            ));
         }
-        self.store.lock().await.revoke_lease_keys(id).map_err(status)?;
-        Ok(LeaseRevokeResponse { header: Some(self.header().await?) })
+        self.store
+            .lock()
+            .await
+            .revoke_lease_keys(id)
+            .map_err(status)?;
+        Ok(LeaseRevokeResponse {
+            header: Some(self.header().await?),
+        })
     }
 
     /// Refresh one lease's TTL (etcd `LeaseKeepAlive`). A live lease is renewed
@@ -660,7 +747,11 @@ impl KineServer {
                 None => 0,
             }
         };
-        Ok(LeaseKeepAliveResponse { header: Some(self.header().await?), id, ttl })
+        Ok(LeaseKeepAliveResponse {
+            header: Some(self.header().await?),
+            id,
+            ttl,
+        })
     }
 
     /// Report a lease's remaining and granted TTL, and (optionally) the keys it
@@ -675,11 +766,21 @@ impl KineServer {
         let (ttl, granted_ttl) =
             found.map_or((-1, 0), |l| ((l.expires_at() - now).max(0), l.ttl_seconds));
         let keys = if want_keys && found.is_some() {
-            self.store.lock().await.keys_with_lease(id).map_err(status)?
+            self.store
+                .lock()
+                .await
+                .keys_with_lease(id)
+                .map_err(status)?
         } else {
             Vec::new()
         };
-        Ok(LeaseTimeToLiveResponse { header: Some(self.header().await?), id, ttl, granted_ttl, keys })
+        Ok(LeaseTimeToLiveResponse {
+            header: Some(self.header().await?),
+            id,
+            ttl,
+            granted_ttl,
+            keys,
+        })
     }
 }
 
@@ -690,14 +791,18 @@ impl Lease for KineServer {
         request: Request<LeaseGrantRequest>,
     ) -> Result<Response<LeaseGrantResponse>, Status> {
         let req = request.into_inner();
-        self.do_lease_grant(req.ttl, req.id).await.map(Response::new)
+        self.do_lease_grant(req.ttl, req.id)
+            .await
+            .map(Response::new)
     }
 
     async fn lease_revoke(
         &self,
         request: Request<LeaseRevokeRequest>,
     ) -> Result<Response<LeaseRevokeResponse>, Status> {
-        self.do_lease_revoke(request.into_inner().id).await.map(Response::new)
+        self.do_lease_revoke(request.into_inner().id)
+            .await
+            .map(Response::new)
     }
 
     type LeaseKeepAliveStream =
@@ -722,7 +827,9 @@ impl Lease for KineServer {
         request: Request<LeaseTimeToLiveRequest>,
     ) -> Result<Response<LeaseTimeToLiveResponse>, Status> {
         let req = request.into_inner();
-        self.do_lease_time_to_live(req.id, req.keys).await.map(Response::new)
+        self.do_lease_time_to_live(req.id, req.keys)
+            .await
+            .map(Response::new)
     }
 }
 
@@ -761,19 +868,23 @@ impl Watch for KineServer {
 fn eval_compare(store: &SqliteStore, cmp: &Compare) -> Result<bool, KineError> {
     use etcdserverpb::compare::{CompareResult, CompareTarget, TargetUnion};
 
-    let current = store.range(&KineRange::key(&cmp.key))?.kvs.into_iter().next();
-    let (create_rev, mod_rev, version, value, lease) = current.as_ref().map_or(
-        (0_i64, 0_i64, 0_i64, Vec::new(), 0_i64),
-        |r| {
-            (
-                r.create_revision,
-                r.mod_revision,
-                r.mod_revision - r.create_revision + 1,
-                r.value.clone(),
-                r.lease,
-            )
-        },
-    );
+    let current = store
+        .range(&KineRange::key(&cmp.key))?
+        .kvs
+        .into_iter()
+        .next();
+    let (create_rev, mod_rev, version, value, lease) =
+        current
+            .as_ref()
+            .map_or((0_i64, 0_i64, 0_i64, Vec::new(), 0_i64), |r| {
+                (
+                    r.create_revision,
+                    r.mod_revision,
+                    r.mod_revision - r.create_revision + 1,
+                    r.value.clone(),
+                    r.lease,
+                )
+            });
 
     let result = CompareResult::try_from(cmp.result).unwrap_or(CompareResult::Equal);
     let target = CompareTarget::try_from(cmp.target).unwrap_or(CompareTarget::Create);
@@ -839,7 +950,11 @@ fn to_event(e: &WatchEvent, want_prev: bool) -> Event {
         value: e.prev_value.clone(),
         lease: 0,
     });
-    Event { r#type: kind as i32, kv: Some(kv), prev_kv }
+    Event {
+        r#type: kind as i32,
+        kv: Some(kv),
+        prev_kv,
+    }
 }
 
 /// The set of event types a watch's `filters` admit. etcd's `WatchCreateRequest`
@@ -860,7 +975,10 @@ impl EventFilter {
     /// decode.
     fn from_proto(filters: &[i32]) -> Self {
         use etcdserverpb::watch_create_request::FilterType;
-        let mut f = Self { allow_put: true, allow_delete: true };
+        let mut f = Self {
+            allow_put: true,
+            allow_delete: true,
+        };
         for code in filters {
             match FilterType::try_from(*code) {
                 Ok(FilterType::Noput) => f.allow_put = false,
@@ -884,7 +1002,12 @@ impl EventFilter {
 /// sends in response to a `WatchCancelRequest`).
 fn watch_canceled(watch_id: i64, revision: i64) -> WatchResponse {
     WatchResponse {
-        header: Some(ResponseHeader { cluster_id: 0, member_id: 0, revision, raft_term: 0 }),
+        header: Some(ResponseHeader {
+            cluster_id: 0,
+            member_id: 0,
+            revision,
+            raft_term: 0,
+        }),
         watch_id,
         created: false,
         canceled: true,
@@ -901,7 +1024,12 @@ fn watch_canceled(watch_id: i64, revision: i64) -> WatchResponse {
 /// reason. etcd ends such a watch this way rather than erroring the stream.
 fn watch_compacted(watch_id: i64, revision: i64, compact_revision: i64) -> WatchResponse {
     WatchResponse {
-        header: Some(ResponseHeader { cluster_id: 0, member_id: 0, revision, raft_term: 0 }),
+        header: Some(ResponseHeader {
+            cluster_id: 0,
+            member_id: 0,
+            revision,
+            raft_term: 0,
+        }),
         watch_id,
         created: false,
         canceled: true,
@@ -913,9 +1041,19 @@ fn watch_compacted(watch_id: i64, revision: i64, compact_revision: i64) -> Watch
 }
 
 /// Build a `WatchResponse` carrying a header, watch id and event batch.
-const fn watch_response(watch_id: i64, revision: i64, created: bool, events: Vec<Event>) -> WatchResponse {
+const fn watch_response(
+    watch_id: i64,
+    revision: i64,
+    created: bool,
+    events: Vec<Event>,
+) -> WatchResponse {
     WatchResponse {
-        header: Some(ResponseHeader { cluster_id: 0, member_id: 0, revision, raft_term: 0 }),
+        header: Some(ResponseHeader {
+            cluster_id: 0,
+            member_id: 0,
+            revision,
+            raft_term: 0,
+        }),
         watch_id,
         created,
         canceled: false,
@@ -944,7 +1082,12 @@ fn shape_range(req: &RangeRequest, resp: &KineRangeResp, revision: i64) -> Range
             .collect()
     };
     RangeResponse {
-        header: Some(ResponseHeader { cluster_id: 0, member_id: 0, revision, raft_term: 0 }),
+        header: Some(ResponseHeader {
+            cluster_id: 0,
+            member_id: 0,
+            revision,
+            raft_term: 0,
+        }),
         kvs,
         more: resp.more,
         count: resp.count,
@@ -955,11 +1098,17 @@ fn shape_range(req: &RangeRequest, resp: &KineRangeResp, revision: i64) -> Range
 fn to_kine_range(req: &RangeRequest) -> Result<KineRange, Status> {
     let mut k = to_kine_range_bytes(&req.key, &req.range_end)?;
     if req.revision < 0 {
-        return Err(Status::new(Code::OutOfRange, "etcdserver: mvcc: revision is negative"));
+        return Err(Status::new(
+            Code::OutOfRange,
+            "etcdserver: mvcc: revision is negative",
+        ));
     }
     k.revision = req.revision;
     if req.limit < 0 {
-        return Err(Status::new(Code::InvalidArgument, "etcdserver: limit is negative"));
+        return Err(Status::new(
+            Code::InvalidArgument,
+            "etcdserver: limit is negative",
+        ));
     }
     k.limit = req.limit;
     Ok(k)
@@ -971,7 +1120,10 @@ fn to_kine_range(req: &RangeRequest) -> Result<KineRange, Status> {
 /// half-open interval `[key, range_end)` (covers paginated list continuations).
 fn to_kine_range_bytes(key: &[u8], range_end: &[u8]) -> Result<KineRange, Status> {
     if key.is_empty() && range_end.is_empty() {
-        return Err(Status::new(Code::InvalidArgument, "etcdserver: key is not provided"));
+        return Err(Status::new(
+            Code::InvalidArgument,
+            "etcdserver: key is not provided",
+        ));
     }
     let end = if range_end.is_empty() {
         RangeEnd::Single
@@ -982,7 +1134,12 @@ fn to_kine_range_bytes(key: &[u8], range_end: &[u8]) -> Result<KineRange, Status
     } else {
         RangeEnd::Explicit(range_end.to_vec())
     };
-    Ok(KineRange { key: key.to_vec(), end, revision: 0, limit: 0 })
+    Ok(KineRange {
+        key: key.to_vec(),
+        end,
+        revision: 0,
+        limit: 0,
+    })
 }
 
 /// Map a kine error onto an etcd gRPC status, preserving etcd's well-known
@@ -1013,12 +1170,13 @@ fn status(err: KineError) -> Status {
 #[cfg(test)]
 mod tests {
     use super::etcdserverpb::{
+        CompactionRequest, Compare, DeleteRangeRequest, PutRequest, RangeRequest, RequestOp,
+        StatusRequest, TxnRequest, WatchCreateRequest,
         compare::{CompareResult, CompareTarget, TargetUnion},
         event::EventType,
         kv_server::Kv,
         maintenance_server::Maintenance,
-        request_op, CompactionRequest, Compare, DeleteRangeRequest, PutRequest, RangeRequest,
-        RequestOp, StatusRequest, TxnRequest, WatchCreateRequest,
+        request_op,
     };
     use super::*;
     use crate::range::prefix_successor;
@@ -1039,20 +1197,35 @@ mod tests {
     }
 
     fn point(key: &[u8]) -> RangeRequest {
-        RangeRequest { key: key.to_vec(), ..Default::default() }
+        RangeRequest {
+            key: key.to_vec(),
+            ..Default::default()
+        }
     }
 
     fn prefix(p: &[u8]) -> RangeRequest {
-        RangeRequest { key: p.to_vec(), range_end: prefix_successor(p), ..Default::default() }
+        RangeRequest {
+            key: p.to_vec(),
+            range_end: prefix_successor(p),
+            ..Default::default()
+        }
     }
 
     #[tokio::test]
     async fn put_then_range_round_trips_value_and_revision() {
         let s = server();
-        let put = s.put(Request::new(put_req(b"/k", b"v1"))).await.unwrap().into_inner();
+        let put = s
+            .put(Request::new(put_req(b"/k", b"v1")))
+            .await
+            .unwrap()
+            .into_inner();
         assert_eq!(put.header.unwrap().revision, 1);
 
-        let resp = s.range(Request::new(point(b"/k"))).await.unwrap().into_inner();
+        let resp = s
+            .range(Request::new(point(b"/k")))
+            .await
+            .unwrap()
+            .into_inner();
         assert_eq!(resp.kvs.len(), 1);
         assert_eq!(resp.kvs[0].value, b"v1");
         assert_eq!(resp.kvs[0].mod_revision, 1);
@@ -1067,7 +1240,11 @@ mod tests {
         s.put(Request::new(put_req(b"/reg/a", b"1"))).await.unwrap();
         s.put(Request::new(put_req(b"/reg/b", b"2"))).await.unwrap();
         s.put(Request::new(put_req(b"/other", b"9"))).await.unwrap();
-        let resp = s.range(Request::new(prefix(b"/reg/"))).await.unwrap().into_inner();
+        let resp = s
+            .range(Request::new(prefix(b"/reg/")))
+            .await
+            .unwrap()
+            .into_inner();
         let keys: Vec<_> = resp.kvs.iter().map(|kv| kv.key.clone()).collect();
         assert_eq!(keys, vec![b"/reg/a".to_vec(), b"/reg/b".to_vec()]);
         assert_eq!(resp.count, 2);
@@ -1091,7 +1268,11 @@ mod tests {
         req.ignore_value = true;
         req.lease = 42;
         s.put(Request::new(req)).await.unwrap();
-        let resp = s.range(Request::new(point(b"/k"))).await.unwrap().into_inner();
+        let resp = s
+            .range(Request::new(point(b"/k")))
+            .await
+            .unwrap()
+            .into_inner();
         assert_eq!(resp.kvs[0].value, b"keep");
         assert_eq!(resp.kvs[0].lease, 42);
     }
@@ -1106,10 +1287,21 @@ mod tests {
             range_end: prefix_successor(b"/reg/"),
             prev_kv: true,
         };
-        let resp = s.delete_range(Request::new(del)).await.unwrap().into_inner();
+        let resp = s
+            .delete_range(Request::new(del))
+            .await
+            .unwrap()
+            .into_inner();
         assert_eq!(resp.deleted, 2);
         assert_eq!(resp.prev_kvs.len(), 2);
-        assert_eq!(s.range(Request::new(prefix(b"/reg/"))).await.unwrap().into_inner().count, 0);
+        assert_eq!(
+            s.range(Request::new(prefix(b"/reg/")))
+                .await
+                .unwrap()
+                .into_inner()
+                .count,
+            0
+        );
     }
 
     #[tokio::test]
@@ -1118,9 +1310,12 @@ mod tests {
         s.put(Request::new(put_req(b"/k", b"v1"))).await.unwrap(); // 1
         s.put(Request::new(put_req(b"/k", b"v2"))).await.unwrap(); // 2
         s.put(Request::new(put_req(b"/k", b"v3"))).await.unwrap(); // 3
-        s.compact(Request::new(CompactionRequest { revision: 2, physical: true }))
-            .await
-            .unwrap();
+        s.compact(Request::new(CompactionRequest {
+            revision: 2,
+            physical: true,
+        }))
+        .await
+        .unwrap();
         let mut at1 = point(b"/k");
         at1.revision = 1;
         let err = s.range(Request::new(at1)).await.unwrap_err();
@@ -1147,13 +1342,23 @@ mod tests {
         };
         let resp = s.txn(Request::new(txn)).await.unwrap().into_inner();
         assert!(resp.succeeded);
-        assert_eq!(s.range(Request::new(point(b"/k"))).await.unwrap().into_inner().kvs[0].value, b"created");
+        assert_eq!(
+            s.range(Request::new(point(b"/k")))
+                .await
+                .unwrap()
+                .into_inner()
+                .kvs[0]
+                .value,
+            b"created"
+        );
     }
 
     #[tokio::test]
     async fn txn_create_if_absent_takes_failure_branch_when_present() {
         let s = server();
-        s.put(Request::new(put_req(b"/k", b"already"))).await.unwrap();
+        s.put(Request::new(put_req(b"/k", b"already")))
+            .await
+            .unwrap();
         let txn = TxnRequest {
             compare: vec![Compare {
                 result: CompareResult::Equal as i32,
@@ -1172,7 +1377,15 @@ mod tests {
         let resp = s.txn(Request::new(txn)).await.unwrap().into_inner();
         assert!(!resp.succeeded);
         // failure branch ran a range, value unchanged
-        assert_eq!(s.range(Request::new(point(b"/k"))).await.unwrap().into_inner().kvs[0].value, b"already");
+        assert_eq!(
+            s.range(Request::new(point(b"/k")))
+                .await
+                .unwrap()
+                .into_inner()
+                .kvs[0]
+                .value,
+            b"already"
+        );
     }
 
     #[tokio::test]
@@ -1195,7 +1408,15 @@ mod tests {
         };
         let resp = s.txn(Request::new(txn)).await.unwrap().into_inner();
         assert!(resp.succeeded);
-        assert_eq!(s.range(Request::new(point(b"/k"))).await.unwrap().into_inner().kvs[0].value, b"v2");
+        assert_eq!(
+            s.range(Request::new(point(b"/k")))
+                .await
+                .unwrap()
+                .into_inner()
+                .kvs[0]
+                .value,
+            b"v2"
+        );
     }
 
     #[tokio::test]
@@ -1213,7 +1434,9 @@ mod tests {
     #[tokio::test]
     async fn keys_only_strips_values() {
         let s = server();
-        s.put(Request::new(put_req(b"/k", b"secret"))).await.unwrap();
+        s.put(Request::new(put_req(b"/k", b"secret")))
+            .await
+            .unwrap();
         let mut req = point(b"/k");
         req.keys_only = true;
         let resp = s.range(Request::new(req)).await.unwrap().into_inner();
@@ -1232,7 +1455,11 @@ mod tests {
     async fn maintenance_status_reports_etcd_version_and_header() {
         let s = server();
         s.put(Request::new(put_req(b"/k", b"v"))).await.unwrap();
-        let resp = s.status(Request::new(StatusRequest {})).await.unwrap().into_inner();
+        let resp = s
+            .status(Request::new(StatusRequest {}))
+            .await
+            .unwrap()
+            .into_inner();
         assert_eq!(resp.version, ETCD_VERSION);
         assert_eq!(resp.header.unwrap().revision, 1);
     }
@@ -1243,9 +1470,12 @@ mod tests {
         s.put(Request::new(put_req(b"/k", b"v"))).await.unwrap(); // ok put
         s.put(Request::new(put_req(b"", b"x"))).await.unwrap_err(); // failed put (empty key)
         s.range(Request::new(point(b"/k"))).await.unwrap(); // ok range
-        s.compact(Request::new(CompactionRequest { revision: 1, physical: true }))
-            .await
-            .unwrap();
+        s.compact(Request::new(CompactionRequest {
+            revision: 1,
+            physical: true,
+        }))
+        .await
+        .unwrap();
 
         let out = s.metrics().render();
         assert!(out.contains("kine_request_total{operation=\"put\"} 2"));
@@ -1259,9 +1489,11 @@ mod tests {
     fn server_with_clock() -> (KineServer, Arc<std::sync::atomic::AtomicI64>) {
         let now = Arc::new(std::sync::atomic::AtomicI64::new(0));
         let n = Arc::clone(&now);
-        let clock: super::ClockFn =
-            Arc::new(move || n.load(std::sync::atomic::Ordering::Relaxed));
-        (KineServer::with_clock(SqliteStore::open_in_memory().unwrap(), clock), now)
+        let clock: super::ClockFn = Arc::new(move || n.load(std::sync::atomic::Ordering::Relaxed));
+        (
+            KineServer::with_clock(SqliteStore::open_in_memory().unwrap(), clock),
+            now,
+        )
     }
 
     #[tokio::test]
@@ -1300,11 +1532,30 @@ mod tests {
         s.put(Request::new(put_req(b"/free", b"x"))).await.unwrap(); // no lease
 
         s.do_lease_revoke(5).await.unwrap();
-        assert!(s.range(Request::new(point(b"/k1"))).await.unwrap().into_inner().kvs.is_empty());
-        assert!(s.range(Request::new(point(b"/k2"))).await.unwrap().into_inner().kvs.is_empty());
+        assert!(
+            s.range(Request::new(point(b"/k1")))
+                .await
+                .unwrap()
+                .into_inner()
+                .kvs
+                .is_empty()
+        );
+        assert!(
+            s.range(Request::new(point(b"/k2")))
+                .await
+                .unwrap()
+                .into_inner()
+                .kvs
+                .is_empty()
+        );
         // the unleased key is untouched
         assert_eq!(
-            s.range(Request::new(point(b"/free"))).await.unwrap().into_inner().kvs[0].value,
+            s.range(Request::new(point(b"/free")))
+                .await
+                .unwrap()
+                .into_inner()
+                .kvs[0]
+                .value,
             b"x"
         );
     }
@@ -1364,13 +1615,27 @@ mod tests {
     async fn compact_retaining_drops_old_history_keeping_recent_revisions() {
         let s = server();
         for i in 0..6 {
-            s.put(Request::new(put_req(b"/k", format!("v{i}").as_bytes()))).await.unwrap();
+            s.put(Request::new(put_req(b"/k", format!("v{i}").as_bytes())))
+                .await
+                .unwrap();
         } // revisions 1..=6, current value v5
         // retain the last 2 revisions -> compact floor moves to 4.
-        let report = s.compact_retaining(2).await.unwrap().expect("compaction ran");
+        let report = s
+            .compact_retaining(2)
+            .await
+            .unwrap()
+            .expect("compaction ran");
         assert_eq!(report.compacted, 4);
         // current state intact
-        assert_eq!(s.range(Request::new(point(b"/k"))).await.unwrap().into_inner().kvs[0].value, b"v5");
+        assert_eq!(
+            s.range(Request::new(point(b"/k")))
+                .await
+                .unwrap()
+                .into_inner()
+                .kvs[0]
+                .value,
+            b"v5"
+        );
         // a read below the new floor is now compacted-out
         let mut at1 = point(b"/k");
         at1.revision = 1;
@@ -1397,7 +1662,14 @@ mod tests {
         now.store(10, std::sync::atomic::Ordering::Relaxed); // TTL elapsed
         let deleted = s.reap_expired_leases().await.unwrap();
         assert_eq!(deleted, 1, "the expired lease's one key is reaped");
-        assert!(s.range(Request::new(point(b"/owned"))).await.unwrap().into_inner().kvs.is_empty());
+        assert!(
+            s.range(Request::new(point(b"/owned")))
+                .await
+                .unwrap()
+                .into_inner()
+                .kvs
+                .is_empty()
+        );
         // the lease is gone from the registry
         assert_eq!(s.do_lease_time_to_live(5, false).await.unwrap().ttl, -1);
     }
@@ -1411,14 +1683,26 @@ mod tests {
         s.put(Request::new(p)).await.unwrap();
         now.store(50, std::sync::atomic::Ordering::Relaxed);
         assert_eq!(s.reap_expired_leases().await.unwrap(), 0);
-        assert_eq!(s.range(Request::new(point(b"/owned"))).await.unwrap().into_inner().kvs.len(), 1);
+        assert_eq!(
+            s.range(Request::new(point(b"/owned")))
+                .await
+                .unwrap()
+                .into_inner()
+                .kvs
+                .len(),
+            1
+        );
     }
 
     #[tokio::test]
     async fn maintenance_status_reports_a_real_db_size() {
         let s = server();
         s.put(Request::new(put_req(b"/k", b"v"))).await.unwrap();
-        let resp = s.status(Request::new(StatusRequest {})).await.unwrap().into_inner();
+        let resp = s
+            .status(Request::new(StatusRequest {}))
+            .await
+            .unwrap()
+            .into_inner();
         assert!(resp.db_size > 0, "status carries the real datastore size");
     }
 
@@ -1426,9 +1710,16 @@ mod tests {
     async fn defragment_rpc_rebuilds_and_returns_a_header() {
         let s = server();
         for i in 0..50 {
-            s.put(Request::new(put_req(b"/k", format!("v{i}").as_bytes()))).await.unwrap();
+            s.put(Request::new(put_req(b"/k", format!("v{i}").as_bytes())))
+                .await
+                .unwrap();
         }
-        s.compact(Request::new(CompactionRequest { revision: 40, physical: true })).await.unwrap();
+        s.compact(Request::new(CompactionRequest {
+            revision: 40,
+            physical: true,
+        }))
+        .await
+        .unwrap();
         let resp = s
             .defragment(Request::new(super::etcdserverpb::DefragmentRequest {}))
             .await
@@ -1436,7 +1727,15 @@ mod tests {
             .into_inner();
         assert!(resp.header.is_some());
         // data still readable after the rebuild
-        assert_eq!(s.range(Request::new(point(b"/k"))).await.unwrap().into_inner().kvs[0].value, b"v49");
+        assert_eq!(
+            s.range(Request::new(point(b"/k")))
+                .await
+                .unwrap()
+                .into_inner()
+                .kvs[0]
+                .value,
+            b"v49"
+        );
     }
 
     fn watch_create(prefix_key: &[u8], start_revision: i64) -> WatchCreateRequest {
@@ -1457,7 +1756,11 @@ mod tests {
         let s = server();
         s.put(Request::new(put_req(b"/ns/a", b"1"))).await.unwrap(); // rev 1 PUT
         s.put(Request::new(put_req(b"/ns/b", b"2"))).await.unwrap(); // rev 2 PUT
-        let del = DeleteRangeRequest { key: b"/ns/a".to_vec(), range_end: Vec::new(), prev_kv: false };
+        let del = DeleteRangeRequest {
+            key: b"/ns/a".to_vec(),
+            range_end: Vec::new(),
+            prev_kv: false,
+        };
         s.delete_range(Request::new(del)).await.unwrap(); //            rev 3 DELETE /ns/a
 
         let mut stream = Box::pin(s.watch_stream(watch_create(b"/ns/", 1)));
@@ -1468,7 +1771,11 @@ mod tests {
         assert!(created.events.is_empty());
 
         let batch = stream.next().await.unwrap().unwrap();
-        let revs: Vec<_> = batch.events.iter().map(|e| e.kv.as_ref().unwrap().mod_revision).collect();
+        let revs: Vec<_> = batch
+            .events
+            .iter()
+            .map(|e| e.kv.as_ref().unwrap().mod_revision)
+            .collect();
         assert_eq!(revs, vec![1, 2, 3], "all changes since rev 1, in order");
         assert_eq!(batch.events[0].r#type, EventType::Put as i32);
         assert_eq!(batch.events[2].r#type, EventType::Delete as i32);
@@ -1488,9 +1795,17 @@ mod tests {
         let _created = stream.next().await.unwrap().unwrap();
         let batch = stream.next().await.unwrap().unwrap();
 
-        let ev_create = batch.events.iter().find(|e| e.kv.as_ref().unwrap().mod_revision == 1).unwrap();
+        let ev_create = batch
+            .events
+            .iter()
+            .find(|e| e.kv.as_ref().unwrap().mod_revision == 1)
+            .unwrap();
         assert!(ev_create.prev_kv.is_none(), "a create has no previous kv");
-        let ev_update = batch.events.iter().find(|e| e.kv.as_ref().unwrap().mod_revision == 2).unwrap();
+        let ev_update = batch
+            .events
+            .iter()
+            .find(|e| e.kv.as_ref().unwrap().mod_revision == 2)
+            .unwrap();
         assert_eq!(ev_update.prev_kv.as_ref().unwrap().value, b"v1");
     }
 
@@ -1518,7 +1833,10 @@ mod tests {
         };
         assert!(canceled.canceled);
         assert_eq!(canceled.watch_id, 7);
-        assert!(stream.next().await.is_none(), "stream terminates after cancel");
+        assert!(
+            stream.next().await.is_none(),
+            "stream terminates after cancel"
+        );
     }
 
     #[tokio::test]
@@ -1550,7 +1868,11 @@ mod tests {
         let mut stream = Box::pin(s.watch_stream(watch_create(b"/ns/", 1)));
         let _created = stream.next().await.unwrap().unwrap();
         let batch = stream.next().await.unwrap().unwrap();
-        let keys: Vec<_> = batch.events.iter().map(|e| e.kv.as_ref().unwrap().key.clone()).collect();
+        let keys: Vec<_> = batch
+            .events
+            .iter()
+            .map(|e| e.kv.as_ref().unwrap().key.clone())
+            .collect();
         assert_eq!(keys, vec![b"/ns/x".to_vec()]);
     }
 
@@ -1560,7 +1882,11 @@ mod tests {
         use tokio_stream::StreamExt;
         let s = server();
         s.put(Request::new(put_req(b"/ns/a", b"1"))).await.unwrap(); // rev 1 PUT
-        let del = DeleteRangeRequest { key: b"/ns/a".to_vec(), range_end: Vec::new(), prev_kv: false };
+        let del = DeleteRangeRequest {
+            key: b"/ns/a".to_vec(),
+            range_end: Vec::new(),
+            prev_kv: false,
+        };
         s.delete_range(Request::new(del)).await.unwrap(); //            rev 2 DELETE
 
         let mut create = watch_create(b"/ns/", 1);
@@ -1580,7 +1906,11 @@ mod tests {
         use tokio_stream::StreamExt;
         let s = server();
         s.put(Request::new(put_req(b"/ns/a", b"1"))).await.unwrap(); // rev 1 PUT
-        let del = DeleteRangeRequest { key: b"/ns/a".to_vec(), range_end: Vec::new(), prev_kv: false };
+        let del = DeleteRangeRequest {
+            key: b"/ns/a".to_vec(),
+            range_end: Vec::new(),
+            prev_kv: false,
+        };
         s.delete_range(Request::new(del)).await.unwrap(); //            rev 2 DELETE
 
         let mut create = watch_create(b"/ns/", 1);
@@ -1600,7 +1930,11 @@ mod tests {
         use tokio_stream::StreamExt;
         let s = server();
         s.put(Request::new(put_req(b"/ns/a", b"1"))).await.unwrap();
-        let del = DeleteRangeRequest { key: b"/ns/a".to_vec(), range_end: Vec::new(), prev_kv: false };
+        let del = DeleteRangeRequest {
+            key: b"/ns/a".to_vec(),
+            range_end: Vec::new(),
+            prev_kv: false,
+        };
         s.delete_range(Request::new(del)).await.unwrap();
 
         let mut create = watch_create(b"/ns/", 1);
@@ -1610,7 +1944,10 @@ mod tests {
         // No event response is ever produced because every change is filtered out;
         // assert the next message (if any within a short window) is never a batch.
         let next = tokio::time::timeout(Duration::from_millis(250), stream.next()).await;
-        assert!(next.is_err(), "no event batch is emitted when both filters are set");
+        assert!(
+            next.is_err(),
+            "no event batch is emitted when both filters are set"
+        );
     }
 
     #[tokio::test]
@@ -1619,20 +1956,29 @@ mod tests {
         s.put(Request::new(put_req(b"/k", b"v1"))).await.unwrap(); // 1
         s.put(Request::new(put_req(b"/k", b"v2"))).await.unwrap(); // 2
         s.put(Request::new(put_req(b"/k", b"v3"))).await.unwrap(); // 3
-        s.compact(Request::new(CompactionRequest { revision: 2, physical: true }))
-            .await
-            .unwrap();
+        s.compact(Request::new(CompactionRequest {
+            revision: 2,
+            physical: true,
+        }))
+        .await
+        .unwrap();
         // Re-compacting at the floor (or below it) is etcd's ErrCompacted, which
         // surfaces as gRPC OutOfRange — NOT InvalidArgument.
         let err = s
-            .compact(Request::new(CompactionRequest { revision: 2, physical: true }))
+            .compact(Request::new(CompactionRequest {
+                revision: 2,
+                physical: true,
+            }))
             .await
             .unwrap_err();
         assert_eq!(err.code(), Code::OutOfRange, "re-compact is ErrCompacted");
         assert!(err.message().contains("compacted"));
 
         let err_below = s
-            .compact(Request::new(CompactionRequest { revision: 1, physical: true }))
+            .compact(Request::new(CompactionRequest {
+                revision: 1,
+                physical: true,
+            }))
             .await
             .unwrap_err();
         assert_eq!(err_below.code(), Code::OutOfRange);
@@ -1645,10 +1991,17 @@ mod tests {
         // etcd's ErrFutureRev when compacting a revision the store hasn't reached;
         // it surfaces as gRPC OutOfRange.
         let err = s
-            .compact(Request::new(CompactionRequest { revision: 99, physical: true }))
+            .compact(Request::new(CompactionRequest {
+                revision: 99,
+                physical: true,
+            }))
             .await
             .unwrap_err();
-        assert_eq!(err.code(), Code::OutOfRange, "future-rev compact is OutOfRange");
+        assert_eq!(
+            err.code(),
+            Code::OutOfRange,
+            "future-rev compact is OutOfRange"
+        );
         assert!(err.message().contains("future"));
     }
 
@@ -1659,7 +2012,10 @@ mod tests {
         s.put(Request::new(put_req(b"/k", b"v2"))).await.unwrap(); // 2
         s.put(Request::new(put_req(b"/k", b"v3"))).await.unwrap(); // 3
         let resp = s
-            .compact(Request::new(CompactionRequest { revision: 2, physical: true }))
+            .compact(Request::new(CompactionRequest {
+                revision: 2,
+                physical: true,
+            }))
             .await
             .unwrap()
             .into_inner();
@@ -1675,9 +2031,12 @@ mod tests {
         s.put(Request::new(put_req(b"/ns/k", b"v1"))).await.unwrap(); // 1
         s.put(Request::new(put_req(b"/ns/k", b"v2"))).await.unwrap(); // 2
         s.put(Request::new(put_req(b"/ns/k", b"v3"))).await.unwrap(); // 3
-        s.compact(Request::new(CompactionRequest { revision: 2, physical: true }))
-            .await
-            .unwrap();
+        s.compact(Request::new(CompactionRequest {
+            revision: 2,
+            physical: true,
+        }))
+        .await
+        .unwrap();
 
         // A watch from rev 1 (below the compacted floor 2) cannot be served:
         // etcd answers with a canceled response carrying compact_revision, not a
@@ -1687,8 +2046,14 @@ mod tests {
         assert!(created.created);
         let canceled = stream.next().await.unwrap().unwrap();
         assert!(canceled.canceled);
-        assert_eq!(canceled.compact_revision, 2, "the floor the client must restart above");
+        assert_eq!(
+            canceled.compact_revision, 2,
+            "the floor the client must restart above"
+        );
         assert!(canceled.cancel_reason.contains("compacted"));
-        assert!(stream.next().await.is_none(), "stream terminates after a compacted cancel");
+        assert!(
+            stream.next().await.is_none(),
+            "stream terminates after a compacted cancel"
+        );
     }
 }

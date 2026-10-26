@@ -30,7 +30,7 @@ use mysql_async::prelude::Queryable;
 use mysql_async::{Conn, Row as MyRow, TxOpts, Value};
 
 use crate::backend::{contains, key_str, like_pattern, resolve_read, validate_range};
-use crate::dialect::{Dialect, Driver, COMPACT_REV_KEY};
+use crate::dialect::{COMPACT_REV_KEY, Dialect, Driver};
 use crate::error::{KineError, Result};
 use crate::range::{RangeRequest, RangeResponse};
 use crate::revision::Revision;
@@ -54,7 +54,10 @@ impl MysqlStore {
     /// [`KineError::Backend`] if the connection or migration fails.
     pub async fn connect(dsn: &str) -> Result<Self> {
         let conn = Conn::from_url(dsn).await.map_err(my_err)?;
-        let mut store = Self { conn, dialect: Dialect::new(Driver::Mysql) };
+        let mut store = Self {
+            conn,
+            dialect: Dialect::new(Driver::Mysql),
+        };
         store.bootstrap().await?;
         Ok(store)
     }
@@ -75,7 +78,10 @@ impl MysqlStore {
             )
             .await
             .map_err(my_err)?;
-        self.conn.query_drop(self.dialect.create_table_sql()).await.map_err(my_err)?;
+        self.conn
+            .query_drop(self.dialect.create_table_sql())
+            .await
+            .map_err(my_err)?;
         if existed.unwrap_or(0) == 0 {
             for ix in self.dialect.index_sqls() {
                 self.conn.query_drop(ix).await.map_err(my_err)?;
@@ -89,7 +95,10 @@ impl MysqlStore {
         let sentinel = COMPACT_REV_KEY;
         let exists: Option<i64> = self
             .conn
-            .exec_first("SELECT EXISTS(SELECT 1 FROM kine WHERE name = ?)", vec![bytes(sentinel.as_bytes())])
+            .exec_first(
+                "SELECT EXISTS(SELECT 1 FROM kine WHERE name = ?)",
+                vec![bytes(sentinel.as_bytes())],
+            )
             .await
             .map_err(my_err)?;
         if exists.unwrap_or(0) != 0 {
@@ -125,7 +134,10 @@ impl MysqlStore {
         let sentinel = COMPACT_REV_KEY;
         let v: Option<i64> = self
             .conn
-            .exec_first(self.dialect.header_revision_sql(), vec![bytes(sentinel.as_bytes())])
+            .exec_first(
+                self.dialect.header_revision_sql(),
+                vec![bytes(sentinel.as_bytes())],
+            )
             .await
             .map_err(my_err)?;
         Ok(v.unwrap_or(0))
@@ -139,7 +151,10 @@ impl MysqlStore {
         let sentinel = COMPACT_REV_KEY;
         let v: Option<i64> = self
             .conn
-            .exec_first(self.dialect.compacted_floor_sql(), vec![bytes(sentinel.as_bytes())])
+            .exec_first(
+                self.dialect.compacted_floor_sql(),
+                vec![bytes(sentinel.as_bytes())],
+            )
             .await
             .map_err(my_err)?;
         Ok(v.unwrap_or(0))
@@ -149,17 +164,38 @@ impl MysqlStore {
     ///
     /// # Errors
     /// [`KineError::EmptyKey`] / [`KineError::Backend`].
-    pub async fn create(&mut self, key: &[u8], value: &[u8], lease: i64) -> Result<Option<Revision>> {
+    pub async fn create(
+        &mut self,
+        key: &[u8],
+        value: &[u8],
+        lease: i64,
+    ) -> Result<Option<Revision>> {
         let k = key_str(key)?;
         let dialect = self.dialect;
-        let mut tx = self.conn.start_transaction(TxOpts::default()).await.map_err(my_err)?;
+        let mut tx = self
+            .conn
+            .start_transaction(TxOpts::default())
+            .await
+            .map_err(my_err)?;
         let latest = latest_in(&mut tx, dialect, &k).await?;
         if latest.as_ref().is_some_and(|(_, _, deleted, _)| !deleted) {
             tx.rollback().await.map_err(my_err)?;
             return Ok(None);
         }
         let prev_id = latest.map_or(0, |(id, _, _, _)| id);
-        let rev = insert_in(&mut tx, dialect, &k, true, false, 0, prev_id, lease, value, &[]).await?;
+        let rev = insert_in(
+            &mut tx,
+            dialect,
+            &k,
+            true,
+            false,
+            0,
+            prev_id,
+            lease,
+            value,
+            &[],
+        )
+        .await?;
         tx.commit().await.map_err(my_err)?;
         Ok(Some(rev))
     }
@@ -168,11 +204,21 @@ impl MysqlStore {
     ///
     /// # Errors
     /// [`KineError::EmptyKey`] / [`KineError::Backend`].
-    pub async fn update(&mut self, key: &[u8], value: &[u8], lease: i64) -> Result<Option<Revision>> {
+    pub async fn update(
+        &mut self,
+        key: &[u8],
+        value: &[u8],
+        lease: i64,
+    ) -> Result<Option<Revision>> {
         let k = key_str(key)?;
         let dialect = self.dialect;
-        let mut tx = self.conn.start_transaction(TxOpts::default()).await.map_err(my_err)?;
-        let Some((prev_id, create_rev, deleted, old)) = latest_in(&mut tx, dialect, &k).await? else {
+        let mut tx = self
+            .conn
+            .start_transaction(TxOpts::default())
+            .await
+            .map_err(my_err)?;
+        let Some((prev_id, create_rev, deleted, old)) = latest_in(&mut tx, dialect, &k).await?
+        else {
             tx.rollback().await.map_err(my_err)?;
             return Ok(None);
         };
@@ -180,7 +226,10 @@ impl MysqlStore {
             tx.rollback().await.map_err(my_err)?;
             return Ok(None);
         }
-        let rev = insert_in(&mut tx, dialect, &k, false, false, create_rev, prev_id, lease, value, &old).await?;
+        let rev = insert_in(
+            &mut tx, dialect, &k, false, false, create_rev, prev_id, lease, value, &old,
+        )
+        .await?;
         tx.commit().await.map_err(my_err)?;
         Ok(Some(rev))
     }
@@ -192,14 +241,33 @@ impl MysqlStore {
     pub async fn put(&mut self, key: &[u8], value: &[u8], lease: i64) -> Result<Revision> {
         let k = key_str(key)?;
         let dialect = self.dialect;
-        let mut tx = self.conn.start_transaction(TxOpts::default()).await.map_err(my_err)?;
+        let mut tx = self
+            .conn
+            .start_transaction(TxOpts::default())
+            .await
+            .map_err(my_err)?;
         let rev = match latest_in(&mut tx, dialect, &k).await? {
             Some((prev_id, create_rev, false, old)) => {
-                insert_in(&mut tx, dialect, &k, false, false, create_rev, prev_id, lease, value, &old).await?
+                insert_in(
+                    &mut tx, dialect, &k, false, false, create_rev, prev_id, lease, value, &old,
+                )
+                .await?
             }
             other => {
                 let prev_id = other.map_or(0, |(id, _, _, _)| id);
-                insert_in(&mut tx, dialect, &k, true, false, 0, prev_id, lease, value, &[]).await?
+                insert_in(
+                    &mut tx,
+                    dialect,
+                    &k,
+                    true,
+                    false,
+                    0,
+                    prev_id,
+                    lease,
+                    value,
+                    &[],
+                )
+                .await?
             }
         };
         tx.commit().await.map_err(my_err)?;
@@ -213,8 +281,13 @@ impl MysqlStore {
     pub async fn delete(&mut self, key: &[u8]) -> Result<Option<Revision>> {
         let k = key_str(key)?;
         let dialect = self.dialect;
-        let mut tx = self.conn.start_transaction(TxOpts::default()).await.map_err(my_err)?;
-        let Some((prev_id, create_rev, deleted, old)) = latest_in(&mut tx, dialect, &k).await? else {
+        let mut tx = self
+            .conn
+            .start_transaction(TxOpts::default())
+            .await
+            .map_err(my_err)?;
+        let Some((prev_id, create_rev, deleted, old)) = latest_in(&mut tx, dialect, &k).await?
+        else {
             tx.rollback().await.map_err(my_err)?;
             return Ok(None);
         };
@@ -222,7 +295,19 @@ impl MysqlStore {
             tx.rollback().await.map_err(my_err)?;
             return Ok(None);
         }
-        let rev = insert_in(&mut tx, dialect, &k, false, true, create_rev, prev_id, 0, &[], &old).await?;
+        let rev = insert_in(
+            &mut tx,
+            dialect,
+            &k,
+            false,
+            true,
+            create_rev,
+            prev_id,
+            0,
+            &[],
+            &old,
+        )
+        .await?;
         tx.commit().await.map_err(my_err)?;
         Ok(Some(rev))
     }
@@ -238,7 +323,10 @@ impl MysqlStore {
         let read_rev = resolve_read(req.revision, header)?;
         let floor = self.compacted_revision().await?;
         if req.revision != 0 && req.revision < floor {
-            return Err(KineError::Compacted { requested: req.revision, compacted: floor });
+            return Err(KineError::Compacted {
+                requested: req.revision,
+                compacted: floor,
+            });
         }
 
         let mut rows = self.list_rows(req, read_rev).await?;
@@ -250,7 +338,12 @@ impl MysqlStore {
         } else {
             (rows, false)
         };
-        Ok(RangeResponse { revision: read_rev, kvs, more, count })
+        Ok(RangeResponse {
+            revision: read_rev,
+            kvs,
+            more,
+            count,
+        })
     }
 
     /// Run the latest-row-per-key list query for `req` at `read_rev`.
@@ -262,12 +355,19 @@ impl MysqlStore {
             self.conn
                 .exec(
                     self.dialect.list_revision_sql(),
-                    vec![bytes(pattern.as_bytes()), Value::Int(read_rev), Value::Int(0)],
+                    vec![
+                        bytes(pattern.as_bytes()),
+                        Value::Int(read_rev),
+                        Value::Int(0),
+                    ],
                 )
                 .await
         } else {
             self.conn
-                .exec(self.dialect.list_current_sql(), vec![bytes(pattern.as_bytes()), Value::Int(0)])
+                .exec(
+                    self.dialect.list_current_sql(),
+                    vec![bytes(pattern.as_bytes()), Value::Int(0)],
+                )
                 .await
         }
         .map_err(my_err)?;
@@ -283,20 +383,32 @@ impl MysqlStore {
     /// # Errors
     /// [`KineError::NegativeRevision`] / [`KineError::Compacted`], filter
     /// validation, or [`KineError::Backend`].
-    pub async fn watch_after(&mut self, filter: &RangeRequest, start_revision: Revision) -> Result<Vec<WatchEvent>> {
+    pub async fn watch_after(
+        &mut self,
+        filter: &RangeRequest,
+        start_revision: Revision,
+    ) -> Result<Vec<WatchEvent>> {
         if start_revision < 0 {
-            return Err(KineError::NegativeRevision { revision: start_revision });
+            return Err(KineError::NegativeRevision {
+                revision: start_revision,
+            });
         }
         let floor = self.compacted_revision().await?;
         if start_revision != 0 && start_revision < floor {
-            return Err(KineError::Compacted { requested: start_revision, compacted: floor });
+            return Err(KineError::Compacted {
+                requested: start_revision,
+                compacted: floor,
+            });
         }
         validate_range(filter)?;
 
         let pattern = like_pattern(filter);
         let my_rows: Vec<MyRow> = self
             .conn
-            .exec(self.dialect.after_sql(), vec![bytes(pattern.as_bytes()), Value::Int(start_revision)])
+            .exec(
+                self.dialect.after_sql(),
+                vec![bytes(pattern.as_bytes()), Value::Int(start_revision)],
+            )
             .await
             .map_err(my_err)?;
         let mut events: Vec<WatchEvent> = my_rows.iter().map(project_event).collect();
@@ -314,21 +426,36 @@ impl MysqlStore {
         }
         let current = self.current_revision().await?;
         if target > current {
-            return Err(KineError::CompactFutureRevision { requested: target, current });
+            return Err(KineError::CompactFutureRevision {
+                requested: target,
+                current,
+            });
         }
         let floor = self.compacted_revision().await?;
         if target <= floor {
-            return Err(KineError::CompactionNotForward { requested: target, current: floor });
+            return Err(KineError::CompactionNotForward {
+                requested: target,
+                current: floor,
+            });
         }
 
         let before = self.count_rows().await?;
         let sentinel = COMPACT_REV_KEY;
         let dialect = self.dialect;
-        let mut tx = self.conn.start_transaction(TxOpts::default()).await.map_err(my_err)?;
-        tx.exec_drop(dialect.compact_delete_sql(), vec![bytes(sentinel.as_bytes()), Value::Int(target)])
+        let mut tx = self
+            .conn
+            .start_transaction(TxOpts::default())
             .await
             .map_err(my_err)?;
-        tx.exec_drop(dialect.update_compact_sql(), vec![Value::Int(target)]).await.map_err(my_err)?;
+        tx.exec_drop(
+            dialect.compact_delete_sql(),
+            vec![bytes(sentinel.as_bytes()), Value::Int(target)],
+        )
+        .await
+        .map_err(my_err)?;
+        tx.exec_drop(dialect.update_compact_sql(), vec![Value::Int(target)])
+            .await
+            .map_err(my_err)?;
         tx.commit().await.map_err(my_err)?;
         let after = self.count_rows().await?;
 
@@ -343,8 +470,14 @@ impl MysqlStore {
     /// Count real (non-sentinel) rows.
     async fn count_rows(&mut self) -> Result<i64> {
         let sentinel = COMPACT_REV_KEY;
-        let v: Option<i64> =
-            self.conn.exec_first(self.dialect.count_rows_sql(), vec![bytes(sentinel.as_bytes())]).await.map_err(my_err)?;
+        let v: Option<i64> = self
+            .conn
+            .exec_first(
+                self.dialect.count_rows_sql(),
+                vec![bytes(sentinel.as_bytes())],
+            )
+            .await
+            .map_err(my_err)?;
         Ok(v.unwrap_or(0))
     }
 
@@ -359,7 +492,10 @@ impl MysqlStore {
         let sentinel = COMPACT_REV_KEY;
         let rows: Vec<MyRow> = self
             .conn
-            .exec(self.dialect.keys_with_lease_sql(), vec![Value::Int(lease_id), bytes(sentinel.as_bytes())])
+            .exec(
+                self.dialect.keys_with_lease_sql(),
+                vec![Value::Int(lease_id), bytes(sentinel.as_bytes())],
+            )
             .await
             .map_err(my_err)?;
         Ok(rows.iter().map(|r| get_string(r, 0).into_bytes()).collect())
@@ -405,17 +541,33 @@ impl MysqlStore {
     /// [`KineError::Backend`] if the rebuild fails.
     pub async fn defragment(&mut self) -> Result<i64> {
         let before = self.db_size().await?;
-        self.conn.query_drop("OPTIMIZE TABLE kine").await.map_err(my_err)?;
+        self.conn
+            .query_drop("OPTIMIZE TABLE kine")
+            .await
+            .map_err(my_err)?;
         let after = self.db_size().await?;
         Ok((before - after).max(0))
     }
 }
 
 /// The latest row for `key` via `q` (a `Conn` or `Transaction`).
-async fn latest_in<Q: Queryable>(q: &mut Q, dialect: Dialect, key: &str) -> Result<Option<LatestRow>> {
-    let row: Option<MyRow> =
-        q.exec_first(dialect.latest_row_sql(), vec![bytes(key.as_bytes())]).await.map_err(my_err)?;
-    Ok(row.map(|r| (get_i64(&r, 0), get_i64(&r, 1), get_i64(&r, 2) != 0, get_bytes(&r, 3))))
+async fn latest_in<Q: Queryable>(
+    q: &mut Q,
+    dialect: Dialect,
+    key: &str,
+) -> Result<Option<LatestRow>> {
+    let row: Option<MyRow> = q
+        .exec_first(dialect.latest_row_sql(), vec![bytes(key.as_bytes())])
+        .await
+        .map_err(my_err)?;
+    Ok(row.map(|r| {
+        (
+            get_i64(&r, 0),
+            get_i64(&r, 1),
+            get_i64(&r, 2) != 0,
+            get_bytes(&r, 3),
+        )
+    }))
 }
 
 /// Insert one append-only row and return its id (the new revision, read from
@@ -461,9 +613,12 @@ async fn insert_in<Q: Queryable>(
             message: "MySQL returned no LAST_INSERT_ID after insert".into(),
         })?;
     if created {
-        q.exec_drop(dialect.set_create_revision_sql(), vec![Value::Int(id), Value::Int(id)])
-            .await
-            .map_err(my_err)?;
+        q.exec_drop(
+            dialect.set_create_revision_sql(),
+            vec![Value::Int(id), Value::Int(id)],
+        )
+        .await
+        .map_err(my_err)?;
     }
     Ok(id)
 }
@@ -506,7 +661,11 @@ fn project_row(r: &MyRow) -> Row {
 fn project_event(r: &MyRow) -> WatchEvent {
     let deleted = get_i64(r, 5) != 0;
     WatchEvent {
-        kind: if deleted { EventKind::Delete } else { EventKind::Put },
+        kind: if deleted {
+            EventKind::Delete
+        } else {
+            EventKind::Put
+        },
         key: get_string(r, 3).into_bytes(),
         value: get_bytes(r, 9),
         prev_value: get_bytes(r, 10),
@@ -518,5 +677,7 @@ fn project_event(r: &MyRow) -> WatchEvent {
 /// Wrap a `mysql_async` error as a backend error.
 #[allow(clippy::needless_pass_by_value)]
 fn my_err(e: mysql_async::Error) -> KineError {
-    KineError::Backend { message: e.to_string() }
+    KineError::Backend {
+        message: e.to_string(),
+    }
 }

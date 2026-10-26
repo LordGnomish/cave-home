@@ -101,16 +101,34 @@ mod tests {
     #[test]
     fn jam_advice_tells_the_user_to_check_the_door() {
         // The safety-critical state must produce an actionable, plain prompt.
-        assert_eq!(LockState::Jammed.advice(Lang::En), "Go check the door — it could not lock.");
+        assert_eq!(
+            LockState::Jammed.advice(Lang::En),
+            "Go check the door — it could not lock."
+        );
     }
 
     #[test]
     fn ui_strings_carry_no_implementation_jargon() {
         // Charter §6.3: lock UI uses home words only, never vendor/protocol terms.
         const BANNED: &[&str] = &[
-            "Nuki", "SwitchBot", "August", "Yale", "Aqara", "ESPHome",
-            "Z-Wave", "Zigbee", "Matter", "MQTT", "node", "entity_id",
-            "bolt", "latch", "API", "token", "UUID", "REST",
+            "Nuki",
+            "SwitchBot",
+            "August",
+            "Yale",
+            "Aqara",
+            "ESPHome",
+            "Z-Wave",
+            "Zigbee",
+            "Matter",
+            "MQTT",
+            "node",
+            "entity_id",
+            "bolt",
+            "latch",
+            "API",
+            "token",
+            "UUID",
+            "REST",
         ];
         for s in ALL_STATES {
             for lang in [Lang::En, Lang::De, Lang::Tr] {

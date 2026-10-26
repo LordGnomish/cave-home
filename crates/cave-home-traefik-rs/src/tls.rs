@@ -11,10 +11,10 @@
 
 use std::sync::Arc;
 
+use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::server::{ClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
-use rustls::ServerConfig;
 
 /// A TLS configuration error.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,7 +102,10 @@ impl SniResolver {
     /// A resolver with an optional default (fallback) certificate.
     #[must_use]
     pub const fn new(default: Option<Arc<CertifiedKey>>) -> Self {
-        Self { default, by_host: Vec::new() }
+        Self {
+            default,
+            by_host: Vec::new(),
+        }
     }
 
     /// Register a certificate for an SNI host (`example.com` or `*.example.com`).
@@ -205,16 +208,25 @@ mod tests {
         let wild = cert_for("wild.example");
         let mut r = SniResolver::new(Some(default));
         r.insert("*.example.com", wild.clone());
-        assert!(Arc::ptr_eq(&r.select_cert(Some("api.example.com")).unwrap(), &wild));
+        assert!(Arc::ptr_eq(
+            &r.select_cert(Some("api.example.com")).unwrap(),
+            &wild
+        ));
         // wildcard matches exactly one label, not the bare domain
-        assert!(!Arc::ptr_eq(&r.select_cert(Some("example.com")).unwrap(), &wild));
+        assert!(!Arc::ptr_eq(
+            &r.select_cert(Some("example.com")).unwrap(),
+            &wild
+        ));
     }
 
     #[test]
     fn unknown_sni_falls_back_to_default() {
         let default = cert_for("default.local");
         let r = SniResolver::new(Some(default.clone()));
-        assert!(Arc::ptr_eq(&r.select_cert(Some("nope.example")).unwrap(), &default));
+        assert!(Arc::ptr_eq(
+            &r.select_cert(Some("nope.example")).unwrap(),
+            &default
+        ));
         assert!(Arc::ptr_eq(&r.select_cert(None).unwrap(), &default));
     }
 

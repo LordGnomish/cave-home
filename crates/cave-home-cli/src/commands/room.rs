@@ -25,9 +25,11 @@ pub fn cmd() -> Command {
         .arg_required_else_help(true)
         .subcommand(Command::new("list").about("Every room cave-home knows about"))
         .subcommand(
-            Command::new("show")
-                .about("Devices in one room")
-                .arg(Arg::new("name").required(true).help("Room name (e.g. Salon)")),
+            Command::new("show").about("Devices in one room").arg(
+                Arg::new("name")
+                    .required(true)
+                    .help("Room name (e.g. Salon)"),
+            ),
         )
 }
 

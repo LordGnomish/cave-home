@@ -40,7 +40,11 @@ impl Rgb {
     /// Pure black / off.
     pub const BLACK: Self = Self { r: 0, g: 0, b: 0 };
     /// Full white (all channels max).
-    pub const WHITE: Self = Self { r: 255, g: 255, b: 255 };
+    pub const WHITE: Self = Self {
+        r: 255,
+        g: 255,
+        b: 255,
+    };
 
     /// Construct from three channel bytes.
     #[must_use]
@@ -124,11 +128,7 @@ impl Hsv {
 
 /// Clamp a possibly-NaN float into the closed unit interval.
 const fn clamp_unit(x: f64) -> f64 {
-    if x.is_nan() {
-        0.0
-    } else {
-        x.clamp(0.0, 1.0)
-    }
+    if x.is_nan() { 0.0 } else { x.clamp(0.0, 1.0) }
 }
 
 /// Round a unit-interval float to a 0..=255 byte.
@@ -223,7 +223,11 @@ pub fn kelvin_to_rgb(kelvin: u32) -> Rgb {
         138.517_731_223_1f64.mul_add((k - 10.0).ln(), -305.044_792_730_7)
     };
 
-    Rgb::new(clamp_to_byte(red), clamp_to_byte(green), clamp_to_byte(blue))
+    Rgb::new(
+        clamp_to_byte(red),
+        clamp_to_byte(green),
+        clamp_to_byte(blue),
+    )
 }
 
 /// Clamp a possibly-out-of-range / NaN float to a 0..=255 byte.
@@ -360,7 +364,11 @@ mod tests {
     #[test]
     fn kelvin_red_channel_is_always_full_in_warm_range() {
         for k in [1000, 1500, 2000, 2700, 3500, 5000, 6600] {
-            assert_eq!(kelvin_to_rgb(k).r, 255, "red saturates across warm whites at {k}K");
+            assert_eq!(
+                kelvin_to_rgb(k).r,
+                255,
+                "red saturates across warm whites at {k}K"
+            );
         }
     }
 }

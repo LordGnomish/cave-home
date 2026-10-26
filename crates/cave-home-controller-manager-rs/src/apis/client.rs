@@ -10,8 +10,8 @@
 //! Only the *network transport* (REST + watch) is deferred.
 
 use crate::apis::{
-    selector_matches, CronJob, DaemonSet, Deployment, Endpoints, Job, LabelSelector, Namespace,
-    Node, PersistentVolumeClaim, Pod, ReplicaSet, Service, ServiceAccount, StatefulSet,
+    CronJob, DaemonSet, Deployment, Endpoints, Job, LabelSelector, Namespace, Node,
+    PersistentVolumeClaim, Pod, ReplicaSet, Service, ServiceAccount, StatefulSet, selector_matches,
 };
 use crate::informer::Store;
 use crate::types::Object;
@@ -29,7 +29,11 @@ impl<T: Object> Api<T> {
     /// An empty `Api` for the named kind (the kind seeds generated UIDs).
     #[must_use]
     pub fn new(kind: &str) -> Self {
-        Self { store: Store::new(), kind: kind.to_owned(), seq: 0 }
+        Self {
+            store: Store::new(),
+            kind: kind.to_owned(),
+            seq: 0,
+        }
     }
 
     /// Create an object, assigning a server UID if it has none. Returns the

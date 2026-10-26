@@ -112,7 +112,10 @@ mod tests {
     use super::*;
 
     fn build_block_with_inverter(model_id: u16, payload: &[u16]) -> Vec<u16> {
-        let mut b = vec![(SUNSPEC_MARKER >> 16) as u16, (SUNSPEC_MARKER & 0xFFFF) as u16];
+        let mut b = vec![
+            (SUNSPEC_MARKER >> 16) as u16,
+            (SUNSPEC_MARKER & 0xFFFF) as u16,
+        ];
         // a common model first
         let common = vec![0u16; 65];
         b.push(1);
@@ -139,7 +142,10 @@ mod tests {
         let inv = models.iter().find(|m| m.model_id == 103).unwrap();
         let reading = decode_inverter(inv.model_id, inv.payload).unwrap();
         assert_eq!(reading.ac_power_w, Some(4200.0));
-        assert_eq!(describe(&reading, Lang::En), "Solar inverter is producing 4.2 kW");
+        assert_eq!(
+            describe(&reading, Lang::En),
+            "Solar inverter is producing 4.2 kW"
+        );
     }
 
     #[test]

@@ -64,7 +64,11 @@ pub fn start_of_next_day(dt: &Civil) -> i64 {
 /// Epoch second of 00:00:00 on the 1st of the month **after** `dt`'s.
 #[must_use]
 pub fn start_of_next_month(dt: &Civil) -> i64 {
-    let (y, m) = if dt.month == 12 { (dt.year + 1, 1) } else { (dt.year, dt.month + 1) };
+    let (y, m) = if dt.month == 12 {
+        (dt.year + 1, 1)
+    } else {
+        (dt.year, dt.month + 1)
+    };
     days_from_civil(y, m, 1) * 86_400
 }
 

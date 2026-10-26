@@ -24,13 +24,11 @@ use crate::status::{Result, Status};
 /// Returns `None` if the header is absent or uses a different scheme.
 fn bearer_token(req: &Request) -> Option<&str> {
     let value = req.headers.get("authorization")?;
-    let rest = value.strip_prefix("Bearer ").or_else(|| value.strip_prefix("bearer "))?;
+    let rest = value
+        .strip_prefix("Bearer ")
+        .or_else(|| value.strip_prefix("bearer "))?;
     let token = rest.trim();
-    if token.is_empty() {
-        None
-    } else {
-        Some(token)
-    }
+    if token.is_empty() { None } else { Some(token) }
 }
 
 /// An authenticator inspects a request and produces an identity.
@@ -114,7 +112,10 @@ impl Authenticator for RequestHeaderAuthenticator {
                     .into_iter()
                     .map(str::to_string)
                     .collect();
-                Ok(Some(UserInfo { name: name.to_string(), groups }))
+                Ok(Some(UserInfo {
+                    name: name.to_string(),
+                    groups,
+                }))
             }
         }
     }
@@ -199,8 +200,8 @@ pub const SYSTEM_UNAUTHENTICATED: &str = "system:unauthenticated";
 /// anonymous identity or already carries the group. The anonymous identity
 /// (`system:anonymous` / member of `system:unauthenticated`) is never tagged.
 fn add_authenticated_group(mut user: UserInfo) -> UserInfo {
-    let is_anonymous = user.name == "system:anonymous"
-        || user.groups.iter().any(|g| g == SYSTEM_UNAUTHENTICATED);
+    let is_anonymous =
+        user.name == "system:anonymous" || user.groups.iter().any(|g| g == SYSTEM_UNAUTHENTICATED);
     if is_anonymous {
         return user;
     }
@@ -234,8 +235,10 @@ mod tests {
 
     #[test]
     fn token_authenticator_accepts_valid_bearer() {
-        let auth = TokenAuthenticator::new()
-            .with_token("s3cret", UserInfo::new("admin").with_groups(&["system:masters"]));
+        let auth = TokenAuthenticator::new().with_token(
+            "s3cret",
+            UserInfo::new("admin").with_groups(&["system:masters"]),
+        );
         let user = auth
             .authenticate(&req_with_auth("Bearer s3cret"))
             .expect("ok")
@@ -253,7 +256,9 @@ mod tests {
     #[test]
     fn token_authenticator_unknown_token_is_401() {
         let auth = TokenAuthenticator::new().with_token("good", UserInfo::new("u"));
-        let err = auth.authenticate(&req_with_auth("Bearer bad")).expect_err("401");
+        let err = auth
+            .authenticate(&req_with_auth("Bearer bad"))
+            .expect_err("401");
         assert_eq!(err.code, 401);
         assert_eq!(err.reason, StatusReason::Unauthorized);
     }
@@ -262,26 +267,44 @@ mod tests {
     fn token_authenticator_non_bearer_scheme_is_no_opinion() {
         let auth = TokenAuthenticator::new().with_token("t", UserInfo::new("u"));
         // A Basic credential is simply not handled by the token authenticator.
-        assert!(auth.authenticate(&req_with_auth("Basic abc")).expect("ok").is_none());
+        assert!(
+            auth.authenticate(&req_with_auth("Basic abc"))
+                .expect("ok")
+                .is_none()
+        );
     }
 
     #[test]
     fn request_header_authenticator_reads_user_and_groups() {
         let raw = "GET /api/v1/pods HTTP/1.1\r\nX-Remote-User: alice\r\nX-Remote-Group: system:masters\r\nX-Remote-Group: dev\r\n\r\n";
         let req = Request::parse(raw.as_bytes()).expect("parse");
-        let user = RequestHeaderAuthenticator.authenticate(&req).expect("ok").expect("some");
+        let user = RequestHeaderAuthenticator
+            .authenticate(&req)
+            .expect("ok")
+            .expect("some");
         assert_eq!(user.name, "alice");
-        assert_eq!(user.groups, vec!["system:masters".to_string(), "dev".to_string()]);
+        assert_eq!(
+            user.groups,
+            vec!["system:masters".to_string(), "dev".to_string()]
+        );
     }
 
     #[test]
     fn request_header_authenticator_no_header_is_no_opinion() {
-        assert!(RequestHeaderAuthenticator.authenticate(&req_no_auth()).expect("ok").is_none());
+        assert!(
+            RequestHeaderAuthenticator
+                .authenticate(&req_no_auth())
+                .expect("ok")
+                .is_none()
+        );
     }
 
     #[test]
     fn anonymous_authenticator_yields_system_anonymous() {
-        let user = AnonymousAuthenticator.authenticate(&req_no_auth()).expect("ok").expect("some");
+        let user = AnonymousAuthenticator
+            .authenticate(&req_no_auth())
+            .expect("ok")
+            .expect("some");
         assert_eq!(user.name, "system:anonymous");
         assert_eq!(user.groups, vec!["system:unauthenticated".to_string()]);
     }
@@ -293,14 +316,18 @@ mod tests {
                 TokenAuthenticator::new().with_token("k", UserInfo::new("node")),
             ))
             .allow_anonymous(true);
-        let user = chain.authenticate(&req_with_auth("Bearer k")).expect("authn");
+        let user = chain
+            .authenticate(&req_with_auth("Bearer k"))
+            .expect("authn");
         assert_eq!(user.name, "node");
     }
 
     #[test]
     fn chain_no_creds_falls_through_to_anonymous_when_enabled() {
         let chain = AuthenticatorChain::new()
-            .with(Box::new(TokenAuthenticator::new().with_token("k", UserInfo::new("node"))))
+            .with(Box::new(
+                TokenAuthenticator::new().with_token("k", UserInfo::new("node")),
+            ))
             .allow_anonymous(true);
         let user = chain.authenticate(&req_no_auth()).expect("anon");
         assert_eq!(user.name, "system:anonymous");
@@ -309,7 +336,9 @@ mod tests {
     #[test]
     fn chain_no_creds_is_401_when_anonymous_disabled() {
         let chain = AuthenticatorChain::new()
-            .with(Box::new(TokenAuthenticator::new().with_token("k", UserInfo::new("node"))))
+            .with(Box::new(
+                TokenAuthenticator::new().with_token("k", UserInfo::new("node")),
+            ))
             .allow_anonymous(false);
         let err = chain.authenticate(&req_no_auth()).expect_err("401");
         assert_eq!(err.code, 401);
@@ -318,10 +347,14 @@ mod tests {
     #[test]
     fn chain_invalid_token_short_circuits_401() {
         let chain = AuthenticatorChain::new()
-            .with(Box::new(TokenAuthenticator::new().with_token("k", UserInfo::new("node"))))
+            .with(Box::new(
+                TokenAuthenticator::new().with_token("k", UserInfo::new("node")),
+            ))
             .allow_anonymous(true);
         // Even with anonymous enabled, a *presented* bad token is a hard 401.
-        let err = chain.authenticate(&req_with_auth("Bearer wrong")).expect_err("401");
+        let err = chain
+            .authenticate(&req_with_auth("Bearer wrong"))
+            .expect_err("401");
         assert_eq!(err.code, 401);
     }
 
@@ -332,9 +365,12 @@ mod tests {
 
     #[test]
     fn chain_adds_system_authenticated_group_to_authenticated_user() {
-        let chain = AuthenticatorChain::new()
-            .with(Box::new(TokenAuthenticator::new().with_token("k", UserInfo::new("alice"))));
-        let user = chain.authenticate(&req_with_auth("Bearer k")).expect("authn");
+        let chain = AuthenticatorChain::new().with(Box::new(
+            TokenAuthenticator::new().with_token("k", UserInfo::new("alice")),
+        ));
+        let user = chain
+            .authenticate(&req_with_auth("Bearer k"))
+            .expect("authn");
         assert_eq!(user.name, "alice");
         assert!(
             user.groups.contains(&"system:authenticated".to_string()),
@@ -346,10 +382,11 @@ mod tests {
     #[test]
     fn chain_preserves_authenticator_groups_and_appends_authenticated() {
         let chain = AuthenticatorChain::new().with(Box::new(
-            TokenAuthenticator::new()
-                .with_token("k", UserInfo::new("alice").with_groups(&["dev"])),
+            TokenAuthenticator::new().with_token("k", UserInfo::new("alice").with_groups(&["dev"])),
         ));
-        let user = chain.authenticate(&req_with_auth("Bearer k")).expect("authn");
+        let user = chain
+            .authenticate(&req_with_auth("Bearer k"))
+            .expect("authn");
         assert!(user.groups.contains(&"dev".to_string()));
         assert!(user.groups.contains(&"system:authenticated".to_string()));
     }
@@ -357,14 +394,18 @@ mod tests {
     #[test]
     fn chain_does_not_duplicate_system_authenticated() {
         // An authenticator that already lists the group must not get a duplicate.
-        let chain = AuthenticatorChain::new().with(Box::new(
-            TokenAuthenticator::new().with_token(
-                "k",
-                UserInfo::new("alice").with_groups(&["system:authenticated"]),
-            ),
-        ));
-        let user = chain.authenticate(&req_with_auth("Bearer k")).expect("authn");
-        let count = user.groups.iter().filter(|g| *g == "system:authenticated").count();
+        let chain = AuthenticatorChain::new().with(Box::new(TokenAuthenticator::new().with_token(
+            "k",
+            UserInfo::new("alice").with_groups(&["system:authenticated"]),
+        )));
+        let user = chain
+            .authenticate(&req_with_auth("Bearer k"))
+            .expect("authn");
+        let count = user
+            .groups
+            .iter()
+            .filter(|g| *g == "system:authenticated")
+            .count();
         assert_eq!(count, 1, "groups: {:?}", user.groups);
     }
 
@@ -372,7 +413,9 @@ mod tests {
     fn chain_does_not_add_authenticated_to_anonymous() {
         // The anonymous fallthrough stays `system:unauthenticated` only.
         let chain = AuthenticatorChain::new()
-            .with(Box::new(TokenAuthenticator::new().with_token("k", UserInfo::new("node"))))
+            .with(Box::new(
+                TokenAuthenticator::new().with_token("k", UserInfo::new("node")),
+            ))
             .allow_anonymous(true);
         let user = chain.authenticate(&req_no_auth()).expect("anon");
         assert_eq!(user.name, "system:anonymous");

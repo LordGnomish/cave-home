@@ -61,7 +61,9 @@ impl VacuumState {
             (Self::Idle, Lang::Tr) => "Hazır olunca temizliğe başlatın.",
             (Self::Cleaning | Self::SpotCleaning, Lang::En) => "All good — let it work.",
             (Self::Cleaning | Self::SpotCleaning, Lang::De) => "Alles gut — lass es arbeiten.",
-            (Self::Cleaning | Self::SpotCleaning, Lang::Tr) => "Her şey yolunda — bırakın çalışsın.",
+            (Self::Cleaning | Self::SpotCleaning, Lang::Tr) => {
+                "Her şey yolunda — bırakın çalışsın."
+            }
             (Self::Returning, Lang::En) => "Nothing to do — it is going home.",
             (Self::Returning, Lang::De) => "Nichts zu tun — es fährt nach Hause.",
             (Self::Returning, Lang::Tr) => "Yapacak bir şey yok — yerine dönüyor.",
@@ -195,8 +197,14 @@ mod tests {
 
     #[test]
     fn brush_stuck_reads_grandma_friendly() {
-        assert_eq!(ErrorCode::BrushStuck.explanation(Lang::En), "The brush is stuck.");
-        assert_eq!(ErrorCode::BrushStuck.advice(Lang::En), "Please free its brush.");
+        assert_eq!(
+            ErrorCode::BrushStuck.explanation(Lang::En),
+            "The brush is stuck."
+        );
+        assert_eq!(
+            ErrorCode::BrushStuck.advice(Lang::En),
+            "Please free its brush."
+        );
         assert_eq!(VacuumState::Cleaning.label(Lang::En), "Vacuum is cleaning");
     }
 
@@ -215,10 +223,24 @@ mod tests {
         // Charter §6.3: vacuum UI uses home words only, never vendor/protocol
         // terms. Copied in spirit from cave-home-air-quality / cave-home-lock.
         const BANNED: &[&str] = &[
-            "Valetudo", "Xiaomi", "Roborock", "Dreame", "Viomi",
-            "MQTT", "REST", "lidar", "topic", "entity_id", "miio",
-            "token", "segment", "zone", "API", "node",
-            "pod", "kubelet",
+            "Valetudo",
+            "Xiaomi",
+            "Roborock",
+            "Dreame",
+            "Viomi",
+            "MQTT",
+            "REST",
+            "lidar",
+            "topic",
+            "entity_id",
+            "miio",
+            "token",
+            "segment",
+            "zone",
+            "API",
+            "node",
+            "pod",
+            "kubelet",
         ];
         let mut texts: Vec<String> = Vec::new();
         for s in ALL_STATES {

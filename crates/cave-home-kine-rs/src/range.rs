@@ -58,13 +58,23 @@ impl RangeRequest {
     /// A point get of `key` at the current revision.
     #[must_use]
     pub fn key(key: &[u8]) -> Self {
-        Self { key: key.to_vec(), end: RangeEnd::Single, revision: 0, limit: 0 }
+        Self {
+            key: key.to_vec(),
+            end: RangeEnd::Single,
+            revision: 0,
+            limit: 0,
+        }
     }
 
     /// A prefix scan under `prefix` at the current revision.
     #[must_use]
     pub fn prefix(prefix: &[u8]) -> Self {
-        Self { key: prefix.to_vec(), end: RangeEnd::Prefix, revision: 0, limit: 0 }
+        Self {
+            key: prefix.to_vec(),
+            end: RangeEnd::Prefix,
+            revision: 0,
+            limit: 0,
+        }
     }
 
     /// An explicit `[key, end)` interval at the current revision.
@@ -81,7 +91,12 @@ impl RangeRequest {
     /// The whole keyspace at the current revision.
     #[must_use]
     pub const fn all() -> Self {
-        Self { key: Vec::new(), end: RangeEnd::AllKeys, revision: 0, limit: 0 }
+        Self {
+            key: Vec::new(),
+            end: RangeEnd::AllKeys,
+            revision: 0,
+            limit: 0,
+        }
     }
 
     /// Builder: read at a historical revision.
@@ -142,7 +157,10 @@ pub fn execute(store: &Store, req: &RangeRequest) -> Result<RangeResponse> {
     let read_rev = store.clock().resolve_read(req.revision)?;
     let compacted = store.compacted_revision();
     if req.revision != 0 && req.revision < compacted {
-        return Err(KineError::Compacted { requested: req.revision, compacted });
+        return Err(KineError::Compacted {
+            requested: req.revision,
+            compacted,
+        });
     }
 
     // Build the current-state view AS OF read_rev: for each key, the latest row
@@ -166,7 +184,12 @@ pub fn execute(store: &Store, req: &RangeRequest) -> Result<RangeResponse> {
         (latest.iter().map(|r| (*r).clone()).collect(), false)
     };
 
-    Ok(RangeResponse { revision: read_rev, kvs, more, count })
+    Ok(RangeResponse {
+        revision: read_rev,
+        kvs,
+        more,
+        count,
+    })
 }
 
 fn validate(req: &RangeRequest) -> Result<()> {
@@ -372,13 +395,19 @@ mod tests {
     fn negative_limit_is_rejected() {
         let s = seeded();
         let req = RangeRequest::key(b"/reg/a").with_limit(-1);
-        assert_eq!(execute(&s, &req), Err(KineError::NegativeLimit { limit: -1 }));
+        assert_eq!(
+            execute(&s, &req),
+            Err(KineError::NegativeLimit { limit: -1 })
+        );
     }
 
     #[test]
     fn empty_key_point_get_is_rejected() {
         let s = seeded();
-        assert_eq!(execute(&s, &RangeRequest::key(b"")), Err(KineError::EmptyKey));
+        assert_eq!(
+            execute(&s, &RangeRequest::key(b"")),
+            Err(KineError::EmptyKey)
+        );
     }
 
     #[test]

@@ -94,9 +94,8 @@ pub async fn discover_bridge(
 /// the cave-home node can't reach) are silently dropped from the result.
 pub async fn discover_nupnp(client: &dyn HueHttpClient) -> HueResult<Vec<DiscoveredHueBridge>> {
     let body = client.get_bytes(URL_NUPNP).await?;
-    let entries: Vec<NupnpEntry> = serde_json::from_slice(&body).map_err(|err| {
-        HueError::Transport(format!("nupnp decode: {err}"))
-    })?;
+    let entries: Vec<NupnpEntry> = serde_json::from_slice(&body)
+        .map_err(|err| HueError::Transport(format!("nupnp decode: {err}")))?;
 
     let mut result = Vec::new();
     for entry in entries {
@@ -202,11 +201,9 @@ mod tests {
 
     #[tokio::test]
     async fn is_v2_bridge_false_when_status_not_403() {
-        let stub = StubClient::default()
-            .with_status("https://10.0.0.1/clip/v2/resource", 200);
+        let stub = StubClient::default().with_status("https://10.0.0.1/clip/v2/resource", 200);
         assert!(!is_v2_bridge(&stub, "10.0.0.1").await);
-        let stub = StubClient::default()
-            .with_status("https://10.0.0.1/clip/v2/resource", 404);
+        let stub = StubClient::default().with_status("https://10.0.0.1/clip/v2/resource", 404);
         assert!(!is_v2_bridge(&stub, "10.0.0.1").await);
         // Even on transport error we say "not v2" — matches upstream.
         let empty = StubClient::default();

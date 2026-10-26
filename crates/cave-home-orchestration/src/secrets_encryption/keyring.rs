@@ -113,7 +113,11 @@ impl EncryptionKey {
     /// to write when appropriate.
     #[must_use]
     pub const fn new(id: KeyId, kek: KekKeypair) -> Self {
-        Self { id, kek, state: KeyState::ReadOnly }
+        Self {
+            id,
+            kek,
+            state: KeyState::ReadOnly,
+        }
     }
 
     /// This key's id.
@@ -172,8 +176,15 @@ impl Keyring {
     /// Create a keyring with a single write key.
     #[must_use]
     pub fn new(write_id: KeyId, write_kek: KekKeypair) -> Self {
-        let key = EncryptionKey { id: write_id, kek: write_kek, state: KeyState::WriteRead };
-        Self { keys: vec![key], phase: RotationPhase::Steady }
+        let key = EncryptionKey {
+            id: write_id,
+            kek: write_kek,
+            state: KeyState::WriteRead,
+        };
+        Self {
+            keys: vec![key],
+            phase: RotationPhase::Steady,
+        }
     }
 
     /// The current rotation phase.
@@ -305,7 +316,10 @@ mod tests {
     use crate::secrets_encryption::envelope::KekKeypair;
 
     fn key(id: &str, seed_tag: u8) -> (KeyId, KekKeypair) {
-        (KeyId::new(id).unwrap(), KekKeypair::from_seed([seed_tag; 64]))
+        (
+            KeyId::new(id).unwrap(),
+            KekKeypair::from_seed([seed_tag; 64]),
+        )
     }
 
     fn ring() -> Keyring {
@@ -371,7 +385,10 @@ mod tests {
     fn prepare_rejects_duplicate_id() {
         let mut r = ring();
         let (id, kek) = key("key-1", 9);
-        assert!(matches!(r.prepare(id, kek), Err(KeyringError::DuplicateKeyId)));
+        assert!(matches!(
+            r.prepare(id, kek),
+            Err(KeyringError::DuplicateKeyId)
+        ));
     }
 
     #[test]
@@ -459,7 +476,11 @@ mod tests {
         r.prepare(KeyId::new("key-2").unwrap(), KekKeypair::from_seed([2; 64]))
             .unwrap();
         r.rotate().unwrap();
-        let ro: Vec<_> = r.read_only_ids().iter().map(|i| i.as_str().to_owned()).collect();
+        let ro: Vec<_> = r
+            .read_only_ids()
+            .iter()
+            .map(|i| i.as_str().to_owned())
+            .collect();
         assert_eq!(ro, vec!["key-1".to_owned()]);
     }
 

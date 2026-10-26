@@ -172,11 +172,7 @@ pub const SECONDS_PER_DAY: Tick = 86_400;
 
 /// Classify a saved event for retention. See [`Retention`].
 #[must_use]
-pub fn classify_retention(
-    recorded_at: Tick,
-    now: Tick,
-    retention_days: u32,
-) -> Retention {
+pub fn classify_retention(recorded_at: Tick, now: Tick, retention_days: u32) -> Retention {
     let window = Tick::from(retention_days).saturating_mul(SECONDS_PER_DAY);
     let age = now.saturating_sub(recorded_at);
     if age <= window {

@@ -183,7 +183,11 @@ mod tests {
 
     #[test]
     fn routes_light_on_off() {
-        let r = route(&m("light.on", &[("name", SlotValue::Text("kitchen".into()))])).expect("r");
+        let r = route(&m(
+            "light.on",
+            &[("name", SlotValue::Text("kitchen".into()))],
+        ))
+        .expect("r");
         assert_eq!(
             r.action,
             IntentAction::SetLight {
@@ -191,7 +195,11 @@ mod tests {
                 on: true
             }
         );
-        let r = route(&m("light.off", &[("name", SlotValue::Text("kitchen".into()))])).expect("r");
+        let r = route(&m(
+            "light.off",
+            &[("name", SlotValue::Text("kitchen".into()))],
+        ))
+        .expect("r");
         assert!(matches!(r.action, IntentAction::SetLight { on: false, .. }));
     }
 
@@ -232,21 +240,30 @@ mod tests {
     #[test]
     fn routes_cover_and_scene_and_queries() {
         assert!(matches!(
-            route(&m("cover.open", &[("name", SlotValue::Text("blinds".into()))]))
-                .expect("r")
-                .action,
+            route(&m(
+                "cover.open",
+                &[("name", SlotValue::Text("blinds".into()))]
+            ))
+            .expect("r")
+            .action,
             IntentAction::SetCover { open: true, .. }
         ));
         assert!(matches!(
-            route(&m("scene.activate", &[("name", SlotValue::Text("movie night".into()))]))
-                .expect("r")
-                .action,
+            route(&m(
+                "scene.activate",
+                &[("name", SlotValue::Text("movie night".into()))]
+            ))
+            .expect("r")
+            .action,
             IntentAction::ActivateScene { .. }
         ));
         assert_eq!(
-            route(&m("query.temperature", &[("name", SlotValue::Text("bedroom".into()))]))
-                .expect("r")
-                .action,
+            route(&m(
+                "query.temperature",
+                &[("name", SlotValue::Text("bedroom".into()))]
+            ))
+            .expect("r")
+            .action,
             IntentAction::QueryState {
                 target: "bedroom".into(),
                 what: QueryKind::Temperature
@@ -293,7 +310,11 @@ mod tests {
 
     #[test]
     fn confidence_is_carried_through() {
-        let r = route(&m("light.on", &[("name", SlotValue::Text("kitchen".into()))])).expect("r");
+        let r = route(&m(
+            "light.on",
+            &[("name", SlotValue::Text("kitchen".into()))],
+        ))
+        .expect("r");
         assert!((r.confidence - 0.9).abs() < f32::EPSILON);
     }
 }

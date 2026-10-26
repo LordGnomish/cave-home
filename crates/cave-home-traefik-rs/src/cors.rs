@@ -74,12 +74,24 @@ impl CorsPolicy {
         };
         let mut headers = vec![
             ("access-control-allow-origin".to_string(), acao),
-            ("access-control-allow-methods".to_string(), self.allow_methods.join(", ")),
-            ("access-control-allow-headers".to_string(), self.allow_headers.join(", ")),
-            ("access-control-max-age".to_string(), self.max_age_secs.to_string()),
+            (
+                "access-control-allow-methods".to_string(),
+                self.allow_methods.join(", "),
+            ),
+            (
+                "access-control-allow-headers".to_string(),
+                self.allow_headers.join(", "),
+            ),
+            (
+                "access-control-max-age".to_string(),
+                self.max_age_secs.to_string(),
+            ),
         ];
         if self.allow_credentials {
-            headers.push(("access-control-allow-credentials".to_string(), "true".to_string()));
+            headers.push((
+                "access-control-allow-credentials".to_string(),
+                "true".to_string(),
+            ));
         }
         headers
     }
@@ -98,7 +110,10 @@ impl CorsPolicy {
             ));
         }
         if self.allow_credentials {
-            headers.push(("access-control-allow-credentials".to_string(), "true".to_string()));
+            headers.push((
+                "access-control-allow-credentials".to_string(),
+                "true".to_string(),
+            ));
         }
         headers
     }
@@ -120,7 +135,9 @@ mod tests {
     }
 
     fn get<'a>(h: &'a [(String, String)], k: &str) -> Option<&'a str> {
-        h.iter().find(|(n, _)| n.eq_ignore_ascii_case(k)).map(|(_, v)| v.as_str())
+        h.iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(k))
+            .map(|(_, v)| v.as_str())
     }
 
     #[test]
@@ -160,23 +177,36 @@ mod tests {
     #[test]
     fn preflight_advertises_methods_headers_and_max_age() {
         let h = policy().preflight_headers("https://app.example");
-        assert_eq!(get(&h, "access-control-allow-origin"), Some("https://app.example"));
+        assert_eq!(
+            get(&h, "access-control-allow-origin"),
+            Some("https://app.example")
+        );
         assert_eq!(get(&h, "access-control-allow-methods"), Some("GET, POST"));
-        assert_eq!(get(&h, "access-control-allow-headers"), Some("Authorization, Content-Type"));
+        assert_eq!(
+            get(&h, "access-control-allow-headers"),
+            Some("Authorization, Content-Type")
+        );
         assert_eq!(get(&h, "access-control-allow-credentials"), Some("true"));
         assert_eq!(get(&h, "access-control-max-age"), Some("600"));
     }
 
     #[test]
     fn denied_origin_gets_no_headers() {
-        assert!(policy().preflight_headers("https://evil.example").is_empty());
+        assert!(
+            policy()
+                .preflight_headers("https://evil.example")
+                .is_empty()
+        );
         assert!(policy().actual_headers("https://evil.example").is_empty());
     }
 
     #[test]
     fn actual_response_exposes_headers_and_credentials() {
         let h = policy().actual_headers("https://app.example");
-        assert_eq!(get(&h, "access-control-allow-origin"), Some("https://app.example"));
+        assert_eq!(
+            get(&h, "access-control-allow-origin"),
+            Some("https://app.example")
+        );
         assert_eq!(get(&h, "access-control-expose-headers"), Some("X-Total"));
         assert_eq!(get(&h, "access-control-allow-credentials"), Some("true"));
     }

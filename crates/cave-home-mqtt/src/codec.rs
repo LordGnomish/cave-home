@@ -2,9 +2,8 @@
 //! §2.2.3 variable-length integer, and §3.1/§3.2/§3.3 packet bodies.
 
 use crate::packet::{
-    ConnAck, ConnAckReturnCode, Connect, Packet, PacketType, PubAck, PubComp,
-    PubRec, PubRel, Publish, QoS, SubAck, SubAckReturnCode, Subscribe,
-    Subscription, UnsubAck, Unsubscribe,
+    ConnAck, ConnAckReturnCode, Connect, Packet, PacketType, PubAck, PubComp, PubRec, PubRel,
+    Publish, QoS, SubAck, SubAckReturnCode, Subscribe, Subscription, UnsubAck, Unsubscribe,
 };
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use thiserror::Error;
@@ -75,7 +74,9 @@ pub fn decode_var_int(input: &[u8]) -> Result<(u32, usize), CodecError> {
         multiplier *= 128;
     }
     if input.len() < 4 {
-        Err(CodecError::Underflow { needed: 4 - input.len() })
+        Err(CodecError::Underflow {
+            needed: 4 - input.len(),
+        })
     } else {
         Err(CodecError::VarIntTooLong)
     }
@@ -89,12 +90,16 @@ fn encode_str(s: &str, buf: &mut BytesMut) {
 
 fn decode_str(buf: &mut &[u8]) -> Result<String, CodecError> {
     if buf.len() < 2 {
-        return Err(CodecError::Underflow { needed: 2 - buf.len() });
+        return Err(CodecError::Underflow {
+            needed: 2 - buf.len(),
+        });
     }
     let len = u16::from_be_bytes([buf[0], buf[1]]) as usize;
     buf.advance(2);
     if buf.len() < len {
-        return Err(CodecError::Underflow { needed: len - buf.len() });
+        return Err(CodecError::Underflow {
+            needed: len - buf.len(),
+        });
     }
     let s = std::str::from_utf8(&buf[..len])
         .map_err(|_| CodecError::BadUtf8)?
@@ -194,14 +199,16 @@ pub fn decode_packet(input: &[u8]) -> Result<(Packet, usize), CodecError> {
         return Err(CodecError::Underflow { needed: 2 });
     }
     let header = input[0];
-    let packet_type = PacketType::from_u8(header >> 4)
-        .ok_or(CodecError::UnknownPacketType(header >> 4))?;
+    let packet_type =
+        PacketType::from_u8(header >> 4).ok_or(CodecError::UnknownPacketType(header >> 4))?;
     let flags = header & 0x0f;
 
     let (remaining, len_bytes) = decode_var_int(&input[1..])?;
     let total = 1 + len_bytes + remaining as usize;
     if input.len() < total {
-        return Err(CodecError::Underflow { needed: total - input.len() });
+        return Err(CodecError::Underflow {
+            needed: total - input.len(),
+        });
     }
     let mut body = &input[1 + len_bytes..total];
 
@@ -209,13 +216,9 @@ pub fn decode_packet(input: &[u8]) -> Result<(Packet, usize), CodecError> {
         PacketType::Connect => Packet::Connect(decode_connect(&mut body)?),
         PacketType::ConnAck => Packet::ConnAck(decode_connack(&mut body)?),
         PacketType::Publish => Packet::Publish(decode_publish(&mut body, flags)?),
-        PacketType::Subscribe => {
-            Packet::Subscribe(decode_subscribe(&mut body, flags)?)
-        }
+        PacketType::Subscribe => Packet::Subscribe(decode_subscribe(&mut body, flags)?),
         PacketType::SubAck => Packet::SubAck(decode_suback(&mut body)?),
-        PacketType::Unsubscribe => {
-            Packet::Unsubscribe(decode_unsubscribe(&mut body, flags)?)
-        }
+        PacketType::Unsubscribe => Packet::Unsubscribe(decode_unsubscribe(&mut body, flags)?),
         PacketType::UnsubAck => Packet::UnsubAck(decode_unsuback(&mut body)?),
         PacketType::PingReq => {
             decode_empty(body)?;
@@ -229,18 +232,20 @@ pub fn decode_packet(input: &[u8]) -> Result<(Packet, usize), CodecError> {
             decode_empty(body)?;
             Packet::Disconnect
         }
-        PacketType::PubAck => {
-            Packet::PubAck(PubAck { packet_id: decode_packet_id(&mut body)? })
-        }
-        PacketType::PubRec => {
-            Packet::PubRec(PubRec { packet_id: decode_packet_id(&mut body)? })
-        }
+        PacketType::PubAck => Packet::PubAck(PubAck {
+            packet_id: decode_packet_id(&mut body)?,
+        }),
+        PacketType::PubRec => Packet::PubRec(PubRec {
+            packet_id: decode_packet_id(&mut body)?,
+        }),
         PacketType::PubRel => {
             // §3.6.1: PUBREL reserved fixed-header flags MUST be 0b0010.
             if flags != 0x02 {
                 return Err(CodecError::BadReservedFlags(flags));
             }
-            Packet::PubRel(PubRel { packet_id: decode_packet_id(&mut body)? })
+            Packet::PubRel(PubRel {
+                packet_id: decode_packet_id(&mut body)?,
+            })
         }
         PacketType::PubComp => Packet::PubComp(PubComp {
             packet_id: decode_packet_id(&mut body)?,
@@ -255,7 +260,9 @@ fn decode_connect(buf: &mut &[u8]) -> Result<Connect, CodecError> {
         return Err(CodecError::BadProtocolName(name));
     }
     if buf.len() < 4 {
-        return Err(CodecError::Underflow { needed: 4 - buf.len() });
+        return Err(CodecError::Underflow {
+            needed: 4 - buf.len(),
+        });
     }
     let level = buf[0];
     if level != 4 {
@@ -274,14 +281,19 @@ fn decode_connect(buf: &mut &[u8]) -> Result<Connect, CodecError> {
 
 fn decode_connack(buf: &mut &[u8]) -> Result<ConnAck, CodecError> {
     if buf.len() < 2 {
-        return Err(CodecError::Underflow { needed: 2 - buf.len() });
+        return Err(CodecError::Underflow {
+            needed: 2 - buf.len(),
+        });
     }
     let session_present = buf[0] & 0x01 != 0;
     let code_byte = buf[1];
     buf.advance(2);
-    let return_code = ConnAckReturnCode::from_u8(code_byte)
-        .ok_or(CodecError::BadConnAckCode(code_byte))?;
-    Ok(ConnAck { session_present, return_code })
+    let return_code =
+        ConnAckReturnCode::from_u8(code_byte).ok_or(CodecError::BadConnAckCode(code_byte))?;
+    Ok(ConnAck {
+        session_present,
+        return_code,
+    })
 }
 
 fn decode_publish(buf: &mut &[u8], flags: u8) -> Result<Publish, CodecError> {
@@ -293,14 +305,23 @@ fn decode_publish(buf: &mut &[u8], flags: u8) -> Result<Publish, CodecError> {
         None
     } else {
         if buf.len() < 2 {
-            return Err(CodecError::Underflow { needed: 2 - buf.len() });
+            return Err(CodecError::Underflow {
+                needed: 2 - buf.len(),
+            });
         }
         let pid = u16::from_be_bytes([buf[0], buf[1]]);
         buf.advance(2);
         Some(pid)
     };
     let payload = Bytes::copy_from_slice(buf);
-    Ok(Publish { topic, qos, retain, dup, packet_id, payload })
+    Ok(Publish {
+        topic,
+        qos,
+        retain,
+        dup,
+        packet_id,
+        payload,
+    })
 }
 
 /// MQTT 3.1.1 §3.8 SUBSCRIBE — variable header (packet id) + payload of
@@ -320,7 +341,9 @@ fn decode_subscribe(buf: &mut &[u8], flags: u8) -> Result<Subscribe, CodecError>
         return Err(CodecError::BadReservedFlags(flags));
     }
     if buf.len() < 2 {
-        return Err(CodecError::Underflow { needed: 2 - buf.len() });
+        return Err(CodecError::Underflow {
+            needed: 2 - buf.len(),
+        });
     }
     let packet_id = u16::from_be_bytes([buf[0], buf[1]]);
     buf.advance(2);
@@ -338,7 +361,10 @@ fn decode_subscribe(buf: &mut &[u8], flags: u8) -> Result<Subscribe, CodecError>
     if subscriptions.is_empty() {
         return Err(CodecError::EmptySubscription);
     }
-    Ok(Subscribe { packet_id, subscriptions })
+    Ok(Subscribe {
+        packet_id,
+        subscriptions,
+    })
 }
 
 /// MQTT 3.1.1 §3.9 SUBACK — packet id + one return code per filter.
@@ -351,25 +377,31 @@ fn encode_suback(a: &SubAck, out: &mut BytesMut) {
 
 fn decode_suback(buf: &mut &[u8]) -> Result<SubAck, CodecError> {
     if buf.len() < 2 {
-        return Err(CodecError::Underflow { needed: 2 - buf.len() });
+        return Err(CodecError::Underflow {
+            needed: 2 - buf.len(),
+        });
     }
     let packet_id = u16::from_be_bytes([buf[0], buf[1]]);
     buf.advance(2);
     let mut return_codes = Vec::with_capacity(buf.len());
     while !buf.is_empty() {
-        let code = SubAckReturnCode::from_u8(buf[0])
-            .ok_or(CodecError::BadSubAckCode(buf[0]))?;
+        let code = SubAckReturnCode::from_u8(buf[0]).ok_or(CodecError::BadSubAckCode(buf[0]))?;
         buf.advance(1);
         return_codes.push(code);
     }
-    Ok(SubAck { packet_id, return_codes })
+    Ok(SubAck {
+        packet_id,
+        return_codes,
+    })
 }
 
 /// Read a 2-byte packet identifier (§2.3.1) — the entire variable header
 /// of PUBACK / PUBREC / PUBREL / PUBCOMP (§3.4-§3.7).
 fn decode_packet_id(buf: &mut &[u8]) -> Result<u16, CodecError> {
     if buf.len() < 2 {
-        return Err(CodecError::Underflow { needed: 2 - buf.len() });
+        return Err(CodecError::Underflow {
+            needed: 2 - buf.len(),
+        });
     }
     let id = u16::from_be_bytes([buf[0], buf[1]]);
     buf.advance(2);
@@ -396,16 +428,15 @@ fn encode_unsubscribe(u: &Unsubscribe, out: &mut BytesMut) -> u8 {
     0x02
 }
 
-fn decode_unsubscribe(
-    buf: &mut &[u8],
-    flags: u8,
-) -> Result<Unsubscribe, CodecError> {
+fn decode_unsubscribe(buf: &mut &[u8], flags: u8) -> Result<Unsubscribe, CodecError> {
     // §3.10.1: bits 3-0 of byte 1 are reserved and MUST be 0b0010.
     if flags != 0x02 {
         return Err(CodecError::BadReservedFlags(flags));
     }
     if buf.len() < 2 {
-        return Err(CodecError::Underflow { needed: 2 - buf.len() });
+        return Err(CodecError::Underflow {
+            needed: 2 - buf.len(),
+        });
     }
     let packet_id = u16::from_be_bytes([buf[0], buf[1]]);
     buf.advance(2);
@@ -417,7 +448,10 @@ fn decode_unsubscribe(
     if topic_filters.is_empty() {
         return Err(CodecError::EmptySubscription);
     }
-    Ok(Unsubscribe { packet_id, topic_filters })
+    Ok(Unsubscribe {
+        packet_id,
+        topic_filters,
+    })
 }
 
 /// MQTT 3.1.1 §3.11 UNSUBACK — a packet identifier only.
@@ -427,7 +461,9 @@ fn encode_unsuback(a: &UnsubAck, out: &mut BytesMut) {
 
 fn decode_unsuback(buf: &mut &[u8]) -> Result<UnsubAck, CodecError> {
     if buf.len() < 2 {
-        return Err(CodecError::Underflow { needed: 2 - buf.len() });
+        return Err(CodecError::Underflow {
+            needed: 2 - buf.len(),
+        });
     }
     let packet_id = u16::from_be_bytes([buf[0], buf[1]]);
     buf.advance(2);
@@ -582,8 +618,14 @@ mod tests {
         let s = Subscribe {
             packet_id: 10,
             subscriptions: vec![
-                Subscription { topic_filter: "a/b".into(), qos: QoS::AtLeastOnce },
-                Subscription { topic_filter: "c/d".into(), qos: QoS::ExactlyOnce },
+                Subscription {
+                    topic_filter: "a/b".into(),
+                    qos: QoS::AtLeastOnce,
+                },
+                Subscription {
+                    topic_filter: "c/d".into(),
+                    qos: QoS::ExactlyOnce,
+                },
             ],
         };
         let bytes = encode_packet(&Packet::Subscribe(s.clone())).expect("encode");
@@ -626,10 +668,7 @@ mod tests {
         // §3.9.3: granted QoS 1, then a failure return code (0x80).
         let a = SubAck {
             packet_id: 10,
-            return_codes: vec![
-                SubAckReturnCode::MaxQoS1,
-                SubAckReturnCode::Failure,
-            ],
+            return_codes: vec![SubAckReturnCode::MaxQoS1, SubAckReturnCode::Failure],
         };
         let bytes = encode_packet(&Packet::SubAck(a.clone())).expect("encode");
         assert_eq!(&bytes[..], [0x90, 0x04, 0x00, 0x0a, 0x01, 0x80].as_slice());
@@ -640,7 +679,16 @@ mod tests {
     #[test]
     fn var_int_round_trip_at_spec_boundaries() {
         // MQTT 3.1.1 §2.2.3 examples: 0, 127, 128, 16383, 16384, 2_097_151, 2_097_152.
-        for v in [0u32, 127, 128, 16_383, 16_384, 2_097_151, 2_097_152, 268_435_455] {
+        for v in [
+            0u32,
+            127,
+            128,
+            16_383,
+            16_384,
+            2_097_151,
+            2_097_152,
+            268_435_455,
+        ] {
             let mut buf = BytesMut::new();
             encode_var_int(v, &mut buf).expect("encode");
             let (decoded, _) = decode_var_int(&buf).expect("decode");
@@ -663,7 +711,10 @@ mod tests {
 
     #[test]
     fn connack_round_trip() {
-        let c = ConnAck { session_present: false, return_code: ConnAckReturnCode::Accepted };
+        let c = ConnAck {
+            session_present: false,
+            return_code: ConnAckReturnCode::Accepted,
+        };
         let bytes = encode_packet(&Packet::ConnAck(c)).expect("encode");
         let (back, _) = decode_packet(&bytes).expect("decode");
         assert_eq!(back, Packet::ConnAck(c));
@@ -709,6 +760,9 @@ mod tests {
         frame.put_u8((PacketType::Connect as u8) << 4);
         encode_var_int(body.len() as u32, &mut frame).unwrap();
         frame.extend_from_slice(&body);
-        assert!(matches!(decode_packet(&frame), Err(CodecError::BadProtocolLevel(5))));
+        assert!(matches!(
+            decode_packet(&frame),
+            Err(CodecError::BadProtocolLevel(5))
+        ));
     }
 }

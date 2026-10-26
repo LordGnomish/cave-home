@@ -130,13 +130,22 @@ fn parse_requirement(part: &str) -> Result<Requirement, Status> {
     }
     // Equality-based — check `!=`/`==` before single `=`.
     if let Some((k, v)) = part.split_once("!=") {
-        return Ok(Requirement::NotEquals(k.trim().to_string(), v.trim().to_string()));
+        return Ok(Requirement::NotEquals(
+            k.trim().to_string(),
+            v.trim().to_string(),
+        ));
     }
     if let Some((k, v)) = part.split_once("==") {
-        return Ok(Requirement::Equals(k.trim().to_string(), v.trim().to_string()));
+        return Ok(Requirement::Equals(
+            k.trim().to_string(),
+            v.trim().to_string(),
+        ));
     }
     if let Some((k, v)) = part.split_once('=') {
-        return Ok(Requirement::Equals(k.trim().to_string(), v.trim().to_string()));
+        return Ok(Requirement::Equals(
+            k.trim().to_string(),
+            v.trim().to_string(),
+        ));
     }
     // Existence.
     if let Some(k) = part.strip_prefix('!') {
@@ -148,14 +157,17 @@ fn parse_requirement(part: &str) -> Result<Requirement, Status> {
     }
     let key = part.trim();
     if key.contains(char::is_whitespace) {
-        return Err(Status::bad_request(format!("malformed requirement {part:?}")));
+        return Err(Status::bad_request(format!(
+            "malformed requirement {part:?}"
+        )));
     }
     Ok(Requirement::Exists(key.to_string()))
 }
 
 /// Split `part` on the first case-sensitive occurrence of ` in ` / ` notin `.
 fn split_keyword<'a>(part: &'a str, kw: &str) -> Option<(String, &'a str)> {
-    part.find(kw).map(|i| (part[..i].trim().to_string(), &part[i + kw.len()..]))
+    part.find(kw)
+        .map(|i| (part[..i].trim().to_string(), &part[i + kw.len()..]))
 }
 
 /// A field selector: a conjunction of `field=value` / `field!=value` over the
@@ -219,7 +231,10 @@ mod tests {
     use crate::json::obj;
 
     fn labels(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
-        pairs.iter().map(|(k, v)| ((*k).to_string(), (*v).to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect()
     }
 
     #[test]
@@ -239,7 +254,10 @@ mod tests {
         let s = LabelSelector::parse("env in (prod, staging)").expect("parse");
         assert_eq!(
             s.requirements,
-            vec![Requirement::In("env".into(), vec!["prod".into(), "staging".into()])]
+            vec![Requirement::In(
+                "env".into(),
+                vec!["prod".into(), "staging".into()]
+            )]
         );
     }
 
@@ -248,7 +266,10 @@ mod tests {
         let s = LabelSelector::parse("ready,!broken").expect("parse");
         assert_eq!(
             s.requirements,
-            vec![Requirement::Exists("ready".into()), Requirement::NotExists("broken".into())]
+            vec![
+                Requirement::Exists("ready".into()),
+                Requirement::NotExists("broken".into())
+            ]
         );
     }
 

@@ -69,7 +69,7 @@ pub mod machine;
 pub mod media;
 
 pub use chime::{ChimeDecision, ChimePolicy, ChimeReason, ChimeTone, Hour, HourError};
-pub use cooldown::{dedup, CooldownGate, Dedup};
+pub use cooldown::{CooldownGate, Dedup, dedup};
 pub use event::{CallState, DoorbellEvent, Tick};
 pub use label::{Lang, TimeError, TimeOfDay};
 pub use log::{VisitorEntry, VisitorLog};

@@ -94,7 +94,8 @@ impl EventGrouper {
         // Safety alarms always surface.
         if event.is_safety_alarm() {
             for t in &event.types {
-                self.last_seen.insert((event.camera.as_str().to_owned(), type_key(*t)), now);
+                self.last_seen
+                    .insert((event.camera.as_str().to_owned(), type_key(*t)), now);
             }
             return true;
         }

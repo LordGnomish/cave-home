@@ -333,7 +333,8 @@ mod tests {
     #[test]
     fn play_pause_stop_transitions() {
         let mut tv = on_tv();
-        tv.apply(MediaCommand::SelectSource("hdmi1".into())).unwrap();
+        tv.apply(MediaCommand::SelectSource("hdmi1".into()))
+            .unwrap();
         tv.apply(MediaCommand::Play).unwrap();
         assert_eq!(tv.playback(), PlaybackState::Playing);
         tv.apply(MediaCommand::Pause).unwrap();
@@ -348,7 +349,10 @@ mod tests {
     fn next_previous_need_content() {
         let mut tv = on_tv();
         // Idle home screen: nothing to skip.
-        assert_eq!(tv.apply(MediaCommand::Next), Err(CommandError::NothingPlaying));
+        assert_eq!(
+            tv.apply(MediaCommand::Next),
+            Err(CommandError::NothingPlaying)
+        );
         assert_eq!(
             tv.apply(MediaCommand::SeekRelative(10)),
             Err(CommandError::NothingPlaying)
@@ -397,7 +401,8 @@ mod tests {
 
     #[test]
     fn set_volume_clamps_to_cap() {
-        let mut tv = Display::powered_on(SourceCatalog::typical_smart_tv(), Volume::with_cap(10, 40));
+        let mut tv =
+            Display::powered_on(SourceCatalog::typical_smart_tv(), Volume::with_cap(10, 40));
         tv.apply(MediaCommand::SetVolume(95)).unwrap();
         assert_eq!(tv.volume().level(), 40, "parental cap holds");
     }
@@ -416,7 +421,8 @@ mod tests {
         let mut tv = on_tv();
         tv.apply(MediaCommand::LaunchApp("netflix".into())).unwrap();
         assert_eq!(tv.current_app(), Some("netflix"));
-        tv.apply(MediaCommand::SelectSource("hdmi1".into())).unwrap();
+        tv.apply(MediaCommand::SelectSource("hdmi1".into()))
+            .unwrap();
         assert_eq!(tv.current_app(), None);
         assert_eq!(tv.playback(), PlaybackState::Idle);
     }

@@ -55,7 +55,7 @@ pub use event::{Event, EventOrigin};
 pub use event_bus::{EventBus, Listener};
 pub use helpers::{Person, PersonRegistry, Scene, SceneRegistry, Zone, ZoneRegistry};
 pub use loader::{Integration, IntegrationLoader, Manifest, SetupReport};
-pub use template::TemplateEngine;
 pub use service::{Service, ServiceCall, ServiceError, ServiceRegistry};
 pub use state::{EntityId, State, StateAttributes};
 pub use state_machine::{StateChange, StateMachine, StateMachineError};
+pub use template::TemplateEngine;

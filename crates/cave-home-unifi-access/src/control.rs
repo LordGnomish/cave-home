@@ -328,8 +328,14 @@ mod tests {
         c.add_door(AccessDoor::new(DoorId::new("b"), "Back door"));
         c.evacuate();
         assert_eq!(c.mode(), EmergencyMode::Evacuation);
-        assert_eq!(c.door(&DoorId::new("a")).expect("a").lock_state(), LockState::Unlocked);
-        assert_eq!(c.door(&DoorId::new("b")).expect("b").lock_state(), LockState::Unlocked);
+        assert_eq!(
+            c.door(&DoorId::new("a")).expect("a").lock_state(),
+            LockState::Unlocked
+        );
+        assert_eq!(
+            c.door(&DoorId::new("b")).expect("b").lock_state(),
+            LockState::Unlocked
+        );
     }
 
     #[test]
@@ -348,7 +354,10 @@ mod tests {
         c.add_door(AccessDoor::new(DoorId::new("a"), "Front door"));
         c.lockdown();
         assert_eq!(c.mode(), EmergencyMode::Lockdown);
-        assert_eq!(c.door(&DoorId::new("a")).expect("a").lock_state(), LockState::Locked);
+        assert_eq!(
+            c.door(&DoorId::new("a")).expect("a").lock_state(),
+            LockState::Locked
+        );
         // Unlock is refused while locked down.
         assert_eq!(c.unlock(&DoorId::new("a")), Err(ControlError::LockedDown));
         assert_eq!(

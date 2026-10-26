@@ -74,8 +74,12 @@ impl RestingHrBand {
             (Self::Elevated, Lang::En) => "Maybe take a calm moment and some water.",
             (Self::Elevated, Lang::De) => "Vielleicht eine ruhige Pause und etwas Wasser.",
             (Self::Elevated, Lang::Tr) => "Belki sakin bir mola ve biraz su iyi gelir.",
-            (Self::High, Lang::En) => "Rest a little; check in with someone you trust if it stays up.",
-            (Self::High, Lang::De) => "Ruh dich etwas aus; sprich mit jemandem, dem du vertraust, wenn es so hoch ist.",
+            (Self::High, Lang::En) => {
+                "Rest a little; check in with someone you trust if it stays up."
+            }
+            (Self::High, Lang::De) => {
+                "Ruh dich etwas aus; sprich mit jemandem, dem du vertraust, wenn es so hoch ist."
+            }
             (Self::High, Lang::Tr) => "Biraz dinlen; böyle devam ederse güvendiğin biriyle konuş.",
         }
     }
@@ -146,9 +150,15 @@ impl SleepBand {
             (Self::Optimal, Lang::En) => "Lovely rest — keep it up.",
             (Self::Optimal, Lang::De) => "Schöne Erholung — weiter so.",
             (Self::Optimal, Lang::Tr) => "Güzel bir dinlenme — böyle devam.",
-            (Self::Excessive, Lang::En) => "A nice long rest; a little daylight can help you feel fresh.",
-            (Self::Excessive, Lang::De) => "Eine schöne lange Erholung; etwas Tageslicht macht munter.",
-            (Self::Excessive, Lang::Tr) => "Güzel uzun bir dinlenme; biraz gün ışığı zinde hissettirir.",
+            (Self::Excessive, Lang::En) => {
+                "A nice long rest; a little daylight can help you feel fresh."
+            }
+            (Self::Excessive, Lang::De) => {
+                "Eine schöne lange Erholung; etwas Tageslicht macht munter."
+            }
+            (Self::Excessive, Lang::Tr) => {
+                "Güzel uzun bir dinlenme; biraz gün ışığı zinde hissettirir."
+            }
         }
     }
 }
@@ -306,8 +316,20 @@ mod tests {
     fn ui_strings_carry_no_implementation_jargon() {
         // Charter §6.3: the UI must never surface protocol / implementation terms.
         const BANNED: &[&str] = &[
-            "MQTT", "Zigbee", "OAuth", "API", "token", "endpoint", "entity_id",
-            "pod", "kubelet", "BLE", "Fitbit", "Withings", "Garmin", "bpm",
+            "MQTT",
+            "Zigbee",
+            "OAuth",
+            "API",
+            "token",
+            "endpoint",
+            "entity_id",
+            "pod",
+            "kubelet",
+            "BLE",
+            "Fitbit",
+            "Withings",
+            "Garmin",
+            "bpm",
         ];
         assert_no_terms(BANNED, "jargon");
     }
@@ -316,10 +338,25 @@ mod tests {
     fn ui_strings_carry_no_clinical_diagnosis_words() {
         // ADR-025 / Charter §6.3: wellness copy must stay gentle and non-clinical.
         const CLINICAL: &[&str] = &[
-            "arrhythmia", "hypertension", "hypotension", "tachycardia",
-            "bradycardia", "diagnosis", "disease", "disorder", "BMI",
-            "percentile", "abnormal", "symptom", "syndrome", "obese",
-            "obesity", "apnea", "insomnia", "clinical", "medical",
+            "arrhythmia",
+            "hypertension",
+            "hypotension",
+            "tachycardia",
+            "bradycardia",
+            "diagnosis",
+            "disease",
+            "disorder",
+            "BMI",
+            "percentile",
+            "abnormal",
+            "symptom",
+            "syndrome",
+            "obese",
+            "obesity",
+            "apnea",
+            "insomnia",
+            "clinical",
+            "medical",
         ];
         assert_no_terms(CLINICAL, "clinical");
     }

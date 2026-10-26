@@ -97,14 +97,14 @@ pub mod store;
 pub mod txn;
 pub mod watch;
 
-pub use compact::{compact, CompactReport};
+pub use compact::{CompactReport, compact};
 pub use error::{KineError, Result};
 pub use lease::{Lease, LeaseTable, UnixSeconds};
-pub use range::{execute, prefix_successor, RangeEnd, RangeRequest, RangeResponse};
-pub use revision::{Clock, Revision, CURRENT};
+pub use range::{RangeEnd, RangeRequest, RangeResponse, execute, prefix_successor};
+pub use revision::{CURRENT, Clock, Revision};
 pub use store::{Row, Store};
 pub use txn::{
-    apply as apply_txn, Compare, CompareOperand, CompareResult, CompareTarget, Txn, TxnOp,
-    TxnOpResponse, TxnResponse,
+    Compare, CompareOperand, CompareResult, CompareTarget, Txn, TxnOp, TxnOpResponse, TxnResponse,
+    apply as apply_txn,
 };
-pub use watch::{watch, EventKind, WatchEvent};
+pub use watch::{EventKind, WatchEvent, watch};

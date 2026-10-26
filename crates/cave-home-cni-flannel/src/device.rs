@@ -20,7 +20,7 @@
 use std::net::IpAddr;
 
 use crate::backend::{MacAddr, VxlanConfig};
-use crate::datapath::{Datapath, LinkAddr, NetError, Neigh, VxlanLink};
+use crate::datapath::{Datapath, LinkAddr, Neigh, NetError, VxlanLink};
 
 /// The attributes needed to create the VXLAN device (upstream
 /// `vxlanDeviceAttrs`).
@@ -206,7 +206,8 @@ mod tests {
     fn configure_adds_addr_then_sets_up_in_order() {
         let mut dp = MockDatapath::new();
         let dev = VxlanDevice::ensure(&mut dp, &attrs()).expect("ensure");
-        dev.configure(&mut dp, v4("10.42.0.0"), 24).expect("configure");
+        dev.configure(&mut dp, v4("10.42.0.0"), 24)
+            .expect("configure");
         // ops: LinkAdd, AddrAdd, LinkSetUp.
         assert_eq!(dp.ops.len(), 3);
         match &dp.ops[1] {

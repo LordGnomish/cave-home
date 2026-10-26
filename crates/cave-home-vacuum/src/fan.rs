@@ -56,13 +56,19 @@ impl FanCapability {
     /// A modest three-step vacuum: Low / Medium / High, no off, no turbo.
     #[must_use]
     pub const fn basic() -> Self {
-        Self { max: FanSpeed::High, can_turn_off: false }
+        Self {
+            max: FanSpeed::High,
+            can_turn_off: false,
+        }
     }
 
     /// A full-range vacuum: everything from a mop-only off up to Turbo.
     #[must_use]
     pub const fn full() -> Self {
-        Self { max: FanSpeed::Turbo, can_turn_off: true }
+        Self {
+            max: FanSpeed::Turbo,
+            can_turn_off: true,
+        }
     }
 
     /// Build a capability from an explicit ceiling and off-support flag.

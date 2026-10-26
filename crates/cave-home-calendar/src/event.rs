@@ -7,8 +7,8 @@
 //! (`rrule` + `exdates`).
 
 use crate::date::{Date, DateTime};
-use crate::ical::parse::{parse_date_value, DateValue, VEvent};
 use crate::ical::IcalError;
+use crate::ical::parse::{DateValue, VEvent, parse_date_value};
 use crate::rrule::RRule;
 
 /// A calendar appointment.
@@ -123,7 +123,10 @@ impl Event {
             .get("UID")
             .map(|l| l.value.clone())
             .ok_or_else(|| IcalError::BadDateValue("missing UID".into()))?;
-        let summary = ve.get("SUMMARY").map(|l| l.value.clone()).unwrap_or_default();
+        let summary = ve
+            .get("SUMMARY")
+            .map(|l| l.value.clone())
+            .unwrap_or_default();
 
         let dtstart_line = ve
             .get("DTSTART")
@@ -285,7 +288,10 @@ mod tests {
         assert!(e.rrule.is_some());
         let occ = e.occurrence_dates(d(2026, 6, 1), d(2026, 6, 30));
         // Tuesdays in June 2026: 2, 9, 16, 23, 30 — minus excluded 16.
-        assert_eq!(occ, vec![d(2026, 6, 2), d(2026, 6, 9), d(2026, 6, 23), d(2026, 6, 30)]);
+        assert_eq!(
+            occ,
+            vec![d(2026, 6, 2), d(2026, 6, 9), d(2026, 6, 23), d(2026, 6, 30)]
+        );
     }
 
     #[test]
@@ -293,7 +299,10 @@ mod tests {
         let ics = "BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:once\n\
             DTSTART:20260530T150000\nEND:VEVENT\nEND:VCALENDAR\n";
         let e = first_event(ics);
-        assert_eq!(e.occurrence_dates(d(2026, 5, 1), d(2026, 5, 31)), vec![d(2026, 5, 30)]);
+        assert_eq!(
+            e.occurrence_dates(d(2026, 5, 1), d(2026, 5, 31)),
+            vec![d(2026, 5, 30)]
+        );
         assert!(e.occurrence_dates(d(2026, 6, 1), d(2026, 6, 30)).is_empty());
     }
 

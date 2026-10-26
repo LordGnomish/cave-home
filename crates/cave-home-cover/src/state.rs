@@ -54,7 +54,10 @@ mod tests {
 
     #[test]
     fn at_rest_for_endpoints_and_middle() {
-        assert_eq!(CoverState::at_rest_for(Position::CLOSED), CoverState::Closed);
+        assert_eq!(
+            CoverState::at_rest_for(Position::CLOSED),
+            CoverState::Closed
+        );
         assert_eq!(CoverState::at_rest_for(Position::OPEN), CoverState::Open);
         assert_eq!(
             CoverState::at_rest_for(Position::new(50).unwrap()),

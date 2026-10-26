@@ -58,7 +58,9 @@ mod tests {
         let json = r#"{"response":{"solar_power":0,"battery_power":-1000,"load_power":500,
             "grid_power":0,"percentage_charged":75,"energy_left":10125,
             "total_pack_energy":13500,"grid_status":"Active"}}"#;
-        serde_json::from_str::<Envelope<LiveStatus>>(json).unwrap().response
+        serde_json::from_str::<Envelope<LiveStatus>>(json)
+            .unwrap()
+            .response
     }
 
     #[test]

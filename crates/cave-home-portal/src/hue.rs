@@ -105,9 +105,18 @@ impl HuePage {
             },
             lights,
             scenes: vec![
-                HueSceneChip { entity_id: "hue:scene:1".into(), name: "Evening".into() },
-                HueSceneChip { entity_id: "hue:scene:2".into(), name: "Reading".into() },
-                HueSceneChip { entity_id: "hue:scene:3".into(), name: "Relax".into() },
+                HueSceneChip {
+                    entity_id: "hue:scene:1".into(),
+                    name: "Evening".into(),
+                },
+                HueSceneChip {
+                    entity_id: "hue:scene:2".into(),
+                    name: "Reading".into(),
+                },
+                HueSceneChip {
+                    entity_id: "hue:scene:3".into(),
+                    name: "Relax".into(),
+                },
             ],
         }
     }
@@ -125,12 +134,12 @@ impl HuePage {
     pub fn cards(&self) -> Vec<Card> {
         self.lights
             .iter()
-            .map(|l| Card::Light { entity_id: l.entity_id.clone() })
-            .chain(
-                self.scenes
-                    .iter()
-                    .map(|s| Card::Scene { entity_id: s.entity_id.clone() }),
-            )
+            .map(|l| Card::Light {
+                entity_id: l.entity_id.clone(),
+            })
+            .chain(self.scenes.iter().map(|s| Card::Scene {
+                entity_id: s.entity_id.clone(),
+            }))
             .collect()
     }
 }
@@ -164,12 +173,15 @@ mod tests {
         // first cards are lights, in order
         assert_eq!(
             cards[0],
-            Card::Light { entity_id: "hue:light:1".into() }
+            Card::Light {
+                entity_id: "hue:light:1".into()
+            }
         );
         // a scene card appears after the lights
-        assert!(cards
-            .iter()
-            .any(|c| *c == Card::Scene { entity_id: "hue:scene:1".into() }));
+        assert!(cards.iter().any(|c| *c
+            == Card::Scene {
+                entity_id: "hue:scene:1".into()
+            }));
     }
 
     #[test]

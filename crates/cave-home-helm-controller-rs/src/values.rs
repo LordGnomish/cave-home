@@ -266,10 +266,7 @@ mod tests {
 
     #[test]
     fn null_removes_nested_key_only() {
-        let lo = Value::object().with(
-            "svc",
-            Value::object().with("a", s("1")).with("b", s("2")),
-        );
+        let lo = Value::object().with("svc", Value::object().with("a", s("1")).with("b", s("2")));
         let hi = Value::object().with("svc", Value::object().with("b", Value::Null));
         let m = lo.deep_merge(hi);
         assert_eq!(m.get_path("svc.a"), Some(&s("1")));
@@ -284,12 +281,7 @@ mod tests {
         let content = Value::object().with("img", s("c")).with("env", s("prod"));
         let config = Value::object().with("img", s("cfg"));
         let set = Value::object().with("img", s("set"));
-        let m = merge_layers(
-            Some(defaults),
-            Some(content),
-            Some(config),
-            Some(set),
-        );
+        let m = merge_layers(Some(defaults), Some(content), Some(config), Some(set));
         // img is set in every layer: highest (set) wins.
         assert_eq!(m.get_path("img"), Some(&s("set")));
         // tier only in defaults, env only in content: both survive.

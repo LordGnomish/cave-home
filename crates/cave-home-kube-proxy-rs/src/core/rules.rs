@@ -21,9 +21,9 @@
 
 use std::net::IpAddr;
 
-use crate::core::model::{Protocol, Service, ServicePort, ServiceType};
-use crate::core::select::{select_endpoints, EndpointTarget, NodeContext, SelectedEndpoints};
 use crate::core::model::EndpointSlice;
+use crate::core::model::{Protocol, Service, ServicePort, ServiceType};
+use crate::core::select::{EndpointTarget, NodeContext, SelectedEndpoints, select_endpoints};
 
 /// Which frontend a rule fronts.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -79,7 +79,13 @@ impl ProxyRule {
             Frontend::NodePort { port } => format!("nodeport:{port}"),
             Frontend::LoadBalancer { ip, port } => format!("lb:{ip}:{port}"),
         };
-        format!("{}|{}|{}|{}", self.service_key, self.port_name, self.protocol.as_str(), fe)
+        format!(
+            "{}|{}|{}|{}",
+            self.service_key,
+            self.port_name,
+            self.protocol.as_str(),
+            fe
+        )
     }
 }
 
@@ -124,7 +130,10 @@ fn push_port_rules(
 
     // NodePort frontend (NodePort + LoadBalancer types). External traffic, so
     // it uses the external-policy-filtered backend set.
-    if matches!(svc.service_type, ServiceType::NodePort | ServiceType::LoadBalancer) {
+    if matches!(
+        svc.service_type,
+        ServiceType::NodePort | ServiceType::LoadBalancer
+    ) {
         if let Some(np) = sp.node_port {
             out.push(ProxyRule {
                 service_key: key.clone(),
@@ -143,7 +152,10 @@ fn push_port_rules(
                 service_key: key.clone(),
                 port_name: sp.name.clone(),
                 protocol: sp.protocol,
-                frontend: Frontend::LoadBalancer { ip: lb, port: sp.port },
+                frontend: Frontend::LoadBalancer {
+                    ip: lb,
+                    port: sp.port,
+                },
                 action: action_for(svc, sel.external.clone()),
             });
         }
@@ -204,10 +216,8 @@ impl RuleDiff {
 #[must_use]
 pub fn diff_rules(old: &[ProxyRule], new: &[ProxyRule]) -> RuleDiff {
     use std::collections::BTreeMap;
-    let old_map: BTreeMap<String, &ProxyRule> =
-        old.iter().map(|r| (r.frontend_key(), r)).collect();
-    let new_map: BTreeMap<String, &ProxyRule> =
-        new.iter().map(|r| (r.frontend_key(), r)).collect();
+    let old_map: BTreeMap<String, &ProxyRule> = old.iter().map(|r| (r.frontend_key(), r)).collect();
+    let new_map: BTreeMap<String, &ProxyRule> = new.iter().map(|r| (r.frontend_key(), r)).collect();
 
     let mut diff = RuleDiff::default();
     for (k, nr) in &new_map {

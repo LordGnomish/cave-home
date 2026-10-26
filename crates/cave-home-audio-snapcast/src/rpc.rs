@@ -212,9 +212,14 @@ mod tests {
         let wire = group_set_stream(3, "g1", "spotify").to_json();
         let v = Json::parse(&wire).expect("parse");
         assert_eq!(v.get("jsonrpc").and_then(Json::as_str), Some("2.0"));
-        assert_eq!(v.get("method").and_then(Json::as_str), Some("Group.SetStream"));
         assert_eq!(
-            v.get("params").and_then(|p| p.get("stream_id")).and_then(Json::as_str),
+            v.get("method").and_then(Json::as_str),
+            Some("Group.SetStream")
+        );
+        assert_eq!(
+            v.get("params")
+                .and_then(|p| p.get("stream_id"))
+                .and_then(Json::as_str),
             Some("spotify")
         );
     }
@@ -229,12 +234,15 @@ mod tests {
 
     #[test]
     fn notification_round_trips_and_has_no_id() {
-        let note = Notification::new(method::CLIENT_ON_CONNECT)
-            .with("id", Json::Str("c1".to_string()));
+        let note =
+            Notification::new(method::CLIENT_ON_CONNECT).with("id", Json::Str("c1".to_string()));
         let wire = note.to_json();
         // The "id" here is a *param* (which client connected), not a JSON-RPC id.
         let v = Json::parse(&wire).expect("parse");
-        assert!(v.get("id").is_none(), "notification must have no top-level id");
+        assert!(
+            v.get("id").is_none(),
+            "notification must have no top-level id"
+        );
         let back = Notification::from_json(&wire).expect("decode");
         assert_eq!(back, note);
     }

@@ -72,6 +72,6 @@ pub mod shuffle;
 pub use label::Lang;
 pub use library::{Library, SearchFields};
 pub use media::{Album, Artist, MediaItem, Playlist, ProviderId, Track, TrackId};
-pub use player::{PlayState, Player, PlayerGroup, TransitionPrefs, Volume, MAX_VOLUME};
+pub use player::{MAX_VOLUME, PlayState, Player, PlayerGroup, TransitionPrefs, Volume};
 pub use queue::{Queue, RepeatMode};
 pub use shuffle::shuffled_order;

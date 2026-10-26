@@ -73,13 +73,13 @@ pub mod moisture;
 pub mod plant;
 pub mod season;
 
-pub use advice::{advise, CareAdvice, Conditions, LightInput, TempFit};
+pub use advice::{CareAdvice, Conditions, LightInput, TempFit, advise};
 pub use frost::FrostRisk;
 pub use label::Lang;
-pub use light::{assess_band, assess_lux, LightBand, LightFit, LightNeed};
-pub use moisture::{recommend_water, SoilFit, WaterRecommendation};
+pub use light::{LightBand, LightFit, LightNeed, assess_band, assess_lux};
+pub use moisture::{SoilFit, WaterRecommendation, recommend_water};
 pub use plant::{CareProfile, FrostSensitivity, Plant, PlantKind};
-pub use season::{growing_season, growing_season_in, Hemisphere, Season};
+pub use season::{Hemisphere, Season, growing_season, growing_season_in};
 
 #[cfg(test)]
 mod tests {
@@ -92,9 +92,20 @@ mod tests {
     #[test]
     fn ui_strings_carry_no_implementation_jargon() {
         const BANNED: &[&str] = &[
-            "lux", "ADC", "probe", "MQTT", "Zigbee", "ESPHome",
-            "entity_id", "soil moisture", "threshold", "percent",
-            "valve", "kubelet", "Automower", "Landroid",
+            "lux",
+            "ADC",
+            "probe",
+            "MQTT",
+            "Zigbee",
+            "ESPHome",
+            "entity_id",
+            "soil moisture",
+            "threshold",
+            "percent",
+            "valve",
+            "kubelet",
+            "Automower",
+            "Landroid",
         ];
         let langs = [Lang::En, Lang::De, Lang::Tr];
         let name = "The tomatoes";

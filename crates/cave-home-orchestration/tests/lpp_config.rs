@@ -21,14 +21,20 @@ fn action_type_ids_match_upstream() {
 
 #[test]
 fn default_non_listed_node_key_matches_upstream() {
-    assert_eq!(NODE_DEFAULT_NON_LISTED_NODES, "DEFAULT_PATH_FOR_NON_LISTED_NODES");
+    assert_eq!(
+        NODE_DEFAULT_NON_LISTED_NODES,
+        "DEFAULT_PATH_FOR_NON_LISTED_NODES"
+    );
 }
 
 #[test]
 fn node_path_map_accepts_absolute_paths_and_dedups_lexically() {
     // "/opt/x" and "/opt/x/" canonicalize to the same path → duplicate.
     let err = NodePathMap::canonicalize("nodeA", &["/opt/x", "/opt/x/"]).unwrap_err();
-    assert!(matches!(err, ConfigError::DuplicatePath { .. }), "got {err:?}");
+    assert!(
+        matches!(err, ConfigError::DuplicatePath { .. }),
+        "got {err:?}"
+    );
 
     // Two genuinely distinct paths are kept, sorted for deterministic selection.
     let npm = NodePathMap::canonicalize("nodeA", &["/data2", "/data1"]).unwrap();
@@ -41,7 +47,10 @@ fn node_path_map_accepts_absolute_paths_and_dedups_lexically() {
 fn node_path_map_rejects_relative_and_root() {
     // Upstream: `if p[0] != '/'` → "path must start with /".
     let rel = NodePathMap::canonicalize("nodeA", &["opt/x"]).unwrap_err();
-    assert!(matches!(rel, ConfigError::PathNotAbsolute { .. }), "got {rel:?}");
+    assert!(
+        matches!(rel, ConfigError::PathNotAbsolute { .. }),
+        "got {rel:?}"
+    );
 
     // Upstream: `if path == "/"` → "cannot use root ('/') as path".
     let root = NodePathMap::canonicalize("nodeA", &["/"]).unwrap_err();
@@ -49,7 +58,10 @@ fn node_path_map_rejects_relative_and_root() {
 
     // `/opt/..` cleans to `/` and is likewise rejected.
     let cleans_to_root = NodePathMap::canonicalize("nodeA", &["/opt/.."]).unwrap_err();
-    assert!(matches!(cleans_to_root, ConfigError::RootPath { .. }), "got {cleans_to_root:?}");
+    assert!(
+        matches!(cleans_to_root, ConfigError::RootPath { .. }),
+        "got {cleans_to_root:?}"
+    );
 }
 
 #[test]
@@ -67,7 +79,10 @@ fn storage_class_config_rejects_duplicate_nodes() {
         "",
     )
     .unwrap_err();
-    assert!(matches!(err, ConfigError::DuplicateNode { .. }), "got {err:?}");
+    assert!(
+        matches!(err, ConfigError::DuplicateNode { .. }),
+        "got {err:?}"
+    );
 }
 
 #[test]
@@ -84,17 +99,24 @@ fn is_shared_filesystem_decision_table() {
     // is_shared_filesystem reports the ambiguity (upstream isSharedFilesystem).
     let both = StorageClassConfig::canonicalize(&[("nodeA", &["/data1"][..])], "/mnt/shared")
         .expect("canonicalize does not reject the conflict");
-    assert_eq!(both.is_shared_filesystem(), Err(ConfigError::BothNodeMapAndSharedFs));
+    assert_eq!(
+        both.is_shared_filesystem(),
+        Err(ConfigError::BothNodeMapAndSharedFs)
+    );
 
     // neither set → error.
     let neither = StorageClassConfig::canonicalize(&[], "").unwrap();
-    assert_eq!(neither.is_shared_filesystem(), Err(ConfigError::NeitherNodeMapNorSharedFs));
+    assert_eq!(
+        neither.is_shared_filesystem(),
+        Err(ConfigError::NeitherNodeMapNorSharedFs)
+    );
 }
 
 #[test]
 fn provisioner_config_pick_default_when_no_named_classes() {
     // pickConfig: no StorageClassConfigs → always the default class config.
-    let default_class = StorageClassConfig::canonicalize(&[("nodeA", &["/data1"][..])], "").unwrap();
+    let default_class =
+        StorageClassConfig::canonicalize(&[("nodeA", &["/data1"][..])], "").unwrap();
     let cfg = ProvisionerConfig::new(default_class.clone(), 0);
     // any storage class name resolves to the single default config.
     assert_eq!(cfg.pick("anything").unwrap(), &default_class);
@@ -108,7 +130,10 @@ fn provisioner_config_pick_named_class_or_error() {
     let class_a = StorageClassConfig::canonicalize(&[("nodeA", &["/a"][..])], "").unwrap();
     let class_b = StorageClassConfig::canonicalize(&[("nodeB", &["/b"][..])], "").unwrap();
     let cfg = ProvisionerConfig::with_classes(
-        [("fast".to_string(), class_a.clone()), ("slow".to_string(), class_b.clone())],
+        [
+            ("fast".to_string(), class_a.clone()),
+            ("slow".to_string(), class_b.clone()),
+        ],
         90,
     );
     assert_eq!(cfg.pick("fast").unwrap(), &class_a);
@@ -117,5 +142,8 @@ fn provisioner_config_pick_named_class_or_error() {
     assert_eq!(cfg.cmd_timeout_seconds(), 90);
 
     let err = cfg.pick("missing").unwrap_err();
-    assert!(matches!(err, ConfigError::UnknownStorageClass { .. }), "got {err:?}");
+    assert!(
+        matches!(err, ConfigError::UnknownStorageClass { .. }),
+        "got {err:?}"
+    );
 }

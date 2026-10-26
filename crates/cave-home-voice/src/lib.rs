@@ -71,8 +71,8 @@ pub mod template;
 
 pub use config::{AssistantConfig, ConfigError, WakeWord};
 pub use label::Lang;
-pub use matcher::{match_intent, CompiledIntent, IntentMatch, MatchOutcome};
-pub use policy::{authorize, sensitivity, Decision, PermissionLevel, Sensitivity};
+pub use matcher::{CompiledIntent, IntentMatch, MatchOutcome, match_intent};
+pub use policy::{Decision, PermissionLevel, Sensitivity, authorize, sensitivity};
 pub use route::{IntentAction, RoutedAction};
 pub use slot::{SlotKind, SlotValue, ValueList};
 pub use template::Template;
@@ -150,7 +150,11 @@ mod tests {
     fn understand_acts_on_a_command() {
         let intents = intents::builtin_intents().expect("c");
         match understand("turn the kitchen light on", &intents, Lang::En) {
-            Understanding::Acted { action, reply, confidence } => {
+            Understanding::Acted {
+                action,
+                reply,
+                confidence,
+            } => {
                 assert_eq!(
                     action,
                     IntentAction::SetLight {

@@ -75,18 +75,25 @@ impl JarvisConfig {
             )));
         }
         if self.wake_keywords.is_empty() {
-            return Err(JarvisError::Config("at least one wake keyword is required".into()));
+            return Err(JarvisError::Config(
+                "at least one wake keyword is required".into(),
+            ));
         }
         if !(0.0..=10.0).contains(&self.wake_threshold) {
             return Err(JarvisError::Config("wake_threshold out of range".into()));
         }
         if !(-1.0..=1.0).contains(&self.speaker_threshold) {
-            return Err(JarvisError::Config("speaker_threshold out of [-1,1]".into()));
+            return Err(JarvisError::Config(
+                "speaker_threshold out of [-1,1]".into(),
+            ));
         }
         // No two devices may name the same id.
         for (i, d) in self.devices.iter().enumerate() {
             if self.devices[i + 1..].iter().any(|o| o.device == d.device) {
-                return Err(JarvisError::Config(format!("duplicate device '{}'", d.device)));
+                return Err(JarvisError::Config(format!(
+                    "duplicate device '{}'",
+                    d.device
+                )));
             }
         }
         Ok(())
@@ -124,8 +131,14 @@ mod tests {
     fn cfg() -> JarvisConfig {
         JarvisConfig {
             devices: vec![
-                DevicePlacement { device: "mic-kitchen".into(), room: "kitchen".into() },
-                DevicePlacement { device: "mic-office".into(), room: "office".into() },
+                DevicePlacement {
+                    device: "mic-kitchen".into(),
+                    room: "kitchen".into(),
+                },
+                DevicePlacement {
+                    device: "mic-office".into(),
+                    room: "office".into(),
+                },
             ],
             ..JarvisConfig::default()
         }
@@ -160,7 +173,10 @@ mod tests {
     #[test]
     fn rejects_duplicate_device() {
         let mut c = cfg();
-        c.devices.push(DevicePlacement { device: "mic-kitchen".into(), room: "den".into() });
+        c.devices.push(DevicePlacement {
+            device: "mic-kitchen".into(),
+            room: "den".into(),
+        });
         assert!(c.validate().is_err());
     }
 

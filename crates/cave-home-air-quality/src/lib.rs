@@ -46,8 +46,8 @@ pub mod classify;
 pub mod nowcast;
 pub mod reading;
 
-pub use aqi::{sub_index, AqiOutcome};
-pub use assessment::{assess, grade, PollutantGrade, RoomAssessment};
+pub use aqi::{AqiOutcome, sub_index};
+pub use assessment::{PollutantGrade, RoomAssessment, assess, grade};
 pub use category::{AirCategory, Lang};
 pub use classify::classify;
 pub use nowcast::now_cast;

@@ -110,11 +110,7 @@ impl BBox {
 pub fn iou(a: &BBox, b: &BBox) -> f64 {
     let inter = a.intersection_area(b);
     let union = a.area() + b.area() - inter;
-    if union <= 0.0 {
-        0.0
-    } else {
-        inter / union
-    }
+    if union <= 0.0 { 0.0 } else { inter / union }
 }
 
 /// A closed polygon describing a detection zone — an ordered ring of vertices.

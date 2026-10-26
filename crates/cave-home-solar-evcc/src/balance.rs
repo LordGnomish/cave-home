@@ -59,7 +59,12 @@ impl PowerSnapshot {
         if pv_production < 0.0 || house_consumption < 0.0 || charge_power < 0.0 {
             return Err(EvccError::NegativePower);
         }
-        Ok(Self { pv_production, house_consumption, battery_flow, charge_power })
+        Ok(Self {
+            pv_production,
+            house_consumption,
+            battery_flow,
+            charge_power,
+        })
     }
 
     #[must_use]

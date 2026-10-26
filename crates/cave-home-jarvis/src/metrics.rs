@@ -46,7 +46,12 @@ impl Metrics {
 
     /// Record one wake-word firing for `keyword`.
     pub fn record_wake(&self, keyword: &str) {
-        *self.inner.lock().wakes.entry(keyword.to_string()).or_insert(0) += 1;
+        *self
+            .inner
+            .lock()
+            .wakes
+            .entry(keyword.to_string())
+            .or_insert(0) += 1;
     }
 
     /// Record one successful transcription.
@@ -75,7 +80,12 @@ impl Metrics {
 
     /// Record one speaker identification (empty name = unrecognised).
     pub fn record_speaker(&self, name: &str) {
-        *self.inner.lock().speakers.entry(name.to_string()).or_insert(0) += 1;
+        *self
+            .inner
+            .lock()
+            .speakers
+            .entry(name.to_string())
+            .or_insert(0) += 1;
     }
 
     /// Record one LLM chat turn (a request/response round to the model).
@@ -101,8 +111,16 @@ impl Metrics {
 
         out.push_str("# HELP jarvis_dispatch_total Dispatches by path.\n");
         out.push_str("# TYPE jarvis_dispatch_total counter\n");
-        let _ = writeln!(out, "jarvis_dispatch_total{{path=\"nlu\"}} {}", i.dispatch_nlu);
-        let _ = writeln!(out, "jarvis_dispatch_total{{path=\"llm\"}} {}", i.dispatch_llm);
+        let _ = writeln!(
+            out,
+            "jarvis_dispatch_total{{path=\"nlu\"}} {}",
+            i.dispatch_nlu
+        );
+        let _ = writeln!(
+            out,
+            "jarvis_dispatch_total{{path=\"llm\"}} {}",
+            i.dispatch_llm
+        );
 
         out.push_str("# HELP jarvis_llm_turns_total Chat turns to the local model.\n");
         out.push_str("# TYPE jarvis_llm_turns_total counter\n");
@@ -123,7 +141,11 @@ impl Metrics {
         out.push_str("# HELP jarvis_speaker_id_total Speaker identifications by member.\n");
         out.push_str("# TYPE jarvis_speaker_id_total counter\n");
         for (name, n) in &i.speakers {
-            let label = if name.is_empty() { "unknown" } else { name.as_str() };
+            let label = if name.is_empty() {
+                "unknown"
+            } else {
+                name.as_str()
+            };
             let _ = writeln!(out, "jarvis_speaker_id_total{{member=\"{label}\"}} {n}");
         }
 

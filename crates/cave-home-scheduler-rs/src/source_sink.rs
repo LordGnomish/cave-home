@@ -138,7 +138,11 @@ impl InMemorySource {
 
     pub fn update_pod(&self, new: Pod) {
         let mut g = self.inner.lock();
-        if let Some(slot) = g.pods.iter_mut().find(|p| p.metadata.uid == new.metadata.uid) {
+        if let Some(slot) = g
+            .pods
+            .iter_mut()
+            .find(|p| p.metadata.uid == new.metadata.uid)
+        {
             let old = slot.clone();
             *slot = new.clone();
             let ev = PodEvent::Update { old, new };
@@ -217,8 +221,8 @@ pub struct InMemorySink {
 
 #[derive(Default, Debug)]
 struct InMemorySinkInner {
-    pub binds: Vec<(String, String)>,            // (pod full_name, node)
-    pub events: Vec<(String, String, String)>,   // (pod full_name, reason, msg)
+    pub binds: Vec<(String, String)>,          // (pod full_name, node)
+    pub events: Vec<(String, String, String)>, // (pod full_name, reason, msg)
 }
 
 impl InMemorySink {
@@ -249,11 +253,10 @@ impl SchedulerSink for InMemorySink {
     }
 
     async fn record_event(&self, pod: &Pod, reason: &str, message: &str) -> Result<()> {
-        self.inner.lock().events.push((
-            pod.full_name(),
-            reason.to_string(),
-            message.to_string(),
-        ));
+        self.inner
+            .lock()
+            .events
+            .push((pod.full_name(), reason.to_string(), message.to_string()));
         Ok(())
     }
 }
@@ -302,11 +305,17 @@ mod tests {
         let sink = InMemorySink::new();
         let p = pending_pod("default", "alpha");
         sink.bind(&p, "n1").await.unwrap();
-        sink.record_event(&p, "Scheduled", "Placed on n1").await.unwrap();
+        sink.record_event(&p, "Scheduled", "Placed on n1")
+            .await
+            .unwrap();
         assert_eq!(sink.binds(), vec![("default/alpha".into(), "n1".into())]);
         assert_eq!(
             sink.events(),
-            vec![("default/alpha".into(), "Scheduled".into(), "Placed on n1".into())]
+            vec![(
+                "default/alpha".into(),
+                "Scheduled".into(),
+                "Placed on n1".into()
+            )]
         );
     }
 

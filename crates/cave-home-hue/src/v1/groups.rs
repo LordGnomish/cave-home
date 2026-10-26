@@ -122,15 +122,9 @@ impl Group {
         })
     }
     /// `aiohue.v1.groups.Group.set_action` — apply a pending action.
-    pub async fn set_action(
-        &self,
-        req: &dyn V1Request,
-        action: &GroupAction,
-    ) -> HueResult<()> {
+    pub async fn set_action(&self, req: &dyn V1Request, action: &GroupAction) -> HueResult<()> {
         let body = serde_json::to_value(action).unwrap_or(json!({}));
-        let _ = req
-            .put(&format!("groups/{}/action", self.id), body)
-            .await?;
+        let _ = req.put(&format!("groups/{}/action", self.id), body).await?;
         Ok(())
     }
 }
@@ -148,10 +142,7 @@ pub fn new_groups() -> Groups {
 /// which is the implicit "all-lights" set.
 pub async fn get_all_lights_group(req: &dyn V1Request) -> HueResult<Group> {
     let raw = req.get("groups/0").await?;
-    let map = raw
-        .as_object()
-        .cloned()
-        .unwrap_or_default();
+    let map = raw.as_object().cloned().unwrap_or_default();
     Ok(Group::from_raw("0".into(), map))
 }
 
@@ -175,7 +166,13 @@ mod tests {
         assert_eq!(g.name(), "Salon");
         assert_eq!(g.lights(), vec!["1", "2", "3"]);
         assert_eq!(g.sensors(), vec!["s1"]);
-        assert_eq!(g.state(), Some(GroupState { all_on: false, any_on: true }));
+        assert_eq!(
+            g.state(),
+            Some(GroupState {
+                all_on: false,
+                any_on: true
+            })
+        );
     }
 
     #[test]
@@ -202,7 +199,9 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push(("get".into(), path.into()));
-            Ok(json!({"name": "All", "state": {"all_on": false, "any_on": false}, "lights": [], "sensors": []}))
+            Ok(
+                json!({"name": "All", "state": {"all_on": false, "any_on": false}, "lights": [], "sensors": []}),
+            )
         }
         async fn put(&self, path: &str, _body: Value) -> HueResult<Value> {
             self.called

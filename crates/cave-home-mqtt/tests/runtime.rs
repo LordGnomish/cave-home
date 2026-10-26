@@ -2,15 +2,15 @@
 //! driving the clean-room broker. Compiled only with `--features runtime`.
 #![cfg(feature = "runtime")]
 
+use bytes::Bytes;
 use cave_home_mqtt::broker::auth::Authenticator;
 use cave_home_mqtt::broker::{Broker, BrokerConfig};
 use cave_home_mqtt::packet::QoS;
-use cave_home_mqtt::runtime::frame::{read_packet, write_packet};
 use cave_home_mqtt::runtime::Server;
+use cave_home_mqtt::runtime::frame::{read_packet, write_packet};
 use cave_home_mqtt::v5::packet::*;
 use cave_home_mqtt::v5::property::Property;
 use cave_home_mqtt::v5::reason::ReasonCode;
-use bytes::Bytes;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
@@ -27,7 +27,11 @@ fn connect(id: &str, clean: bool, expiry: u32) -> PacketV5 {
         client_id: id.into(),
         clean_start: clean,
         keep_alive_secs: 0,
-        properties: if expiry > 0 { vec![Property::SessionExpiryInterval(expiry)] } else { vec![] },
+        properties: if expiry > 0 {
+            vec![Property::SessionExpiryInterval(expiry)]
+        } else {
+            vec![]
+        },
         will: None,
         username: None,
         password: None,
@@ -86,20 +90,29 @@ async fn tcp_qos1_publish_round_trip_between_two_clients() {
     let addr = start_tcp().await;
 
     let mut sub = TcpStream::connect(addr).await.unwrap();
-    write_packet(&mut sub, &connect("sub", true, 0)).await.unwrap();
+    write_packet(&mut sub, &connect("sub", true, 0))
+        .await
+        .unwrap();
     read_packet(&mut sub).await.unwrap().unwrap(); // CONNACK
-    write_packet(&mut sub, &subscribe("home/#", QoS::AtLeastOnce, 1)).await.unwrap();
+    write_packet(&mut sub, &subscribe("home/#", QoS::AtLeastOnce, 1))
+        .await
+        .unwrap();
     match read_packet(&mut sub).await.unwrap().unwrap() {
         PacketV5::SubAck(s) => assert_eq!(s.reason_codes, vec![ReasonCode::GrantedQoS1]),
         other => panic!("expected SUBACK, got {other:?}"),
     }
 
     let mut publisher = TcpStream::connect(addr).await.unwrap();
-    write_packet(&mut publisher, &connect("pub", true, 0)).await.unwrap();
-    read_packet(&mut publisher).await.unwrap().unwrap(); // CONNACK
-    write_packet(&mut publisher, &publish("home/loft/temp", QoS::AtLeastOnce, Some(5), b"21.5"))
+    write_packet(&mut publisher, &connect("pub", true, 0))
         .await
         .unwrap();
+    read_packet(&mut publisher).await.unwrap().unwrap(); // CONNACK
+    write_packet(
+        &mut publisher,
+        &publish("home/loft/temp", QoS::AtLeastOnce, Some(5), b"21.5"),
+    )
+    .await
+    .unwrap();
 
     // Publisher receives its PUBACK(5).
     match read_packet(&mut publisher).await.unwrap().unwrap() {
@@ -124,9 +137,13 @@ async fn tcp_persistent_session_survives_reconnect() {
     // Subscriber: persistent session, then drop the socket.
     {
         let mut sub = TcpStream::connect(addr).await.unwrap();
-        write_packet(&mut sub, &connect("durable", false, 3600)).await.unwrap();
+        write_packet(&mut sub, &connect("durable", false, 3600))
+            .await
+            .unwrap();
         read_packet(&mut sub).await.unwrap().unwrap();
-        write_packet(&mut sub, &subscribe("home/#", QoS::AtLeastOnce, 1)).await.unwrap();
+        write_packet(&mut sub, &subscribe("home/#", QoS::AtLeastOnce, 1))
+            .await
+            .unwrap();
         read_packet(&mut sub).await.unwrap().unwrap();
     } // socket dropped → ungraceful disconnect
 
@@ -134,16 +151,23 @@ async fn tcp_persistent_session_survives_reconnect() {
 
     // Publish while the subscriber is offline.
     let mut publisher = TcpStream::connect(addr).await.unwrap();
-    write_packet(&mut publisher, &connect("pub", true, 0)).await.unwrap();
-    read_packet(&mut publisher).await.unwrap().unwrap();
-    write_packet(&mut publisher, &publish("home/x", QoS::AtLeastOnce, Some(9), b"queued"))
+    write_packet(&mut publisher, &connect("pub", true, 0))
         .await
         .unwrap();
+    read_packet(&mut publisher).await.unwrap().unwrap();
+    write_packet(
+        &mut publisher,
+        &publish("home/x", QoS::AtLeastOnce, Some(9), b"queued"),
+    )
+    .await
+    .unwrap();
     read_packet(&mut publisher).await.unwrap().unwrap(); // PUBACK
 
     // Reconnect: session resumes and the queued message is delivered.
     let mut sub = TcpStream::connect(addr).await.unwrap();
-    write_packet(&mut sub, &connect("durable", false, 3600)).await.unwrap();
+    write_packet(&mut sub, &connect("durable", false, 3600))
+        .await
+        .unwrap();
     match read_packet(&mut sub).await.unwrap().unwrap() {
         PacketV5::ConnAck(ack) => assert!(ack.session_present, "session must resume"),
         other => panic!("expected CONNACK, got {other:?}"),
@@ -161,9 +185,9 @@ async fn tcp_persistent_session_survives_reconnect() {
 
 #[tokio::test]
 async fn tls_handshake_then_connect() {
+    use tokio_rustls::TlsConnector;
     use tokio_rustls::rustls::pki_types::{CertificateDer, ServerName};
     use tokio_rustls::rustls::{ClientConfig, RootCertStore};
-    use tokio_rustls::TlsConnector;
 
     // Self-signed cert for "localhost" via rcgen (offline).
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
@@ -182,14 +206,18 @@ async fn tls_handshake_then_connect() {
     // Client trusts the self-signed cert.
     let mut roots = RootCertStore::empty();
     roots.add(cert_der).unwrap();
-    let client_config = ClientConfig::builder().with_root_certificates(roots).with_no_client_auth();
+    let client_config = ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
     let connector = TlsConnector::from(std::sync::Arc::new(client_config));
 
     let tcp = TcpStream::connect(addr).await.unwrap();
     let domain = ServerName::try_from("localhost").unwrap();
     let mut tls = connector.connect(domain, tcp).await.unwrap();
 
-    write_packet(&mut tls, &connect("tls-client", true, 0)).await.unwrap();
+    write_packet(&mut tls, &connect("tls-client", true, 0))
+        .await
+        .unwrap();
     match read_packet(&mut tls).await.unwrap().unwrap() {
         PacketV5::ConnAck(ack) => assert_eq!(ack.reason_code, ReasonCode::Success),
         other => panic!("expected CONNACK over TLS, got {other:?}"),
@@ -212,8 +240,9 @@ async fn websocket_connect_is_acknowledged() {
     });
 
     let tcp = TcpStream::connect(addr).await.unwrap();
-    let (mut ws, _resp) =
-        tokio_tungstenite::client_async(format!("ws://{addr}/mqtt"), tcp).await.unwrap();
+    let (mut ws, _resp) = tokio_tungstenite::client_async(format!("ws://{addr}/mqtt"), tcp)
+        .await
+        .unwrap();
 
     let frame = encode_v5(&connect("ws-client", true, 0)).unwrap();
     ws.send(Message::Binary(frame.to_vec())).await.unwrap();

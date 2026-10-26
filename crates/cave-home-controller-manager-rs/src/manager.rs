@@ -19,7 +19,7 @@
 use crate::apis::{Cluster, PodPhase};
 use crate::controllers::deployment::DeploymentController;
 use crate::controllers::replicaset::ReplicaSetController;
-use crate::reconcile::{apply_outcome, Outcome};
+use crate::reconcile::{Outcome, apply_outcome};
 use crate::types::Object;
 use crate::workqueue::WorkQueue;
 
@@ -142,7 +142,12 @@ impl Manager {
             ));
         }
         for p in self.cluster.pods.list() {
-            lines.push(format!("p {} {:?} ready={}", p.key(), p.status.phase, p.status.ready));
+            lines.push(format!(
+                "p {} {:?} ready={}",
+                p.key(),
+                p.status.phase,
+                p.status.ready
+            ));
         }
         lines.sort();
         lines.join("\n")

@@ -54,7 +54,10 @@ impl Person {
         // Otherwise the first tracker reporting a named zone (anything that is
         // not an away/unknown sentinel) is taken.
         if let Some(zone) = tracker_states.iter().find(|s| {
-            !matches!(s.as_str(), STATE_NOT_HOME | STATE_UNKNOWN | STATE_UNAVAILABLE)
+            !matches!(
+                s.as_str(),
+                STATE_NOT_HOME | STATE_UNKNOWN | STATE_UNAVAILABLE
+            )
         }) {
             return zone.clone();
         }
@@ -101,7 +104,12 @@ impl PersonRegistry {
         let mut guard = self.inner.write();
         let existing: HashSet<String> = guard.people.keys().cloned().collect();
         let id = ensure_unique_string(&slug, &existing);
-        let person = Person { id: id.clone(), name, user_id, device_trackers: Vec::new() };
+        let person = Person {
+            id: id.clone(),
+            name,
+            user_id,
+            device_trackers: Vec::new(),
+        };
         guard.people.insert(id, person.clone());
         Ok(person)
     }
@@ -217,17 +225,24 @@ mod tests {
     #[test]
     fn registry_create_track_and_state_of() {
         let reg = PersonRegistry::new();
-        let alice = reg.create("Alice Smith", Some("user-1".into())).expect("create");
+        let alice = reg
+            .create("Alice Smith", Some("user-1".into()))
+            .expect("create");
         assert_eq!(alice.id, "alice_smith");
         assert_eq!(alice.user_id.as_deref(), Some("user-1"));
 
         reg.add_tracker(&alice.id, tracker("phone")).expect("track");
         // adding the same tracker twice is idempotent
-        let p = reg.add_tracker(&alice.id, tracker("phone")).expect("track2");
+        let p = reg
+            .add_tracker(&alice.id, tracker("phone"))
+            .expect("track2");
         assert_eq!(p.device_trackers.len(), 1);
 
         let states = states_with(&[("phone", STATE_HOME)]);
-        assert_eq!(reg.state_of(&alice.id, &states).as_deref(), Some(STATE_HOME));
+        assert_eq!(
+            reg.state_of(&alice.id, &states).as_deref(),
+            Some(STATE_HOME)
+        );
         assert!(reg.state_of("nobody", &states).is_none());
 
         assert_eq!(

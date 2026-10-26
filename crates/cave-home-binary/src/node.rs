@@ -26,7 +26,10 @@ impl LocalNode {
     /// Construct from a name and internal IP.
     #[must_use]
     pub fn new(name: impl Into<String>, internal_ip: impl Into<String>) -> Self {
-        Self { name: name.into(), internal_ip: internal_ip.into() }
+        Self {
+            name: name.into(),
+            internal_ip: internal_ip.into(),
+        }
     }
 
     /// Build the core/v1 `Node` object to register with the apiserver.
@@ -56,9 +59,15 @@ impl LocalNode {
         json::obj([
             ("apiVersion", Value::from("v1")),
             ("kind", Value::from("Node")),
-            ("metadata", json::obj([("name", Value::from(self.name.as_str()))])),
+            (
+                "metadata",
+                json::obj([("name", Value::from(self.name.as_str()))]),
+            ),
             ("spec", Value::object()),
-            ("status", json::obj([("addresses", addresses), ("conditions", conditions)])),
+            (
+                "status",
+                json::obj([("addresses", addresses), ("conditions", conditions)]),
+            ),
         ])
     }
 }
@@ -83,30 +92,49 @@ mod tests {
     #[test]
     fn metadata_name_is_the_node_name() {
         let n = node();
-        assert_eq!(n.pointer("metadata.name").and_then(Value::as_str), Some("hub-01"));
+        assert_eq!(
+            n.pointer("metadata.name").and_then(Value::as_str),
+            Some("hub-01")
+        );
     }
 
     #[test]
     fn reports_ready_condition() {
         let n = node();
-        let conditions = n.pointer("status.conditions").and_then(Value::as_array).expect("conditions");
+        let conditions = n
+            .pointer("status.conditions")
+            .and_then(Value::as_array)
+            .expect("conditions");
         let ready = conditions
             .iter()
             .find(|c| c.pointer("type").and_then(Value::as_str) == Some("Ready"))
             .expect("Ready condition present");
-        assert_eq!(ready.pointer("status").and_then(Value::as_str), Some("True"));
+        assert_eq!(
+            ready.pointer("status").and_then(Value::as_str),
+            Some("True")
+        );
     }
 
     #[test]
     fn advertises_internal_ip_and_hostname() {
         let n = node();
-        let addrs = n.pointer("status.addresses").and_then(Value::as_array).expect("addresses");
+        let addrs = n
+            .pointer("status.addresses")
+            .and_then(Value::as_array)
+            .expect("addresses");
         let internal = addrs
             .iter()
             .find(|a| a.pointer("type").and_then(Value::as_str) == Some("InternalIP"))
             .expect("InternalIP");
-        assert_eq!(internal.pointer("address").and_then(Value::as_str), Some("10.0.0.5"));
-        assert!(addrs.iter().any(|a| a.pointer("type").and_then(Value::as_str) == Some("Hostname")));
+        assert_eq!(
+            internal.pointer("address").and_then(Value::as_str),
+            Some("10.0.0.5")
+        );
+        assert!(
+            addrs
+                .iter()
+                .any(|a| a.pointer("type").and_then(Value::as_str) == Some("Hostname"))
+        );
     }
 
     #[test]
@@ -117,6 +145,11 @@ mod tests {
         reg.create(&nodes, node()).expect("create node");
         let list = reg.list(&nodes, &ListOptions::default()).expect("list");
         assert_eq!(list.items.len(), 1);
-        assert_eq!(list.items[0].pointer("metadata.name").and_then(Value::as_str), Some("hub-01"));
+        assert_eq!(
+            list.items[0]
+                .pointer("metadata.name")
+                .and_then(Value::as_str),
+            Some("hub-01")
+        );
     }
 }

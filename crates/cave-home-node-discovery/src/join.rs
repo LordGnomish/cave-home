@@ -44,7 +44,11 @@ impl core::fmt::Display for TokenError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::WrongLength { got } => {
-                write!(f, "join token must be {} characters, got {got}", JoinToken::LEN)
+                write!(
+                    f,
+                    "join token must be {} characters, got {got}",
+                    JoinToken::LEN
+                )
             }
             Self::BadCharacter(c) => write!(f, "join token has invalid character {c:?}"),
             Self::ZeroLifetime => f.write_str("join token lifetime is zero"),

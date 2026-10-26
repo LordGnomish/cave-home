@@ -215,7 +215,10 @@ impl core::fmt::Display for PathError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::NoNodeConfigured { node } => {
-                write!(f, "config doesn't contain node {node}, and no default available")
+                write!(
+                    f,
+                    "config doesn't contain node {node}, and no default available"
+                )
             }
             Self::NoLocalPath { node } => write!(f, "no local path available on node {node}"),
             Self::RequestedPathNotConfigured { path, node } => {

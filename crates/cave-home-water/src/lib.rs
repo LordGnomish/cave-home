@@ -53,10 +53,10 @@ pub mod label;
 pub mod schedule;
 pub mod zone;
 
-pub use decision::{apply_seasonal_adjust, decide, SkipReason, WaterDecision};
-pub use flow::{detect, FlowFault};
+pub use decision::{SkipReason, WaterDecision, apply_seasonal_adjust, decide};
+pub use flow::{FlowFault, detect};
 pub use label::Lang;
-pub use schedule::{plan_run, RunPlan, RunStep};
+pub use schedule::{RunPlan, RunStep, plan_run};
 pub use zone::{Zone, ZoneError, ZoneState};
 
 #[cfg(test)]
@@ -70,14 +70,27 @@ mod tests {
     #[test]
     fn ui_strings_carry_no_implementation_jargon() {
         const BANNED: &[&str] = &[
-            "valve", "GPIO", "MQTT", "entity_id", "Zigbee", "Z-Wave", "Modbus",
-            "M-Bus", "OpenSprinkler", "Rachio", "lpm", "seconds", "threshold",
-            "flow rate", "API", "pod", "kubelet",
+            "valve",
+            "GPIO",
+            "MQTT",
+            "entity_id",
+            "Zigbee",
+            "Z-Wave",
+            "Modbus",
+            "M-Bus",
+            "OpenSprinkler",
+            "Rachio",
+            "lpm",
+            "seconds",
+            "threshold",
+            "flow rate",
+            "API",
+            "pod",
+            "kubelet",
         ];
         let langs = [Lang::En, Lang::De, Lang::Tr];
 
-        let zone = Zone::new(1, "the back garden", 600, Some(40.0), None)
-            .expect("valid zone");
+        let zone = Zone::new(1, "the back garden", 600, Some(40.0), None).expect("valid zone");
 
         let mut strings: Vec<String> = Vec::new();
 
@@ -106,7 +119,13 @@ mod tests {
             // Run-plan summaries (with steps and empty).
             let plan = plan_run([(&zone, watering)]);
             strings.push(plan.summary(lang));
-            strings.push(RunPlan { steps: Vec::new(), total_seconds: 0 }.summary(lang));
+            strings.push(
+                RunPlan {
+                    steps: Vec::new(),
+                    total_seconds: 0,
+                }
+                .summary(lang),
+            );
         }
 
         for text in &strings {
@@ -122,12 +141,9 @@ mod tests {
     #[test]
     fn engine_produces_a_complete_morning_plan() {
         // A small garden: front lawn (dry), beds (already moist), terrace (dry).
-        let lawn = Zone::new(1, "Front lawn", 600, Some(40.0), Some(10.0))
-            .expect("valid zone");
-        let beds = Zone::new(2, "Vegetable beds", 900, Some(40.0), None)
-            .expect("valid zone");
-        let terrace = Zone::new(3, "Terrace pots", 300, None, None)
-            .expect("valid zone");
+        let lawn = Zone::new(1, "Front lawn", 600, Some(40.0), Some(10.0)).expect("valid zone");
+        let beds = Zone::new(2, "Vegetable beds", 900, Some(40.0), None).expect("valid zone");
+        let terrace = Zone::new(3, "Terrace pots", 300, None, None).expect("valid zone");
 
         let lawn_d = decide(&lawn, ZoneState::Idle, Some(15.0), false, 120, true);
         let beds_d = decide(&beds, ZoneState::Idle, Some(70.0), false, 120, true);

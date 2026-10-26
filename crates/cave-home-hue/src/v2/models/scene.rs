@@ -151,14 +151,26 @@ mod tests {
 
     #[test]
     fn recall_action_from_cli_accepts_friendly_tokens() {
-        assert_eq!(SceneRecallAction::from_cli("active"), Some(SceneRecallAction::Active));
-        assert_eq!(SceneRecallAction::from_cli("ON"), Some(SceneRecallAction::Active));
+        assert_eq!(
+            SceneRecallAction::from_cli("active"),
+            Some(SceneRecallAction::Active)
+        );
+        assert_eq!(
+            SceneRecallAction::from_cli("ON"),
+            Some(SceneRecallAction::Active)
+        );
         assert_eq!(
             SceneRecallAction::from_cli("dynamic"),
             Some(SceneRecallAction::DynamicPalette)
         );
-        assert_eq!(SceneRecallAction::from_cli("static"), Some(SceneRecallAction::Static));
-        assert_eq!(SceneRecallAction::from_cli("off"), Some(SceneRecallAction::Deactivate));
+        assert_eq!(
+            SceneRecallAction::from_cli("static"),
+            Some(SceneRecallAction::Static)
+        );
+        assert_eq!(
+            SceneRecallAction::from_cli("off"),
+            Some(SceneRecallAction::Deactivate)
+        );
         assert_eq!(SceneRecallAction::from_cli("nonsense"), None);
     }
 

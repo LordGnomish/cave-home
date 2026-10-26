@@ -314,8 +314,7 @@ impl EnrolledCredential {
         if self.is_locked_out() {
             return CredentialVerdict::LockedOut;
         }
-        let matches =
-            presented.kind() == self.kind && presented.digest().ct_eq(&self.expected);
+        let matches = presented.kind() == self.kind && presented.digest().ct_eq(&self.expected);
         if matches {
             self.failures = 0;
             CredentialVerdict::Accepted
@@ -343,7 +342,10 @@ mod tests {
     #[test]
     fn pin_rejects_short_long_and_non_digit() {
         assert_eq!(Credential::pin("123"), Err(CredentialError::PinTooShort));
-        assert_eq!(Credential::pin("123456789"), Err(CredentialError::PinTooLong));
+        assert_eq!(
+            Credential::pin("123456789"),
+            Err(CredentialError::PinTooLong)
+        );
         assert_eq!(Credential::pin("12a4"), Err(CredentialError::PinNotDigits));
     }
 
@@ -357,12 +359,18 @@ mod tests {
     fn card_validation() {
         assert!(Credential::nfc_card("0a1b2c3d").is_ok()); // 8 hex
         assert!(Credential::nfc_card("0a1b2c3d4e5f6a").is_ok()); // 14 hex
-        assert_eq!(Credential::nfc_card("0a1b"), Err(CredentialError::CardWrongLength));
+        assert_eq!(
+            Credential::nfc_card("0a1b"),
+            Err(CredentialError::CardWrongLength)
+        );
         assert_eq!(
             Credential::nfc_card("0a1b2c3d4e5f6a7b"),
             Err(CredentialError::CardWrongLength)
         );
-        assert_eq!(Credential::nfc_card("0a1b2c3g"), Err(CredentialError::CardNotHex));
+        assert_eq!(
+            Credential::nfc_card("0a1b2c3g"),
+            Err(CredentialError::CardNotHex)
+        );
     }
 
     #[test]
@@ -374,7 +382,10 @@ mod tests {
 
     #[test]
     fn mobile_and_wave_reject_empty() {
-        assert_eq!(Credential::mobile(""), Err(CredentialError::EmptyIdentifier));
+        assert_eq!(
+            Credential::mobile(""),
+            Err(CredentialError::EmptyIdentifier)
+        );
         assert_eq!(
             Credential::wave_to_unlock(""),
             Err(CredentialError::EmptyIdentifier)
@@ -387,7 +398,10 @@ mod tests {
     fn debug_never_reveals_material() {
         let c = Credential::pin("4242").expect("valid");
         let rendered = format!("{c:?}");
-        assert!(!rendered.contains("4242"), "PIN leaked into Debug: {rendered}");
+        assert!(
+            !rendered.contains("4242"),
+            "PIN leaked into Debug: {rendered}"
+        );
         assert!(rendered.contains("Pin"));
         assert!(rendered.contains("len"));
     }

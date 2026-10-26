@@ -58,7 +58,12 @@ impl TalkDevice {
     /// unless [`TalkDevice::with_state`] says otherwise.
     #[must_use]
     pub fn new(id: DeviceId, name: impl Into<String>, kind: DeviceKind) -> Self {
-        Self { id, name: name.into(), kind, state: DeviceState::Online }
+        Self {
+            id,
+            name: name.into(),
+            kind,
+            state: DeviceState::Online,
+        }
     }
 
     /// Builder-style override of the initial reachability state.

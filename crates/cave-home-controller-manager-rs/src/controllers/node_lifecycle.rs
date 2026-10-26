@@ -174,7 +174,10 @@ mod tests {
     use super::*;
 
     fn cfg() -> LifecycleConfig {
-        LifecycleConfig { monitor_grace: 40, eviction_grace: 300 }
+        LifecycleConfig {
+            monitor_grace: 40,
+            eviction_grace: 300,
+        }
     }
 
     #[test]
@@ -216,7 +219,10 @@ mod tests {
         let mut n = NodeState::ready("n", 100);
         n.taints.push(TAINT_NOT_READY.to_owned());
         let actions = reconcile_node(&n, &cfg(), None, 120);
-        assert_eq!(actions, vec![NodeAction::RemoveTaint(TAINT_NOT_READY.to_owned())]);
+        assert_eq!(
+            actions,
+            vec![NodeAction::RemoveTaint(TAINT_NOT_READY.to_owned())]
+        );
     }
 
     #[test]
@@ -254,7 +260,11 @@ mod tests {
         n.taints.push(TAINT_UNREACHABLE.to_owned());
         // unhealthy since 100, now 100+299 -> just under grace
         let actions = reconcile_node(&n, &cfg(), Some(100), 399);
-        assert!(!actions.iter().any(|a| matches!(a, NodeAction::EvictPods(_))));
+        assert!(
+            !actions
+                .iter()
+                .any(|a| matches!(a, NodeAction::EvictPods(_)))
+        );
     }
 
     #[test]

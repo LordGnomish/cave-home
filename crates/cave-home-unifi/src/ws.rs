@@ -28,8 +28,8 @@ use async_trait::async_trait;
 use parking_lot::Mutex;
 use tokio::sync::mpsc;
 
-use crate::access::types::AccessNotification;
 use crate::access::AccessConfig;
+use crate::access::types::AccessNotification;
 use crate::auth::Session;
 use crate::console::Console;
 use crate::error::{Result, UnifiError};
@@ -324,9 +324,9 @@ mod real {
     use futures_util::{SinkExt, StreamExt};
     use std::sync::Arc;
     use tokio::net::TcpStream;
+    use tokio_tungstenite::tungstenite::Message;
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     use tokio_tungstenite::tungstenite::http::{HeaderName, HeaderValue};
-    use tokio_tungstenite::tungstenite::Message;
     use tokio_tungstenite::{Connector, MaybeTlsStream, WebSocketStream};
 
     /// The real WebSocket connector: `tokio-tungstenite` over `rustls`,
@@ -339,7 +339,8 @@ mod real {
 
     impl std::fmt::Debug for TungsteniteConnector {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("TungsteniteConnector").finish_non_exhaustive()
+            f.debug_struct("TungsteniteConnector")
+                .finish_non_exhaustive()
         }
     }
 
@@ -427,14 +428,10 @@ mod real {
                 req.headers_mut().insert(header, val);
             }
             let connector = Connector::Rustls(Arc::clone(&self.tls));
-            let (stream, _resp) = tokio_tungstenite::connect_async_tls_with_config(
-                req,
-                None,
-                false,
-                Some(connector),
-            )
-            .await
-            .map_err(|e| UnifiError::WebSocket(e.to_string()))?;
+            let (stream, _resp) =
+                tokio_tungstenite::connect_async_tls_with_config(req, None, false, Some(connector))
+                    .await
+                    .map_err(|e| UnifiError::WebSocket(e.to_string()))?;
             Ok(Box::new(TungsteniteConnection { stream }))
         }
     }
@@ -569,9 +566,11 @@ mod tests {
         assert_eq!(n, 2); // pong is not data
         assert_eq!(rx.recv().await, Some(WsMessage::Text("a".into())));
         assert_eq!(rx.recv().await, Some(WsMessage::Binary(vec![1, 2])));
-        assert!(metrics
-            .render_prometheus()
-            .contains("unifi_ws_events_total{pillar=\"protect\"} 2"));
+        assert!(
+            metrics
+                .render_prometheus()
+                .contains("unifi_ws_events_total{pillar=\"protect\"} 2")
+        );
     }
 
     #[tokio::test]
@@ -601,9 +600,11 @@ mod tests {
         assert!(note.is_intercom_call());
         assert_eq!(note.door_name.as_deref(), Some("Front door"));
         // both text frames were counted as ws events even though one didn't parse
-        assert!(metrics
-            .render_prometheus()
-            .contains("unifi_ws_events_total{pillar=\"access\"} 2"));
+        assert!(
+            metrics
+                .render_prometheus()
+                .contains("unifi_ws_events_total{pillar=\"access\"} 2")
+        );
     }
 
     #[tokio::test]

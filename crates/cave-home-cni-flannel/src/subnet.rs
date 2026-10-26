@@ -264,7 +264,10 @@ mod tests {
         let cluster = Cidr::from_str("10.42.0.0/24").expect("c");
         assert_eq!(
             SubnetManager::new(cluster, 24).err(),
-            Some(SubnetError::PrefixNotLonger { cluster: 24, node: 24 })
+            Some(SubnetError::PrefixNotLonger {
+                cluster: 24,
+                node: 24
+            })
         );
         assert!(matches!(
             SubnetManager::new(cluster, 16),
@@ -383,14 +386,20 @@ mod tests {
     fn reserve_rejects_subnet_outside_cluster() {
         let mut m = mgr();
         let bad = Cidr::from_str("10.43.0.0/24").expect("c");
-        assert_eq!(m.reserve("node-a", bad), Err(SubnetError::NotInCluster(bad)));
+        assert_eq!(
+            m.reserve("node-a", bad),
+            Err(SubnetError::NotInCluster(bad))
+        );
     }
 
     #[test]
     fn reserve_rejects_wrong_prefix_length() {
         let mut m = mgr();
         let bad = Cidr::from_str("10.42.0.0/25").expect("c");
-        assert_eq!(m.reserve("node-a", bad), Err(SubnetError::NotInCluster(bad)));
+        assert_eq!(
+            m.reserve("node-a", bad),
+            Err(SubnetError::NotInCluster(bad))
+        );
     }
 
     #[test]

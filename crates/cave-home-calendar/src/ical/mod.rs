@@ -6,6 +6,4 @@
 
 pub mod parse;
 
-pub use parse::{
-    parse_date_value, parse_vcalendar, unfold_lines, ContentLine, IcalError,
-};
+pub use parse::{ContentLine, IcalError, parse_date_value, parse_vcalendar, unfold_lines};

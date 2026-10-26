@@ -162,7 +162,8 @@ where
         let outcome = self.dispatcher.dispatch(&transcript, &ctx).await?;
 
         self.metrics.record_dispatch(outcome.path);
-        self.metrics.record_speaker(speaker.as_deref().unwrap_or(""));
+        self.metrics
+            .record_speaker(speaker.as_deref().unwrap_or(""));
         for (call, result) in &outcome.executed {
             self.metrics.record_tool(call.name(), !result.ok);
         }
@@ -289,7 +290,11 @@ mod tests {
             .map(|i| {
                 #[allow(clippy::cast_precision_loss)]
                 let phase = (i as f32 % period) / period;
-                let tri = if phase < 0.5 { 4.0 * phase - 1.0 } else { 3.0 - 4.0 * phase };
+                let tri = if phase < 0.5 {
+                    4.0 * phase - 1.0
+                } else {
+                    3.0 - 4.0 * phase
+                };
                 tri * 0.6
             })
             .collect()
@@ -315,7 +320,14 @@ mod tests {
         let mut speakers = SpeakerBook::with_defaults();
         speakers.enroll("Burak", &tone(150.0, 8192, 0.8));
         let rooms = RoomRegistry::new().with_device("mic-kitchen", "kitchen");
-        JarvisPipeline::new(wake, speakers, rooms, stt, dispatcher(llm, exec), MockTts::new())
+        JarvisPipeline::new(
+            wake,
+            speakers,
+            rooms,
+            stt,
+            dispatcher(llm, exec),
+            MockTts::new(),
+        )
     }
 
     #[tokio::test]
@@ -341,8 +353,7 @@ mod tests {
     #[tokio::test]
     async fn run_wakes_then_handles_a_command() {
         let stt = MockStt::new().say("turn the kitchen light on");
-        let p = pipeline(stt, MockLlm::new(), MockToolExecutor::new())
-            .with_wake_window(4096);
+        let p = pipeline(stt, MockLlm::new(), MockToolExecutor::new()).with_wake_window(4096);
 
         // Wake clip, a pause, the voiced command, then trailing silence to end it.
         let frames = vec![
@@ -359,7 +370,9 @@ mod tests {
         let source = MockAudioSource::from_frames(frames);
         let events = p.run(&source).await.unwrap();
 
-        let woke = events.iter().any(|e| matches!(e, PipelineEvent::Woke { keyword, .. } if keyword == "jarvis"));
+        let woke = events
+            .iter()
+            .any(|e| matches!(e, PipelineEvent::Woke { keyword, .. } if keyword == "jarvis"));
         assert!(woke, "expected a wake event; got {events:?}");
         let handled = events.iter().find_map(|e| match e {
             PipelineEvent::Handled(t) => Some(t),
@@ -368,7 +381,11 @@ mod tests {
         let turn = handled.expect("a handled command");
         assert_eq!(turn.transcript, "turn the kitchen light on");
         assert_eq!(turn.outcome.executed_tools(), vec!["set_light".to_string()]);
-        assert!(p.metrics().render().contains("jarvis_wake_total{keyword=\"jarvis\"} 1"));
+        assert!(
+            p.metrics()
+                .render()
+                .contains("jarvis_wake_total{keyword=\"jarvis\"} 1")
+        );
     }
 
     #[tokio::test]

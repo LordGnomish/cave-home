@@ -85,7 +85,10 @@ impl ObjectMeta {
 pub fn read_meta(object: &Value) -> ObjectMeta {
     let m = object.get("metadata");
     let s = |k: &str| -> String {
-        m.and_then(|m| m.get(k)).and_then(Value::as_str).unwrap_or("").to_string()
+        m.and_then(|m| m.get(k))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string()
     };
     let generation = m
         .and_then(|m| m.get("generation"))
@@ -97,7 +100,11 @@ pub fn read_meta(object: &Value) -> ObjectMeta {
     let finalizers = m
         .and_then(|m| m.get("finalizers"))
         .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default();
     let deletion_timestamp = m
         .and_then(|m| m.get("deletionTimestamp"))
@@ -142,7 +149,10 @@ fn read_owner_ref(v: &Value) -> OwnerReference {
         kind: s("kind"),
         name: s("name"),
         uid: s("uid"),
-        controller: v.get("controller").and_then(Value::as_bool).unwrap_or(false),
+        controller: v
+            .get("controller")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
         block_owner_deletion: v
             .get("blockOwnerDeletion")
             .and_then(Value::as_bool)
@@ -161,7 +171,9 @@ pub fn write_meta(object: &mut Value, meta: &ObjectMeta) {
         Some(m) => m,
         None => return,
     };
-    let md = root.entry("metadata".to_string()).or_insert_with(Value::object);
+    let md = root
+        .entry("metadata".to_string())
+        .or_insert_with(Value::object);
     if md.as_object().is_none() {
         *md = Value::object();
     }
@@ -173,7 +185,10 @@ pub fn write_meta(object: &mut Value, meta: &ObjectMeta) {
         if !meta.uid.is_empty() {
             m.insert("uid".into(), Value::from(meta.uid.clone()));
         }
-        m.insert("resourceVersion".into(), Value::from(meta.resource_version.clone()));
+        m.insert(
+            "resourceVersion".into(),
+            Value::from(meta.resource_version.clone()),
+        );
         m.insert("generation".into(), Value::from(meta.generation));
         match &meta.deletion_timestamp {
             Some(ts) => {

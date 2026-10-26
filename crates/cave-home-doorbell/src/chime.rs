@@ -136,7 +136,13 @@ impl ChimePolicy {
         quiet_start: Option<Hour>,
         quiet_end: Option<Hour>,
     ) -> Self {
-        Self { enabled, do_not_disturb, chime_on_motion, quiet_start, quiet_end }
+        Self {
+            enabled,
+            do_not_disturb,
+            chime_on_motion,
+            quiet_start,
+            quiet_end,
+        }
     }
 
     /// Whether `hour` falls inside the configured quiet-hours window. A window
@@ -205,7 +211,11 @@ impl ChimePolicy {
     }
 
     const fn silent(reason: ChimeReason) -> ChimeDecision {
-        ChimeDecision { should_chime: false, tone: ChimeTone::Silent, reason }
+        ChimeDecision {
+            should_chime: false,
+            tone: ChimeTone::Silent,
+            reason,
+        }
     }
 }
 

@@ -51,14 +51,18 @@ mod tests {
             "percentage_charged":50,"energy_left":0,"total_pack_energy":0,
             "grid_status":"{grid_status}","island_status":"{island}","storm_mode_active":{storm}}}}}"#
         );
-        serde_json::from_str::<Envelope<LiveStatus>>(&json).unwrap().response
+        serde_json::from_str::<Envelope<LiveStatus>>(&json)
+            .unwrap()
+            .response
     }
 
     fn info() -> SiteInfo {
         let json = r#"{"response":{"id":"STE9","site_name":"Cave","backup_reserve_percent":20,
             "default_real_mode":"backup","battery_count":1,"nameplate_power":5000,
             "nameplate_energy":13500}}"#;
-        serde_json::from_str::<Envelope<SiteInfo>>(json).unwrap().response
+        serde_json::from_str::<Envelope<SiteInfo>>(json)
+            .unwrap()
+            .response
     }
 
     #[test]

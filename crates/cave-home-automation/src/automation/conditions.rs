@@ -91,10 +91,14 @@ impl Condition {
     /// Evaluate this condition.
     pub fn evaluate(&self, sm: &Arc<StateMachine>) -> HassResult<bool> {
         match self {
-            Self::State { entity_id, state } => Ok(sm
-                .get(entity_id)
-                .is_some_and(|s| state.matches(&s.state))),
-            Self::NumericState { entity_id, above, below } => {
+            Self::State { entity_id, state } => {
+                Ok(sm.get(entity_id).is_some_and(|s| state.matches(&s.state)))
+            }
+            Self::NumericState {
+                entity_id,
+                above,
+                below,
+            } => {
                 let Some(s) = sm.get(entity_id) else {
                     return Ok(false);
                 };
@@ -122,8 +126,9 @@ impl Condition {
             }
             Self::Time { after, before } => {
                 let now = OffsetDateTime::now_utc();
-                let now_sec =
-                    u32::from(now.hour()) * 3600 + u32::from(now.minute()) * 60 + u32::from(now.second());
+                let now_sec = u32::from(now.hour()) * 3600
+                    + u32::from(now.minute()) * 60
+                    + u32::from(now.second());
                 if let Some(a) = after.as_deref() {
                     let a_sec = hms_to_seconds(a)
                         .ok_or_else(|| HassError::ConditionError(format!("bad after: {a}")))?;

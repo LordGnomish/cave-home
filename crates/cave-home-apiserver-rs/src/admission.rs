@@ -142,7 +142,9 @@ impl MutatingPlugin for DefaultFields {
                 *object = Value::object();
             }
             if let Some(root) = object.as_object_mut() {
-                let md = root.entry("metadata".to_string()).or_insert_with(Value::object);
+                let md = root
+                    .entry("metadata".to_string())
+                    .or_insert_with(Value::object);
                 if md.as_object().is_none() {
                     *md = Value::object();
                 }
@@ -270,9 +272,18 @@ mod tests {
     #[test]
     fn default_fields_sets_namespace_on_create() {
         let plugin = DefaultFields { namespaced: true };
-        let mut r = req(Operation::Create, "", Some(obj([("metadata", obj([("name", Value::from("p"))]))])));
+        let mut r = req(
+            Operation::Create,
+            "",
+            Some(obj([("metadata", obj([("name", Value::from("p"))]))])),
+        );
         plugin.admit(&mut r).expect("admit");
-        let ns = r.object.as_ref().unwrap().pointer("metadata.namespace").and_then(Value::as_str);
+        let ns = r
+            .object
+            .as_ref()
+            .unwrap()
+            .pointer("metadata.namespace")
+            .and_then(Value::as_str);
         assert_eq!(ns, Some("default"));
         assert_eq!(r.namespace, "default");
     }
@@ -280,15 +291,27 @@ mod tests {
     #[test]
     fn default_fields_respects_request_namespace() {
         let plugin = DefaultFields { namespaced: true };
-        let mut r = req(Operation::Create, "web", Some(obj([("metadata", obj([("name", Value::from("p"))]))])));
+        let mut r = req(
+            Operation::Create,
+            "web",
+            Some(obj([("metadata", obj([("name", Value::from("p"))]))])),
+        );
         plugin.admit(&mut r).expect("admit");
-        let ns = r.object.as_ref().unwrap().pointer("metadata.namespace").and_then(Value::as_str);
+        let ns = r
+            .object
+            .as_ref()
+            .unwrap()
+            .pointer("metadata.namespace")
+            .and_then(Value::as_str);
         assert_eq!(ns, Some("web"));
     }
 
     #[test]
     fn namespace_exists_rejects_missing_namespace() {
-        let plugin = NamespaceExists { active: vec!["default".into()], terminating: vec![] };
+        let plugin = NamespaceExists {
+            active: vec!["default".into()],
+            terminating: vec![],
+        };
         let r = req(Operation::Create, "ghost", Some(Value::object()));
         let err = plugin.validate(&r).expect_err("reject");
         assert_eq!(err.reason, crate::status::StatusReason::NotFound);
@@ -296,14 +319,20 @@ mod tests {
 
     #[test]
     fn namespace_exists_accepts_active_namespace() {
-        let plugin = NamespaceExists { active: vec!["default".into()], terminating: vec![] };
+        let plugin = NamespaceExists {
+            active: vec!["default".into()],
+            terminating: vec![],
+        };
         let r = req(Operation::Create, "default", Some(Value::object()));
         assert!(plugin.validate(&r).is_ok());
     }
 
     #[test]
     fn namespace_terminating_is_rejected() {
-        let plugin = NamespaceExists { active: vec![], terminating: vec!["dying".into()] };
+        let plugin = NamespaceExists {
+            active: vec![],
+            terminating: vec!["dying".into()],
+        };
         let r = req(Operation::Create, "dying", Some(Value::object()));
         let err = plugin.validate(&r).expect_err("reject");
         assert_eq!(err.reason, crate::status::StatusReason::Conflict);
@@ -312,7 +341,11 @@ mod tests {
     #[test]
     fn require_name_rejects_empty() {
         let plugin = RequireName;
-        let r = req(Operation::Create, "default", Some(obj([("metadata", Value::object())])));
+        let r = req(
+            Operation::Create,
+            "default",
+            Some(obj([("metadata", Value::object())])),
+        );
         assert!(plugin.validate(&r).is_err());
     }
 
@@ -320,10 +353,20 @@ mod tests {
     fn chain_runs_mutating_before_validating_in_order() {
         let log = Arc::new(Mutex::new(Vec::new()));
         let chain = AdmissionChain::new()
-            .with_mutating(Box::new(Recorder { tag: "m1", log: log.clone() }))
-            .with_mutating(Box::new(Recorder { tag: "m2", log: log.clone() }))
+            .with_mutating(Box::new(Recorder {
+                tag: "m1",
+                log: log.clone(),
+            }))
+            .with_mutating(Box::new(Recorder {
+                tag: "m2",
+                log: log.clone(),
+            }))
             .with_validating(Box::new(RequireName));
-        let r = req(Operation::Create, "default", Some(obj([("metadata", obj([("name", Value::from("p"))]))])));
+        let r = req(
+            Operation::Create,
+            "default",
+            Some(obj([("metadata", obj([("name", Value::from("p"))]))])),
+        );
         chain.run(r).expect("admit");
         assert_eq!(*log.lock().expect("log"), vec!["m1", "m2"]);
         assert_eq!(chain.plugin_order(), vec!["m1", "m2", "RequireName"]);
@@ -339,7 +382,11 @@ mod tests {
             }))
             .with_validating(Box::new(RequireName));
         // Create into a non-existent namespace -> NamespaceLifecycle rejects.
-        let r = req(Operation::Create, "ghost", Some(obj([("metadata", obj([("name", Value::from("p"))]))])));
+        let r = req(
+            Operation::Create,
+            "ghost",
+            Some(obj([("metadata", obj([("name", Value::from("p"))]))])),
+        );
         let err = chain.run(r).expect_err("reject");
         assert_eq!(err.reason, crate::status::StatusReason::NotFound);
     }
@@ -353,7 +400,11 @@ mod tests {
                 active: vec!["default".into()],
                 terminating: vec![],
             }));
-        let r = req(Operation::Create, "", Some(obj([("metadata", obj([("name", Value::from("p"))]))])));
+        let r = req(
+            Operation::Create,
+            "",
+            Some(obj([("metadata", obj([("name", Value::from("p"))]))])),
+        );
         let out = chain.run(r).expect("admit");
         assert_eq!(out.namespace, "default");
     }

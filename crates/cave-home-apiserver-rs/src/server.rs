@@ -93,7 +93,9 @@ pub fn serve_stream<S: Read + Write>(stream: &mut S, app: &Mutex<ApiServer>) -> 
     };
     let mut resp = {
         // A poisoned lock still holds a valid server; recover and continue.
-        let mut guard = app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut guard = app
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         guard.handle(&req)
     };
     resp.headers.insert("connection", "close");
@@ -187,7 +189,8 @@ mod tests {
 
     #[test]
     fn read_request_parses_buffered_message() {
-        let raw = b"POST /api/v1/namespaces/default/pods HTTP/1.1\r\ncontent-length: 5\r\n\r\nhello";
+        let raw =
+            b"POST /api/v1/namespaces/default/pods HTTP/1.1\r\ncontent-length: 5\r\n\r\nhello";
         let mut cur = Cursor::new(raw.to_vec());
         let req = read_request(&mut cur).expect("io").expect("some");
         assert_eq!(req.path(), "/api/v1/namespaces/default/pods");
@@ -204,7 +207,10 @@ mod tests {
     fn serve_stream_writes_handler_response() {
         let app = Mutex::new(ApiServer::new());
         let raw = b"GET /healthz HTTP/1.1\r\n\r\n";
-        let mut stream = MockStream { input: Cursor::new(raw.to_vec()), output: Vec::new() };
+        let mut stream = MockStream {
+            input: Cursor::new(raw.to_vec()),
+            output: Vec::new(),
+        };
         serve_stream(&mut stream, &app).expect("serve");
         let text = String::from_utf8(stream.output).expect("utf8");
         assert!(text.starts_with("HTTP/1.1 200 OK\r\n"));
@@ -249,9 +255,13 @@ mod tests {
         });
 
         // 1. Create a pod (POST collection → 201).
-        let pod = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default"}}"#;
+        let pod =
+            r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default"}}"#;
         let created = http_call(addr, &post("/api/v1/namespaces/default/pods", pod));
-        assert!(created.starts_with("HTTP/1.1 201 Created\r\n"), "create: {created}");
+        assert!(
+            created.starts_with("HTTP/1.1 201 Created\r\n"),
+            "create: {created}"
+        );
         assert!(created.contains(r#""name":"nginx""#));
         assert!(created.contains(r#""resourceVersion":"1""#));
 
@@ -265,14 +275,32 @@ mod tests {
         assert!(listed.contains(r#""kind":"PodList""#), "list: {listed}");
 
         // 4. Watch the collection from rv 0 (chunked stream with an ADDED event).
-        let watched = http_call(addr, &get("/api/v1/namespaces/default/pods?watch=true&resourceVersion=0"));
-        assert!(watched.contains("transfer-encoding: chunked"), "watch head: {watched}");
-        assert!(watched.contains(r#""type":"ADDED""#), "watch body: {watched}");
-        assert!(watched.trim_end().ends_with("0"), "watch terminator: {watched:?}");
+        let watched = http_call(
+            addr,
+            &get("/api/v1/namespaces/default/pods?watch=true&resourceVersion=0"),
+        );
+        assert!(
+            watched.contains("transfer-encoding: chunked"),
+            "watch head: {watched}"
+        );
+        assert!(
+            watched.contains(r#""type":"ADDED""#),
+            "watch body: {watched}"
+        );
+        assert!(
+            watched.trim_end().ends_with("0"),
+            "watch terminator: {watched:?}"
+        );
 
         // 5. Delete it (200).
-        let deleted = http_call(addr, &format!("DELETE /api/v1/namespaces/default/pods/nginx HTTP/1.1\r\nhost: test\r\n\r\n"));
-        assert!(deleted.starts_with("HTTP/1.1 200 OK\r\n"), "delete: {deleted}");
+        let deleted = http_call(
+            addr,
+            &format!("DELETE /api/v1/namespaces/default/pods/nginx HTTP/1.1\r\nhost: test\r\n\r\n"),
+        );
+        assert!(
+            deleted.starts_with("HTTP/1.1 200 OK\r\n"),
+            "delete: {deleted}"
+        );
 
         worker.join().expect("worker");
     }

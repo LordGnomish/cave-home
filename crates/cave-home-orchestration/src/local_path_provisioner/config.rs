@@ -269,11 +269,11 @@ impl ProvisionerConfig {
         if self.storage_class_configs.is_empty() {
             return Ok(&self.default_class);
         }
-        self.storage_class_configs.get(storage_class_name).ok_or_else(|| {
-            ConfigError::UnknownStorageClass {
+        self.storage_class_configs
+            .get(storage_class_name)
+            .ok_or_else(|| ConfigError::UnknownStorageClass {
                 name: storage_class_name.to_string(),
-            }
-        })
+            })
     }
 
     /// The canonicalized helper-pod command timeout in seconds.

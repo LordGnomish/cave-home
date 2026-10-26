@@ -85,9 +85,7 @@ impl Pairing {
             | Self::InfoBrightness
             | Self::SetBlindPosition
             | Self::InfoBlindPosition => ValueShape::Percent,
-            Self::SetTargetTemperature | Self::InfoCurrentTemperature => {
-                ValueShape::Temperature
-            }
+            Self::SetTargetTemperature | Self::InfoCurrentTemperature => ValueShape::Temperature,
         }
     }
 

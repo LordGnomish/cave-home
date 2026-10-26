@@ -318,9 +318,7 @@ impl fmt::Display for ConfigError {
                 write!(f, "token too short: {got} < {min} bytes")
             }
             Self::EmptyDatastore => f.write_str("external datastore endpoint is empty"),
-            Self::DatastoreNoScheme => {
-                f.write_str("external datastore endpoint has no scheme://")
-            }
+            Self::DatastoreNoScheme => f.write_str("external datastore endpoint has no scheme://"),
             Self::ConflictingAddon { name } => {
                 write!(f, "add-on '{name}' is both enabled and in the disable list")
             }

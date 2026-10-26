@@ -175,7 +175,10 @@ impl WorkQueue {
             self.remove_delayed(key);
         }
         self.queued.insert(key.to_owned());
-        self.delayed.entry(ready_at).or_default().push(key.to_owned());
+        self.delayed
+            .entry(ready_at)
+            .or_default()
+            .push(key.to_owned());
     }
 
     /// Add `key` with exponential backoff derived from its failure history.
@@ -259,11 +262,7 @@ impl WorkQueue {
 
     fn flush_due(&mut self, now: u64) {
         // BTreeMap is ordered: pop every bucket with ready_at <= now.
-        let due: Vec<u64> = self
-            .delayed
-            .range(..=now)
-            .map(|(k, _)| *k)
-            .collect();
+        let due: Vec<u64> = self.delayed.range(..=now).map(|(k, _)| *k).collect();
         for at in due {
             if let Some(keys) = self.delayed.remove(&at) {
                 for key in keys {
@@ -445,12 +444,24 @@ mod tests {
     fn rate_limited_add_schedules_growing_delays() {
         let mut q = WorkQueue::new(cfg());
         let o1 = q.add_rate_limited("a", 0);
-        assert_eq!(o1, AddOutcome::Requeued { failures: 1, delay: 10 });
+        assert_eq!(
+            o1,
+            AddOutcome::Requeued {
+                failures: 1,
+                delay: 10
+            }
+        );
         // Becomes ready at 10; drain it so the next add can reschedule.
         assert_eq!(q.get(10).as_deref(), Some("a"));
         q.done("a");
         let o2 = q.add_rate_limited("a", 10);
-        assert_eq!(o2, AddOutcome::Requeued { failures: 2, delay: 20 });
+        assert_eq!(
+            o2,
+            AddOutcome::Requeued {
+                failures: 2,
+                delay: 20
+            }
+        );
         assert_eq!(q.get(20), None, "ready at 10+20=30");
         assert_eq!(q.get(30).as_deref(), Some("a"));
     }
@@ -484,7 +495,13 @@ mod tests {
         let _ = q.get(1_000_000);
         q.done("a");
         let after = q.add_rate_limited("a", 0);
-        assert_eq!(after, AddOutcome::Requeued { failures: 1, delay: 10 });
+        assert_eq!(
+            after,
+            AddOutcome::Requeued {
+                failures: 1,
+                delay: 10
+            }
+        );
     }
 
     #[test]

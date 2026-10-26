@@ -106,7 +106,10 @@ mod tests {
         let n = NodeId(1);
         assert_eq!(c.lock_door(n, None).expect("lock"), DoorLockState::Locked);
         assert_eq!(c.read_state(n).expect("read"), DoorLockState::Locked);
-        assert_eq!(c.unlock_door(n, None).expect("unlock"), DoorLockState::Unlocked);
+        assert_eq!(
+            c.unlock_door(n, None).expect("unlock"),
+            DoorLockState::Unlocked
+        );
         assert_eq!(c.read_state(n).expect("read"), DoorLockState::Unlocked);
     }
 
@@ -130,6 +133,9 @@ mod tests {
         let c = DoorLockClient::new();
         let n = NodeId(7);
         c.report_state(n, DoorLockState::NotFullyLocked);
-        assert_eq!(c.read_state(n).expect("read"), DoorLockState::NotFullyLocked);
+        assert_eq!(
+            c.read_state(n).expect("read"),
+            DoorLockState::NotFullyLocked
+        );
     }
 }

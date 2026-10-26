@@ -182,7 +182,10 @@ mod tests {
     fn line_buffer_splits_on_newlines_and_keeps_partial() {
         let mut lb = LineBuffer::default();
         assert_eq!(lb.push(b"id: 1\nda"), vec!["id: 1".to_string()]);
-        assert_eq!(lb.push(b"ta: x\n\n"), vec!["data: x".to_string(), String::new()]);
+        assert_eq!(
+            lb.push(b"ta: x\n\n"),
+            vec!["data: x".to_string(), String::new()]
+        );
         assert!(lb.push(b"partial").is_empty());
     }
 
@@ -229,7 +232,8 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_reconnect_loop_delivers_then_stops_when_receiver_dropped() {
-        let payload = r#"[{"id":"e9","creationtime":"t","type":"add","data":[{"id":"l1","type":"light"}]}]"#;
+        let payload =
+            r#"[{"id":"e9","creationtime":"t","type":"add","data":[{"id":"l1","type":"light"}]}]"#;
         let sse = format!("id: 9\ndata: {payload}\n\n");
         // Only one response is served; the reconnect attempt afterward fails,
         // and once the receiver is dropped the loop exits.

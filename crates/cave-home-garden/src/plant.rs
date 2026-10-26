@@ -128,13 +128,19 @@ impl Plant {
     /// Build a plant from a named preset, with a household-friendly name.
     #[must_use]
     pub fn of(kind: PlantKind, name: impl Into<String>) -> Self {
-        Self { name: name.into(), profile: kind.profile() }
+        Self {
+            name: name.into(),
+            profile: kind.profile(),
+        }
     }
 
     /// Build a plant with a fully custom care profile.
     #[must_use]
     pub fn custom(name: impl Into<String>, profile: CareProfile) -> Self {
-        Self { name: name.into(), profile }
+        Self {
+            name: name.into(),
+            profile,
+        }
     }
 
     /// The plant's household-friendly name (e.g. "Tomatoes", "The hallway fern").
@@ -170,7 +176,10 @@ mod tests {
                 < PlantKind::Fern.profile().soil_moisture_min
         );
         // Kale shrugs off frost; the succulent does not.
-        assert_eq!(PlantKind::Kale.profile().frost_sensitivity, FrostSensitivity::Hardy);
+        assert_eq!(
+            PlantKind::Kale.profile().frost_sensitivity,
+            FrostSensitivity::Hardy
+        );
         assert_eq!(
             PlantKind::Succulent.profile().frost_sensitivity,
             FrostSensitivity::Tender
@@ -203,7 +212,10 @@ mod tests {
             PlantKind::Succulent,
         ] {
             let p = kind.profile();
-            assert!(p.soil_moisture_min < p.soil_moisture_max, "{kind:?} band inverted");
+            assert!(
+                p.soil_moisture_min < p.soil_moisture_max,
+                "{kind:?} band inverted"
+            );
             assert!(p.temp_min_c < p.temp_max_c, "{kind:?} temp band inverted");
         }
     }

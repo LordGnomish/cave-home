@@ -97,7 +97,13 @@ fn time_phrase(dt: DateTime, lang: Lang) -> String {
 /// A whole, household-readable line for a single occurrence, e.g.
 /// "Dentist at 3pm tomorrow".
 #[must_use]
-pub fn occurrence_phrase(summary: &str, when: DateTime, all_day: bool, today: Date, lang: Lang) -> String {
+pub fn occurrence_phrase(
+    summary: &str,
+    when: DateTime,
+    all_day: bool,
+    today: Date,
+    lang: Lang,
+) -> String {
     let rel = relate(today, when.date());
     let day_word: String = match (rel, lang) {
         (Relative::Today, Lang::En) => "today".into(),
@@ -301,9 +307,20 @@ mod tests {
     fn ui_strings_carry_no_implementation_jargon() {
         // Charter §6.3 / ADR-027: the UI must never surface protocol terms.
         const BANNED: &[&str] = &[
-            "VEVENT", "VCALENDAR", "RRULE", "CalDAV", "CardDAV", "PROPFIND",
-            "iCalendar", "FREQ", "BYDAY", "DTSTART", "MQTT", "entity_id",
-            "RFC", "UID",
+            "VEVENT",
+            "VCALENDAR",
+            "RRULE",
+            "CalDAV",
+            "CardDAV",
+            "PROPFIND",
+            "iCalendar",
+            "FREQ",
+            "BYDAY",
+            "DTSTART",
+            "MQTT",
+            "entity_id",
+            "RFC",
+            "UID",
         ];
         let today = d(2026, 5, 29);
         let langs = [Lang::En, Lang::De, Lang::Tr];

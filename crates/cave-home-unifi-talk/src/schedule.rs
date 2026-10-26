@@ -84,7 +84,10 @@ impl BusinessHours {
     #[must_use]
     pub const fn always_open() -> Self {
         // start == end ⇒ always open (see `is_open`).
-        Self { start: Minute(0), end: Minute(0) }
+        Self {
+            start: Minute(0),
+            end: Minute(0),
+        }
     }
 
     /// Whether calls ring through at wall-clock time `now`.
@@ -156,7 +159,10 @@ mod tests {
         assert!(bh.is_open(m(23, 0)));
         assert!(bh.is_open(m(0, 0)));
         assert!(bh.is_open(m(5, 59)));
-        assert!(!bh.is_open(m(6, 0)), "end is exclusive even across midnight");
+        assert!(
+            !bh.is_open(m(6, 0)),
+            "end is exclusive even across midnight"
+        );
         assert!(bh.is_after_hours(m(12, 0)));
     }
 

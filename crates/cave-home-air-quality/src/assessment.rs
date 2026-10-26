@@ -41,11 +41,21 @@ pub fn grade(reading: &Reading) -> PollutantGrade {
         let outcome = aqi::sub_index(p, v);
         let aqi_val = outcome.as_index();
         let category = aqi_val.map_or(AirCategory::Good, AirCategory::from_aqi);
-        PollutantGrade { pollutant: p, value: v, category, aqi: aqi_val }
+        PollutantGrade {
+            pollutant: p,
+            value: v,
+            category,
+            aqi: aqi_val,
+        }
     } else {
         // Non-AQI pollutant: classifier always returns Some for these.
         let category = classify::classify(p, v).unwrap_or(AirCategory::Good);
-        PollutantGrade { pollutant: p, value: v, category, aqi: None }
+        PollutantGrade {
+            pollutant: p,
+            value: v,
+            category,
+            aqi: None,
+        }
     }
 }
 
@@ -56,17 +66,20 @@ pub fn grade(reading: &Reading) -> PollutantGrade {
 #[must_use]
 pub fn assess(readings: &[Reading]) -> RoomAssessment {
     let grades: Vec<PollutantGrade> = readings.iter().map(grade).collect();
-    let (overall, dominant) = grades.iter().fold(
-        (AirCategory::Good, None),
-        |(worst, dom), g| {
+    let (overall, dominant) = grades
+        .iter()
+        .fold((AirCategory::Good, None), |(worst, dom), g| {
             if g.category > worst {
                 (g.category, Some(g.pollutant))
             } else {
                 (worst, dom)
             }
-        },
-    );
-    RoomAssessment { overall, dominant, grades }
+        });
+    RoomAssessment {
+        overall,
+        dominant,
+        grades,
+    }
 }
 
 #[cfg(test)]
@@ -128,15 +141,15 @@ mod tests {
         let a = assess(&[r(Pollutant::CarbonDioxide, 1800.0)]);
         assert_eq!(a.overall, AirCategory::Poor);
         // The end-user sees plain advice, never the ppm number.
-        assert_eq!(a.overall.advice(Lang::En), "Open a window to let in fresh air.");
+        assert_eq!(
+            a.overall.advice(Lang::En),
+            "Open a window to let in fresh air."
+        );
     }
 
     #[test]
     fn breakdown_preserves_input_order() {
-        let a = assess(&[
-            r(Pollutant::Pm25, 4.0),
-            r(Pollutant::Ozone, 0.04),
-        ]);
+        let a = assess(&[r(Pollutant::Pm25, 4.0), r(Pollutant::Ozone, 0.04)]);
         assert_eq!(a.grades.len(), 2);
         assert_eq!(a.grades[0].pollutant, Pollutant::Pm25);
         assert_eq!(a.grades[1].pollutant, Pollutant::Ozone);

@@ -64,7 +64,11 @@ impl Job {
     /// A Job with the given metadata and spec, empty status.
     #[must_use]
     pub fn new(meta: ObjectMeta, spec: JobSpec) -> Self {
-        Self { meta, spec, status: JobStatus::default() }
+        Self {
+            meta,
+            spec,
+            status: JobStatus::default(),
+        }
     }
 }
 
@@ -78,8 +82,7 @@ impl Object for Job {
 }
 
 /// How a `CronJob` handles an overlapping run (`batch/v1` `ConcurrencyPolicy`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ConcurrencyPolicy {
     /// Allow concurrent runs.
     #[default]
@@ -89,7 +92,6 @@ pub enum ConcurrencyPolicy {
     /// Replace the active run with the new one.
     Replace,
 }
-
 
 /// Desired state of a `CronJob` (`batch/v1` `CronJobSpec` subset).
 ///
@@ -150,7 +152,12 @@ impl CronJob {
     /// and never run. Use [`CronJob::created_at`] for a non-zero base time.
     #[must_use]
     pub const fn new(meta: ObjectMeta, spec: CronJobSpec) -> Self {
-        Self { meta, spec, created_at: 0, last_scheduled: None }
+        Self {
+            meta,
+            spec,
+            created_at: 0,
+            last_scheduled: None,
+        }
     }
 
     /// Set the creation timestamp (the schedule base before the first run).

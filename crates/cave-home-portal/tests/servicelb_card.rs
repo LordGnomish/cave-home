@@ -28,10 +28,17 @@ fn servicelb_card_groups_with_the_other_developer_cards() {
     for c in [
         Card::ServiceLb,
         Card::ClusterTopology,
-        Card::Logs { entity_id: "x".into() },
+        Card::Logs {
+            entity_id: "x".into(),
+        },
     ] {
         assert!(c.is_developer_only());
     }
     // …and it is NOT a resident card.
-    assert!(!Card::Entity { entity_id: "e".into() }.is_developer_only());
+    assert!(
+        !Card::Entity {
+            entity_id: "e".into()
+        }
+        .is_developer_only()
+    );
 }
