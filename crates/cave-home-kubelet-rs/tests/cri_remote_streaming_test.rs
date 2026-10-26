@@ -6,6 +6,11 @@
 //! These tests cover the gRPC half — obtaining the URL. The byte-streaming
 //! dialer is tracked as deferred (see the crate handoff / parity manifest).
 #![cfg(feature = "remote-cri")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 mod common;
 

@@ -4,6 +4,11 @@
 //! double — the same shape containerd's CRI streaming server presents on the
 //! URL the gRPC `Exec`/`Attach`/`PortForward` calls hand back.
 #![cfg(feature = "remote-cri")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use std::io::Cursor;
 

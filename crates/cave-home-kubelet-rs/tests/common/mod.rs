@@ -6,6 +6,11 @@
 #![cfg(feature = "remote-cri")]
 // Each test binary that `mod common;`s this file only uses part of it.
 #![allow(dead_code)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -440,7 +445,7 @@ impl ImageService for MockCriRuntime {
         let image = st
             .images
             .values()
-            .find(|i| i.id == spec.image || i.repo_tags.iter().any(|t| *t == spec.image))
+            .find(|i| i.id == spec.image || i.repo_tags.contains(&spec.image))
             .cloned();
         Ok(Response::new(proto::ImageStatusResponse {
             image,

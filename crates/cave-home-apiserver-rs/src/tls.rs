@@ -204,12 +204,7 @@ impl TlsServer {
     /// A fatal accept error.
     pub fn run(&self) -> io::Result<()> {
         for conn in self.listener.incoming() {
-            match conn {
-                Ok(tcp) => {
-                    let _ = serve_tls_stream(tcp, &self.config, &self.app);
-                }
-                Err(e) => return Err(e),
-            }
+            let _ = serve_tls_stream(conn?, &self.config, &self.app);
         }
         Ok(())
     }

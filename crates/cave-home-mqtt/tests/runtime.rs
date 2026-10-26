@@ -1,6 +1,11 @@
 //! End-to-end async-runtime tests: real TCP / TLS / WebSocket sockets
 //! driving the clean-room broker. Compiled only with `--features runtime`.
 #![cfg(feature = "runtime")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use bytes::Bytes;
 use cave_home_mqtt::broker::auth::Authenticator;

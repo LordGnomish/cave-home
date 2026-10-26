@@ -3,6 +3,11 @@
 //! server over a Unix socket. These exercise the full client stack: native ->
 //! proto marshalling, HTTP/2 transport, and proto -> native demarshalling.
 #![cfg(feature = "remote-cri")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 mod common;
 

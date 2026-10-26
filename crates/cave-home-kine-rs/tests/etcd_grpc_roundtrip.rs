@@ -7,7 +7,11 @@
 //! backend work together across a real connection, not just at the trait level.
 //!
 //! Run with: `cargo test -p cave-home-kine-rs --features grpc`.
-
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 #![cfg(feature = "grpc")]
 
 use cave_home_kine_rs::grpc::KineServer;
