@@ -113,9 +113,7 @@ impl LinuxExecutor {
 #[async_trait]
 impl IptablesExecutor for LinuxExecutor {
     async fn restore(&self, rules: &str) -> Result<(), ProxierError> {
-        use nix::fcntl::{FlockArg, flock};
-        use std::io::Write as _;
-        use std::os::fd::AsRawFd as _;
+        use nix::fcntl::{Flock, FlockArg};
         use tokio::io::AsyncWriteExt as _;
         use tokio::process::Command;
 
@@ -130,8 +128,8 @@ impl IptablesExecutor for LinuxExecutor {
             .write(true)
             .open(XTABLES_LOCK_PATH)
             .map_err(|e| ProxierError::LockFailed(e.to_string()))?;
-        flock(lock_file.as_raw_fd(), FlockArg::LockExclusive)
-            .map_err(|e| ProxierError::LockFailed(e.to_string()))?;
+        let lock = Flock::lock(lock_file, FlockArg::LockExclusive)
+            .map_err(|(_, e)| ProxierError::LockFailed(e.to_string()))?;
 
         // -- Spawn iptables-restore --noflush --counters ---------------------
         let mut child = Command::new(bin)
@@ -146,9 +144,8 @@ impl IptablesExecutor for LinuxExecutor {
             stdin.shutdown().await?;
         }
         let output = child.wait_with_output().await?;
-        // Drop lock when `lock_file` goes out of scope.
-        let _ = lock_file;
-        let _ = std::io::sink().write_all(b""); // keep std::io::Write import live
+        // Release /run/xtables.lock (Flock unlocks on drop).
+        drop(lock);
 
         if output.status.success() {
             Ok(())
