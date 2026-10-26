@@ -209,7 +209,7 @@ fn hue_does_not_fake_lights_or_scenes() {
 #[test]
 fn jarvis_ask_says_nothing_was_sent() {
     cavehomectl()
-        .args(["jarvis", "ask", "--text", "turn on the kitchen light"])
+        .args(["jarvis", "ask", "--text", "turn the kitchen light on"])
         .assert()
         .success()
         .stdout(contains("gönderilmedi"))

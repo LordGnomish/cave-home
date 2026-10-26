@@ -14,8 +14,14 @@
 //!   cavehomectl solar forecast today          # today's forecast
 //!   cavehomectl solar forecast tomorrow       # tomorrow's forecast
 //! ```
+//!
+//! None of these sources is connected to the CLI yet: every verb exits
+//! `EXIT_NOT_CONNECTED` (after validating its input) rather than printing demo
+//! production. The render helpers below are tested on fixture values.
 
 use clap::{Arg, ArgMatches, Command};
+
+use crate::commands::not_connected::not_connected;
 
 /// Build the `solar` clap subtree.
 #[must_use]
@@ -78,33 +84,22 @@ pub fn run() -> i32 {
 }
 
 /// Internal dispatcher — exposed for unit tests.
+///
+/// No inverter, charger or forecast source is connected to the CLI yet: after
+/// validating input every verb exits `EXIT_NOT_CONNECTED` instead of printing
+/// demo production.
+#[must_use]
 pub fn dispatch(matches: &ArgMatches, verbose: bool) -> i32 {
+    let _ = verbose;
     match matches.subcommand() {
-        None | Some(("status", _)) => {
-            print!("{}", render_status_summary(&demo_summary(), verbose));
-            0
-        }
+        None | Some(("status", _)) => not_connected("solar status"),
         Some(("sunspec", sub)) => match sub.subcommand() {
-            None | Some(("inverter", _)) => {
-                print!("{}", render_inverter(&demo_inverter(), verbose));
-                0
-            }
-            Some(("battery", _)) => {
-                print!("{}", render_battery(&demo_battery(), verbose));
-                0
-            }
+            None | Some(("inverter" | "battery", _)) => not_connected("solar sunspec"),
             _ => 2,
         },
         Some(("evcc", sub)) => match sub.subcommand() {
-            None | Some(("list", _)) => {
-                print!("{}", render_loadpoints(&demo_loadpoints(), verbose));
-                0
-            }
+            None | Some(("list", _)) => not_connected("solar evcc list"),
             Some(("mode", m)) => {
-                let lp = m
-                    .get_one::<String>("loadpoint")
-                    .map(String::as_str)
-                    .unwrap_or("");
                 let mode = m
                     .get_one::<String>("mode")
                     .map(String::as_str)
@@ -113,20 +108,12 @@ pub fn dispatch(matches: &ArgMatches, verbose: bool) -> i32 {
                     eprintln!("Unknown mode '{mode}'. Use off, now, minpv or pv.");
                     return 1;
                 }
-                println!("Set {lp} to {mode}.");
-                0
+                not_connected("solar evcc mode")
             }
             _ => 2,
         },
         Some(("forecast", sub)) => match sub.subcommand() {
-            None | Some(("today", _)) => {
-                print!("{}", render_forecast(&demo_forecast_today(), verbose));
-                0
-            }
-            Some(("tomorrow", _)) => {
-                print!("{}", render_forecast(&demo_forecast_tomorrow(), verbose));
-                0
-            }
+            None | Some(("today" | "tomorrow", _)) => not_connected("solar forecast"),
             _ => 2,
         },
         _ => 2,

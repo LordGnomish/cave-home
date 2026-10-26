@@ -8,6 +8,7 @@
 //! Portal "Add node" wizard. ADR-007: the raw token is technical;
 //! the user-visible output stays grandma-friendly.
 
+use cave_home_node_discovery::{JoinToken, TokenError};
 use clap::{Arg, ArgMatches, Command};
 
 /// Build the clap subtree for `join`.
@@ -29,24 +30,21 @@ pub fn cmd() -> Command {
         )
 }
 
-/// Lightweight validation that the token shape is plausible. Real
-/// crypto verification happens server-side in cave-home-cluster.
+/// Check the token's shape with the same parser the hub uses
+/// (`cave-home-node-discovery`'s [`JoinToken`]: 12 characters of its
+/// Crockford-style charset). Expiry and the real handshake are the hub's job.
 ///
-/// Token format (placeholder, Phase 2b will tighten):
-/// `K10::<32+ ascii base64-ish chars>::<10+ chars>`
-#[must_use]
-pub fn token_is_well_formed(token: &str) -> bool {
-    if !token.starts_with("K10::") {
-        return false;
-    }
-    let parts: Vec<&str> = token.split("::").collect();
-    parts.len() == 3 && parts[1].len() >= 32 && parts[2].len() >= 10
+/// # Errors
+/// The parser's [`TokenError`].
+pub fn check_token(token: &str) -> Result<(), TokenError> {
+    // Lifetime is unknown client-side; any non-zero value checks shape only.
+    JoinToken::parse(token.trim(), 0, 1).map(|_| ())
 }
 
-/// Dispatcher entry. The CLI just validates shape and prints a
-/// grandma-friendly progress message — actual cluster wire-up will
-/// route through `cave-home-cluster` once that crate exposes a
-/// public `join()` API (Phase 2b).
+/// Dispatcher entry. Validates the token shape, then reports that the join
+/// transport is not connected — there is no `cave-home-cluster` join call to
+/// make yet, so the CLI never claims "Connected".
+#[must_use]
 pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
     let token = matches
         .get_one::<String>("token")
@@ -54,26 +52,18 @@ pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
         .unwrap_or("");
     let server = matches.get_one::<String>("server").map(String::as_str);
 
-    if !token_is_well_formed(token) {
+    if let Err(why) = check_token(token) {
+        eprintln!("Bu katılım kodu doğru görünmüyor. Ana hub'daki QR kodunu yeniden okutun.");
         eprintln!("That join code doesn't look right. Please re-scan the QR code on the main hub.");
         if verbose {
-            eprintln!("  token: {token}");
+            eprintln!("  token: {token} ({why})");
         }
         return 2;
     }
-
-    println!("Joining your cave-home hub...");
     if verbose {
-        println!("  token: {token}");
-        if let Some(s) = server {
-            println!("  server: {s}");
-        } else {
-            println!("  server: <auto-discover>");
-        }
+        eprintln!("  server: {}", server.unwrap_or("<auto-discover>"));
     }
-    // Phase 2b: call cave-home-cluster::join(token, server)
-    println!("Connected. This hub is now part of your cave-home.");
-    0
+    crate::commands::not_connected::not_connected("join")
 }
 
 #[cfg(test)]
@@ -91,16 +81,16 @@ mod tests {
     }
 
     #[test]
-    fn token_well_formed_accepts_plausible_shape() {
-        let t = "K10::abcdefghijklmnopqrstuvwxyz012345::join-1234567";
-        assert!(token_is_well_formed(t));
+    fn check_token_accepts_the_node_discovery_format() {
+        assert!(check_token("ABCDEFGHJKMN").is_ok());
+        assert!(check_token(" 23456789ABCD ").is_ok());
     }
 
     #[test]
-    fn token_well_formed_rejects_garbage() {
-        assert!(!token_is_well_formed(""));
-        assert!(!token_is_well_formed("foo"));
-        assert!(!token_is_well_formed("K10::short::ok"));
-        assert!(!token_is_well_formed("K10::abcdefghijklmnopqrstuvwxyz012345"));
+    fn check_token_rejects_garbage_and_the_old_placeholder() {
+        assert!(check_token("").is_err());
+        assert!(check_token("foo").is_err());
+        assert!(check_token("ABCDEFGHJKMI").is_err(), "I is outside the charset");
+        assert!(check_token("K10::abcdefghijklmnopqrstuvwxyz012345::join-1234567").is_err());
     }
 }

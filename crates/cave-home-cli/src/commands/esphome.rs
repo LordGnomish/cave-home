@@ -32,7 +32,8 @@ pub fn cmd() -> Command {
 
 /// Default no-op handler — Phase 2 wires the verbs to the cave-home-esphome
 /// transport (the codec itself already exists in the crate).
+/// No backend is wired into the CLI for this verb yet: say so, change nothing.
+#[must_use]
 pub fn run() -> i32 {
-    println!("esphome: device transport not yet attached — Phase 2.");
-    0
+    crate::commands::not_connected::not_connected("esphome")
 }

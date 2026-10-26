@@ -7,10 +7,11 @@
 //! [`HttpRequest`] → [`HttpResponse`] over the [`HttpTransport`] trait and never
 //! touches a socket directly. Two implementations live here:
 //!
-//! - [`ReqwestTransport`] — the real one: a `reqwest` client over `rustls`,
-//!   built **self-signed-cert tolerant** because every UniFi OS console and
-//!   Cloud Key ships a self-signed certificate on its local management
-//!   interface. It exposes raw response headers (we need `set-cookie`).
+//! - [`ReqwestTransport`] — the real one: a `reqwest` client over `rustls`.
+//!   Every UniFi OS console and Cloud Key ships a self-signed certificate on
+//!   its local management interface, so it is built with an explicit
+//!   [`TlsTrust`] — normally a pin of that certificate. It exposes raw
+//!   response headers (we need `set-cookie`).
 //! - [`MockTransport`] — a fully offline, deterministic transport that replays
 //!   queued responses and records every request, so the auth flow and all
 //!   three API surfaces are unit-testable with no network.
@@ -24,6 +25,7 @@ use parking_lot::Mutex;
 use std::collections::VecDeque;
 
 use crate::error::{Result, UnifiError};
+use crate::tls::TlsTrust;
 
 /// The HTTP verbs the UniFi local APIs use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -273,11 +275,16 @@ impl HttpTransport for MockTransport {
 
 /// The real transport: a `reqwest` client over `rustls`.
 ///
-/// Built **once** and shared (it pools connections). Crucially it is configured
-/// to accept the self-signed certificate that every UniFi OS console / Cloud
-/// Key presents on its local management port — there is no public CA in the
-/// loop on a LAN appliance, and Charter §9 keeps us off the Ubiquiti cloud that
-/// would otherwise broker trust.
+/// Built **once** and shared (it pools connections). Every UniFi OS console /
+/// Cloud Key presents a self-signed certificate on its local management port —
+/// no public CA is in the loop on a LAN appliance, and Charter §9 keeps us off
+/// the Ubiquiti cloud that would otherwise broker trust. So the transport is
+/// built with an explicit [`TlsTrust`]: normally a pin of that console's
+/// certificate ([`TlsTrust::Pinned`], captured at onboarding with
+/// [`crate::tls::capture_presented_certificate`]). A mismatch fails the
+/// handshake before the login password, API key or Access token is written.
+/// Accepting any certificate is only possible through the explicitly named,
+/// logged [`TlsTrust::DangerousAcceptAnyCertificate`].
 pub struct ReqwestTransport {
     client: reqwest::Client,
 }
@@ -289,15 +296,18 @@ impl std::fmt::Debug for ReqwestTransport {
 }
 
 impl ReqwestTransport {
-    /// Build a transport that trusts the console's self-signed certificate and
-    /// applies a per-request timeout.
+    /// Build a transport that verifies the console's certificate with `trust`
+    /// and applies a per-request timeout.
     ///
     /// # Errors
-    /// Fails if the underlying TLS backend cannot be initialised.
-    pub fn new(timeout: std::time::Duration, trust: &crate::tls::TlsTrust) -> Result<Self> {
-        let _ = trust;
+    /// An unusable trust policy (e.g. no pins), or a TLS backend that cannot be
+    /// initialised.
+    pub fn new(timeout: std::time::Duration, trust: &TlsTrust) -> Result<Self> {
+        let tls = trust
+            .client_config()
+            .map_err(|e| UnifiError::Transport(format!("TLS trust: {e}")))?;
         let client = reqwest::Client::builder()
-            .danger_accept_invalid_certs(true)
+            .use_preconfigured_tls(tls)
             .timeout(timeout)
             .user_agent("cave-home-unifi/0.0")
             .build()
@@ -305,8 +315,8 @@ impl ReqwestTransport {
         Ok(Self { client })
     }
 
-    /// Build from an already-configured `reqwest` client (e.g. one that pins a
-    /// CA in a hardened deployment).
+    /// Build from an already-configured `reqwest` client (plain-HTTP mocks, or
+    /// a console behind a reverse proxy with a publicly trusted certificate).
     #[must_use]
     pub fn from_client(client: reqwest::Client) -> Self {
         Self { client }
@@ -337,7 +347,7 @@ impl HttpTransport for ReqwestTransport {
         let resp = builder
             .send()
             .await
-            .map_err(|e| UnifiError::Transport(e.to_string()))?;
+            .map_err(|e| UnifiError::Transport(error_chain(&e)))?;
 
         let status = resp.status().as_u16();
         let mut headers = Vec::with_capacity(resp.headers().len());
@@ -357,6 +367,23 @@ impl HttpTransport for ReqwestTransport {
             body,
         })
     }
+}
+
+
+/// `e` plus its `source()` chain — reqwest's own `Display` stops at "error
+/// sending request", hiding e.g. which certificate failed the pin check.
+fn error_chain(e: &dyn std::error::Error) -> String {
+    let mut out = e.to_string();
+    let mut source = e.source();
+    while let Some(inner) = source {
+        let text = inner.to_string();
+        if !out.contains(&text) {
+            out.push_str(": ");
+            out.push_str(&text);
+        }
+        source = inner.source();
+    }
+    out
 }
 
 #[cfg(test)]

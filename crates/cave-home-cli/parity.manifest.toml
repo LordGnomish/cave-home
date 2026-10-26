@@ -23,7 +23,9 @@ linux_min_kernel = "7.1"
 [ratios]
 # Not applicable; first-party. Reported as 1.0 by convention so the
 # crate is not flagged as "incomplete" against the upstream-port
-# pipeline.
+# pipeline. This is NOT a claim that the verbs work: real coverage is
+# the subcommand_coverage table below (2026-10-26: 4 implemented,
+# 1 partial, 36 not-connected of 41 top-level verbs).
 fill_ratio              = 1.0
 adr_justified_ratio = 1.00  # measured: every [[unmapped]]/[[scope_cut]] entry carries both priority and note
 honest_ratio        = 1.00  # computed: fill / (fill + (1-fill)*(1-adr_justified))
@@ -31,69 +33,242 @@ fill_ratio_basis        = "first-party — no upstream port; coverage tracked vi
 test_port_ratio         = 1.0
 
 # ---- subcommand_coverage — implementation status per top-level verb ---------
+#
+# status values:
+#   implemented    — does the real thing (local filesystem, real client, or
+#                    a local computation that claims nothing about devices).
+#   partial        — some sub-verbs reach a real client; the rest are
+#                    not-connected.
+#   not-connected  — no backend is wired into the CLI. The verb changes
+#                    nothing, prints nothing on stdout, and exits 69
+#                    (EX_UNAVAILABLE) with "henüz bağlı değil / not
+#                    connected". Review finding Y5 (2026-10-19): these used
+#                    to print demo data or "done" and exit 0.
+
+[coverage_summary]
+implemented   = 4
+partial       = 1
+not_connected = 36
+total         = 41
 
 [[subcommand_coverage]]
 verb   = "init"
 status = "implemented"
 owner  = "F5"
-
-[[subcommand_coverage]]
-verb   = "join"
-status = "implemented"
-owner  = "F5"
-
-[[subcommand_coverage]]
-verb   = "status"
-status = "implemented"
-owner  = "F5"
+note   = "Creates the local config dir + node marker."
 
 [[subcommand_coverage]]
 verb   = "destroy"
 status = "implemented"
 owner  = "F5"
+note   = "Removes the local config dir after DESTROY confirmation."
 
 [[subcommand_coverage]]
-verb   = "device"
+verb   = "get"
 status = "implemented"
 owner  = "F5"
+note   = "Real HTTP GET of nodes/pods from the apiserver. Plain HTTP, no credentials: fails against a binary booted with authn + HTTPS by default (follow-up)."
 
 [[subcommand_coverage]]
-verb   = "room"
+verb   = "jarvis"
 status = "implemented"
 owner  = "F5"
-note   = "Added 2026-05-25 — `room list` + `room show <name>` (case-insensitive)."
-
-[[subcommand_coverage]]
-verb   = "automation"
-status = "implemented"
-owner  = "F5"
-
-[[subcommand_coverage]]
-verb   = "scene"
-status = "implemented"
-owner  = "F5"
-
-[[subcommand_coverage]]
-verb   = "solar"
-status = "stub"
-owner  = "F1"
+note   = "Local only: `ask` runs the real NLU fast-path as a dry run and says nothing was sent; `tools`/`wake` show local config."
 
 [[subcommand_coverage]]
 verb   = "unifi"
-status = "stub"
+status = "partial"
 owner  = "F2"
+note   = "Real cave-home-unifi client: network devices/clients, protect cameras, access doors, live <view>, fingerprint (TOFU). Pinned TLS required (CAVEHOME_UNIFI_FINGERPRINT / CAVEHOME_ACCESS_FINGERPRINT) unless --insecure. Not connected: network status/block/unblock/outlet, protect status/events/seam, access status/events/unlock/lockdown, all of talk."
+
+[[subcommand_coverage]]
+verb   = "join"
+status = "not-connected"
+owner  = "F5"
+note   = "Validates the token with cave-home-node-discovery's JoinToken parser, then exits 69 — no cave-home-cluster join call exists yet."
+
+[[subcommand_coverage]]
+verb   = "status"
+status = "not-connected"
+owner  = "F5"
+note   = "No hub health source wired; used to print a fixed 'All good'."
+
+[[subcommand_coverage]]
+verb   = "device"
+status = "not-connected"
+owner  = "F5"
+note   = "No device registry wired; list/add/remove used to print demo data / 'Added'."
+
+[[subcommand_coverage]]
+verb   = "room"
+status = "not-connected"
+owner  = "F5"
+note   = "No device registry wired."
+
+[[subcommand_coverage]]
+verb   = "automation"
+status = "not-connected"
+owner  = "F5"
+note   = "No automation engine wired; enable/disable used to print 'is now ON/OFF'."
+
+[[subcommand_coverage]]
+verb   = "scene"
+status = "not-connected"
+owner  = "F5"
+note   = "No scene engine wired; trigger used to print 'Running scene'."
+
+[[subcommand_coverage]]
+verb   = "top"
+status = "not-connected"
+owner  = "F5"
+note   = "In-process metrics pipeline not attached (ADR-004 phase-1b)."
+
+[[subcommand_coverage]]
+verb   = "solar"
+status = "not-connected"
+owner  = "F1"
+note   = "No SunSpec/EVCC/forecast transport in the CLI; evcc mode used to print 'Set'."
+
+[[subcommand_coverage]]
+verb   = "energy"
+status = "not-connected"
+owner  = "F1"
+note   = "cave-home-tesla transport not wired; mode/backup-reserve used to confirm a change. Input is still validated first (exit 1)."
 
 [[subcommand_coverage]]
 verb   = "hue"
-status = "stub"
+status = "not-connected"
 owner  = "F3"
+note   = "CLI links the pure cave-home-hue core only (no runtime transport); list-lights/set-scene used to print demo lights / 'switched on'."
 
 [[subcommand_coverage]]
 verb   = "knx"
-status = "stub"
+status = "not-connected"
+owner  = "F4"
+
+[[subcommand_coverage]]
+verb   = "esphome"
+status = "not-connected"
 owner  = "F4"
 
 [[subcommand_coverage]]
 verb   = "free-home"
-status = "stub"
+status = "not-connected"
 owner  = "F4"
+
+[[subcommand_coverage]]
+verb   = "lights"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "cover"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "lock"
+status = "not-connected"
+owner  = "G8"
+note   = "lock/unlock never claim a result."
+
+[[subcommand_coverage]]
+verb   = "vacuum"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "hvac"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "camera"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "doorbell"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "alarm"
+status = "not-connected"
+owner  = "G8"
+note   = "arm/disarm never claim a result."
+
+[[subcommand_coverage]]
+verb   = "water"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "garden"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "pool"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "voice"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "music"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "notify"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "display"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "history"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "wellness"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "calendar"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "household"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "matter"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "zigbee"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "zwave"
+status = "not-connected"
+owner  = "G8"
+
+[[subcommand_coverage]]
+verb   = "mobile"
+status = "not-connected"
+owner  = "G8"

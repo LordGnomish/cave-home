@@ -13,8 +13,8 @@ use clap::{Arg, ArgAction, Command};
 use cave_home_cli::commands::{
     alarm, automation, calendar, camera, cover, destroy, device, display, doorbell, energy,
     esphome, free_home, garden, get, history, household, hue, hvac, init, jarvis, join, knx,
-    lights, lock, matter, mobile, music, not_connected, notify, pool, room, scene, solar, status,
-    top, unifi, vacuum, voice, water, wellness, zigbee, zwave,
+    lights, lock, matter, mobile, music, notify, pool, room, scene, solar, status, top, unifi,
+    vacuum, voice, water, wellness, zigbee, zwave,
 };
 
 fn build_cli() -> Command {
@@ -143,6 +143,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cave_home_cli::commands::not_connected;
 
     #[test]
     fn help_lists_every_subcommand() {

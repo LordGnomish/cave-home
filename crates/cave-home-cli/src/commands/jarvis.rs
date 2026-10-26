@@ -13,6 +13,8 @@
 //! (Charter §5). `ask` really runs the crate's NLU fast-path — the same
 //! `cave_home_voice` intent match and `intent_to_tool_call` bridge the live
 //! pipeline uses — so the CLI and the assistant agree on what a sentence means.
+//! It is a dry run: the result says what was understood and that nothing was
+//! sent to a device (the CLI is not connected to one).
 //! The wake/STT/LLM/TTS engines need on-device models and a microphone, so the
 //! live `listen` loop is Phase-1b.
 
@@ -80,8 +82,15 @@ pub fn render_ask(text: &str, verbose: bool) -> String {
     let mut out = String::new();
     match understand(text, &intents, Lang::En) {
         Understanding::Acted { action, reply, .. } => {
+            // The assistant *understood* the command; the CLI is not connected
+            // to any device, so say plainly that nothing happened.
+            out.push_str("Anladım / Understood: ");
             out.push_str(&reply);
             out.push('\n');
+            out.push_str(
+                "Bu bir deneme — komut hiçbir cihaza gönderilmedi.\n\
+                 This is a dry run — nothing was sent to any device.\n",
+            );
             if verbose {
                 let call = intent_to_tool_call(&action);
                 out.push_str(&format!(

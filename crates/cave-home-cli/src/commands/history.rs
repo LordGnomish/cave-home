@@ -3,7 +3,8 @@
 //
 //! cavehomectl history — Look at sensor history.
 //!
-//! Phase 1 stub. Backed by cave-home-history crate; wires the
+//! Not connected yet: every verb exits `EXIT_NOT_CONNECTED` (69) and changes
+//! nothing. Will be backed by cave-home-history crate; wires the
 //! clap surface and grandma-friendly verb names. Real implementation
 //! lands once the backend exposes its public RPC surface.
 
@@ -27,9 +28,10 @@ pub fn cmd() -> Command {
         )
 }
 
+/// No backend is wired into the CLI for this verb yet: say so, change nothing.
+#[must_use]
 pub fn run() -> i32 {
-    println!("history: backend not yet attached — Phase 2.");
-    0
+    crate::commands::not_connected::not_connected("history")
 }
 
 #[cfg(test)]

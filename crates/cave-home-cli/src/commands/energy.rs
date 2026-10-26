@@ -15,12 +15,17 @@
 //!
 //! The backend is the `cave-home-tesla` adapter compiled into the one binary
 //! (Charter §5); this surface re-uses its `OpMode` parsing so the CLI and the
-//! adapter agree on what `tbc` means. Live values shown here are demo data until
-//! the adapter's transport is wired (Phase 1b).
+//! adapter agree on what `tbc` means. The adapter's transport is not wired into
+//! the CLI yet (Phase 1b), so after validating its input every verb exits
+//! `EXIT_NOT_CONNECTED` — it never confirms a battery change it did not make,
+//! nor shows power-flow numbers it did not read. The render helpers are tested
+//! on fixture values.
 
 use clap::{Arg, ArgMatches, Command};
 
 use cave_home_tesla::OpMode;
+
+use crate::commands::not_connected::not_connected;
 
 /// Build the `energy` clap subtree.
 #[must_use]
@@ -71,54 +76,33 @@ pub fn run() -> i32 {
 /// Internal dispatcher — exposed for unit tests.
 #[must_use]
 pub fn dispatch(matches: &ArgMatches, verbose: bool) -> i32 {
+    let _ = verbose;
     match matches.subcommand() {
-        None | Some(("status", _)) => {
-            print!("{}", render_status(&demo_flow(), verbose));
-            0
-        }
+        None | Some(("status", _)) => not_connected("energy status"),
         Some(("mode", m)) => {
             let raw = m.get_one::<String>("mode").map(String::as_str).unwrap_or("");
-            match OpMode::from_cli(raw) {
-                Some(mode) => {
-                    println!("Battery set to: {}.", friendly_mode(mode));
-                    0
-                }
-                None => {
-                    eprintln!("I don't know the mode '{raw}'. Try self-consumption, backup or tbc.");
-                    1
-                }
+            if OpMode::from_cli(raw).is_none() {
+                eprintln!("I don't know the mode '{raw}'. Try self-consumption, backup or tbc.");
+                return 1;
             }
+            not_connected("energy mode")
         }
         Some(("backup-reserve", m)) => {
             let raw = m.get_one::<String>("percent").map(String::as_str).unwrap_or("");
-            match raw.parse::<u16>() {
-                Ok(p) if p <= 100 => {
-                    println!("Keeping the battery at least {p}% full for outages.");
-                    0
-                }
-                _ => {
-                    eprintln!("Backup reserve must be a whole number from 0 to 100.");
-                    1
-                }
+            if !matches!(raw.parse::<u16>(), Ok(p) if p <= 100) {
+                eprintln!("Backup reserve must be a whole number from 0 to 100.");
+                return 1;
             }
+            not_connected("energy backup-reserve")
         }
-        Some(("history", m)) => {
-            let range = m.get_one::<String>("range").map(String::as_str).unwrap_or("24h");
-            print!("{}", render_history(&demo_history(range), verbose));
-            0
-        }
+        Some(("history", _)) => not_connected("energy history"),
         _ => 2,
     }
 }
 
-/// A grandma-friendly mode label (English; the Portal renders DE/TR).
-fn friendly_mode(mode: OpMode) -> &'static str {
-    mode.label(cave_home_tesla::Lang::En)
-}
-
 /// ------- render helpers (pure, test-friendly) -----------------------
 
-/// A demo power-flow snapshot, shown until the adapter transport is wired.
+/// A power-flow snapshot (the shape the adapter transport will fill).
 #[derive(Debug, Clone, Copy)]
 pub struct EnergyFlow {
     /// Solar production, watts.
@@ -131,7 +115,7 @@ pub struct EnergyFlow {
     pub soc_pct: f64,
 }
 
-/// Demo data for the live flow.
+/// Fixture values for the render tests — never shown as real.
 #[must_use]
 pub const fn demo_flow() -> EnergyFlow {
     EnergyFlow {
@@ -169,7 +153,7 @@ pub fn render_status(f: &EnergyFlow, verbose: bool) -> String {
     out
 }
 
-/// A demo history summary for a range token.
+/// A history summary for a range token.
 #[derive(Debug, Clone)]
 pub struct EnergyHistory {
     /// The requested range token (e.g. `24h`).
@@ -180,7 +164,7 @@ pub struct EnergyHistory {
     pub used_kwh: f64,
 }
 
-/// Demo history for `range`.
+/// Fixture history for the render tests — never shown as real.
 #[must_use]
 pub fn demo_history(range: &str) -> EnergyHistory {
     EnergyHistory {

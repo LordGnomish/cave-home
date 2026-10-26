@@ -5,36 +5,74 @@
 //! `reqwest` + rustls.
 //!
 //! The Hue bridge exposes the v2 API at `https://<bridge>/clip/v2/...` behind a
-//! **self-signed** certificate generated on the bridge itself (no Hue cloud is
-//! involved — everything is LAN-local). Authentication is a single
-//! `hue-application-key` header carrying the key the bridge minted at pairing
-//! time. This module wires those facts into a concrete client so the
-//! controllers in [`super::controllers`] can talk to a real bridge.
+//! certificate no public CA vouches for: on current firmware it is issued by
+//! the Signify bridge root CA with CN = bridge id; older bridges self-sign
+//! (no Hue cloud is involved — everything is LAN-local). Authentication is a
+//! single `hue-application-key` header carrying the key the bridge minted at
+//! pairing time, so the transport verifies the bridge first —
+//! [`signify_bridge_trust`] or a pinned fingerprint — and fails closed. This
+//! module wires those facts into a concrete client so the controllers in
+//! [`super::controllers`] can talk to a real bridge.
 //!
 //! Gated behind the default-on `runtime` feature; with it off the crate is a
 //! pure, dependency-light core tested against in-process stubs.
 
 use crate::errors::{HueError, HueResult};
+use crate::tls::TlsTrust;
+use cave_home_tls_pin::rustls_pki::pem::PemObject as _;
+use cave_home_tls_pin::rustls_pki::CertificateDer;
 use crate::v2::controllers::base::{V2Envelope, V2Request};
 use async_trait::async_trait;
 use reqwest::{Client, Method};
 use serde_json::Value;
 
-/// The Signify (Philips Hue) bridge root CA (RED placeholder).
-pub const SIGNIFY_HUE_ROOT_CA_PEM: &str = "";
+/// The Signify (Philips Hue) bridge root CA.
+///
+/// `C=NL, O=Philips Hue, CN=root-bridge`, ECDSA P-256, valid 2017-01-01 …
+/// 2038-01-19, as published in the Hue developer documentation ("Using
+/// HTTPS" / bridge certificate). Bridges on current firmware present a leaf issued by this root whose
+/// subject CN is the bridge id. Its self-signature verifies, and its SHA-256
+/// is `F0:BD:8E:65:09:E8:2F:77:4D:63:BC:00:9D:53:88:C9:69:FE:3D:CF:7D:6D:54:1D:63:51:B7:2B:89:8D:8A:CF`
+/// (pinned by a test). Older bridges with a self-signed certificate are not
+/// covered by this root — pin those instead ([`TlsTrust::Pinned`]).
+pub const SIGNIFY_HUE_ROOT_CA_PEM: &str = "-----BEGIN CERTIFICATE-----
+MIICMjCCAdigAwIBAgIUO7FSLbaxikuXAljzVaurLXWmFw4wCgYIKoZIzj0EAwIw
+OTELMAkGA1UEBhMCTkwxFDASBgNVBAoMC1BoaWxpcHMgSHVlMRQwEgYDVQQDDAty
+b290LWJyaWRnZTAiGA8yMDE3MDEwMTAwMDAwMFoYDzIwMzgwMTE5MDMxNDA3WjA5
+MQswCQYDVQQGEwJOTDEUMBIGA1UECgwLUGhpbGlwcyBIdWUxFDASBgNVBAMMC3Jv
+b3QtYnJpZGdlMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEjNw2tx2AplOf9x86
+aTdvEcL1FU65QDxziKvBpW9XXSIcibAeQiKxegpq8Exbr9v6LBnYbna2VcaK0G22
+jOKkTqOBuTCBtjAPBgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBhjAdBgNV
+HQ4EFgQUZ2ONTFrDT6o8ItRnKfqWKnHFGmQwdAYDVR0jBG0wa4AUZ2ONTFrDT6o8
+ItRnKfqWKnHFGmShPaQ7MDkxCzAJBgNVBAYTAk5MMRQwEgYDVQQKDAtQaGlsaXBz
+IEh1ZTEUMBIGA1UEAwwLcm9vdC1icmlkZ2WCFDuxUi22sYpLlwJY81Wrqy11phcO
+MAoGCCqGSM49BAMCA0gAMEUCIEBYYEOsa07TH7E5MJnGw557lVkORgit2Rm1h3B2
+sFgDAiEA1Fj/C3AN5psFMjo0//mrQebo0eKd3aWRx+pQY08mk48=
+-----END CERTIFICATE-----
+";
 
-/// The Signify root as DER (RED placeholder).
-pub fn signify_root_ca_der() -> HueResult<rustls_pki::CertificateDer<'static>> {
-    Err(HueError::Generic("not implemented".into()))
+/// [`SIGNIFY_HUE_ROOT_CA_PEM`] as DER.
+///
+/// # Errors
+/// Only if the embedded PEM were corrupt (a test guards it).
+pub fn signify_root_ca_der() -> HueResult<CertificateDer<'static>> {
+    CertificateDer::from_pem_slice(SIGNIFY_HUE_ROOT_CA_PEM.as_bytes())
+        .map_err(|e| HueError::Generic(format!("embedded Signify root CA: {e}")))
 }
 
-/// Trust a bridge by the Signify root + CN == bridge id (RED placeholder).
-pub fn signify_bridge_trust(bridge_id: &str) -> HueResult<crate::tls::TlsTrust> {
-    let _ = bridge_id;
-    Err(HueError::Generic("not implemented".into()))
+/// Trust a bridge the way the Hue app does.
+///
+/// Its certificate must chain to the Signify root CA and its subject CN must
+/// equal `bridge_id` (the 16-hex-digit id from discovery / `config.bridgeid`,
+/// compared case-insensitively).
+///
+/// # Errors
+/// An empty bridge id.
+pub fn signify_bridge_trust(bridge_id: &str) -> HueResult<TlsTrust> {
+    let root = signify_root_ca_der()?;
+    TlsTrust::common_name_ca(vec![root], bridge_id)
+        .map_err(|e| HueError::Generic(format!("bridge trust: {e}")))
 }
-
-use cave_home_tls_pin::rustls_pki;
 
 /// CLIP-v2 path prefix shared by every resource endpoint.
 const CLIP_V2_PREFIX: &str = "clip/v2";
@@ -52,14 +90,24 @@ pub struct ReqwestTransport {
 }
 
 impl ReqwestTransport {
-    /// Connect to a bridge over HTTPS on the LAN, accepting its self-signed
-    /// certificate. The bridge mints this cert itself; there is no public CA in
-    /// the chain, so standard verification would always fail. Traffic never
-    /// leaves the local network.
-    pub fn new(host: &str, app_key: &str, trust: &crate::tls::TlsTrust) -> HueResult<Self> {
-        let _ = trust;
+    /// Connect to a bridge over HTTPS on the LAN, verifying its certificate
+    /// with `trust`: [`signify_bridge_trust`] for a bridge whose certificate is
+    /// issued by the Signify root (CN = bridge id), or a [`TlsTrust::Pinned`]
+    /// fingerprint captured at pairing. No public CA vouches for a bridge, so
+    /// public-CA verification would always fail — and accepting anything would
+    /// hand the application key to whoever answers on the LAN. A mismatch fails
+    /// the handshake before the key is sent.
+    ///
+    /// # Errors
+    /// An unusable trust policy, or a TLS backend that cannot be initialised.
+    pub fn new(host: &str, app_key: &str, trust: &TlsTrust) -> HueResult<Self> {
+        let mut tls = trust
+            .client_config()
+            .map_err(|e| HueError::Transport(format!("TLS trust: {e}")))?;
+        // The bridge speaks HTTP/2 (preferred for the eventstream) and 1.1.
+        tls.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
         let client = Client::builder()
-            .danger_accept_invalid_certs(true)
+            .use_preconfigured_tls(tls)
             .build()
             .map_err(|e| HueError::Transport(format!("client build: {e}")))?;
         Ok(Self {
@@ -135,7 +183,7 @@ impl ReqwestTransport {
         let resp = rb
             .send()
             .await
-            .map_err(|e| HueError::Transport(format!("request {url}: {e}")))?;
+            .map_err(|e| HueError::Transport(format!("request {url}: {}", error_chain(&e))))?;
         let status = resp.status();
         let text = resp
             .text()
@@ -150,6 +198,22 @@ impl ReqwestTransport {
             Err(map_status(status.as_u16(), &text))
         }
     }
+}
+
+/// `e` plus its `source()` chain — reqwest's `Display` alone hides the TLS
+/// reason (e.g. which certificate failed the pin).
+fn error_chain(e: &dyn std::error::Error) -> String {
+    let mut out = e.to_string();
+    let mut source = e.source();
+    while let Some(inner) = source {
+        let text = inner.to_string();
+        if !out.contains(&text) {
+            out.push_str(": ");
+            out.push_str(&text);
+        }
+        source = inner.source();
+    }
+    out
 }
 
 /// Map a non-2xx HTTP status (plus the bridge's body) onto a typed [`HueError`].
@@ -258,11 +322,8 @@ mod tests {
     }
 
     #[test]
-    fn new_targets_https_self_signed_bridge() {
-        let trust = crate::tls::TlsTrust::pinned(crate::tls::PinSet::from(crate::tls::Pin::Certificate(
-            crate::tls::Sha256Fingerprint::of(b"bridge"),
-        )))
-        .unwrap();
+    fn new_targets_https_bridge() {
+        let trust = signify_bridge_trust("001788fffe1234ab").unwrap();
         let t = ReqwestTransport::new("10.0.0.5", "k", &trust).unwrap();
         assert_eq!(t.base_url(), "https://10.0.0.5");
         assert_eq!(t.eventstream_url(), "https://10.0.0.5/eventstream/clip/v2");

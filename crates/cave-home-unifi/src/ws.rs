@@ -15,7 +15,8 @@
 //! - [`WsConnection`] / [`WsConnector`] — the async seam (mirroring
 //!   [`crate::transport::HttpTransport`]). [`MockWsConnector`] replays canned
 //!   frames offline; [`TungsteniteConnector`] is the real `tokio-tungstenite` +
-//!   `rustls` client that tolerates the console's self-signed certificate.
+//!   `rustls` client, verifying the console with a [`crate::tls::TlsTrust`]
+//!   (normally a pin of its self-signed certificate).
 //! - [`EventPump`] — drains a connection, counts every frame into [`Metrics`]
 //!   per pillar, and forwards frames to an [`mpsc`] channel; the typed
 //!   [`EventPump::access_notifications`] decodes each frame to an
@@ -320,6 +321,7 @@ pub use real::TungsteniteConnector;
 
 mod real {
     use super::{Result, UnifiError, WsConnection, WsConnector, WsMessage, WsRequest};
+    use crate::tls::TlsTrust;
     use async_trait::async_trait;
     use futures_util::{SinkExt, StreamExt};
     use std::sync::Arc;
@@ -330,8 +332,10 @@ mod real {
     use tokio_tungstenite::{Connector, MaybeTlsStream, WebSocketStream};
 
     /// The real WebSocket connector: `tokio-tungstenite` over `rustls`,
-    /// configured to accept the console's self-signed certificate (the same
-    /// trust posture as [`crate::transport::ReqwestTransport`]).
+    /// verifying the console with an explicit [`TlsTrust`] (the same trust as
+    /// [`crate::transport::ReqwestTransport`]). The upgrade request — which
+    /// carries the session cookie or the Access bearer token — is only written
+    /// after the certificate passed.
     #[derive(Clone)]
     pub struct TungsteniteConnector {
         tls: Arc<rustls::ClientConfig>,
@@ -344,13 +348,14 @@ mod real {
     }
 
     impl TungsteniteConnector {
-        /// Build a connector that trusts the console's self-signed certificate.
-        pub fn new(trust: &crate::tls::TlsTrust) -> Result<Self> {
-            let _ = trust;
-            let tls = rustls::ClientConfig::builder()
-                .dangerous()
-                .with_custom_certificate_verifier(Arc::new(no_verify::NoVerify::new()))
-                .with_no_client_auth();
+        /// Build a connector that verifies the console with `trust`.
+        ///
+        /// # Errors
+        /// An unusable trust policy (e.g. no pins).
+        pub fn new(trust: &TlsTrust) -> Result<Self> {
+            let tls = trust
+                .client_config()
+                .map_err(|e| UnifiError::WebSocket(format!("TLS trust: {e}")))?;
             Ok(Self { tls: Arc::new(tls) })
         }
     }
@@ -433,78 +438,6 @@ mod real {
         }
     }
 
-    /// A rustls certificate verifier that accepts any server certificate — the
-    /// LAN-appliance trust posture (no public CA brokers a self-signed console
-    /// cert; Charter §9 keeps us off the cloud that otherwise would). No
-    /// `unsafe` is involved.
-    mod no_verify {
-        use rustls::client::danger::{
-            HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
-        };
-        use rustls::crypto::{ring, verify_tls12_signature, verify_tls13_signature};
-        use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-        use rustls::{DigitallySignedStruct, Error, SignatureScheme};
-
-        #[derive(Debug)]
-        pub struct NoVerify {
-            schemes: Vec<SignatureScheme>,
-        }
-
-        impl NoVerify {
-            pub fn new() -> Self {
-                Self {
-                    schemes: ring::default_provider()
-                        .signature_verification_algorithms
-                        .supported_schemes(),
-                }
-            }
-        }
-
-        impl ServerCertVerifier for NoVerify {
-            fn verify_server_cert(
-                &self,
-                _end_entity: &CertificateDer<'_>,
-                _intermediates: &[CertificateDer<'_>],
-                _server_name: &ServerName<'_>,
-                _ocsp_response: &[u8],
-                _now: UnixTime,
-            ) -> Result<ServerCertVerified, Error> {
-                Ok(ServerCertVerified::assertion())
-            }
-
-            fn verify_tls12_signature(
-                &self,
-                message: &[u8],
-                cert: &CertificateDer<'_>,
-                dss: &DigitallySignedStruct,
-            ) -> Result<HandshakeSignatureValid, Error> {
-                verify_tls12_signature(
-                    message,
-                    cert,
-                    dss,
-                    &ring::default_provider().signature_verification_algorithms,
-                )
-            }
-
-            fn verify_tls13_signature(
-                &self,
-                message: &[u8],
-                cert: &CertificateDer<'_>,
-                dss: &DigitallySignedStruct,
-            ) -> Result<HandshakeSignatureValid, Error> {
-                verify_tls13_signature(
-                    message,
-                    cert,
-                    dss,
-                    &ring::default_provider().signature_verification_algorithms,
-                )
-            }
-
-            fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-                self.schemes.clone()
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -613,9 +546,12 @@ mod tests {
     }
 
     #[test]
-    fn real_connector_constructs() {
-        // Build the real connector (exercises the rustls dangerous config path);
-        // an actual connect needs a live console, covered by integration only.
-        let _c = TungsteniteConnector::new(&crate::tls::TlsTrust::dangerous_accept_any_certificate()).unwrap();
+    fn real_connector_needs_a_usable_trust() {
+        // Real connects are covered by tests/tls_pinning.rs (local TLS server).
+        let pinned = crate::tls::TlsTrust::Pinned(crate::tls::PinSet::default());
+        assert!(TungsteniteConnector::new(&pinned).is_err(), "an empty pin set must not build");
+        let pin = crate::tls::Pin::Certificate(crate::tls::Sha256Fingerprint::of(b"console"));
+        let trust = crate::tls::TlsTrust::pinned(pin.into()).unwrap();
+        assert!(TungsteniteConnector::new(&trust).is_ok());
     }
 }

@@ -40,9 +40,10 @@ pub fn cmd() -> Command {
 }
 
 /// Default no-op handler — Phase 2 wires this to cave-home-free-home.
+/// No backend is wired into the CLI for this verb yet: say so, change nothing.
+#[must_use]
 pub fn run() -> i32 {
-    println!("free-home: SysAP connection not yet bootstrapped — Phase 2b.");
-    0
+    crate::commands::not_connected::not_connected("free-home")
 }
 
 #[cfg(test)]

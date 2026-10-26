@@ -34,15 +34,20 @@ that unifies all three behind one console client over a **real** `reqwest` +
                  │  metrics::Metrics  (Prometheus)   render::*  (EN/DE/TR)
                  │                                                 │
                  │  transport: HttpTransport seam                  │
-                 │     ReqwestTransport (real, self-signed OK)     │
+                 │     ReqwestTransport (real, pinned TLS)         │
                  │     MockTransport    (offline unit tests)       │
                  └───────────────────────────────────────────────┘
 ```
 
 The whole stack is built on the `HttpTransport` async seam (mirrors
-`cave-home-tesla`). The **real** `ReqwestTransport` accepts the console's
-self-signed certificate (every UniFi OS console / Cloud Key ships one; Charter §9
-keeps us off the Ubiquiti cloud that would otherwise broker trust). `MockTransport`
+`cave-home-tesla`). Every UniFi OS console / Cloud Key ships a self-signed
+certificate (Charter §9 keeps us off the Ubiquiti cloud that would otherwise
+broker trust), so the **real** `ReqwestTransport` and `TungsteniteConnector` are
+built with an explicit `tls::TlsTrust` (from `cave-home-tls-pin`): normally a
+SHA-256 pin of that console's certificate, captured once with
+`cavehomectl unifi fingerprint <host>`. A mismatch fails the handshake before
+the password, API key or Access door token is sent. (Until 2026-10-26 the
+transports accepted any certificate — review finding Y6.) `MockTransport`
 makes the auth flow + all three API surfaces unit-testable with zero network, and
 the e2e suite swaps in the real transport against `wiremock`.
 
@@ -51,14 +56,15 @@ the e2e suite swaps in the real transport against `wiremock`.
 | module | what |
 |---|---|
 | `error.rs` | `UnifiError` + status→variant classification (401→reauth, 429→backoff, 5xx→transient) |
-| `transport.rs` | `HttpTransport` seam, real `ReqwestTransport`, `MockTransport` |
+| `transport.rs` | `HttpTransport` seam, real `ReqwestTransport` (pinned via `TlsTrust`), `MockTransport` |
+| `tls.rs` | Re-exports `cave-home-tls-pin`: `TlsTrust`, `PinSet`, `Pin`, TOFU `capture_presented_certificate` |
 | `console.rs` | `Console` — UniFi OS vs Legacy URL/port/prefix routing (REST + WS) |
 | `auth.rs` | `Credentials` (password / API key), `Session` (cookie + CSRF, incl. CSRF decoded from the UniFi OS `TOKEN` JWT) |
 | `client.rs` | `ConsoleClient` — login, authorized request, **transparent 401 re-auth + retry**, metrics timing |
 | `network/` | Network Controller REST: sites, clients, devices, events, health; block/unblock/reconnect/PoE; `execute(&domain Command)` |
 | `access/` | Access developer REST (bearer, :12445): doors, visitors, events, **intercom answer**; notification parsing (intercom/doorbell/granted/denied) |
 | `protect/` | Protect REST over the console session: bootstrap, cameras, **live RTSPS URL**, events, recordings; 8-byte binary update-packet header |
-| `ws.rs` | Real-time engine: per-pillar `WsRequest`, `WsConnection`/`WsConnector` seam, real `TungsteniteConnector` (rustls, self-signed-tolerant, no `unsafe`), `MockWsConnector`, `EventPump` |
+| `ws.rs` | Real-time engine: per-pillar `WsRequest`, `WsConnection`/`WsConnector` seam, real `TungsteniteConnector` (rustls, pinned via `TlsTrust`, no `unsafe`), `MockWsConnector`, `EventPump` |
 | `metrics.rs` | Prometheus exposition (requests/errors/logins/reauth/ws events) |
 | `render.rs` | Grandma-friendly EN/DE/TR rendering for the CLI |
 

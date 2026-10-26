@@ -3,9 +3,10 @@
 //
 //! `cavehomectl device {add,list,remove}` — device CRUD surface.
 //!
-//! Phase 1 MVP: in-memory ops + grandma-friendly output. Phase 2b
-//! will route to cave-home-apiserver-rs via the `apiserver`
-//! sibling module.
+//! No device registry is connected to the CLI yet (Phase 2b routes to
+//! cave-home-apiserver-rs), so every verb exits `EXIT_NOT_CONNECTED` and
+//! changes nothing. [`render_list`] — tested on fixture rows — is what the
+//! live registry will feed.
 
 use clap::{Arg, ArgMatches, Command};
 
@@ -19,6 +20,7 @@ pub struct Device {
     pub technical_id: String,
 }
 
+/// Fixture rows for the render tests (and `room`'s) — never shown as real.
 #[must_use]
 pub fn demo_devices() -> Vec<Device> {
     vec![
@@ -94,41 +96,19 @@ pub fn cmd() -> Command {
         )
 }
 
-/// Dispatcher entry.
-pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
-    match matches.subcommand() {
-        Some(("list", _sub)) => {
-            print!("{}", render_list(&demo_devices(), verbose));
-            0
-        }
-        Some(("add", sub)) => {
-            let name = sub
-                .get_one::<String>("name")
-                .cloned()
-                .unwrap_or_else(|| "(auto-named)".to_string());
-            let room = sub
-                .get_one::<String>("room")
-                .cloned()
-                .unwrap_or_else(|| "(unassigned)".to_string());
-            println!("Searching for a new device... (5 seconds)");
-            // Phase 2b: actually scan Zigbee / Z-Wave / Matter.
-            println!("Added '{name}' to room '{room}'.");
-            0
-        }
-        Some(("remove", sub)) => {
-            // SAFETY: name is required, clap guarantees it.
-            let Some(name) = sub.get_one::<String>("name") else {
-                eprintln!("Internal: missing device name.");
-                return 2;
-            };
-            println!("Forgot device '{name}'.");
-            0
-        }
+/// Dispatcher entry: no registry is connected — say so, change nothing.
+#[must_use]
+pub fn run(matches: &ArgMatches, _verbose: bool) -> i32 {
+    let what = match matches.subcommand() {
+        Some(("list", _)) => "device list",
+        Some(("add", _)) => "device add",
+        Some(("remove", _)) => "device remove",
         _ => {
             eprintln!("Use one of: list, add, remove");
-            2
+            return 2;
         }
-    }
+    };
+    crate::commands::not_connected::not_connected(what)
 }
 
 #[cfg(test)]

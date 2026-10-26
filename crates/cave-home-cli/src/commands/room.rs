@@ -10,9 +10,9 @@
 //! one room. Both surfaces stay in home-world vocabulary; technical
 //! fields appear only under the global `--verbose` flag (ADR-007 §4).
 //!
-//! Phase 1 MVP: in-memory demo data shared with `device`; Phase 2b
-//! routes through cave-home-apiserver-rs to read the real device
-//! registry.
+//! No device registry is connected to the CLI yet (Phase 2b routes through
+//! cave-home-apiserver-rs), so both verbs exit `EXIT_NOT_CONNECTED`. The
+//! render helpers are tested on `device`'s fixture rows.
 
 use crate::commands::device;
 use clap::{Arg, ArgMatches, Command};
@@ -31,26 +31,18 @@ pub fn cmd() -> Command {
         )
 }
 
-pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
-    let devices = device::demo_devices();
-    match matches.subcommand() {
-        Some(("list", _)) => {
-            print!("{}", render_list(&devices, verbose));
-            0
-        }
-        Some(("show", sub)) => {
-            let name = sub
-                .get_one::<String>("name")
-                .expect("clap enforces required");
-            let (out, code) = render_show(&devices, name, verbose);
-            print!("{out}");
-            code
-        }
+/// Dispatcher entry: no registry is connected — say so.
+#[must_use]
+pub fn run(matches: &ArgMatches, _verbose: bool) -> i32 {
+    let what = match matches.subcommand() {
+        Some(("list", _)) => "room list",
+        Some(("show", _)) => "room show",
         _ => {
             eprintln!("Use 'cavehomectl room --help' to see what's available.");
-            2
+            return 2;
         }
-    }
+    };
+    crate::commands::not_connected::not_connected(what)
 }
 
 #[must_use]

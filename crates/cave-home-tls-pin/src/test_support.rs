@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //
-//! Test-only helpers (feature `test-support`): rcgen certificates and a tiny
-//! blocking rustls server on `127.0.0.1` that records the application bytes
+//! Test-only helpers (feature `test-support`).
+//!
+//! rcgen certificates and a tiny blocking rustls server on `127.0.0.1` that records the application bytes
 //! each connection delivered. Shared by the integration tests of this crate,
 //! `cave-home-unifi` and `cave-home-hue` so they all exercise real handshakes
 //! offline. Never enabled in a production build.
@@ -30,7 +31,7 @@ fn key_der(key: &KeyPair) -> PrivateKeyDer<'static> {
     PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.serialize_der()))
 }
 
-/// A fresh self-signed certificate for `names` (as a UniFi console ships).
+/// A fresh self-signed certificate for `names` (as a `UniFi` console ships).
 #[must_use]
 pub fn self_signed(names: &[&str]) -> TestCert {
     let key = KeyPair::generate().expect("keygen");

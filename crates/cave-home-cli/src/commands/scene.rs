@@ -2,6 +2,10 @@
 // Copyright 2026 cave-home contributors
 //
 //! `cavehomectl scene trigger <name>` — run a scene.
+//!
+//! No scene engine is connected to the CLI yet, so `trigger` exits
+//! `EXIT_NOT_CONNECTED` and runs nothing. [`resolve`] (case-insensitive name
+//! match) is the pure piece the live path will reuse.
 
 use clap::{Arg, ArgMatches, Command};
 
@@ -33,36 +37,20 @@ pub fn resolve<'a>(scenes: &'a [&'a str], query: &str) -> Option<&'a str> {
         .find(|s| s.eq_ignore_ascii_case(query))
 }
 
+/// Fixture scene names for the resolver tests — never shown as real.
 #[must_use]
 pub fn demo_scenes() -> &'static [&'static str] {
     &["Akşam", "Romantic Dinner", "Movie Night", "Wake Up", "Sleep"]
 }
 
-pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
-    let Some(("trigger", sub)) = matches.subcommand() else {
+/// Dispatcher entry: no scene engine is connected — say so, run nothing.
+#[must_use]
+pub fn run(matches: &ArgMatches, _verbose: bool) -> i32 {
+    let Some(("trigger", _)) = matches.subcommand() else {
         eprintln!("Use: scene trigger <name>");
         return 2;
     };
-    let Some(name) = sub.get_one::<String>("name") else {
-        eprintln!("Internal: missing scene name.");
-        return 2;
-    };
-    match resolve(demo_scenes(), name) {
-        Some(matched) => {
-            println!("Running scene: {matched}");
-            if verbose {
-                println!("  resolved from query: {name:?}");
-            }
-            0
-        }
-        None => {
-            eprintln!(
-                "No scene called '{name}'. Try one of: {}.",
-                demo_scenes().join(", ")
-            );
-            1
-        }
-    }
+    crate::commands::not_connected::not_connected("scene trigger")
 }
 
 #[cfg(test)]

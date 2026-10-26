@@ -31,9 +31,11 @@
 //! It is the single console client a household's UniFi stack actually needs:
 //!
 //! - [`transport`] — the async [`HttpTransport`] seam, a real `reqwest` +
-//!   `rustls` [`transport::ReqwestTransport`] (self-signed-cert tolerant, as
-//!   every UniFi OS console ships one), and a [`transport::MockTransport`] for
-//!   fast offline unit tests.
+//!   `rustls` [`transport::ReqwestTransport`] (verifying the console's
+//!   self-signed certificate against a pin — see [`tls`]), and a
+//!   [`transport::MockTransport`] for fast offline unit tests.
+//! - [`tls`] — the trust policy: certificate / public-key pinning, a TOFU
+//!   capture helper, and the explicitly named, logged no-verify opt-in.
 //! - [`console`] — the [`console::Console`] abstraction over a **Cloud Key /
 //!   UniFi OS console** (Dream Machine, UNVR, Cloud Key Gen2+) versus a
 //!   **legacy** standalone Network controller, which differ only in URL prefix

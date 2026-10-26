@@ -11,7 +11,9 @@
 use clap::{Arg, ArgMatches, Command};
 
 use cave_home_hue::v2::color::xy_to_rgb;
-use cave_home_hue::v2::models::scene::{SceneRecall, SceneRecallAction};
+use cave_home_hue::v2::models::scene::SceneRecallAction;
+
+use crate::commands::not_connected::not_connected;
 
 /// Build the `cavehomectl hue <verb>` subcommand tree.
 #[must_use]
@@ -100,67 +102,38 @@ pub fn run() -> i32 {
     dispatch(&cmd().get_matches_from(after), false)
 }
 
-/// Internal dispatcher — exposed for unit tests. The `list-lights` and
-/// `set-scene` verbs link `cave-home-hue` directly (colour maths + the
-/// `SceneRecallAction` CLI contract); the remaining verbs are Phase-2 stubs
-/// wired through the single binary's IPC surface.
+/// Internal dispatcher — exposed for unit tests.
+///
+/// The CLI links only the pure `cave-home-hue` core (colour maths, the
+/// `SceneRecallAction` CLI contract), not the bridge transport, so no verb can
+/// reach a bridge: after validating input each exits `EXIT_NOT_CONNECTED`
+/// rather than showing demo lights or confirming a scene that never switched.
 #[must_use]
 pub fn dispatch(matches: &ArgMatches, verbose: bool) -> i32 {
+    let _ = verbose;
     match matches.subcommand() {
-        Some(("list-lights", _)) => {
-            print!("{}", render_lights(&demo_lights(), verbose));
-            0
-        }
+        Some(("list-lights", _)) => not_connected("hue list-lights"),
         Some(("set-scene", m)) => {
-            let id = m.get_one::<String>("id").map(String::as_str).unwrap_or("");
             let raw = m
                 .get_one::<String>("action")
                 .map_or("active", String::as_str);
-            match SceneRecallAction::from_cli(raw) {
-                Some(action) => {
-                    // The body the bridge would receive on PUT resource/scene/{id}.
-                    let recall = SceneRecall {
-                        action: Some(action),
-                        ..Default::default()
-                    };
-                    debug_assert!(recall.action.is_some());
-                    println!("Scene {id}: {}.", friendly_action(action));
-                    0
-                }
-                None => {
-                    eprintln!(
-                        "I don't know the scene action '{raw}'. Try active, dynamic, static or off."
-                    );
-                    1
-                }
+            if SceneRecallAction::from_cli(raw).is_none() {
+                eprintln!("I don't know the scene action '{raw}'. Try active, dynamic, static or off.");
+                return 1;
             }
+            not_connected("hue set-scene")
         }
         None => {
-            println!("Try `cavehomectl hue list-lights` or `cavehomectl hue set-scene --id <id>`.");
+            println!("Try `cavehomectl hue --help` to see the bridge commands.");
             0
         }
-        // Phase-2 verbs (discover/pair/status/light/group/scene/sensor/events/
-        // bridge-emu) land with the binary's bridge IPC surface.
-        Some(_) => {
-            println!("hue: this command lands in Phase 2 binary integration.");
-            0
-        }
-    }
-}
-
-/// A grandma-friendly label for a recall action (English; Portal renders DE/TR).
-fn friendly_action(action: SceneRecallAction) -> &'static str {
-    match action {
-        SceneRecallAction::Active => "switched on",
-        SceneRecallAction::DynamicPalette => "switched on, colours drifting",
-        SceneRecallAction::Static => "switched on, fixed colours",
-        SceneRecallAction::Deactivate => "switched off",
+        Some((verb, _)) => not_connected(&format!("hue {verb}")),
     }
 }
 
 /// ------- render helpers (pure, test-friendly) -----------------------
 
-/// A demo light row, shown until the bridge transport is wired into the binary.
+/// A light row (the shape the bridge transport will fill).
 /// `xy` is a CIE colour point; the renderer converts it to RGB via the crate's
 /// own colour maths so the CLI and adapter agree on what a colour looks like.
 #[derive(Debug, Clone, Copy)]
@@ -175,7 +148,7 @@ pub struct DemoLight {
     pub xy: (f64, f64),
 }
 
-/// Demo lights for `list-lights`.
+/// Fixture lights for the render tests — never shown as real.
 #[must_use]
 pub fn demo_lights() -> Vec<DemoLight> {
     vec![

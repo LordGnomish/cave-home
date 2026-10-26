@@ -42,9 +42,10 @@ thiserror   = "2"
 tokio       = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "io-util"] }
 tracing     = "0.1"
 
-# Real CLIP-v2 transport (HTTPS REST + Server-Sent Events). The Hue bridge
-# serves a self-signed cert on the LAN, so the default client accepts it; a
-# pinned-CA path is also provided. rustls keeps the build pure-Rust + offline.
+# Real CLIP-v2 transport (HTTPS REST + Server-Sent Events). No public CA
+# vouches for a bridge, so the transport verifies it against the Signify root
+# CA + CN == bridge id, or a pinned fingerprint (cave-home-tls-pin). rustls
+# keeps the build pure-Rust + offline.
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
     "stream",

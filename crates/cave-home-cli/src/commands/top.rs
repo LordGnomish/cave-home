@@ -6,13 +6,11 @@
 //! `metrics_server` pipeline (ADR-004).
 //!
 //! The table layout lives in [`crate::top`]. This module is the clap wiring.
-//! Until the in-process metrics runtime is attached to the CLI process
-//! (ADR-004 phase-1b), the live row source is empty, so the commands render the
-//! honest `No resources found` rather than fabricating usage.
+//! The in-process metrics runtime is not attached to the CLI process yet
+//! (ADR-004 phase-1b), so both verbs exit `EXIT_NOT_CONNECTED` — not "No
+//! resources found", which would claim the cluster was asked and is empty.
 
 use clap::{ArgMatches, Command};
-
-use crate::top::{NodeTopRow, PodTopRow, render_top_nodes, render_top_pods};
 
 #[must_use]
 pub fn cmd() -> Command {
@@ -24,34 +22,18 @@ pub fn cmd() -> Command {
         .subcommand(Command::new("pods").about("CPU / memory usage per workload (device group)"))
 }
 
-/// The live node rows. Phase 1b attaches the in-process metrics pipeline; until
-/// then there is no source and the slice is empty.
+/// Dispatcher entry: no metrics source is attached — say so.
 #[must_use]
-pub const fn live_node_rows() -> Vec<NodeTopRow> {
-    Vec::new()
-}
-
-/// The live pod rows. Empty until the metrics pipeline is attached (phase 1b).
-#[must_use]
-pub const fn live_pod_rows() -> Vec<PodTopRow> {
-    Vec::new()
-}
-
 pub fn run(matches: &ArgMatches, _verbose: bool) -> i32 {
-    match matches.subcommand() {
-        Some(("nodes", _)) => {
-            println!("{}", render_top_nodes(&live_node_rows()));
-            0
-        }
-        Some(("pods", _)) => {
-            println!("{}", render_top_pods(&live_pod_rows(), true));
-            0
-        }
+    let what = match matches.subcommand() {
+        Some(("nodes", _)) => "top nodes",
+        Some(("pods", _)) => "top pods",
         _ => {
             eprintln!("Use: top nodes | top pods");
-            2
+            return 2;
         }
-    }
+    };
+    crate::commands::not_connected::not_connected(what)
 }
 
 #[cfg(test)]
@@ -71,8 +53,8 @@ mod tests {
     }
 
     #[test]
-    fn live_rows_are_empty_until_phase_1b() {
-        assert!(live_node_rows().is_empty());
-        assert!(live_pod_rows().is_empty());
+    fn run_reports_not_connected() {
+        let m = cmd().try_get_matches_from(["top", "nodes"]).unwrap();
+        assert_eq!(run(&m, false), crate::commands::not_connected::EXIT_NOT_CONNECTED);
     }
 }

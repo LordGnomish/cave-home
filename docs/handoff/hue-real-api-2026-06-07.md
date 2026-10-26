@@ -71,6 +71,10 @@ aiohue `v2/controllers/events.py` + `v2/__init__.py` request layer.
 - Self-signed acceptance is `danger_accept_invalid_certs`; a stricter mode that
   pins the bridge-id cert can hang off `with_base_url` + a custom rustls verifier
   later (left out to keep the offline build pure-rustls and the diff focused).
+  **Done 2026-10-26:** `ReqwestTransport::new(host, key, &TlsTrust)` now takes an
+  explicit trust — `signify_bridge_trust(bridge_id)` (Signify root CA + CN =
+  bridge id) or a pinned fingerprint; accept-any is only the named, logged
+  `TlsTrust::DangerousAcceptAnyCertificate` (crate `cave-home-tls-pin`).
 - Discovery (`discovery.rs`) still uses the `HueHttpClient` seam; a reqwest impl
   of *that* trait is a small follow-up (not in scope here).
 - `runtime` is on by default; if a downstream wants the pure core it must set

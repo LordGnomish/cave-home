@@ -12,18 +12,36 @@
 //! Charter v6 §6.3 / ADR-007 rendering rules apply: default output is
 //! grandma-friendly; raw fields (MAC, port id, vlan, GUIDs) appear
 //! only with `--verbose`.
+//!
+//! **Honesty.** Verbs backed by a real `cave-home-unifi` client — `network
+//! devices`, `network clients`, `protect cameras`, `access doors` and the
+//! `live` views — talk to the console. Every other verb (including the door
+//! `unlock` and emergency `lockdown`) has no wired backend: it changes
+//! nothing, prints nothing on stdout and exits `EXIT_NOT_CONNECTED`.
+//!
+//! **TLS.** The consoles present self-signed certificates. The console
+//! password / API key and the Access door-unlock token are only sent to a
+//! console whose certificate matches a pin (`--fingerprint` /
+//! `CAVEHOME_UNIFI_FINGERPRINT`, `--access-fingerprint` /
+//! `CAVEHOME_ACCESS_FINGERPRINT`); read it once with `cavehomectl unifi
+//! fingerprint <host>`. With no pin the CLI refuses, unless `--insecure`
+//! explicitly accepts any certificate (with a warning).
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 
+use std::str::FromStr;
 use std::time::Duration;
 
-use cave_home_unifi::access::{AccessClient, AccessConfig};
+use cave_home_unifi::access::{AccessClient, AccessConfig, DEFAULT_ACCESS_PORT};
 use cave_home_unifi::console::Console;
 use cave_home_unifi::network::NetworkApi;
 use cave_home_unifi::protect::ProtectApi;
 use cave_home_unifi::render::{self, Lang, Section};
+use cave_home_unifi::tls::{PinSet, TlsTrust, capture_presented_certificate};
 use cave_home_unifi::transport::ReqwestTransport;
 use cave_home_unifi::{ConsoleClient, Credentials};
+
+use crate::commands::not_connected::{not_connected, not_connected_with_hint};
 
 /// Build the top-level `unifi` command.
 #[must_use]
@@ -33,11 +51,53 @@ pub fn cmd() -> Command {
     // summary and returns 0.
     Command::new("unifi")
         .about("Control your UniFi network, cameras, doors and intercoms")
+        .arg(
+            Arg::new("fingerprint")
+                .long("fingerprint")
+                .global(true)
+                .env("CAVEHOME_UNIFI_FINGERPRINT")
+                .value_name("SHA256")
+                .help(
+                    "Pinned SHA-256 of the console certificate (from `cavehomectl unifi \
+                     fingerprint <host>`); comma-separate several",
+                ),
+        )
+        .arg(
+            Arg::new("access-fingerprint")
+                .long("access-fingerprint")
+                .global(true)
+                .env("CAVEHOME_ACCESS_FINGERPRINT")
+                .value_name("SHA256")
+                .help("Pinned SHA-256 of the UniFi Access host certificate (default: --fingerprint)"),
+        )
+        .arg(
+            Arg::new("insecure")
+                .long("insecure")
+                .global(true)
+                .action(ArgAction::SetTrue)
+                .help(
+                    "Accept ANY certificate — unsafe: any device on your network can read the \
+                     password and the door token",
+                ),
+        )
         .subcommand(network_cmd())
         .subcommand(protect_cmd())
         .subcommand(access_cmd())
         .subcommand(talk_cmd())
         .subcommand(live_cmd())
+        .subcommand(fingerprint_cmd())
+}
+
+/// `cavehomectl unifi fingerprint <host[:port]>` — trust on first use: show
+/// the certificate a console presents so the household can pin it.
+fn fingerprint_cmd() -> Command {
+    Command::new("fingerprint")
+        .about("Show a console's certificate fingerprint, to pin it (sends no password)")
+        .arg(
+            Arg::new("address")
+                .required(true)
+                .help("Console host or host:port (default port 443; UniFi Access uses 12445)"),
+        )
 }
 
 /// `cavehomectl unifi live <target>` — connect to a real console (configured
@@ -49,11 +109,18 @@ fn live_cmd() -> Command {
             "Reads connection settings from the environment and talks to a real \
              UniFi console via the cave-home-unifi client:\n\
              \n  CAVEHOME_UNIFI_HOST      console host/IP (Network + Protect)\
+             \n  CAVEHOME_UNIFI_PORT      console port (default 443 / legacy 8443)\
              \n  CAVEHOME_UNIFI_API_KEY   API key, or USER+PASS below\
              \n  CAVEHOME_UNIFI_USER / CAVEHOME_UNIFI_PASS\
              \n  CAVEHOME_UNIFI_KIND      unifios (default) | legacy\
              \n  CAVEHOME_UNIFI_SITE      site name (default: default)\
-             \n  CAVEHOME_ACCESS_HOST / CAVEHOME_ACCESS_TOKEN  (for doors)",
+             \n  CAVEHOME_UNIFI_FINGERPRINT  pinned console certificate SHA-256\
+             \n  CAVEHOME_ACCESS_HOST / CAVEHOME_ACCESS_TOKEN  (for doors)\
+             \n  CAVEHOME_ACCESS_PORT     (default 12445)\
+             \n  CAVEHOME_ACCESS_FINGERPRINT  pinned Access certificate SHA-256\
+             \n\
+             \nNothing is sent unless the certificate matches the pin \
+             (`cavehomectl unifi fingerprint <host>` reads it) or --insecure is given.",
         )
         .arg_required_else_help(true)
         .arg(
@@ -178,17 +245,17 @@ pub fn run() -> i32 {
     0
 }
 
-/// Verbose-aware dispatcher (Phase 1: prints help-style summaries
-/// since the wire client isn't connected yet). Phase 2 ticket: pass
-/// each subcommand to the matching crate's `XxxClient`.
+/// Verbose-aware dispatcher: real-client verbs go to `cave-home-unifi`, the
+/// rest report `EXIT_NOT_CONNECTED`.
 #[must_use]
 pub fn run_matched(matches: &ArgMatches, verbose: bool) -> i32 {
     match matches.subcommand() {
         Some(("network", sub)) => dispatch_network(sub, verbose),
         Some(("protect", sub)) => dispatch_protect(sub, verbose),
         Some(("access", sub)) => dispatch_access(sub, verbose),
-        Some(("talk", sub)) => dispatch_talk(sub, verbose),
+        Some(("talk", sub)) => dispatch_talk(sub),
         Some(("live", sub)) => dispatch_live(sub, verbose),
+        Some(("fingerprint", sub)) => dispatch_fingerprint(sub),
         // No sub-pillar: keep the cross-agent contract — print the summary and
         // succeed (the same behaviour the bare `unifi::run()` gives).
         None => run(),
@@ -201,98 +268,24 @@ pub fn run_matched(matches: &ArgMatches, verbose: bool) -> i32 {
 
 fn dispatch_network(sub: &ArgMatches, verbose: bool) -> i32 {
     match sub.subcommand() {
-        Some(("status", _)) => {
-            println!("UniFi Network: Wi-Fi sağlıklı (demo).");
-            if verbose {
-                println!("  controller: not connected (Phase 2 wire-up pending)");
-            }
-            0
-        }
-        Some(("devices", _)) => {
-            println!("Cihazlar:");
-            println!("  • Salon switch (Switch)");
-            println!("  • Üst kat Wi-Fi noktası (Wi-Fi noktası)");
-            if verbose {
-                println!("  ^-- demo data; wire-side fetch is Phase 2");
-            }
-            0
-        }
-        Some(("clients", _)) => {
-            println!("Bağlı cihazlar:");
-            println!("  • Anne iPhone");
-            println!("  • Salon TV");
-            0
-        }
-        Some(("block", m)) | Some(("unblock", m)) => {
-            let mac = m.get_one::<String>("mac").map(String::as_str).unwrap_or("");
-            let verb = if sub.subcommand_name() == Some("block") {
-                "engellendi"
-            } else {
-                "engel kaldırıldı"
-            };
-            println!("Cihaz {verb} (Phase 1 stub).");
-            if verbose {
-                println!("  raw mac: {mac}");
-            }
-            0
-        }
-        Some(("outlet", m)) => {
-            let on = m.get_flag("on");
-            let device = m.get_one::<String>("device").map(String::as_str).unwrap_or("");
-            let idx = m.get_one::<String>("idx").map(String::as_str).unwrap_or("");
-            println!(
-                "Outlet {} (Phase 1 stub).",
-                if on { "açıldı" } else { "kapandı" }
-            );
-            if verbose {
-                println!("  raw device {device} port {idx}");
-            }
-            0
-        }
+        Some(("devices", m)) => run_live_target(m, LiveTarget::DEVICES, verbose),
+        Some(("clients", m)) => run_live_target(m, LiveTarget::CLIENTS, verbose),
+        Some(("status", _)) => not_connected("unifi network status"),
+        Some(("block", _)) => not_connected("unifi network block"),
+        Some(("unblock", _)) => not_connected("unifi network unblock"),
+        Some(("outlet", _)) => not_connected("unifi network outlet"),
         _ => 2,
     }
 }
 
 fn dispatch_protect(sub: &ArgMatches, verbose: bool) -> i32 {
     match sub.subcommand() {
-        Some(("status", _)) => {
-            println!("UniFi Protect: NVR ulaşılabilir (demo).");
-            if verbose {
-                println!("  REST bootstrap: Phase 2 wire-up pending");
-            }
-            0
-        }
-        Some(("cameras", _)) => {
-            println!("Kameralar:");
-            println!("  • Salon kamerası");
-            println!("  • Ön kapı kamerası");
-            0
-        }
-        Some(("events", _)) => {
-            println!("Son olaylar: (demo)");
-            println!("  • Ön kapı zili çaldı");
-            println!("  • Salon kamerasında hareket");
-            0
-        }
+        Some(("cameras", m)) => run_live_target(m, LiveTarget::CAMERAS, verbose),
+        Some(("status", _)) => not_connected("unifi protect status"),
+        Some(("events", _)) => not_connected("unifi protect events"),
         Some(("seam", seam_sub)) => match seam_sub.subcommand() {
-            Some(("list", _)) => {
-                println!("Frigate seam (kamera→sistem):");
-                println!("  • Salon kamerası → UniFi Protect (Native)");
-                println!("  • Garaj RTSP    → Frigate ML");
-                0
-            }
-            Some(("assign", m)) => {
-                let cam = m.get_one::<String>("camera").map(String::as_str).unwrap_or("");
-                let sys = m
-                    .get_one::<String>("subsystem")
-                    .map(String::as_str)
-                    .unwrap_or("");
-                println!("Kamera '{cam}' → '{sys}' atandı (Phase 1 stub).");
-                if verbose {
-                    println!("  persistence: in-memory only, M2 ticket");
-                }
-                0
-            }
+            Some(("list", _)) => not_connected("unifi protect seam list"),
+            Some(("assign", _)) => not_connected("unifi protect seam assign"),
             _ => 2,
         },
         _ => 2,
@@ -301,68 +294,29 @@ fn dispatch_protect(sub: &ArgMatches, verbose: bool) -> i32 {
 
 fn dispatch_access(sub: &ArgMatches, verbose: bool) -> i32 {
     match sub.subcommand() {
-        Some(("status", _)) => {
-            println!("UniFi Access: hub bağlı, acil durum yok (demo).");
-            0
-        }
-        Some(("doors", _)) => {
-            println!("Kapılar:");
-            println!("  • Ön kapı (kilitli)");
-            println!("  • Garaj kapısı (kilitli)");
-            0
-        }
-        Some(("events", _)) => {
-            println!("Son geçiş olayları: (demo)");
-            println!("  • Ön kapı zili çaldı");
-            println!("  • Garaj kapısı açıldı (Burak)");
-            0
-        }
-        Some(("unlock", m)) => {
-            let door = m.get_one::<String>("door").map(String::as_str).unwrap_or("");
-            let minutes = m.get_one::<u32>("minutes").copied().unwrap_or(10);
-            println!("Kapı '{door}' {minutes} dakika açık kalacak (Phase 1 stub).");
-            if verbose {
-                println!("  lock_rule: type=unlock interval={minutes}");
-            }
-            0
-        }
-        Some(("lockdown", m)) => {
-            let on = m.get_flag("on");
-            println!(
-                "Acil durum kilitlemesi {}.",
-                if on { "etkin" } else { "kaldırıldı" }
-            );
-            0
-        }
+        Some(("doors", m)) => run_live_target(m, LiveTarget::Doors, verbose),
+        Some(("status", _)) => not_connected("unifi access status"),
+        Some(("events", _)) => not_connected("unifi access events"),
+        Some(("unlock", _)) => not_connected_with_hint(
+            "unifi access unlock",
+            "Kapıyı UniFi Access uygulamasından açın.",
+            "Unlock the door from the UniFi Access app.",
+        ),
+        Some(("lockdown", _)) => not_connected_with_hint(
+            "unifi access lockdown",
+            "Acil durum kilitlemesi için UniFi Access uygulamasını kullanın.",
+            "For an emergency lockdown use the UniFi Access app.",
+        ),
         _ => 2,
     }
 }
 
-fn dispatch_talk(sub: &ArgMatches, verbose: bool) -> i32 {
+fn dispatch_talk(sub: &ArgMatches) -> i32 {
     match sub.subcommand() {
-        Some(("status", _)) => {
-            println!("UniFi Talk: hub bağlı, aktif çağrı yok (demo).");
-            0
-        }
-        Some(("phones", _)) => {
-            println!("Telefonlar:");
-            println!("  • Mutfak interkomu (dahili 100)");
-            println!("  • Salon interkomu (dahili 101)");
-            0
-        }
-        Some(("incoming", _)) => {
-            println!("Gelen çağrı yok (demo).");
-            0
-        }
-        Some(("control", m)) => {
-            let call = m.get_one::<String>("call").map(String::as_str).unwrap_or("");
-            let verb = m.get_one::<String>("verb").map(String::as_str).unwrap_or("");
-            println!("Çağrı '{call}' için '{verb}' isteği gönderildi (Phase 1 stub).");
-            if verbose {
-                println!("  Phase 1: TalkClient::control_call returns Unavailable");
-            }
-            0
-        }
+        Some(("status", _)) => not_connected("unifi talk status"),
+        Some(("phones", _)) => not_connected("unifi talk phones"),
+        Some(("incoming", _)) => not_connected("unifi talk incoming"),
+        Some(("control", _)) => not_connected("unifi talk control"),
         _ => 2,
     }
 }
@@ -371,25 +325,68 @@ fn dispatch_talk(sub: &ArgMatches, verbose: bool) -> i32 {
 // live — the real cave-home-unifi client path (4-track integration).
 // ---------------------------------------------------------------------------
 
-/// Connection settings for the live console, read from the environment.
-struct LiveConfig {
+/// A view served by the Network / Protect console.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConsoleView {
+    Devices,
+    Clients,
+    Cameras,
+}
+
+/// A live view backed by a real `cave-home-unifi` client.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LiveTarget {
+    /// Network / Protect, on the console (`CAVEHOME_UNIFI_*`).
+    Console(ConsoleView),
+    /// Doors, on the Access host (`CAVEHOME_ACCESS_*`).
+    Doors,
+}
+
+impl LiveTarget {
+    const DEVICES: Self = Self::Console(ConsoleView::Devices);
+    const CLIENTS: Self = Self::Console(ConsoleView::Clients);
+    const CAMERAS: Self = Self::Console(ConsoleView::Cameras);
+
+    fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "devices" => Some(Self::DEVICES),
+            "clients" => Some(Self::CLIENTS),
+            "cameras" => Some(Self::CAMERAS),
+            "doors" => Some(Self::Doors),
+            _ => None,
+        }
+    }
+}
+
+fn env_port(var: &str) -> Result<Option<u16>, String> {
+    std::env::var(var).ok().map_or(Ok(None), |raw| {
+        raw.trim()
+            .parse::<u16>()
+            .map(Some)
+            .map_err(|_| format!("{var} must be a port number, got {raw:?}"))
+    })
+}
+
+/// Network / Protect console settings, read from `CAVEHOME_UNIFI_*`.
+struct ConsoleEnv {
     console: Console,
     site: String,
     creds: Credentials,
-    access: Option<(String, String)>,
 }
 
-impl LiveConfig {
-    /// Build from `CAVEHOME_UNIFI_*` / `CAVEHOME_ACCESS_*` environment.
+impl ConsoleEnv {
     fn from_env() -> Result<Self, String> {
         let host = std::env::var("CAVEHOME_UNIFI_HOST")
             .map_err(|_| "set CAVEHOME_UNIFI_HOST to your console IP/hostname".to_string())?;
         let kind = std::env::var("CAVEHOME_UNIFI_KIND").unwrap_or_else(|_| "unifios".into());
-        let console = if kind.eq_ignore_ascii_case("legacy") {
+        let mut console = if kind.eq_ignore_ascii_case("legacy") {
             Console::legacy(host)
         } else {
             Console::unifi_os(host)
         };
+        if let Some(port) = env_port("CAVEHOME_UNIFI_PORT")? {
+            console = console.with_port(port);
+        }
         let site = std::env::var("CAVEHOME_UNIFI_SITE").unwrap_or_else(|_| "default".into());
         let creds = if let Ok(key) = std::env::var("CAVEHOME_UNIFI_API_KEY") {
             Credentials::api_key(key)
@@ -402,31 +399,100 @@ impl LiveConfig {
                 .map_err(|_| "set CAVEHOME_UNIFI_PASS".to_string())?;
             Credentials::password(user, pass)
         };
-        let access = match (
-            std::env::var("CAVEHOME_ACCESS_HOST"),
-            std::env::var("CAVEHOME_ACCESS_TOKEN"),
-        ) {
-            (Ok(h), Ok(t)) => Some((h, t)),
-            _ => None,
-        };
         Ok(Self {
             console,
             site,
             creds,
-            access,
         })
     }
+}
+
+/// Access (door) host settings, read from `CAVEHOME_ACCESS_*`.
+fn access_from_env() -> Result<AccessConfig, String> {
+    let (Ok(host), Ok(token)) = (
+        std::env::var("CAVEHOME_ACCESS_HOST"),
+        std::env::var("CAVEHOME_ACCESS_TOKEN"),
+    ) else {
+        return Err("set CAVEHOME_ACCESS_HOST + CAVEHOME_ACCESS_TOKEN".into());
+    };
+    let port = env_port("CAVEHOME_ACCESS_PORT")?.unwrap_or(DEFAULT_ACCESS_PORT);
+    Ok(AccessConfig::new(host, token).with_port(port))
+}
+
+/// Which host's pin applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PinFor {
+    Console,
+    Access,
+}
+
+/// Resolve the TLS trust for `which` from the (global) `--fingerprint`,
+/// `--access-fingerprint` and `--insecure` args. With no pin and no
+/// `--insecure` this refuses — credentials are never sent unverified.
+fn trust_for(m: &ArgMatches, which: PinFor) -> Result<TlsTrust, String> {
+    let console_pin = m.get_one::<String>("fingerprint");
+    let (pins, env_name) = match which {
+        PinFor::Console => (console_pin, "CAVEHOME_UNIFI_FINGERPRINT"),
+        PinFor::Access => (
+            m.get_one::<String>("access-fingerprint").or(console_pin),
+            "CAVEHOME_ACCESS_FINGERPRINT",
+        ),
+    };
+    if let Some(raw) = pins {
+        let set = PinSet::from_str(raw).map_err(|e| format!("bad certificate fingerprint ({env_name}): {e}"))?;
+        return TlsTrust::pinned(set).map_err(|e| e.to_string());
+    }
+    if m.get_flag("insecure") {
+        eprintln!(
+            "UYARI: --insecure — sertifika doğrulaması KAPALI; ağınızdaki herhangi bir cihaz şifreyi ve kapı anahtarını okuyabilir."
+        );
+        eprintln!(
+            "WARNING: --insecure — certificate verification is OFF; any device on your network can read the password and the door token."
+        );
+        return Ok(TlsTrust::dangerous_accept_any_certificate());
+    }
+    Err(format!(
+        "sertifika sabitlenmemiş — şifre / anahtar gönderilmedi.\n\
+         no certificate is pinned for this host — refusing to send the password, API key or door token.\n  \
+         Pin it: run `cavehomectl unifi fingerprint <host>`, compare with the console, then set {env_name}.\n  \
+         Or knowingly accept any certificate on your network: --insecure"
+    ))
 }
 
 fn dispatch_live(sub: &ArgMatches, verbose: bool) -> i32 {
     let target = sub
         .get_one::<String>("target")
-        .map(String::as_str)
-        .unwrap_or("devices");
-    let cfg = match LiveConfig::from_env() {
-        Ok(cfg) => cfg,
+        .and_then(|t| LiveTarget::parse(t))
+        .unwrap_or(LiveTarget::DEVICES);
+    run_live_target(sub, target, verbose)
+}
+
+/// Everything resolved before a single byte goes on the wire.
+enum Prepared {
+    Console(ConsoleEnv, TlsTrust, ConsoleView),
+    Access(AccessConfig, TlsTrust),
+}
+
+fn prepare(m: &ArgMatches, target: LiveTarget) -> Result<Prepared, String> {
+    match target {
+        LiveTarget::Doors => {
+            let cfg = access_from_env()?;
+            Ok(Prepared::Access(cfg, trust_for(m, PinFor::Access)?))
+        }
+        LiveTarget::Console(view) => {
+            let env = ConsoleEnv::from_env()?;
+            Ok(Prepared::Console(env, trust_for(m, PinFor::Console)?, view))
+        }
+    }
+}
+
+/// Configuration and TLS trust are resolved first; only then is a runtime
+/// started and the console contacted.
+fn run_live_target(m: &ArgMatches, target: LiveTarget, verbose: bool) -> i32 {
+    let prepared = match prepare(m, target) {
+        Ok(p) => p,
         Err(why) => {
-            eprintln!("unifi live: {why}");
+            eprintln!("unifi: {why}");
             return 2;
         }
     };
@@ -436,102 +502,136 @@ fn dispatch_live(sub: &ArgMatches, verbose: bool) -> i32 {
     {
         Ok(rt) => rt,
         Err(e) => {
-            eprintln!("unifi live: could not start async runtime: {e}");
+            eprintln!("unifi: could not start async runtime: {e}");
             return 1;
         }
     };
-    runtime.block_on(run_live(&cfg, target, verbose))
+    match prepared {
+        Prepared::Console(env, trust, view) => runtime.block_on(run_console(&env, &trust, view, verbose)),
+        Prepared::Access(cfg, trust) => runtime.block_on(run_doors(cfg, &trust)),
+    }
 }
 
-async fn run_live(cfg: &LiveConfig, target: &str, verbose: bool) -> i32 {
-    let transport = match ReqwestTransport::new(Duration::from_secs(15), &cave_home_unifi::tls::TlsTrust::dangerous_accept_any_certificate()) {
+async fn run_console(env: &ConsoleEnv, trust: &TlsTrust, view: ConsoleView, verbose: bool) -> i32 {
+    let transport = match ReqwestTransport::new(Duration::from_secs(15), trust) {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("unifi live: {e}");
+            eprintln!("unifi: {e}");
             return 1;
         }
     };
-    let client = ConsoleClient::new(cfg.console.clone(), transport, cfg.creds.clone());
+    let client = ConsoleClient::new(env.console.clone(), transport, env.creds.clone());
     if let Err(e) = client.login().await {
-        eprintln!("unifi live: login failed: {e}");
+        eprintln!("unifi: login failed: {e}");
         return 1;
     }
     let lang = Lang::Tr;
-    match target {
-        "devices" => {
-            match NetworkApi::new(&client).devices(&cfg.site).await {
-                Ok(devices) => {
-                    println!("{}", render::header(Section::Devices, lang));
-                    for d in &devices {
-                        println!("{}", render::device_line(d, lang));
-                    }
-                    if verbose {
-                        println!("  ({} devices on site {})", devices.len(), cfg.site);
-                    }
-                    0
-                }
-                Err(e) => {
-                    eprintln!("unifi live: {e}");
-                    1
-                }
+    let lines = match view {
+        ConsoleView::Devices => NetworkApi::new(&client).devices(&env.site).await.map(|devices| {
+            let mut out: Vec<String> = devices.iter().map(|d| render::device_line(d, lang)).collect();
+            if verbose {
+                out.push(format!("  ({} devices on site {})", devices.len(), env.site));
             }
+            (Section::Devices, out)
+        }),
+        ConsoleView::Clients => NetworkApi::new(&client)
+            .clients(&env.site)
+            .await
+            .map(|clients| (Section::Clients, clients.iter().map(|c| render::client_line(c, lang)).collect())),
+        ConsoleView::Cameras => ProtectApi::new(&client)
+            .cameras()
+            .await
+            .map(|cams| (Section::Cameras, cams.iter().map(|c| render::camera_line(c, lang)).collect())),
+    };
+    match lines {
+        Ok((section, lines)) => {
+            println!("{}", render::header(section, lang));
+            for line in lines {
+                println!("{line}");
+            }
+            0
         }
-        "clients" => match NetworkApi::new(&client).clients(&cfg.site).await {
-            Ok(clients) => {
-                println!("{}", render::header(Section::Clients, lang));
-                for c in &clients {
-                    println!("{}", render::client_line(c, lang));
-                }
-                0
-            }
-            Err(e) => {
-                eprintln!("unifi live: {e}");
-                1
-            }
-        },
-        "cameras" => match ProtectApi::new(&client).cameras().await {
-            Ok(cameras) => {
-                println!("{}", render::header(Section::Cameras, lang));
-                for cam in &cameras {
-                    println!("{}", render::camera_line(cam, lang));
-                }
-                0
-            }
-            Err(e) => {
-                eprintln!("unifi live: {e}");
-                1
-            }
-        },
-        "doors" => {
-            let Some((host, token)) = &cfg.access else {
-                eprintln!("unifi live doors: set CAVEHOME_ACCESS_HOST + CAVEHOME_ACCESS_TOKEN");
-                return 2;
-            };
-            let access = AccessClient::new(
-                AccessConfig::new(host.clone(), token.clone()),
-                match ReqwestTransport::new(Duration::from_secs(15), &cave_home_unifi::tls::TlsTrust::dangerous_accept_any_certificate()) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        eprintln!("unifi live: {e}");
-                        return 1;
-                    }
-                },
-            );
-            match access.doors().await {
-                Ok(doors) => {
-                    println!("{}", render::header(Section::Doors, lang));
-                    for d in &doors {
-                        println!("{}", render::door_line(d, lang));
-                    }
-                    0
-                }
-                Err(e) => {
-                    eprintln!("unifi live: {e}");
-                    1
-                }
-            }
+        Err(e) => {
+            eprintln!("unifi: {e}");
+            1
         }
-        _ => 2,
+    }
+}
+
+async fn run_doors(cfg: AccessConfig, trust: &TlsTrust) -> i32 {
+    let transport = match ReqwestTransport::new(Duration::from_secs(15), trust) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("unifi: {e}");
+            return 1;
+        }
+    };
+    let lang = Lang::Tr;
+    match AccessClient::new(cfg, transport).doors().await {
+        Ok(doors) => {
+            println!("{}", render::header(Section::Doors, lang));
+            for d in &doors {
+                println!("{}", render::door_line(d, lang));
+            }
+            0
+        }
+        Err(e) => {
+            eprintln!("unifi: {e}");
+            1
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// fingerprint — trust on first use for onboarding.
+// ---------------------------------------------------------------------------
+
+/// Split `host[:port]` (IPv6 as `[addr]:port`) into the TLS name and a
+/// connectable `host:port`.
+fn split_host_port(raw: &str, default_port: u16) -> (String, String) {
+    let raw = raw.trim();
+    if let Some(rest) = raw.strip_prefix('[') {
+        if let Some((host, tail)) = rest.split_once(']') {
+            let port = tail.strip_prefix(':').and_then(|p| p.parse().ok()).unwrap_or(default_port);
+            return (host.to_owned(), format!("[{host}]:{port}"));
+        }
+    }
+    match raw.rsplit_once(':') {
+        Some((host, port)) if !host.contains(':') => port.parse::<u16>().map_or_else(
+            |_| (raw.to_owned(), format!("{raw}:{default_port}")),
+            |port| (host.to_owned(), format!("{host}:{port}")),
+        ),
+        Some(_) => (raw.to_owned(), format!("[{raw}]:{default_port}")),
+        None => (raw.to_owned(), format!("{raw}:{default_port}")),
+    }
+}
+
+fn dispatch_fingerprint(sub: &ArgMatches) -> i32 {
+    let raw = sub.get_one::<String>("address").map_or("", String::as_str);
+    let (host, addr) = split_host_port(raw, 443);
+    let env_name = if addr.ends_with(&format!(":{DEFAULT_ACCESS_PORT}")) {
+        "CAVEHOME_ACCESS_FINGERPRINT"
+    } else {
+        "CAVEHOME_UNIFI_FINGERPRINT"
+    };
+    match capture_presented_certificate(&addr, &host, Duration::from_secs(10)) {
+        Ok(cert) => {
+            println!("Sertifika parmak izi (SHA-256) / Certificate fingerprint (SHA-256):");
+            println!("  {}", cert.certificate_sha256());
+            if let Some(pin) = cert.public_key_pin() {
+                println!("Açık anahtar pini / Public-key pin (survives a re-issue with the same key):");
+                println!("  {pin}");
+            }
+            println!();
+            println!("Konsolun kendi ekranındaki parmak iziyle karşılaştırın; aynıysa sabitleyin:");
+            println!("Compare it with the fingerprint the console itself shows; if they match, pin it:");
+            println!("  export {env_name}={}", cert.certificate_sha256());
+            0
+        }
+        Err(e) => {
+            eprintln!("unifi fingerprint: {addr}: {e}");
+            1
+        }
     }
 }
 
@@ -611,6 +711,48 @@ mod tests {
                 .try_get_matches_from(["unifi", "live", "devices"])
                 .unwrap();
             assert_eq!(run_matched(&m, false), 2);
+        }
+    }
+
+    #[test]
+    fn split_host_port_handles_defaults_ports_and_ipv6() {
+        assert_eq!(split_host_port("10.0.0.1", 443), ("10.0.0.1".into(), "10.0.0.1:443".into()));
+        assert_eq!(split_host_port("console:8443", 443), ("console".into(), "console:8443".into()));
+        assert_eq!(split_host_port("[fe80::1]:12445", 443), ("fe80::1".into(), "[fe80::1]:12445".into()));
+        assert_eq!(split_host_port("fe80::1", 443), ("fe80::1".into(), "[fe80::1]:443".into()));
+    }
+
+    fn live_matches(extra: &[&str]) -> ArgMatches {
+        let mut argv = vec!["unifi", "live", "devices"];
+        argv.extend_from_slice(extra);
+        let m = cmd().try_get_matches_from(argv).unwrap();
+        m.subcommand_matches("live").unwrap().clone()
+    }
+
+    #[test]
+    fn trust_refuses_without_a_pin_or_insecure() {
+        if std::env::var("CAVEHOME_UNIFI_FINGERPRINT").is_err() {
+            let err = trust_for(&live_matches(&[]), PinFor::Console).unwrap_err();
+            assert!(err.contains("CAVEHOME_UNIFI_FINGERPRINT") && err.contains("--insecure"));
+        }
+    }
+
+    #[test]
+    fn trust_uses_the_pin_and_access_falls_back_to_it() {
+        let fp = cave_home_unifi::tls::Sha256Fingerprint::of(b"console").to_string();
+        let m = live_matches(&["--fingerprint", &fp]);
+        assert!(matches!(trust_for(&m, PinFor::Console), Ok(TlsTrust::Pinned(_))));
+        if std::env::var("CAVEHOME_ACCESS_FINGERPRINT").is_err() {
+            assert_eq!(trust_for(&m, PinFor::Access).unwrap(), trust_for(&m, PinFor::Console).unwrap());
+        }
+        assert!(trust_for(&live_matches(&["--fingerprint", "nope"]), PinFor::Console).is_err());
+    }
+
+    #[test]
+    fn insecure_is_the_only_way_to_skip_verification() {
+        if std::env::var("CAVEHOME_UNIFI_FINGERPRINT").is_err() {
+            let t = trust_for(&live_matches(&["--insecure"]), PinFor::Console).unwrap();
+            assert!(t.is_dangerous());
         }
     }
 

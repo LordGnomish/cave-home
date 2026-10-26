@@ -1,0 +1,53 @@
+# cave-home-tls-pin — first-party manifest (no upstream port).
+#
+# TLS trust for LAN appliances that present certificates no public CA vouches
+# for (UniFi consoles: self-signed; Hue bridges: Signify private root, CN =
+# bridge id). Created for review finding Y6 (2026-10-19): the UniFi and Hue
+# transports accepted ANY certificate, so a compromised device on the LAN
+# could read the UniFi admin password / API key and the Access door-unlock
+# bearer token, and the Hue application key.
+#
+# Port method: first-party, built on rustls 0.23 (ServerCertVerifier) and
+# rustls-webpki 0.103 (chain building) — no code copied from elsewhere. The
+# pin text formats follow `openssl x509 -fingerprint -sha256` (certificate)
+# and curl `--pinnedpubkey sha256//` (public key).
+
+[crate]
+name             = "cave-home-tls-pin"
+upstream_repo    = "none"
+port_method      = "first-party"
+upstream_license = "n/a"
+spec_sources     = [
+    "RFC 5280 §4.1 — certificate / SubjectPublicKeyInfo / Name (RDNSequence) structure",
+    "RFC 7469 §2.4 — SHA-256 SPKI pin semantics (as used by curl --pinnedpubkey)",
+    "rustls 0.23 ServerCertVerifier contract (handshake signatures still verified)",
+]
+ported_at        = "2026-10-26"
+linux_min_kernel = "7.1"
+
+[ratios]
+# fill is against the crate's own scope: pinning (certificate + public key,
+# any-of sets, parse/print), private-CA + common-name verification, TOFU
+# capture, the explicit logged no-verify opt-in, rustls ClientConfig for
+# reqwest / tokio-tungstenite. All implemented and tested against real
+# handshakes (rcgen, offline). The unmapped items below belong to callers.
+fill_ratio              = 0.90
+fill_ratio_basis        = "PinnedCertVerifier + CommonNameCaVerifier + AcceptAnyCertificate (logged) + TlsTrust::client_config + PinSet/Pin/Sha256Fingerprint parse/print + TOFU capture + minimal DER CN reader, all tested; pin persistence / onboarding UI and revocation are out of this crate"
+test_port_ratio         = 0.0   # tests designed first-party, not ported
+adr_justified_ratio     = 1.00  # every unmapped item carries priority + note
+honest_ratio            = 1.00  # computed: fill / (fill + (1-fill)*(1-adr_justified))
+
+[[unmapped]]
+area     = "Pin persistence + Portal onboarding flow (show fingerprint, household confirms, store pin)"
+priority = "phase-2"
+note     = "This crate captures and verifies; storing the confirmed pin in the hub config and the grandma-friendly Portal confirm step belong to cave-home-portal / cave-home-binary. Today the CLI takes pins from CAVEHOME_UNIFI_FINGERPRINT / CAVEHOME_ACCESS_FINGERPRINT and `cavehomectl unifi fingerprint` prints them."
+
+[[unmapped]]
+area     = "Revocation (OCSP / CRL) on the private-CA path"
+priority = "permanent"
+note     = "LAN appliances publish no revocation data (the Signify bridge root has no CRL/OCSP endpoint reachable without the cloud — Charter §9). Pins are rotated by re-pinning instead."
+
+[[unmapped]]
+area     = "Pinned-certificate expiry check"
+priority = "permanent"
+note     = "Deliberate: a pinned self-signed console certificate is the identity; consoles mint them once for decades. Handshake signatures are still verified, so possession of the pinned key is always proven."

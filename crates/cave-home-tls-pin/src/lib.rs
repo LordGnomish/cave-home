@@ -3,11 +3,11 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 //! `cave-home-tls-pin` — TLS trust for LAN appliances.
 //!
-//! UniFi consoles and Philips Hue bridges serve HTTPS behind certificates no
-//! public CA vouches for, so "verify against the WebPKI" always fails and
+//! `UniFi` consoles and Philips Hue bridges serve HTTPS behind certificates no
+//! public CA vouches for, so "verify against the public CAs" always fails and
 //! "accept anything" hands every admin password and door-unlock token to
 //! whoever answers on the LAN (the charter's threat model includes a
-//! compromised IoT device on the same network). This crate is the middle path:
+//! compromised `IoT` device on the same network). This crate is the middle path:
 //!
 //! - [`TlsTrust::Pinned`] — accept exactly the certificate (or public key) the
 //!   household pinned, by SHA-256 fingerprint. The server must still prove it

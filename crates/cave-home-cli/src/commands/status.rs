@@ -5,6 +5,11 @@
 //!
 //! ADR-007 mandates we render this in home-world vocabulary by
 //! default. Pod / node / kubelet names live behind `--verbose`.
+//!
+//! The CLI has no connection to the hub's health sources yet, so `status`
+//! says so and exits `EXIT_NOT_CONNECTED` — it never prints "All good" for a
+//! home it did not look at. [`render`] (tested on fixture rows) is what the
+//! live gatherer will feed.
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 
@@ -59,9 +64,8 @@ pub fn cmd() -> Command {
         )
 }
 
-/// Placeholder gatherer — Phase 2b will hit
-/// `cave-home-apiserver-rs` for the real picture. Test seam: this
-/// function is the one we mock.
+/// Fixture rows for the [`render`] tests — **not** shown to the user; the
+/// live gatherer (Phase 2b, via `cave-home-apiserver-rs`) replaces it.
 #[must_use]
 pub fn gather_demo_status() -> Vec<StatusRow> {
     vec![
@@ -110,17 +114,12 @@ pub fn render(rows: &[StatusRow], verbose: bool) -> String {
     out
 }
 
-/// Dispatcher entry.
-pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
-    let _watch = matches.get_flag("watch"); // Phase 2b: loop with sleep.
-    let rows = gather_demo_status();
-    print!("{}", render(&rows, verbose));
-    // Exit code: 0 if all rows OK or Warn; 1 if any are Down.
-    if rows.iter().any(|r| r.health == Health::Down) {
-        1
-    } else {
-        0
-    }
+/// Dispatcher entry. No health source is connected: report that, never a
+/// made-up "All good".
+#[must_use]
+pub fn run(matches: &ArgMatches, _verbose: bool) -> i32 {
+    let _watch = matches.get_flag("watch");
+    crate::commands::not_connected::not_connected("status")
 }
 
 #[cfg(test)]

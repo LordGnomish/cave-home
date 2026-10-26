@@ -34,9 +34,10 @@ pub fn cmd() -> Command {
 }
 
 /// Default no-op handler — Phase 2 wires this to cave-home-knx::gateway.
+/// No backend is wired into the CLI for this verb yet: say so, change nothing.
+#[must_use]
 pub fn run() -> i32 {
-    println!("knx: gateway not yet attached — Phase 2b.");
-    0
+    crate::commands::not_connected::not_connected("knx")
 }
 
 #[cfg(test)]

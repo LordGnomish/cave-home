@@ -2,6 +2,10 @@
 // Copyright 2026 cave-home contributors
 //
 //! `cavehomectl automation {list,enable,disable}` — automation surface.
+//!
+//! The automation engine is not connected to the CLI yet: every verb exits
+//! `EXIT_NOT_CONNECTED` and changes nothing (no "'Tatil modu' is now ON." for
+//! an automation nobody touched). [`render_list`] is tested on fixture rows.
 
 use clap::{Arg, ArgMatches, Command};
 
@@ -13,6 +17,7 @@ pub struct Automation {
     pub technical_id: String,
 }
 
+/// Fixture rows for the render tests — never shown as real.
 #[must_use]
 pub fn demo_automations() -> Vec<Automation> {
     vec![
@@ -78,33 +83,19 @@ pub fn cmd() -> Command {
         )
 }
 
-pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
-    match matches.subcommand() {
-        Some(("list", _)) => {
-            print!("{}", render_list(&demo_automations(), verbose));
-            0
-        }
-        Some(("enable", sub)) => {
-            let Some(name) = sub.get_one::<String>("name") else {
-                eprintln!("Internal: missing automation name.");
-                return 2;
-            };
-            println!("'{name}' is now ON.");
-            0
-        }
-        Some(("disable", sub)) => {
-            let Some(name) = sub.get_one::<String>("name") else {
-                eprintln!("Internal: missing automation name.");
-                return 2;
-            };
-            println!("'{name}' is now OFF.");
-            0
-        }
+/// Dispatcher entry: no automation engine is connected — say so.
+#[must_use]
+pub fn run(matches: &ArgMatches, _verbose: bool) -> i32 {
+    let what = match matches.subcommand() {
+        Some(("list", _)) => "automation list",
+        Some(("enable", _)) => "automation enable",
+        Some(("disable", _)) => "automation disable",
         _ => {
             eprintln!("Use one of: list, enable, disable");
-            2
+            return 2;
         }
-    }
+    };
+    crate::commands::not_connected::not_connected(what)
 }
 
 #[cfg(test)]
