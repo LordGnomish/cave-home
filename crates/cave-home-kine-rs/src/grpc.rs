@@ -1162,6 +1162,9 @@ fn status(err: KineError) -> Status {
         | KineError::NegativeRevision { .. }
         | KineError::InvalidLeaseId
         | KineError::InvalidTtl { .. } => Code::InvalidArgument,
+        // etcd's `rpctypes.ErrGRPCDuplicateKey` is InvalidArgument; a Compare
+        // whose operand kind does not match its target is malformed likewise.
+        KineError::TxnCompareTypeMismatch | KineError::TxnDuplicateKey => Code::InvalidArgument,
         KineError::Backend { .. } => Code::Internal,
     };
     Status::new(code, err.to_string())
@@ -1442,6 +1445,19 @@ mod tests {
         let resp = s.range(Request::new(req)).await.unwrap().into_inner();
         assert_eq!(resp.kvs[0].key, b"/k");
         assert!(resp.kvs[0].value.is_empty());
+    }
+
+    #[test]
+    fn txn_validation_errors_are_invalid_argument() {
+        for err in [
+            KineError::TxnCompareTypeMismatch,
+            KineError::TxnDuplicateKey,
+        ] {
+            let msg = err.to_string();
+            let st = status(err);
+            assert_eq!(st.code(), Code::InvalidArgument);
+            assert_eq!(st.message(), msg);
+        }
     }
 
     #[tokio::test]
