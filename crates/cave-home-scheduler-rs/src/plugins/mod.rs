@@ -112,17 +112,15 @@ impl crate::framework::FilterPlugin for NodeAffinityFilter {
         }
 
         // Required node affinity.
-        if let Some(aff) = pod.spec.affinity.as_ref() {
-            if let Some(na) = aff.node_affinity.as_ref() {
-                if let Some(req) = na.required_during_scheduling.as_ref() {
-                    if !req.matches(labels) {
-                        return crate::framework::Status::unresolvable(
-                            self.name(),
-                            "required node affinity does not match",
-                        );
-                    }
-                }
-            }
+        if let Some(aff) = pod.spec.affinity.as_ref()
+            && let Some(na) = aff.node_affinity.as_ref()
+            && let Some(req) = na.required_during_scheduling.as_ref()
+            && !req.matches(labels)
+        {
+            return crate::framework::Status::unresolvable(
+                self.name(),
+                "required node affinity does not match",
+            );
         }
 
         crate::framework::Status::success()

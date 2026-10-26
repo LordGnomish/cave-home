@@ -151,19 +151,18 @@ pub fn reconcile_node(
         }
     }
     // Add the taint the current health calls for, if absent.
-    if let Some(key) = wanted {
-        if !node.taints.iter().any(|t| t == key) {
-            actions.push(NodeAction::AddTaint(key.to_owned()));
-        }
+    if let Some(key) = wanted
+        && !node.taints.iter().any(|t| t == key)
+    {
+        actions.push(NodeAction::AddTaint(key.to_owned()));
     }
 
     // Eviction: unhealthy long enough.
-    if health != NodeHealth::Ready {
-        if let Some(since) = unhealthy_since {
-            if now.saturating_sub(since) >= cfg.eviction_grace {
-                actions.push(NodeAction::EvictPods(node.name.clone()));
-            }
-        }
+    if health != NodeHealth::Ready
+        && let Some(since) = unhealthy_since
+        && now.saturating_sub(since) >= cfg.eviction_grace
+    {
+        actions.push(NodeAction::EvictPods(node.name.clone()));
     }
 
     actions

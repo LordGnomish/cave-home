@@ -81,10 +81,10 @@ pub fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
     for raw in headers.get_all(http::header::COOKIE) {
         let Ok(s) = raw.to_str() else { continue };
         for pair in s.split(';') {
-            if let Some((k, v)) = pair.trim().split_once('=') {
-                if k.trim() == name {
-                    return Some(v.trim().to_owned());
-                }
+            if let Some((k, v)) = pair.trim().split_once('=')
+                && k.trim() == name
+            {
+                return Some(v.trim().to_owned());
             }
         }
     }

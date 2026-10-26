@@ -54,13 +54,15 @@ impl ReadAttributes {
     /// # Errors
     /// Returns [`ZigbeeError::Truncated`] if the payload is not 2-byte aligned.
     pub fn decode(payload: &[u8]) -> Result<Self> {
-        if payload.len() % 2 != 0 {
+        if !payload.len().is_multiple_of(2) {
             return Err(ZigbeeError::Zcl(
                 "Read Attributes payload not 2-byte aligned".into(),
             ));
         }
         let ids = payload
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| u16::from_le_bytes([c[0], c[1]]))
             .collect();
         Ok(Self { ids })
@@ -93,11 +95,11 @@ impl ReadAttributesResponse {
         for r in &self.records {
             out.extend_from_slice(&r.id.to_le_bytes());
             out.push(r.status);
-            if r.status == 0x00 {
-                if let Some(v) = &r.value {
-                    out.push(v.data_type() as u8);
-                    out.extend_from_slice(&v.encode_value());
-                }
+            if r.status == 0x00
+                && let Some(v) = &r.value
+            {
+                out.push(v.data_type() as u8);
+                out.extend_from_slice(&v.encode_value());
             }
         }
         out

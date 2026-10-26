@@ -339,10 +339,10 @@ async fn apiserver_round_trip_lists_only_unscheduled_pods() {
     {
         let mut g = store.lock();
         let mut v = pod_value("default", "beta", 100);
-        if let Value::Object(ref mut m) = v {
-            if let Some(Value::Object(spec)) = m.get_mut("spec") {
-                spec.insert("nodeName".to_string(), Value::from("n1"));
-            }
+        if let Value::Object(ref mut m) = v
+            && let Some(Value::Object(spec)) = m.get_mut("spec")
+        {
+            spec.insert("nodeName".to_string(), Value::from("n1"));
         }
         g.create(&pods_gvr(), v).unwrap();
     }

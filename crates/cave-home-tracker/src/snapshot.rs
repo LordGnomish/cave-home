@@ -207,10 +207,10 @@ impl SnapshotStore {
             if !(named_snapshot && is_json) {
                 continue;
             }
-            if let Ok(text) = std::fs::read_to_string(&path) {
-                if let Ok(snap) = Snapshot::from_json(&text) {
-                    out.push(snap);
-                }
+            if let Ok(text) = std::fs::read_to_string(&path)
+                && let Ok(snap) = Snapshot::from_json(&text)
+            {
+                out.push(snap);
             }
         }
         out.sort_by(|a, b| a.date.cmp(&b.date));

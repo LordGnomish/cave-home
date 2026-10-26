@@ -40,12 +40,11 @@ pub fn topic_matches(filter: &str, topic: &str) -> bool {
     let t: Vec<&str> = topic.split('/').collect();
 
     // §4.7.2 — leading wildcard must not match a $-topic.
-    if matches!(f.first(), Some(&"#" | &"+")) {
-        if let Some(first) = t.first() {
-            if first.starts_with('$') {
-                return false;
-            }
-        }
+    if matches!(f.first(), Some(&"#" | &"+"))
+        && let Some(first) = t.first()
+        && first.starts_with('$')
+    {
+        return false;
     }
 
     let mut fi = 0;

@@ -72,10 +72,10 @@ fn parse_hosts_line(trimmed: &str) -> Option<Rule> {
     let domain_raw = parts.next()?;
     // Any further token must be the start of a trailing comment; a bare extra
     // token (e.g. `0.0.0.0 exa mple`) means the line is malformed — skip it.
-    if let Some(next) = parts.next() {
-        if !next.starts_with('#') {
-            return None;
-        }
+    if let Some(next) = parts.next()
+        && !next.starts_with('#')
+    {
+        return None;
     }
     let domain = normalize_domain(domain_raw);
     if !is_plausible_domain(&domain) {

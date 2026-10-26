@@ -103,15 +103,15 @@ impl Zone {
         if runtime_seconds == 0 {
             return Err(ZoneError::ZeroRuntime);
         }
-        if let Some(t) = soil_moisture_threshold {
-            if !t.is_finite() || !(0.0..=100.0).contains(&t) {
-                return Err(ZoneError::ThresholdOutOfRange);
-            }
+        if let Some(t) = soil_moisture_threshold
+            && (!t.is_finite() || !(0.0..=100.0).contains(&t))
+        {
+            return Err(ZoneError::ThresholdOutOfRange);
         }
-        if let Some(flow) = expected_flow_lpm {
-            if !flow.is_finite() || flow <= 0.0 {
-                return Err(ZoneError::BadFlowRate);
-            }
+        if let Some(flow) = expected_flow_lpm
+            && (!flow.is_finite() || flow <= 0.0)
+        {
+            return Err(ZoneError::BadFlowRate);
         }
         Ok(Self {
             id,

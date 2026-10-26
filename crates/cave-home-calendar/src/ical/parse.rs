@@ -77,11 +77,11 @@ pub fn unfold_lines(input: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for raw in input.split('\n') {
         let line = raw.strip_suffix('\r').unwrap_or(raw);
-        if let Some(rest) = line.strip_prefix(' ').or_else(|| line.strip_prefix('\t')) {
-            if let Some(last) = out.last_mut() {
-                last.push_str(rest);
-                continue;
-            }
+        if let Some(rest) = line.strip_prefix(' ').or_else(|| line.strip_prefix('\t'))
+            && let Some(last) = out.last_mut()
+        {
+            last.push_str(rest);
+            continue;
         }
         // Skip the trailing empty fragment produced by a final newline.
         if line.is_empty() && out.last().is_some_and(String::is_empty) {
@@ -297,12 +297,12 @@ pub fn parse_vcalendar(input: &str) -> Result<Vec<VEvent>, IcalError> {
                 block_stack.pop();
             }
             _ => {
-                if let Some(ev) = current.as_mut() {
-                    if block_stack.is_empty() {
-                        ev.lines.push(cl);
-                    }
-                    // else: inside a nested VALARM etc. — skipped in Phase 1.
+                if let Some(ev) = current.as_mut()
+                    && block_stack.is_empty()
+                {
+                    ev.lines.push(cl);
                 }
+                // else: inside a nested VALARM etc. — skipped in Phase 1.
             }
         }
     }

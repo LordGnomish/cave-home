@@ -66,10 +66,11 @@ pub fn place(cluster: &Cluster, workload: Workload) -> Result<String, PlacementE
         Workload::Radios => {
             // Radios bind to the radio hardware. Prefer the active primary if it
             // has radios; otherwise any hostable node that has them.
-            if let Some(p) = cluster.active_primary() {
-                if p.capabilities().has_radios && hostable(p) {
-                    return Ok(p.id().to_owned());
-                }
+            if let Some(p) = cluster.active_primary()
+                && p.capabilities().has_radios
+                && hostable(p)
+            {
+                return Ok(p.id().to_owned());
             }
             cluster
                 .nodes()

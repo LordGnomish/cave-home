@@ -128,10 +128,10 @@ pub fn downsample(series: &Series, window: i64, agg: Aggregator) -> Series {
 }
 
 fn flush(out: &mut Vec<Sample>, bucket: &[Sample], start: Option<i64>, agg: Aggregator) {
-    if let (Some(start), Some(value)) = (start, agg.apply(bucket)) {
-        if let Ok(point) = Sample::new(start, value) {
-            out.push(point);
-        }
+    if let (Some(start), Some(value)) = (start, agg.apply(bucket))
+        && let Ok(point) = Sample::new(start, value)
+    {
+        out.push(point);
     }
 }
 

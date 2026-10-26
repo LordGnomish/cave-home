@@ -168,10 +168,11 @@ pub fn execute(store: &Store, req: &RangeRequest) -> Result<RangeResponse> {
     // by key" plan, filtered to the read revision.
     let mut latest: Vec<&Row> = Vec::new();
     for key in distinct_keys_in_order(store) {
-        if let Some(row) = latest_at(store, key, read_rev) {
-            if row.is_live() && req.contains(&row.key) {
-                latest.push(row);
-            }
+        if let Some(row) = latest_at(store, key, read_rev)
+            && row.is_live()
+            && req.contains(&row.key)
+        {
+            latest.push(row);
         }
     }
     latest.sort_by(|a, b| a.key.cmp(&b.key));

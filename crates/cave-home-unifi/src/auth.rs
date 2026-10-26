@@ -189,10 +189,10 @@ impl Session {
                     if cname.eq_ignore_ascii_case("csrf_token") {
                         self.csrf = Some(cvalue.clone());
                     }
-                    if cname == "TOKEN" {
-                        if let Some(c) = csrf_from_jwt(&cvalue) {
-                            self.csrf = Some(c);
-                        }
+                    if cname == "TOKEN"
+                        && let Some(c) = csrf_from_jwt(&cvalue)
+                    {
+                        self.csrf = Some(c);
                     }
                     self.cookies.insert(cname, cvalue);
                 }

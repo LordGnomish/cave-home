@@ -142,15 +142,15 @@ impl Trigger {
                     .get("new_state")
                     .and_then(|v| v.get("state"))
                     .and_then(Value::as_str);
-                if let Some(want) = from.as_deref() {
-                    if old != Some(want) {
-                        return Ok(false);
-                    }
+                if let Some(want) = from.as_deref()
+                    && old != Some(want)
+                {
+                    return Ok(false);
                 }
-                if let Some(want) = to.as_deref() {
-                    if new != Some(want) {
-                        return Ok(false);
-                    }
+                if let Some(want) = to.as_deref()
+                    && new != Some(want)
+                {
+                    return Ok(false);
                 }
                 Ok(true)
             }
@@ -208,10 +208,10 @@ impl Trigger {
                         return Ok(false);
                     }
                 }
-                if let Some(b) = below {
-                    if state_value.partial_cmp(b) != Some(std::cmp::Ordering::Less) {
-                        return Ok(false);
-                    }
+                if let Some(b) = below
+                    && state_value.partial_cmp(b) != Some(std::cmp::Ordering::Less)
+                {
+                    return Ok(false);
                 }
                 Ok(above.is_some() || below.is_some())
             }
@@ -276,10 +276,10 @@ fn cron_match(pattern: &str, value: u32, max: u32) -> bool {
     if pattern == "*" {
         return true;
     }
-    if let Some(stripped) = pattern.strip_prefix("*/") {
-        if let Ok(step) = stripped.parse::<u32>() {
-            return step != 0 && value % step == 0 && value <= max;
-        }
+    if let Some(stripped) = pattern.strip_prefix("*/")
+        && let Ok(step) = stripped.parse::<u32>()
+    {
+        return step != 0 && value.is_multiple_of(step) && value <= max;
     }
     pattern.parse::<u32>().is_ok_and(|p| p == value)
 }

@@ -236,13 +236,13 @@ impl CallMachine {
     /// Idempotent and monotonic: ticking with a `now` earlier than the ring's
     /// start, or ticking a settled / idle / connected machine, changes nothing.
     pub fn tick(&mut self, now: Tick) -> CallState {
-        if self.state == CallState::Ringing {
-            if let Some(started) = self.ringing_since {
-                let rung_for = now.saturating_sub(started);
-                if rung_for >= self.ring_timeout {
-                    self.ringing_since = None;
-                    self.state = self.unanswered_outcome();
-                }
+        if self.state == CallState::Ringing
+            && let Some(started) = self.ringing_since
+        {
+            let rung_for = now.saturating_sub(started);
+            if rung_for >= self.ring_timeout {
+                self.ringing_since = None;
+                self.state = self.unanswered_outcome();
             }
         }
         self.state

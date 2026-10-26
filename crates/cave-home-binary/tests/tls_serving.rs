@@ -94,19 +94,19 @@ async fn apiserver_serves_over_real_tls() {
     // TLS terminator is really in the path.
     let body = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            if let Ok(tcp) = TcpStream::connect(addr).await {
-                if let Ok(mut tls) = connector.connect(domain.clone(), tcp).await {
-                    tls.write_all(
-                        b"GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-                    )
-                    .await
-                    .expect("write");
-                    let mut buf = Vec::new();
-                    let _ = tls.read_to_end(&mut buf).await;
-                    let text = String::from_utf8_lossy(&buf).into_owned();
-                    if text.contains("200") {
-                        return text;
-                    }
+            if let Ok(tcp) = TcpStream::connect(addr).await
+                && let Ok(mut tls) = connector.connect(domain.clone(), tcp).await
+            {
+                tls.write_all(
+                    b"GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+                )
+                .await
+                .expect("write");
+                let mut buf = Vec::new();
+                let _ = tls.read_to_end(&mut buf).await;
+                let text = String::from_utf8_lossy(&buf).into_owned();
+                if text.contains("200") {
+                    return text;
                 }
             }
             tokio::time::sleep(Duration::from_millis(50)).await;

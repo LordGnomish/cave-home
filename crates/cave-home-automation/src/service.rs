@@ -157,10 +157,10 @@ impl ServiceRegistry {
             let removed = services
                 .get_mut(&domain)
                 .is_some_and(|m| m.remove(&service).is_some());
-            if let Some(m) = services.get(&domain) {
-                if m.is_empty() {
-                    services.remove(&domain);
-                }
+            if let Some(m) = services.get(&domain)
+                && m.is_empty()
+            {
+                services.remove(&domain);
             }
             removed
         };

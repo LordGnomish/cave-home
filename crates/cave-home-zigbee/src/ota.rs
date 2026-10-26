@@ -188,16 +188,16 @@ impl OtaQueue {
             .provider
             .next_image_for(manufacturer_code, image_type, current_file_version)
             .await?;
-        if let Some(d) = &desc {
-            if d.file_version > current_file_version {
-                self.enqueue(OtaJob {
-                    device_ieee,
-                    manufacturer_code,
-                    image_type,
-                    current_file_version,
-                    status: OtaJobStatus::Pending,
-                });
-            }
+        if let Some(d) = &desc
+            && d.file_version > current_file_version
+        {
+            self.enqueue(OtaJob {
+                device_ieee,
+                manufacturer_code,
+                image_type,
+                current_file_version,
+                status: OtaJobStatus::Pending,
+            });
         }
         Ok(desc)
     }

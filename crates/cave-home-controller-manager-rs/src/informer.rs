@@ -359,10 +359,10 @@ impl<T: Object> DeltaFifo<T> {
                 Some(self.order.remove(0))
             }
         } {
-            if let Some(deltas) = self.queues.remove(&key) {
-                if !deltas.is_empty() {
-                    return Some((key, deltas));
-                }
+            if let Some(deltas) = self.queues.remove(&key)
+                && !deltas.is_empty()
+            {
+                return Some((key, deltas));
             }
         }
         None

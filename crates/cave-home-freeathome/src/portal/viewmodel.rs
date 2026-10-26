@@ -75,10 +75,10 @@ pub fn controls(device: &dyn FreeAtHomeDevice) -> Vec<Control> {
             // Move up/down is subsumed by the position slider.
             _ => None,
         };
-        if let Some(c) = control {
-            if !out.contains(&c) {
-                out.push(c);
-            }
+        if let Some(c) = control
+            && !out.contains(&c)
+        {
+            out.push(c);
         }
     }
     out

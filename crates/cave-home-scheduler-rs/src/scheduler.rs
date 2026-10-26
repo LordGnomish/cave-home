@@ -443,11 +443,11 @@ impl Scheduler {
                 ));
             }
         }
-        if let Some(timeout) = wait_timeout {
-            if let Err(reason) = self.wait_on_permit(pod, timeout).await {
-                self.unwind(&mut state, pod, host, reserved);
-                return Err(reason);
-            }
+        if let Some(timeout) = wait_timeout
+            && let Err(reason) = self.wait_on_permit(pod, timeout).await
+        {
+            self.unwind(&mut state, pod, host, reserved);
+            return Err(reason);
         }
 
         // ---------- PreBind ----------
@@ -484,11 +484,9 @@ impl Scheduler {
             bound = true;
             break;
         }
-        if !bound {
-            if let Err(e) = self.sink.bind(pod, host).await {
-                self.unwind(&mut state, pod, host, reserved);
-                return Err(format!("bind failed: {e}"));
-            }
+        if !bound && let Err(e) = self.sink.bind(pod, host).await {
+            self.unwind(&mut state, pod, host, reserved);
+            return Err(format!("bind failed: {e}"));
         }
 
         // ---------- PostBind ----------

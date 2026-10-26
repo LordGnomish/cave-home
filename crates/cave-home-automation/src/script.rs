@@ -249,10 +249,9 @@ async fn wait_for_trigger(
             if trigger_clone
                 .matches(event, Some(&sm_for_listener))
                 .unwrap_or(false)
+                && let Some(send) = tx_for_cb.lock().take()
             {
-                if let Some(send) = tx_for_cb.lock().take() {
-                    let _ = send.send(());
-                }
+                let _ = send.send(());
             }
         })
     };

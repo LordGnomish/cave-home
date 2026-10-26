@@ -501,25 +501,23 @@ where
         };
         for ev in events {
             last_rv = last_rv.max(ev.resource_version);
-            if let Some(ns) = &ns_filter {
-                if ev
+            if let Some(ns) = &ns_filter
+                && ev
                     .object
                     .pointer("metadata.namespace")
                     .and_then(cave_home_apiserver_rs::json::Value::as_str)
                     != Some(ns.as_str())
-                {
-                    continue;
-                }
+            {
+                continue;
             }
-            if let Some(name) = &name_filter {
-                if ev
+            if let Some(name) = &name_filter
+                && ev
                     .object
                     .pointer("metadata.name")
                     .and_then(cave_home_apiserver_rs::json::Value::as_str)
                     != Some(name.as_str())
-                {
-                    continue;
-                }
+            {
+                continue;
             }
             let frame = watch_event_frame(&ev);
             // A write error means the client hung up — end the watch quietly.

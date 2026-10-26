@@ -213,18 +213,16 @@ impl Broker {
         });
 
         // Deliver anything queued while the (resumed) session was offline.
-        if session_present {
-            if let Some(sess) = self.sessions.get_mut(&client_id) {
-                let queued: Vec<PublishV5> = sess.queued.drain(..).collect();
-                for p in queued {
-                    if let Some(pid) = p.packet_id {
-                        sess.outgoing_unacked.insert(pid, p.clone());
-                    }
-                    actions.push(Action::Send {
-                        client_id: client_id.clone(),
-                        packet: PacketV5::Publish(p),
-                    });
+        if session_present && let Some(sess) = self.sessions.get_mut(&client_id) {
+            let queued: Vec<PublishV5> = sess.queued.drain(..).collect();
+            for p in queued {
+                if let Some(pid) = p.packet_id {
+                    sess.outgoing_unacked.insert(pid, p.clone());
                 }
+                actions.push(Action::Send {
+                    client_id: client_id.clone(),
+                    packet: PacketV5::Publish(p),
+                });
             }
         }
         actions
@@ -446,16 +444,14 @@ impl Broker {
         }
 
         // §3.3.1.2 — QoS 2 duplicate: re-acknowledge without re-routing.
-        if p.qos == QoS::ExactlyOnce {
-            if let Some(pid) = p.packet_id {
-                if self
-                    .sessions
-                    .get(client_id)
-                    .is_some_and(|s| s.incoming_qos2.contains(&pid))
-                {
-                    return vec![pubrec(client_id, pid, ReasonCode::Success)];
-                }
-            }
+        if p.qos == QoS::ExactlyOnce
+            && let Some(pid) = p.packet_id
+            && self
+                .sessions
+                .get(client_id)
+                .is_some_and(|s| s.incoming_qos2.contains(&pid))
+        {
+            return vec![pubrec(client_id, pid, ReasonCode::Success)];
         }
 
         if p.retain && self.config.retain_available {

@@ -238,10 +238,10 @@ impl Toleration {
     /// Upstream: `pkg/apis/core/v1/helper/helpers.go::Toleration.ToleratesTaint`.
     #[must_use]
     pub fn tolerates(&self, taint: &Taint) -> bool {
-        if let Some(e) = self.effect {
-            if e != taint.effect {
-                return false;
-            }
+        if let Some(e) = self.effect
+            && e != taint.effect
+        {
+            return false;
         }
         match self.operator {
             TolerationOperator::Exists => self.key.is_empty() || self.key == taint.key,

@@ -130,7 +130,7 @@ impl Quantity {
 /// Round-up integer division (`⌈n / d⌉`) without overflow for the ranges used
 /// here. `d` is a non-zero scale constant.
 const fn div_ceil(n: u64, d: u64) -> u64 {
-    n / d + if n % d == 0 { 0 } else { 1 }
+    n / d + if n.is_multiple_of(d) { 0 } else { 1 }
 }
 
 /// Pick the largest scale that divides `amount` evenly and emit `q<suffix>`.
@@ -141,7 +141,7 @@ fn canonical(amount: u64, scales: &[(u64, &str)]) -> String {
         return "0".to_string();
     }
     for &(unit, suffix) in scales {
-        if amount >= unit && amount % unit == 0 {
+        if amount >= unit && amount.is_multiple_of(unit) {
             return format!("{}{suffix}", amount / unit);
         }
     }

@@ -143,11 +143,11 @@ impl Backend for KineBackend {
     fn list(&self, prefix: &str) -> Result<Vec<(String, Vec<u8>)>> {
         let mut out = Vec::new();
         for key in self.store.live_keys() {
-            if key.starts_with(prefix.as_bytes()) {
-                if let Some(row) = self.store.get_live(&key) {
-                    let key_str = String::from_utf8_lossy(&key).into_owned();
-                    out.push((key_str, row.value.clone()));
-                }
+            if key.starts_with(prefix.as_bytes())
+                && let Some(row) = self.store.get_live(&key)
+            {
+                let key_str = String::from_utf8_lossy(&key).into_owned();
+                out.push((key_str, row.value.clone()));
             }
         }
         out.sort_by(|a, b| a.0.cmp(&b.0));

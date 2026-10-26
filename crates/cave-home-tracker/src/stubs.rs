@@ -95,10 +95,10 @@ fn walk(dir: &Path, total: &mut StubCount) -> crate::Result<()> {
             let _ = walk(&path, total);
             continue;
         }
-        if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-            if let Ok(src) = std::fs::read_to_string(&path) {
-                total.accumulate(count_in_source(&src));
-            }
+        if path.extension().and_then(|e| e.to_str()) == Some("rs")
+            && let Ok(src) = std::fs::read_to_string(&path)
+        {
+            total.accumulate(count_in_source(&src));
         }
     }
     Ok(())

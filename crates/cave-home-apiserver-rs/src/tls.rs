@@ -113,12 +113,12 @@ fn inject_client_identity(req: &mut Request, peer: Option<&[CertificateDer<'_>]>
     // Always strip first: a value on the wire must never be trusted.
     req.headers.remove_all("x-remote-user");
     req.headers.remove_all("x-remote-group");
-    if let Some(leaf) = peer.and_then(<[_]>::first) {
-        if let Some(identity) = crate::x509::subject_identity(leaf.as_ref()) {
-            req.headers.insert("x-remote-user", identity.name);
-            for group in identity.groups {
-                req.headers.insert("x-remote-group", group);
-            }
+    if let Some(leaf) = peer.and_then(<[_]>::first)
+        && let Some(identity) = crate::x509::subject_identity(leaf.as_ref())
+    {
+        req.headers.insert("x-remote-user", identity.name);
+        for group in identity.groups {
+            req.headers.insert("x-remote-group", group);
         }
     }
 }

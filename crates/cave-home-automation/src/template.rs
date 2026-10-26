@@ -182,10 +182,10 @@ impl Template {
         env.add_filter(
             "float",
             |v: JinjaValue, default: Option<f64>| -> JinjaValue {
-                if let Some(s) = v.as_str() {
-                    if let Ok(parsed) = s.parse::<f64>() {
-                        return JinjaValue::from(parsed);
-                    }
+                if let Some(s) = v.as_str()
+                    && let Ok(parsed) = s.parse::<f64>()
+                {
+                    return JinjaValue::from(parsed);
                 }
                 if let Ok(n) = i64::try_from(v.clone()) {
                     return JinjaValue::from(n as f64);

@@ -179,23 +179,23 @@ impl RRule {
                 if date < start {
                     continue; // never emit before DTSTART
                 }
-                if let Limit::Until(until) = self.limit {
-                    if date > until {
-                        all_past_until = true;
-                        continue;
-                    }
+                if let Limit::Until(until) = self.limit
+                    && date > until
+                {
+                    all_past_until = true;
+                    continue;
                 }
                 // This is a valid series member.
                 emitted += 1;
                 if date >= window_start && date <= window_end {
                     out.push(date);
                 }
-                if let Limit::Count(c) = self.limit {
-                    if emitted >= c {
-                        out.sort_unstable();
-                        out.dedup();
-                        return out;
-                    }
+                if let Limit::Count(c) = self.limit
+                    && emitted >= c
+                {
+                    out.sort_unstable();
+                    out.dedup();
+                    return out;
                 }
             }
 
@@ -292,10 +292,10 @@ impl RRule {
             }
         } else if !self.by_month_day.is_empty() {
             for &n in &self.by_month_day {
-                if let Some(day) = resolve_monthday(n, dim) {
-                    if let Ok(d) = Date::new(year, month, day) {
-                        out.push(d);
-                    }
+                if let Some(day) = resolve_monthday(n, dim)
+                    && let Ok(d) = Date::new(year, month, day)
+                {
+                    out.push(d);
                 }
             }
         } else {
@@ -324,10 +324,10 @@ impl RRule {
                 }
             } else if !self.by_month_day.is_empty() {
                 for &n in &self.by_month_day {
-                    if let Some(day) = resolve_monthday(n, dim) {
-                        if let Ok(d) = Date::new(year, month, day) {
-                            out.push(d);
-                        }
+                    if let Some(day) = resolve_monthday(n, dim)
+                        && let Ok(d) = Date::new(year, month, day)
+                    {
+                        out.push(d);
                     }
                 }
             } else {
@@ -347,10 +347,10 @@ impl RRule {
         // All days of that weekday in the month, in calendar order.
         let mut matches = Vec::new();
         for day in 1..=dim {
-            if let Ok(d) = Date::new(year, month, day) {
-                if d.weekday() == bd.weekday {
-                    matches.push(d);
-                }
+            if let Ok(d) = Date::new(year, month, day)
+                && d.weekday() == bd.weekday
+            {
+                matches.push(d);
             }
         }
         match bd.ordinal {

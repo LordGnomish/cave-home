@@ -361,13 +361,13 @@ pub fn parse_admission_response(body: &[u8], expected_uid: &str) -> Result<Admis
         )
     })?;
 
-    if let Some(uid) = response.get("uid").and_then(Value::as_str) {
-        if uid != expected_uid {
-            return Err(Status::new(
-                StatusReason::InternalError,
-                format!("webhook response uid {uid:?} does not match request {expected_uid:?}"),
-            ));
-        }
+    if let Some(uid) = response.get("uid").and_then(Value::as_str)
+        && uid != expected_uid
+    {
+        return Err(Status::new(
+            StatusReason::InternalError,
+            format!("webhook response uid {uid:?} does not match request {expected_uid:?}"),
+        ));
     }
 
     let allowed = response
@@ -592,10 +592,10 @@ impl MutatingPlugin for WebhookMutatingPlugin {
         if !response.allowed {
             return Err(response.into_status());
         }
-        if let Some(ops) = &response.json_patch {
-            if let Some(object) = request.object.as_mut() {
-                *object = patch::apply_json_patch(object, ops)?;
-            }
+        if let Some(ops) = &response.json_patch
+            && let Some(object) = request.object.as_mut()
+        {
+            *object = patch::apply_json_patch(object, ops)?;
         }
         Ok(())
     }

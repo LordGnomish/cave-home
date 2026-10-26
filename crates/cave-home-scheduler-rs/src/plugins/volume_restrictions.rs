@@ -41,17 +41,18 @@ impl FilterPlugin for VolumeRestrictions {
 
         for existing in node.pods() {
             for v in &existing.spec.volumes {
-                if let VolumeSource::PersistentVolumeClaim(pvc) = &v.source {
-                    if !pvc.read_only && pod_claims.contains(pvc.claim_name.as_str()) {
-                        return Status::unschedulable(
-                            self.name(),
-                            format!(
-                                "PVC {} is already used by pod {} on this node",
-                                pvc.claim_name,
-                                existing.full_name(),
-                            ),
-                        );
-                    }
+                if let VolumeSource::PersistentVolumeClaim(pvc) = &v.source
+                    && !pvc.read_only
+                    && pod_claims.contains(pvc.claim_name.as_str())
+                {
+                    return Status::unschedulable(
+                        self.name(),
+                        format!(
+                            "PVC {} is already used by pod {} on this node",
+                            pvc.claim_name,
+                            existing.full_name(),
+                        ),
+                    );
                 }
             }
         }

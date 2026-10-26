@@ -181,14 +181,14 @@ pub fn headline(t: &Telemetry, alarm: AlarmState, lang: Lang) -> String {
             Lang::Tr => format!("Güneş panelleriniz {watts} W üretiyor"),
         };
     }
-    if status == SolarStatus::PanelShaded {
-        if let Some(idx) = SolarStatus::shaded_panel_index(t) {
-            return match lang {
-                Lang::En => format!("Panel {idx} is shaded"),
-                Lang::De => format!("Panel {idx} ist verschattet"),
-                Lang::Tr => format!("Panel {idx} gölgede"),
-            };
-        }
+    if status == SolarStatus::PanelShaded
+        && let Some(idx) = SolarStatus::shaded_panel_index(t)
+    {
+        return match lang {
+            Lang::En => format!("Panel {idx} is shaded"),
+            Lang::De => format!("Panel {idx} ist verschattet"),
+            Lang::Tr => format!("Panel {idx} gölgede"),
+        };
     }
     status.advice(lang).to_string()
 }

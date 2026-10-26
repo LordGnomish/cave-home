@@ -196,10 +196,10 @@ impl PodWorker {
         // Fast path: cached id is still valid.
         let cached = self.sandbox_id.lock().clone();
         if let Some(id) = cached {
-            if let Ok(st) = self.cri.pod_sandbox_status(&id).await {
-                if st.state == PodSandboxState::Ready {
-                    return Ok(id);
-                }
+            if let Ok(st) = self.cri.pod_sandbox_status(&id).await
+                && st.state == PodSandboxState::Ready
+            {
+                return Ok(id);
             }
             // Cached sandbox is gone or not-ready: best-effort cleanup.
             let _ = self.cri.stop_pod_sandbox(&id).await;

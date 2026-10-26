@@ -155,10 +155,10 @@ impl DeviceRegistry {
         if via_device_id.is_some() {
             entry.via_device_id = via_device_id;
         }
-        if entry.area_id.is_none() {
-            if let Some(area) = &info.suggested_area {
-                entry.area_id = Some(area.clone());
-            }
+        if entry.area_id.is_none()
+            && let Some(area) = &info.suggested_area
+        {
+            entry.area_id = Some(area.clone());
         }
 
         Ok(entry.clone())

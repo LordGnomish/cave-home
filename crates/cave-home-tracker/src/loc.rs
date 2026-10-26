@@ -181,10 +181,10 @@ impl Language {
             let line = raw.trim();
             if in_block {
                 stat.comment += 1;
-                if let Some((_, end)) = self.block {
-                    if line.contains(end) {
-                        in_block = false;
-                    }
+                if let Some((_, end)) = self.block
+                    && line.contains(end)
+                {
+                    in_block = false;
                 }
                 continue;
             }
@@ -207,10 +207,10 @@ impl Language {
                     continue;
                 }
                 // code line that opens (but does not close) a trailing block.
-                if let Some(open) = line.rfind(start) {
-                    if !line[open + start.len()..].contains(end) {
-                        in_block = true;
-                    }
+                if let Some(open) = line.rfind(start)
+                    && !line[open + start.len()..].contains(end)
+                {
+                    in_block = true;
                 }
             }
             stat.code += 1;
@@ -293,12 +293,11 @@ pub fn count_subpaths(root: &Path, subpaths: &[String]) -> crate::Result<LocRepo
         let target = root.join(sub);
         if target.is_dir() {
             count_into(&target, &mut report)?;
-        } else if target.is_file() {
-            if let Some(lang) = classify_file(&target) {
-                if let Ok(content) = std::fs::read_to_string(&target) {
-                    report.merge(lang.name(), lang.count(&content));
-                }
-            }
+        } else if target.is_file()
+            && let Some(lang) = classify_file(&target)
+            && let Ok(content) = std::fs::read_to_string(&target)
+        {
+            report.merge(lang.name(), lang.count(&content));
         }
     }
     Ok(report)

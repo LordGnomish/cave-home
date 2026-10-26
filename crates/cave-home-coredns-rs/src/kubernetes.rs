@@ -488,14 +488,14 @@ impl Plugin for Kubernetes {
         // Reverse lookups are matched against the address index regardless of
         // the plugin's forward zones.
         if q.qtype == RecordType::Ptr {
-            if let Some(ip) = from_arpa(&owner) {
-                if let Some(fqdn) = self.reverse.get(&ip) {
-                    let mut reply = req.reply().with_aa(true);
-                    reply
-                        .answers
-                        .push(self.record(owner, Rdata::Ptr(fqdn.clone())));
-                    return Ok(reply);
-                }
+            if let Some(ip) = from_arpa(&owner)
+                && let Some(fqdn) = self.reverse.get(&ip)
+            {
+                let mut reply = req.reply().with_aa(true);
+                reply
+                    .answers
+                    .push(self.record(owner, Rdata::Ptr(fqdn.clone())));
+                return Ok(reply);
             }
             return next.run(req);
         }

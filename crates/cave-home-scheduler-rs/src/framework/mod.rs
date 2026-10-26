@@ -402,10 +402,10 @@ impl WaitingPod {
         // try_lock never blocks; the lock is uncontended in practice (the only
         // writer is whoever resolves the gate first) and a contended lock means
         // someone else is mid-resolution, so dropping the signal is correct.
-        if let Ok(mut guard) = self.inner.tx.try_lock() {
-            if let Some(tx) = guard.take() {
-                return tx.send(decision).is_ok();
-            }
+        if let Ok(mut guard) = self.inner.tx.try_lock()
+            && let Some(tx) = guard.take()
+        {
+            return tx.send(decision).is_ok();
         }
         false
     }

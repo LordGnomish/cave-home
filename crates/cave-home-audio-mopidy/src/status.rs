@@ -31,14 +31,13 @@ pub fn status(playback: &Playback, tracklist: &Tracklist) -> String {
         .field("playlistlength", tracklist.len())
         .field("state", playback.state().as_mpd());
 
-    if playback.state() != PlayState::Stop {
-        if let Some(pos) = playback.current() {
-            if let Some(song) = tracklist.get(pos) {
-                r.field("song", pos)
-                    .field("songid", song.id)
-                    .field("elapsed", format_seconds(playback.elapsed()));
-            }
-        }
+    if playback.state() != PlayState::Stop
+        && let Some(pos) = playback.current()
+        && let Some(song) = tracklist.get(pos)
+    {
+        r.field("song", pos)
+            .field("songid", song.id)
+            .field("elapsed", format_seconds(playback.elapsed()));
     }
     r.ok()
 }
@@ -50,17 +49,17 @@ pub fn status(playback: &Playback, tracklist: &Tracklist) -> String {
 #[must_use]
 pub fn current_song(playback: &Playback, tracklist: &Tracklist) -> String {
     let mut r = Response::new();
-    if let Some(pos) = playback.current() {
-        if let Some(song) = tracklist.get(pos) {
-            r.field("file", &song.uri);
-            if let Some(title) = &song.title {
-                r.field("Title", title);
-            }
-            if let Some(artist) = &song.artist {
-                r.field("Artist", artist);
-            }
-            r.field("Pos", pos).field("Id", song.id);
+    if let Some(pos) = playback.current()
+        && let Some(song) = tracklist.get(pos)
+    {
+        r.field("file", &song.uri);
+        if let Some(title) = &song.title {
+            r.field("Title", title);
         }
+        if let Some(artist) = &song.artist {
+            r.field("Artist", artist);
+        }
+        r.field("Pos", pos).field("Id", song.id);
     }
     r.ok()
 }

@@ -120,10 +120,10 @@ impl SchedulerCache {
     /// Upstream: `Cache.ForgetPod`.
     pub fn forget_pod(&self, uid: &str) {
         let mut g = self.inner.write();
-        if let Some(p) = g.assumed.remove(uid) {
-            if let Some(info) = g.nodes.get_mut(&p.spec.node_name) {
-                info.remove_pod(&p);
-            }
+        if let Some(p) = g.assumed.remove(uid)
+            && let Some(info) = g.nodes.get_mut(&p.spec.node_name)
+        {
+            info.remove_pod(&p);
         }
     }
 

@@ -430,12 +430,11 @@ impl RbacAuthorizer {
             if !crb.subjects.iter().any(|s| s.matches(&attrs.user)) {
                 continue;
             }
-            if crb.role_ref.kind == RoleRefKind::ClusterRole {
-                if let Some(role) = self.cluster_role(&crb.role_ref.name) {
-                    if role.rules.iter().any(|r| r.allows(attrs)) {
-                        return Decision::Allow;
-                    }
-                }
+            if crb.role_ref.kind == RoleRefKind::ClusterRole
+                && let Some(role) = self.cluster_role(&crb.role_ref.name)
+                && role.rules.iter().any(|r| r.allows(attrs))
+            {
+                return Decision::Allow;
             }
         }
 
@@ -457,10 +456,10 @@ impl RbacAuthorizer {
                         .cluster_role(&rb.role_ref.name)
                         .map(|r| r.rules.as_slice()),
                 };
-                if let Some(rules) = rules {
-                    if rules.iter().any(|r| r.allows(attrs)) {
-                        return Decision::Allow;
-                    }
+                if let Some(rules) = rules
+                    && rules.iter().any(|r| r.allows(attrs))
+                {
+                    return Decision::Allow;
                 }
             }
         }

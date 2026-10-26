@@ -255,10 +255,9 @@ impl Proxy {
         strip_hop_by_hop(&mut resp_headers);
         wire::apply_response_headers(&mut resp_headers, &applied.response);
         if let (LoadBalancer::Sticky { cookie_name }, Some(value)) = (&service.policy, &set_cookie)
+            && let Ok(hv) = HeaderValue::from_str(&format!("{cookie_name}={value}; Path=/"))
         {
-            if let Ok(hv) = HeaderValue::from_str(&format!("{cookie_name}={value}; Path=/")) {
-                resp_headers.append(http::header::SET_COOKIE, hv);
-            }
+            resp_headers.append(http::header::SET_COOKIE, hv);
         }
 
         self.metrics.record_request(
@@ -327,13 +326,13 @@ fn apply_request_header_overrides(
     original: &RequestDescriptor,
 ) {
     for (key, value) in &applied.headers {
-        if original.headers.get(key).map(String::as_str) != Some(value.as_str()) {
-            if let (Ok(name), Ok(val)) = (
+        if original.headers.get(key).map(String::as_str) != Some(value.as_str())
+            && let (Ok(name), Ok(val)) = (
                 HeaderName::from_bytes(key.as_bytes()),
                 HeaderValue::from_str(value),
-            ) {
-                dst.insert(name, val);
-            }
+            )
+        {
+            dst.insert(name, val);
         }
     }
 }

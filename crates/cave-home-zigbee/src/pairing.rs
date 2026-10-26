@@ -56,7 +56,7 @@ impl InstallCode {
             .chars()
             .filter(|c| !c.is_whitespace() && *c != '-')
             .collect();
-        if cleaned.len() % 2 != 0 {
+        if !cleaned.len().is_multiple_of(2) {
             return Err(ZigbeeError::Pairing("install code: odd hex length".into()));
         }
         let mut bytes = Vec::with_capacity(cleaned.len() / 2);

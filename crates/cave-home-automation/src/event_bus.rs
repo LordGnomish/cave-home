@@ -314,18 +314,18 @@ impl EventBus for InMemoryEventBus {
             }
             // Match-all listeners — but NOT for state_reported (HA's
             // EVENTS_EXCLUDED_FROM_MATCH_ALL).
-            if event.event_type != EVENT_STATE_REPORTED {
-                if let Some(ls) = inner.listeners.get(MATCH_ALL) {
-                    combined.extend(ls.iter().cloned());
-                }
+            if event.event_type != EVENT_STATE_REPORTED
+                && let Some(ls) = inner.listeners.get(MATCH_ALL)
+            {
+                combined.extend(ls.iter().cloned());
             }
             combined
         };
         for listener in listeners {
-            if let Some(filter) = listener.filter.as_ref() {
-                if !filter(&event) {
-                    continue;
-                }
+            if let Some(filter) = listener.filter.as_ref()
+                && !filter(&event)
+            {
+                continue;
             }
             (listener.cb)(&event);
         }

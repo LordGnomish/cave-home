@@ -114,10 +114,10 @@ impl Condition {
                         return Ok(false);
                     }
                 }
-                if let Some(b) = below {
-                    if v.partial_cmp(b) != Some(std::cmp::Ordering::Less) {
-                        return Ok(false);
-                    }
+                if let Some(b) = below
+                    && v.partial_cmp(b) != Some(std::cmp::Ordering::Less)
+                {
+                    return Ok(false);
                 }
                 Ok(above.is_some() || below.is_some())
             }

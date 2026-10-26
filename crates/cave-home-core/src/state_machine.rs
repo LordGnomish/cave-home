@@ -69,10 +69,11 @@ impl StateMachine {
         let mut guard = self.inner.write();
         let old = guard.get(&id).cloned();
 
-        if let Some(ref prev) = old {
-            if prev.state == new_state && prev.attributes == attributes {
-                return None;
-            }
+        if let Some(ref prev) = old
+            && prev.state == new_state
+            && prev.attributes == attributes
+        {
+            return None;
         }
 
         let last_changed = match old.as_ref() {

@@ -67,12 +67,12 @@ pub fn negotiate(accept_encoding: Option<&str>, supported: &[Encoding]) -> Encod
     // Best q among supported encodings; ties broken by server preference order.
     let mut best: Option<(Encoding, u32)> = None;
     for &enc in supported {
-        if let Some(token) = enc.header_value() {
-            if let Some(q) = q_for(token) {
-                if q > 0 && best.is_none_or(|(_, bq)| q > bq) {
-                    best = Some((enc, q));
-                }
-            }
+        if let Some(token) = enc.header_value()
+            && let Some(q) = q_for(token)
+            && q > 0
+            && best.is_none_or(|(_, bq)| q > bq)
+        {
+            best = Some((enc, q));
         }
     }
     best.map_or(Encoding::Identity, |(enc, _)| enc)
@@ -111,10 +111,10 @@ const PRECOMPRESSED: &[&str] = &[
 /// at or above `min_size` and not an already-compressed media type.
 #[must_use]
 pub fn should_compress(content_type: &str, content_length: Option<u64>, min_size: u64) -> bool {
-    if let Some(len) = content_length {
-        if len < min_size {
-            return false;
-        }
+    if let Some(len) = content_length
+        && len < min_size
+    {
+        return false;
     }
     let ct = content_type
         .split(';')

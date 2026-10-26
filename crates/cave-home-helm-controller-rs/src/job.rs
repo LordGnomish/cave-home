@@ -94,11 +94,11 @@ pub fn build_args(spec: &HelmChartSpec, op: Operation) -> Vec<String> {
                 args.push("--install".into());
             }
 
-            if let Some(repo) = &spec.repo {
-                if !repo.trim().is_empty() {
-                    args.push("--repo".into());
-                    args.push(repo.clone());
-                }
+            if let Some(repo) = &spec.repo
+                && !repo.trim().is_empty()
+            {
+                args.push("--repo".into());
+                args.push(repo.clone());
             }
 
             match &spec.version {

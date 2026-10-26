@@ -131,13 +131,13 @@ impl AttributeValue {
     /// # Errors
     /// Returns [`ZigbeeError::Truncated`] if `bytes` is too short.
     pub fn decode(dt: ZclDataType, bytes: &[u8]) -> Result<(Self, usize)> {
-        if let Some(sz) = dt.fixed_size() {
-            if bytes.len() < sz {
-                return Err(ZigbeeError::Truncated {
-                    need: sz,
-                    have: bytes.len(),
-                });
-            }
+        if let Some(sz) = dt.fixed_size()
+            && bytes.len() < sz
+        {
+            return Err(ZigbeeError::Truncated {
+                need: sz,
+                have: bytes.len(),
+            });
         }
         Ok(match dt {
             ZclDataType::Boolean => (Self::Boolean(bytes[0] != 0), 1),

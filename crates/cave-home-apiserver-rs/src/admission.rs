@@ -148,22 +148,22 @@ impl MutatingPlugin for DefaultFields {
                 if md.as_object().is_none() {
                     *md = Value::object();
                 }
-                if let Some(m) = md.as_object_mut() {
-                    if self.namespaced {
-                        let needs_ns = m
-                            .get("namespace")
-                            .and_then(Value::as_str)
-                            .map(str::is_empty)
-                            .unwrap_or(true);
-                        if needs_ns {
-                            let ns = if request.namespace.is_empty() {
-                                "default".to_string()
-                            } else {
-                                request.namespace.clone()
-                            };
-                            m.insert("namespace".into(), Value::from(ns.clone()));
-                            request.namespace = ns;
-                        }
+                if let Some(m) = md.as_object_mut()
+                    && self.namespaced
+                {
+                    let needs_ns = m
+                        .get("namespace")
+                        .and_then(Value::as_str)
+                        .map(str::is_empty)
+                        .unwrap_or(true);
+                    if needs_ns {
+                        let ns = if request.namespace.is_empty() {
+                            "default".to_string()
+                        } else {
+                            request.namespace.clone()
+                        };
+                        m.insert("namespace".into(), Value::from(ns.clone()));
+                        request.namespace = ns;
                     }
                 }
             }

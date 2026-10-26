@@ -239,10 +239,10 @@ pub fn create_group(
     // Detach members from their existing groups.
     for id in member_ids {
         let current = topo.group_of(id).map(|g| g.id().to_string());
-        if let Some(cur) = current {
-            if let Some(g) = topo.group_mut(&cur) {
-                g.remove_member(id);
-            }
+        if let Some(cur) = current
+            && let Some(g) = topo.group_mut(&cur)
+        {
+            g.remove_member(id);
         }
     }
     let members: Vec<String> = member_ids.iter().map(|s| (*s).to_string()).collect();

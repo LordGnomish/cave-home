@@ -172,13 +172,13 @@ pub fn put_light_state(ctx: &V1Context, app_key: &str, id: &str, body: &Value) -
             light.brightness = clamped as f32 / 254.0 * 100.0;
             acks.push(json!({ "success": { format!("/lights/{id}/state/bri"): clamped } }));
         }
-        if let Some(arr) = obj.get("xy").and_then(Value::as_array) {
-            if arr.len() == 2 {
-                let x = arr[0].as_f64().unwrap_or(0.0) as f32;
-                let y = arr[1].as_f64().unwrap_or(0.0) as f32;
-                light.xy = Some((x, y));
-                acks.push(json!({ "success": { format!("/lights/{id}/state/xy"): [x, y] } }));
-            }
+        if let Some(arr) = obj.get("xy").and_then(Value::as_array)
+            && arr.len() == 2
+        {
+            let x = arr[0].as_f64().unwrap_or(0.0) as f32;
+            let y = arr[1].as_f64().unwrap_or(0.0) as f32;
+            light.xy = Some((x, y));
+            acks.push(json!({ "success": { format!("/lights/{id}/state/xy"): [x, y] } }));
         }
         if let Some(v) = obj.get("ct").and_then(Value::as_i64) {
             let clamped = v.clamp(153, 500) as u16;
@@ -250,13 +250,13 @@ pub fn put_group_action(ctx: &V1Context, app_key: &str, id: &str, body: &Value) 
                 let clamped = v.clamp(1, 254);
                 light.brightness = clamped as f32 / 254.0 * 100.0;
             }
-            if let Some(arr) = obj.get("xy").and_then(Value::as_array) {
-                if arr.len() == 2 {
-                    light.xy = Some((
-                        arr[0].as_f64().unwrap_or(0.0) as f32,
-                        arr[1].as_f64().unwrap_or(0.0) as f32,
-                    ));
-                }
+            if let Some(arr) = obj.get("xy").and_then(Value::as_array)
+                && arr.len() == 2
+            {
+                light.xy = Some((
+                    arr[0].as_f64().unwrap_or(0.0) as f32,
+                    arr[1].as_f64().unwrap_or(0.0) as f32,
+                ));
             }
             if let Some(v) = obj.get("ct").and_then(Value::as_i64) {
                 light.mirek = Some(v.clamp(153, 500) as u16);

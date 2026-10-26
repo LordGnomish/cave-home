@@ -149,10 +149,10 @@ impl Zone {
                 return Self::answer(matched);
             }
             // CNAME at the name (and the client didn't ask for CNAME) → chase.
-            if qtype != RecordType::Cname {
-                if let Some(cname) = self.cname_at(qname) {
-                    return self.chase_cname(qname, &cname, qtype, depth);
-                }
+            if qtype != RecordType::Cname
+                && let Some(cname) = self.cname_at(qname)
+            {
+                return self.chase_cname(qname, &cname, qtype, depth);
             }
             return self.negative(Rcode::NoError); // NODATA
         }
@@ -303,16 +303,16 @@ impl Zone {
 
             // Optional TTL, optional class, then the type.
             let mut ttl = default_ttl;
-            if let Some(t) = toks.peek() {
-                if let Ok(v) = t.parse::<u32>() {
-                    ttl = v;
-                    toks.next();
-                }
+            if let Some(t) = toks.peek()
+                && let Ok(v) = t.parse::<u32>()
+            {
+                ttl = v;
+                toks.next();
             }
-            if let Some(t) = toks.peek() {
-                if matches!(t.to_ascii_uppercase().as_str(), "IN" | "CS" | "CH" | "HS") {
-                    toks.next();
-                }
+            if let Some(t) = toks.peek()
+                && matches!(t.to_ascii_uppercase().as_str(), "IN" | "CS" | "CH" | "HS")
+            {
+                toks.next();
             }
             let rtype = toks.next().ok_or(WireError::Corefile {
                 reason: "missing type",

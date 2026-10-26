@@ -405,27 +405,28 @@ fn decode_body(req: &Request, gvr: &GroupVersionResource, rp: &ResourcePath) -> 
 
     // GVK consistency: an explicit apiVersion/kind must name this endpoint's GVK.
     let expected = gvk::kind_for(gvr);
-    if let Some(kind) = body.get("kind").and_then(Value::as_str) {
-        if !kind.is_empty() {
-            match &expected {
-                Some(gvk) if gvk.kind == kind => {}
-                Some(gvk) => {
-                    return Err(Status::bad_request(format!(
-                        "the kind of the provided object ({kind}) does not match the kind of the resource ({})",
-                        gvk.kind
-                    )));
-                }
-                None => {}
+    if let Some(kind) = body.get("kind").and_then(Value::as_str)
+        && !kind.is_empty()
+    {
+        match &expected {
+            Some(gvk) if gvk.kind == kind => {}
+            Some(gvk) => {
+                return Err(Status::bad_request(format!(
+                    "the kind of the provided object ({kind}) does not match the kind of the resource ({})",
+                    gvk.kind
+                )));
             }
+            None => {}
         }
     }
-    if let Some(api_version) = body.get("apiVersion").and_then(Value::as_str) {
-        if !api_version.is_empty() && api_version != gvr.group_version() {
-            return Err(Status::bad_request(format!(
-                "the apiVersion of the provided object ({api_version}) does not match the apiVersion of the resource ({})",
-                gvr.group_version()
-            )));
-        }
+    if let Some(api_version) = body.get("apiVersion").and_then(Value::as_str)
+        && !api_version.is_empty()
+        && api_version != gvr.group_version()
+    {
+        return Err(Status::bad_request(format!(
+            "the apiVersion of the provided object ({api_version}) does not match the apiVersion of the resource ({})",
+            gvr.group_version()
+        )));
     }
 
     // metadata.name consistency (named requests only).

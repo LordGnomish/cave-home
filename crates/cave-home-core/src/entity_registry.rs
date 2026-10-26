@@ -123,10 +123,10 @@ impl EntityRegistry {
         let mut guard = self.inner.write();
 
         // Idempotent on the identity triple.
-        if let Some(entity_id) = guard.by_unique.get(&key) {
-            if let Some(entry) = guard.entries.get(entity_id) {
-                return entry.clone();
-            }
+        if let Some(entity_id) = guard.by_unique.get(&key)
+            && let Some(entry) = guard.entries.get(entity_id)
+        {
+            return entry.clone();
         }
 
         // Allocate an entity_id: slug of the suggested object id (or the unique

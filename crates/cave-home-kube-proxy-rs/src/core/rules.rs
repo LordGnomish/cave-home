@@ -133,16 +133,15 @@ fn push_port_rules(
     if matches!(
         svc.service_type,
         ServiceType::NodePort | ServiceType::LoadBalancer
-    ) {
-        if let Some(np) = sp.node_port {
-            out.push(ProxyRule {
-                service_key: key.clone(),
-                port_name: sp.name.clone(),
-                protocol: sp.protocol,
-                frontend: Frontend::NodePort { port: np },
-                action: action_for(svc, sel.external.clone()),
-            });
-        }
+    ) && let Some(np) = sp.node_port
+    {
+        out.push(ProxyRule {
+            service_key: key.clone(),
+            port_name: sp.name.clone(),
+            protocol: sp.protocol,
+            frontend: Frontend::NodePort { port: np },
+            action: action_for(svc, sel.external.clone()),
+        });
     }
 
     // LoadBalancer ingress frontends.

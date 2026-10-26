@@ -62,12 +62,12 @@ impl CronJobController {
         };
 
         // Past the starting deadline? Skip the run but advance the schedule.
-        if let Some(deadline) = cj.spec.starting_deadline {
-            if now - scheduled > deadline {
-                advance_schedule(&cj, scheduled, cluster);
-                prune_history(&cj, cluster);
-                return Outcome::Done;
-            }
+        if let Some(deadline) = cj.spec.starting_deadline
+            && now - scheduled > deadline
+        {
+            advance_schedule(&cj, scheduled, cluster);
+            prune_history(&cj, cluster);
+            return Outcome::Done;
         }
 
         // Concurrency policy.

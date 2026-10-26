@@ -203,10 +203,10 @@ impl HelmChartSpec {
         if self.job_image.trim().is_empty() {
             return Err(SpecError::EmptyJobImage);
         }
-        if let Some(repo) = &self.repo {
-            if !repo.trim().is_empty() {
-                Repo::parse(repo)?;
-            }
+        if let Some(repo) = &self.repo
+            && !repo.trim().is_empty()
+        {
+            Repo::parse(repo)?;
         }
         Ok(())
     }

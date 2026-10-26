@@ -129,12 +129,12 @@ impl CriClient for MockCriClient {
         if !s.sandboxes.contains_key(sandbox_id) {
             return Err(CriError::NotFound(format!("pod sandbox {sandbox_id}")));
         }
-        if let Some(rec) = s.sandboxes.get(sandbox_id) {
-            if rec.sandbox.state == PodSandboxState::Ready {
-                return Err(CriError::InvalidState(format!(
-                    "pod sandbox {sandbox_id} must be stopped before removal"
-                )));
-            }
+        if let Some(rec) = s.sandboxes.get(sandbox_id)
+            && rec.sandbox.state == PodSandboxState::Ready
+        {
+            return Err(CriError::InvalidState(format!(
+                "pod sandbox {sandbox_id} must be stopped before removal"
+            )));
         }
         s.sandboxes.remove(sandbox_id);
         // Remove every container belonging to this sandbox too.

@@ -94,14 +94,14 @@ impl HostPortAllocator {
 
         let mut conflicts = Vec::new();
         for hp in &wanted {
-            if let Some(holder) = self.claims.get(hp) {
-                if holder != &key {
-                    conflicts.push(PortConflict {
-                        port: *hp,
-                        held_by: holder.clone(),
-                        requested_by: key.clone(),
-                    });
-                }
+            if let Some(holder) = self.claims.get(hp)
+                && holder != &key
+            {
+                conflicts.push(PortConflict {
+                    port: *hp,
+                    held_by: holder.clone(),
+                    requested_by: key.clone(),
+                });
             }
         }
         if !conflicts.is_empty() {

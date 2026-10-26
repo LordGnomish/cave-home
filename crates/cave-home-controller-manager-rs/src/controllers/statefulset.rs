@@ -98,10 +98,10 @@ fn reconcile_parallel(sts: &StatefulSet, cluster: &mut Cluster) {
 
     // Delete every surplus ordinal (>= desired); PVCs are retained.
     for pod in &owned {
-        if let Some(o) = ordinal(&sts.meta.name, &pod.meta.name) {
-            if o >= sts.spec.replicas {
-                cluster.pods.delete(&pod.key());
-            }
+        if let Some(o) = ordinal(&sts.meta.name, &pod.meta.name)
+            && o >= sts.spec.replicas
+        {
+            cluster.pods.delete(&pod.key());
         }
     }
     // Create every missing ordinal below desired.

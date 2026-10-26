@@ -175,10 +175,9 @@ pub fn decide(
     // 4. Already wet enough? Skip (sensor-gated watering).
     if let (Some(threshold), Some(moisture)) =
         (zone.soil_moisture_threshold(), current_soil_moisture)
+        && moisture >= threshold
     {
-        if moisture >= threshold {
-            return WaterDecision::skip(SkipReason::SoilMoistSufficient);
-        }
+        return WaterDecision::skip(SkipReason::SoilMoistSufficient);
     }
     // 5. Seasonal adjust to 0 means "suspended this period".
     let runtime = apply_seasonal_adjust(zone.runtime_seconds(), seasonal_percent);

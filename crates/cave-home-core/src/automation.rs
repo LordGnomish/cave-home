@@ -133,15 +133,15 @@ impl Trigger {
                     return false;
                 }
                 // Filter checks; an absent filter matches anything.
-                if let Some(want_from) = from {
-                    if change.old.as_deref() != Some(want_from.as_str()) {
-                        return false;
-                    }
+                if let Some(want_from) = from
+                    && change.old.as_deref() != Some(want_from.as_str())
+                {
+                    return false;
                 }
-                if let Some(want_to) = to {
-                    if change.new.as_deref() != Some(want_to.as_str()) {
-                        return false;
-                    }
+                if let Some(want_to) = to
+                    && change.new.as_deref() != Some(want_to.as_str())
+                {
+                    return false;
                 }
                 // With no `to`/`from`, require a genuine value change.
                 if from.is_none() && to.is_none() {
@@ -272,13 +272,13 @@ impl Action {
                 target,
             } => {
                 let mut data = data.clone();
-                if let Some(entity_id) = target {
-                    if let Some(map) = data.as_object_mut() {
-                        map.insert(
-                            "entity_id".to_owned(),
-                            serde_json::Value::String(entity_id.to_string()),
-                        );
-                    }
+                if let Some(entity_id) = target
+                    && let Some(map) = data.as_object_mut()
+                {
+                    map.insert(
+                        "entity_id".to_owned(),
+                        serde_json::Value::String(entity_id.to_string()),
+                    );
                 }
                 ServiceCall::new(domain, service, data, Context::child_of(parent)).ok()
             }
