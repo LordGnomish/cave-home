@@ -107,7 +107,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.package }}-${{ matrix.features }}
+          key: ${{ matrix.name }}
       - name: cargo clippy
         run: cargo clippy -p ${{ matrix.package }} --all-targets --locked ${{ matrix.features }} -- -D warnings
       - name: cargo test
