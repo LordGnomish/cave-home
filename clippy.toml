@@ -1,0 +1,9 @@
+# Workspace clippy configuration. The lint levels live in the root Cargo.toml
+# under `[workspace.lints.clippy]`; this file only tunes lint behaviour.
+
+# `unwrap_used` / `expect_used` / `panic` are errors in shipped code but are the
+# normal way to fail a test, so they are allowed inside `#[test]` functions and
+# `#[cfg(test)]` modules.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests  = true

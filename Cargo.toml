@@ -89,8 +89,20 @@ authors       = ["The cave-home Authors"]
 unsafe_code = "forbid"
 
 [workspace.lints.clippy]
-pedantic   = { level = "warn", priority = -1 }
-nursery    = { level = "warn", priority = -1 }
+# Lint policy (enforced in CI by `cargo clippy --workspace --all-targets -- -D warnings`,
+# which turns every `warn` below into an error):
+#
+# * clippy's default groups (correctness, suspicious, style, complexity, perf)
+#   stay at their default levels, so they are errors in CI.
+# * `pedantic` and `nursery` are NOT enabled workspace-wide. They produced
+#   ~2,000 mostly stylistic findings (doc backticks, `use_self`,
+#   `missing_const_for_fn`, `must_use_candidate`, ...), and nursery lints are
+#   unstable by definition. A crate may opt into individual lints from them
+#   with a crate-level `#![warn(clippy::...)]`.
+# * Panicking shortcuts are errors in shipped code. Tests are exempt via
+#   `allow-{unwrap,expect,panic}-in-tests` in `clippy.toml`; outside tests a
+#   genuinely unreachable case needs a local `#[allow(..., reason = "...")]`
+#   or, better, a returned error.
 unwrap_used        = "warn"
 expect_used        = "warn"
 panic              = "warn"
