@@ -220,15 +220,11 @@ impl GenericPleg {
         // 4. Persist & broadcast.
         *self.records.lock() = new_records;
         *self.last_relist_ms.lock() = self.clock.now_unix_millis();
-        let mut emitted = 0usize;
+        let emitted = events.len();
         for e in events {
             // `send` only fails when there are no live subscribers; in that
             // case we still advance the cache (parity with upstream behaviour).
-            if self.tx.send(e).is_ok() {
-                emitted += 1;
-            } else {
-                emitted += 1;
-            }
+            let _ = self.tx.send(e);
         }
         emitted
     }

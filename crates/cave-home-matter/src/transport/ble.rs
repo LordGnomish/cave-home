@@ -48,12 +48,15 @@ pub const BTP_DEFAULT_MTU: u16 = 23;
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct BleAddr(pub String);
 
+/// A received frame: sender address plus payload.
+type Datagram = (String, Vec<u8>);
+
 /// In-memory BLE transport — bi-directional channel keyed by peer addr.
 pub struct BleTransport {
     addr: BleAddr,
-    inbox_tx: mpsc::Sender<(String, Vec<u8>)>,
-    inbox_rx: tokio::sync::Mutex<mpsc::Receiver<(String, Vec<u8>)>>,
-    peers: Arc<Mutex<HashMap<String, mpsc::Sender<(String, Vec<u8>)>>>>,
+    inbox_tx: mpsc::Sender<Datagram>,
+    inbox_rx: tokio::sync::Mutex<mpsc::Receiver<Datagram>>,
+    peers: Arc<Mutex<HashMap<String, mpsc::Sender<Datagram>>>>,
 }
 
 impl BleTransport {

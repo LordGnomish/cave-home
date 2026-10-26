@@ -8,6 +8,11 @@
 //! - upstream_test: TestPodPhase
 //! - upstream_test: TestSyncPodWithVolumes
 //! - upstream_test: TestKubeletSyncLoopFlush
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use std::sync::Arc;
 

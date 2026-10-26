@@ -57,8 +57,10 @@ mod tests {
     fn pod_with_images(imgs: &[&str]) -> Pod {
         let mut p = Pod::default();
         for img in imgs {
-            let mut c = Container::default();
-            c.image = (*img).into();
+            let c = Container {
+                image: (*img).into(),
+                ..Default::default()
+            };
             p.spec.containers.push(c);
         }
         p

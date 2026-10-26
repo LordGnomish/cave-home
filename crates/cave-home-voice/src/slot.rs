@@ -60,9 +60,9 @@ impl ValueList {
     #[must_use]
     pub fn with_synonym(mut self, spoken: &str, canonical: &str) -> ValueList {
         let canon_key = normalize(canonical);
-        if !self.map.contains_key(&canon_key) {
-            self.map.insert(canon_key, canonical.to_string());
-        }
+        self.map
+            .entry(canon_key)
+            .or_insert_with(|| canonical.to_string());
         self.map.insert(normalize(spoken), canonical.to_string());
         self
     }
@@ -151,11 +151,9 @@ fn normalize(s: &str) -> String {
                 out.push(lc);
             }
             last_space = false;
-        } else if c.is_whitespace() {
-            if !last_space {
-                out.push(' ');
-                last_space = true;
-            }
+        } else if c.is_whitespace() && !last_space {
+            out.push(' ');
+            last_space = true;
         }
         // punctuation dropped
     }

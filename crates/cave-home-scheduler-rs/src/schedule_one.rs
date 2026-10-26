@@ -268,11 +268,13 @@ mod tests {
     }
 
     fn pod(name: &str, cpu: i64, mem: i64) -> Pod {
-        let mut p = Pod::default();
-        p.metadata = ObjectMeta {
-            namespace: "default".into(),
-            name: name.into(),
-            uid: name.into(),
+        let mut p = Pod {
+            metadata: ObjectMeta {
+                namespace: "default".into(),
+                name: name.into(),
+                uid: name.into(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let mut c = Container::default();

@@ -74,17 +74,12 @@ pub const MAX_LENGTH_EVENT_EVENT_TYPE: usize = 64;
 /// Origin of a fired event.
 ///
 /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::EventOrigin
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum EventOrigin {
+    #[default]
     Local,
     Remote,
-}
-
-impl Default for EventOrigin {
-    fn default() -> Self {
-        Self::Local
-    }
 }
 
 /// Concrete event delivered to listeners.

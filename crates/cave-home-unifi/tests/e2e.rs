@@ -4,12 +4,17 @@
 //! End-to-end tests against a **mock UniFi console** stood up with `wiremock`.
 //!
 //! These drive the *real* `reqwest` + `rustls` transport (over plain HTTP, the
-//! one knob `wiremock` exposes) through the full stack — login → session cookie
-//! + CSRF capture → authorized API call → wire-to-domain mapping — so the same
+//! one knob `wiremock` exposes) through the full stack — login → session cookie +
+//! CSRF capture → authorized API call → wire-to-domain mapping — so the same
 //! code that talks to a real Cloud Key / UniFi OS console is exercised here. The
 //! acceptance trio is covered: a **device list**, a **camera live URL**, and the
 //! **intercom** path (the answer over REST + the live notification decoded by
 //! the real WebSocket engine).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use std::sync::Arc;
 use std::time::Duration;

@@ -21,12 +21,12 @@
 //! The restart policy gates whether a non-zero exit is *terminal*:
 //!
 //! * `Never`     — any non-zero exit is terminal -> contributes to `Failed`;
-//!                 a zero exit is terminal success.
+//!   a zero exit is terminal success.
 //! * `OnFailure` — a non-zero exit is *not* terminal (it will be restarted, so
-//!                 the container is effectively still "running"); only a zero
-//!                 exit is terminal success.
+//!   the container is effectively still "running"); only a zero
+//!   exit is terminal success.
 //! * `Always`    — *no* termination is terminal; a terminated container is
-//!                 always going to be restarted, so the pod stays `Running`.
+//!   always going to be restarted, so the pod stays `Running`.
 //!
 //! Pure, `std`-only, total function: no panics, no I/O, no clock.
 

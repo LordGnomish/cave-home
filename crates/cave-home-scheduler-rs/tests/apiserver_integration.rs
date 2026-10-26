@@ -13,6 +13,11 @@
 //!
 //! The translation lives entirely in this test (the library stays
 //! transport-agnostic): scheduler-typed `Pod`/`Node` ⇄ apiserver `json::Value`.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use std::sync::Arc;
 
@@ -88,25 +93,27 @@ fn node_value(name: &str, cpu_m: i64) -> Value {
 
 /// apiserver Pod `Value` → scheduler-typed `Pod`.
 fn value_to_pod(v: &Value) -> Pod {
-    let mut p = Pod::default();
-    p.metadata = ObjectMeta {
-        namespace: v
-            .pointer("metadata.namespace")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .into(),
-        name: v
-            .pointer("metadata.name")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .into(),
-        // The apiserver stamps a uid on create; mirror it so the cache's
-        // assumed-pod / forget bookkeeping keys correctly.
-        uid: v
-            .pointer("metadata.uid")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .into(),
+    let mut p = Pod {
+        metadata: ObjectMeta {
+            namespace: v
+                .pointer("metadata.namespace")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .into(),
+            name: v
+                .pointer("metadata.name")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .into(),
+            // The apiserver stamps a uid on create; mirror it so the cache's
+            // assumed-pod / forget bookkeeping keys correctly.
+            uid: v
+                .pointer("metadata.uid")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .into(),
+            ..Default::default()
+        },
         ..Default::default()
     };
     p.spec.node_name = v

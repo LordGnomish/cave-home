@@ -280,7 +280,7 @@ mod tests {
         assert!(removed.supports_target);
         assert!(!reg.has_service("light", "turn_on"));
         // domain bucket is dropped once empty
-        assert!(reg.services().get("light").is_none());
+        assert!(!reg.services().contains_key("light"));
         // removing a missing service yields None
         assert!(reg.remove("light", "turn_on").is_none());
     }

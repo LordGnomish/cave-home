@@ -109,12 +109,13 @@ impl Condition {
                     ))
                 })?;
                 if let Some(a) = above {
-                    if !(v > *a) {
+                    // NaN compares as unordered and fails the bound.
+                    if v.partial_cmp(a) != Some(std::cmp::Ordering::Greater) {
                         return Ok(false);
                     }
                 }
                 if let Some(b) = below {
-                    if !(v < *b) {
+                    if v.partial_cmp(b) != Some(std::cmp::Ordering::Less) {
                         return Ok(false);
                     }
                 }

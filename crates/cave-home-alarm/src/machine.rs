@@ -306,18 +306,13 @@ impl AlarmPanel {
                     self.elapsed = 0;
                 }
             }
-            AlarmState::Triggered => {
-                if self.elapsed >= self.config.trigger_time() {
-                    match (self.config.stay_triggered(), self.prior_armed) {
-                        (false, Some(prior)) => {
-                            self.state = prior;
-                            self.prior_armed = None;
-                            self.elapsed = 0;
-                        }
-                        // Stay triggered (config) or nothing to return to: a
-                        // human must disarm. Hold the triggered state.
-                        _ => {}
-                    }
+            AlarmState::Triggered if self.elapsed >= self.config.trigger_time() => {
+                // Otherwise (stay triggered by config, or nothing to return
+                // to) a human must disarm: hold the triggered state.
+                if let (false, Some(prior)) = (self.config.stay_triggered(), self.prior_armed) {
+                    self.state = prior;
+                    self.prior_armed = None;
+                    self.elapsed = 0;
                 }
             }
             _ => {}

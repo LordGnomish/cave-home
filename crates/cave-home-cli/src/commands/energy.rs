@@ -127,7 +127,7 @@ fn friendly_mode(mode: OpMode) -> &'static str {
     mode.label(cave_home_tesla::Lang::En)
 }
 
-/// ------- render helpers (pure, test-friendly) -----------------------
+// ------- render helpers (pure, test-friendly) -----------------------
 
 /// A demo power-flow snapshot, shown until the adapter transport is wired.
 #[derive(Debug, Clone, Copy)]

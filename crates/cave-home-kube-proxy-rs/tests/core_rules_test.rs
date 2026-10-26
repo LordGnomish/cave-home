@@ -2,6 +2,11 @@
 //! ProxyRule generation tests: ClusterIP / NodePort / LoadBalancer frontends,
 //! multi-port services, sessionAffinity mode, zero-endpoint REJECT, headless /
 //! ExternalName skipping, determinism, and the incremental rule diff.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use std::net::IpAddr;
 

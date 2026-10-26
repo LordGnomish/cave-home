@@ -2,6 +2,11 @@
 //! Endpoint-selection tests: readiness/serving/terminating filtering,
 //! topology-aware hints, externalTrafficPolicy Local vs Cluster, named-port
 //! resolution, and the terminating fallback.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use std::net::IpAddr;
 

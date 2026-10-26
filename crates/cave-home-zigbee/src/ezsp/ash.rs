@@ -141,11 +141,8 @@ impl AshFramer {
     pub fn feed(&mut self, chunk: &[u8]) -> Result<Vec<AshFrame>> {
         self.buf.extend_from_slice(chunk);
         let mut frames = Vec::new();
-        loop {
-            // Find next FLAG.
-            let Some(end) = self.buf.iter().position(|b| *b == FLAG) else {
-                break;
-            };
+        // Find next FLAG.
+        while let Some(end) = self.buf.iter().position(|b| *b == FLAG) {
             // Slice the bytes up to (but not including) end into a frame body.
             let body: Vec<u8> = self.buf[..end].to_vec();
             // Consume body + FLAG from buf.

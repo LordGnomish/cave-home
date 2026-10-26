@@ -156,9 +156,11 @@ mod tests {
 
     #[test]
     fn enabled_requires_site_id() {
-        let mut c = TeslaConfig::default();
-        c.enabled = true;
-        c.client_id = "real-client".into();
+        let mut c = TeslaConfig {
+            enabled: true,
+            client_id: "real-client".into(),
+            ..Default::default()
+        };
         assert!(c.validate().is_err());
         c.site_id = Some(123);
         assert!(c.validate().is_ok());
@@ -166,8 +168,10 @@ mod tests {
 
     #[test]
     fn validate_rejects_unknown_region() {
-        let mut c = TeslaConfig::default();
-        c.region = "mars".into();
+        let c = TeslaConfig {
+            region: "mars".into(),
+            ..Default::default()
+        };
         assert!(c.validate().is_err());
         assert_eq!(c.region(), None);
     }

@@ -9,9 +9,9 @@
 //! objects, motion / button / temperature each get their own resource).
 //!
 //! - [`models`]      — typed resource structs (lights, scenes, devices,
-//!                     motion, buttons, ...). 1:1 with `aiohue.v2.models.*`.
+//!   motion, buttons, ...). 1:1 with `aiohue.v2.models.*`.
 //! - [`controllers`] — request-scoped controllers wrapping `clip/v2/...`
-//!                     endpoints. 1:1 with `aiohue.v2.controllers.*`.
+//!   endpoints. 1:1 with `aiohue.v2.controllers.*`.
 //! - [`events`]      — typed wrapping of the EventStream payloads.
 //! - [`bridge`]      — high-level `HueBridgeV2`.
 
@@ -29,5 +29,6 @@ pub mod transport;
 #[cfg(feature = "runtime")]
 pub mod eventstream;
 
-#[cfg(all(test, feature = "runtime"))]
+#[cfg(test)]
+#[cfg(feature = "runtime")]
 mod test_support;

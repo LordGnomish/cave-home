@@ -8,7 +8,7 @@
 //! Phase 1 ships:
 //! - [`slip`]    — SLIP framer (RFC 1055-style byte stuffing + END markers).
 //! - [`commands`] — minimal command surface (version, read network params,
-//!                  permit-joining, APS-DATA-INDICATION callback).
+//!   permit-joining, APS-DATA-INDICATION callback).
 
 pub mod commands;
 pub mod slip;

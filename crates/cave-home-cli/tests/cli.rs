@@ -6,6 +6,11 @@
 //! Charter Golden Rule #1 (adapted for first-party crates): every
 //! command surface has a `--help` example test, so the help text
 //! itself is checked into CI.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use assert_cmd::Command;
 use predicates::prelude::PredicateBooleanExt;

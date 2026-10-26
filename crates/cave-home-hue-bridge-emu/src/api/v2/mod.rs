@@ -60,7 +60,6 @@ impl Envelope {
 pub const APP_KEY_HEADER: &str = "hue-application-key";
 
 /// Verify a request's `hue-application-key` header.
-#[must_use]
 pub fn check_app_key(ctx: &V1Context, app_key: Option<&str>) -> Result<(), Envelope> {
     match app_key {
         Some(key) if ctx.pairing.whitelist_get(key).is_some() => Ok(()),
@@ -274,6 +273,14 @@ pub fn supported_resource_segments() -> &'static [&'static str] {
     ]
 }
 
+// keep the unused-import warning at bay (BridgeRegistry is used only via fields).
+#[allow(dead_code)]
+fn _ensure_arc_brigde_registry_used(_: Arc<BridgeRegistry>) {}
+#[allow(dead_code)]
+fn _ensure_map_used(_: Map<String, Value>) {}
+#[allow(dead_code)]
+fn _ensure_protocol_error_used(_: HueProtocolError) {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -418,11 +425,3 @@ mod tests {
         }
     }
 }
-
-// keep the unused-import warning at bay (BridgeRegistry is used only via fields).
-#[allow(dead_code)]
-fn _ensure_arc_brigde_registry_used(_: Arc<BridgeRegistry>) {}
-#[allow(dead_code)]
-fn _ensure_map_used(_: Map<String, Value>) {}
-#[allow(dead_code)]
-fn _ensure_protocol_error_used(_: HueProtocolError) {}

@@ -51,6 +51,12 @@ impl LightsController {
         self.inner.len()
     }
 
+    /// Whether no lights are tracked.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
     /// `LightsController.set_state` — port. The upstream method takes
     /// keyword args; we accept a pre-built [`LightPut`] for type safety.
     pub async fn set_state(&self, req: &dyn V2Request, id: &str, put: &LightPut) -> HueResult<()> {

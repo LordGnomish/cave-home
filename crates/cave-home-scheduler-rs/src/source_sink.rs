@@ -20,6 +20,10 @@ use crate::types::{Node, Pod};
 
 /// Upstream: `pkg/scheduler/internal/queue/events.go::PodEvent`.
 #[derive(Debug, Clone)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "events are moved once through a channel; boxing would add an allocation per event"
+)]
 pub enum PodEvent {
     Add(Pod),
     Update { old: Pod, new: Pod },
@@ -35,6 +39,10 @@ pub type EventStream = mpsc::UnboundedReceiver<PodEvent>;
 /// Upstream: the Node informer's `Add/Update/Delete` handlers
 /// (`pkg/scheduler/eventhandlers.go::addNodeToCache` et al.).
 #[derive(Debug, Clone)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "events are moved once through a channel; boxing would add an allocation per event"
+)]
 pub enum NodeEvent {
     Add(Node),
     Update { old: Node, new: Node },

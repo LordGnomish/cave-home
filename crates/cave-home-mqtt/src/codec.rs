@@ -606,7 +606,7 @@ mod tests {
     fn unsuback_round_trip() {
         // §3.11: UNSUBACK is a packet identifier only; remaining len 2.
         let a = UnsubAck { packet_id: 11 };
-        let bytes = encode_packet(&Packet::UnsubAck(a.clone())).expect("encode");
+        let bytes = encode_packet(&Packet::UnsubAck(a)).expect("encode");
         assert_eq!(&bytes[..], [0xb0, 0x02, 0x00, 0x0b].as_slice());
         let (back, _) = decode_packet(&bytes).expect("decode");
         assert_eq!(back, Packet::UnsubAck(a));

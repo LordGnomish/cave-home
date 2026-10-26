@@ -166,9 +166,8 @@ impl PaseSession {
         // 5. DeriveSecureSession.
         let shared_secret = pake_shared_secret(&i_commitment, &r_commitment, self.passcode);
         let keys = derive_secure_session(&shared_secret, &self.params.salt)?;
-        self.session_keys = Some(keys.clone());
-        peer.session_keys = Some(keys);
-        Ok(self.session_keys.as_ref().expect("populated above"))
+        peer.session_keys = Some(keys.clone());
+        Ok(self.session_keys.insert(keys))
     }
 
     /// Returns the derived session keys, once `pair` or `wait_for_establishment` succeeded.
@@ -207,8 +206,7 @@ impl PaseSession {
     /// # Upstream: src/protocols/secure_channel/PASESession.cpp::PASESession::DeriveSecureSession
     pub fn derive_secure_session(&mut self, shared_secret: &[u8]) -> Result<&SessionKeys> {
         let keys = derive_secure_session(shared_secret, &self.params.salt)?;
-        self.session_keys = Some(keys);
-        Ok(self.session_keys.as_ref().expect("populated"))
+        Ok(self.session_keys.insert(keys))
     }
 }
 
@@ -217,7 +215,16 @@ impl PaseSession {
 // # Upstream: src/crypto/CHIPCryptoPALmbedTLS.cpp::Spake2p_*
 // -----------------------------------------------------------------------------
 
-type HmacSha256 = Hmac<Sha256>;
+pub(crate) type HmacSha256 = Hmac<Sha256>;
+
+/// An HMAC-SHA256 instance keyed with `key`.
+#[allow(
+    clippy::expect_used,
+    reason = "HMAC accepts keys of any length (RFC 2104 §2), so new_from_slice cannot fail"
+)]
+pub(crate) fn hmac_sha256(key: &[u8]) -> HmacSha256 {
+    HmacSha256::new_from_slice(key).expect("HMAC accepts keys of any length")
+}
 
 /// Build a Pake1/Pake2 commitment value.
 ///
@@ -227,7 +234,7 @@ pub fn pake_commitment(
     passcode: u32,
     params: &PbkdfParameters,
 ) -> [u8; 32] {
-    let mut mac = HmacSha256::new_from_slice(domain_separator).expect("hmac key");
+    let mut mac = hmac_sha256(domain_separator);
     mac.update(&passcode.to_le_bytes());
     mac.update(&params.iterations.to_le_bytes());
     mac.update(&params.salt);
@@ -241,7 +248,7 @@ pub fn pake_commitment(
 ///
 /// # Upstream: src/crypto/CHIPCryptoPAL.cpp::Spake2p::ComputeAuthenticator
 fn pake_proof(direction: &[u8], a: &[u8; 32], b: &[u8; 32], passcode: u32) -> [u8; 32] {
-    let mut mac = HmacSha256::new_from_slice(&passcode.to_le_bytes()).expect("hmac key");
+    let mut mac = hmac_sha256(&passcode.to_le_bytes());
     mac.update(direction);
     mac.update(a);
     mac.update(b);
@@ -259,7 +266,7 @@ fn verify_pake_proof(
     passcode: u32,
     provided: &[u8; 32],
 ) -> Result<()> {
-    let mut mac = HmacSha256::new_from_slice(&passcode.to_le_bytes()).expect("hmac key");
+    let mut mac = hmac_sha256(&passcode.to_le_bytes());
     mac.update(direction);
     mac.update(a);
     mac.update(b);
@@ -271,7 +278,7 @@ fn verify_pake_proof(
 ///
 /// # Upstream: src/crypto/CHIPCryptoPAL.cpp::Spake2p::KeyConfirmation (combined with K_e expansion)
 fn pake_shared_secret(a: &[u8; 32], b: &[u8; 32], passcode: u32) -> Vec<u8> {
-    let mut mac = HmacSha256::new_from_slice(b"PAKE-K_e").expect("hmac key");
+    let mut mac = hmac_sha256(b"PAKE-K_e");
     mac.update(a);
     mac.update(b);
     mac.update(&passcode.to_le_bytes());
@@ -343,7 +350,7 @@ mod tests {
         let params = fixture_params();
         let mut commissioner =
             PaseSession::new_initiator(20_202_021, params.clone()).expect("initiator");
-        let mut device = PaseSession::new_responder(00_000_001, params).expect("responder");
+        let mut device = PaseSession::new_responder(1, params).expect("responder");
         device.wait_for_establishment().expect("wait");
         let err = commissioner.pair(&mut device).expect_err("must reject");
         match err {

@@ -143,10 +143,12 @@ mod tests {
     }
 
     fn pod_with_ports(name: &str, hp: i32) -> Pod {
-        let mut p = Pod::default();
-        p.metadata = ObjectMeta {
-            name: name.into(),
-            uid: name.into(),
+        let mut p = Pod {
+            metadata: ObjectMeta {
+                name: name.into(),
+                uid: name.into(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         p.spec = PodSpec::default();

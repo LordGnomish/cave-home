@@ -272,12 +272,15 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    /// `(domain, setup position)` pairs in the order integrations were set up.
+    type OrderLog = Arc<parking_lot::Mutex<Vec<(String, usize)>>>;
+
     /// A test integration that records the order it was set up in and can be
     /// told to fail.
     struct Recorder {
         manifest: Manifest,
         counter: Arc<AtomicUsize>,
-        order: Arc<parking_lot::Mutex<Vec<(String, usize)>>>,
+        order: OrderLog,
         fail: bool,
     }
 
@@ -302,7 +305,7 @@ mod tests {
     fn recorder(
         manifest: Manifest,
         counter: &Arc<AtomicUsize>,
-        order: &Arc<parking_lot::Mutex<Vec<(String, usize)>>>,
+        order: &OrderLog,
         fail: bool,
     ) -> Box<dyn Integration> {
         Box::new(Recorder {
@@ -313,10 +316,7 @@ mod tests {
         })
     }
 
-    fn harness() -> (
-        Arc<AtomicUsize>,
-        Arc<parking_lot::Mutex<Vec<(String, usize)>>>,
-    ) {
+    fn harness() -> (Arc<AtomicUsize>, OrderLog) {
         (
             Arc::new(AtomicUsize::new(0)),
             Arc::new(parking_lot::Mutex::new(Vec::new())),

@@ -3,11 +3,16 @@
 //!
 //! These exercise the decision core of K3s's ServiceLB controller
 //! (`pkg/cloudprovider/servicelb.go` `updateStatus`/`deployDaemonSet`/
-//! `deleteDaemonSet`): given a cluster snapshot of LoadBalancer Services + Nodes
-//! + the set of svclb DaemonSets that currently exist, decide which DaemonSets to
+//! `deleteDaemonSet`): given a cluster snapshot of LoadBalancer Services + Nodes +
+//! the set of svclb DaemonSets that currently exist, decide which DaemonSets to
 //! apply (create-or-update), which to delete (orphans), and what each Service's
 //! `status.loadBalancer.ingress` should become — composing the already-tested
 //! port allocator, node selector, pod-spec builder, and status computer.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
@@ -216,7 +221,7 @@ fn local_etp_only_publishes_nodes_with_a_backing_pod() {
 
 #[test]
 fn status_patches_lists_every_programmed_service_with_its_ingress() {
-    let services = vec![http("web"), http("api2")];
+    let services = [http("web"), http("api2")];
     // api2 uses a different port so both program.
     let mut api = svc("api2", vec![port("h", Protocol::Tcp, 8080, 30090)]);
     api.name = "api2".to_owned();

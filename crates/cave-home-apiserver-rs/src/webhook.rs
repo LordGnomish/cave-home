@@ -18,7 +18,7 @@
 //! TLS-backed client (the `tls` feature provides the stream type).
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::admission::{AdmissionRequest, MutatingPlugin, Operation, ValidatingPlugin};
 use crate::json::{self, Value, obj};
@@ -704,7 +704,10 @@ impl MockWebhookClient {
     /// The recorded request bodies, in order.
     #[must_use]
     pub fn requests(&self) -> Vec<Vec<u8>> {
-        self.requests.lock().expect("requests lock").clone()
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -712,7 +715,7 @@ impl WebhookClient for MockWebhookClient {
     fn post(&self, _url: &str, body: &[u8]) -> std::result::Result<Vec<u8>, WebhookError> {
         self.requests
             .lock()
-            .expect("requests lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .push(body.to_vec());
         (self.responder)(body)
     }

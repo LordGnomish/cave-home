@@ -52,6 +52,12 @@ impl MotionController {
         self.inner.len()
     }
 
+    /// Whether no motion sensors are tracked.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
     /// Enable / disable a motion sensor. Source:
     /// `MotionController.set_enabled` — PUTs `{"enabled": <bool>}`.
     pub async fn set_enabled(&self, req: &dyn V2Request, id: &str, enabled: bool) -> HueResult<()> {

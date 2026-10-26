@@ -53,6 +53,12 @@ impl ButtonController {
         self.inner.len()
     }
 
+    /// Whether no buttons are tracked.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
     /// The most recent press event reported by a button, if any. This is the
     /// value an automation reads after an SSE button-press event lands.
     #[must_use]

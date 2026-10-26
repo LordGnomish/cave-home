@@ -20,6 +20,7 @@
 //!     * `EnergySaveHeat`      = 0x0B
 //!     * `EnergySaveCool`      = 0x0C
 //!     * `ManufacturerSpecific`= 0x1F
+//!
 //!   with `ThermostatMode::from_u8(u8) -> Option<Self>` and
 //!   `ThermostatMode::to_u8(self) -> u8`, mirroring the `CommandClass` pattern.
 //! - Three new `Command` variants, tuple-style like `BasicSet`/`BasicReport`
@@ -47,6 +48,11 @@
 //! of the named modes nor the `0x1F` ManufacturerSpecific sentinel — so this
 //! test asserts the same `OutOfRange` rejection rather than fabricating a mode.
 //! `0x1F` IS modelled (ManufacturerSpecific) and must decode successfully.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use cave_home_zwave::{Command, CommandClass, ThermostatMode, ZwaveError};
 

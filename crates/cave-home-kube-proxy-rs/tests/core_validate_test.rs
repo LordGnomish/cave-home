@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Validation tests for the decision core — malformed Services / slices are
 //! rejected with a typed error, never a panic.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use std::net::IpAddr;
 

@@ -166,7 +166,7 @@ fn friendly_action(action: SceneRecallAction) -> &'static str {
     }
 }
 
-/// ------- render helpers (pure, test-friendly) -----------------------
+// ------- render helpers (pure, test-friendly) -----------------------
 
 /// A demo light row, shown until the bridge transport is wired into the binary.
 /// `xy` is a CIE colour point; the renderer converts it to RGB via the crate's

@@ -148,12 +148,8 @@ impl Server {
     /// A fatal accept error.
     pub fn run(&self) -> io::Result<()> {
         for conn in self.listener.incoming() {
-            match conn {
-                Ok(mut stream) => {
-                    let _ = serve_stream(&mut stream, &self.app);
-                }
-                Err(e) => return Err(e),
-            }
+            let mut stream = conn?;
+            let _ = serve_stream(&mut stream, &self.app);
         }
         Ok(())
     }
@@ -295,7 +291,7 @@ mod tests {
         // 5. Delete it (200).
         let deleted = http_call(
             addr,
-            &format!("DELETE /api/v1/namespaces/default/pods/nginx HTTP/1.1\r\nhost: test\r\n\r\n"),
+            "DELETE /api/v1/namespaces/default/pods/nginx HTTP/1.1\r\nhost: test\r\n\r\n",
         );
         assert!(
             deleted.starts_with("HTTP/1.1 200 OK\r\n"),

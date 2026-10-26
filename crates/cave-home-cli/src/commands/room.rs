@@ -41,9 +41,10 @@ pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
             0
         }
         Some(("show", sub)) => {
-            let name = sub
-                .get_one::<String>("name")
-                .expect("clap enforces required");
+            let Some(name) = sub.get_one::<String>("name") else {
+                eprintln!("Tell me which room, e.g. 'cavehomectl room show Kitchen'.");
+                return 2;
+            };
             let (out, code) = render_show(&devices, name, verbose);
             print!("{out}");
             code
@@ -159,7 +160,7 @@ mod tests {
     fn cmd_advertises_room_subtree() {
         let c = cmd();
         let subs: Vec<_> = c.get_subcommands().map(|s| s.get_name()).collect();
-        assert!(subs.iter().any(|n| *n == "list"));
-        assert!(subs.iter().any(|n| *n == "show"));
+        assert!(subs.contains(&"list"));
+        assert!(subs.contains(&"show"));
     }
 }

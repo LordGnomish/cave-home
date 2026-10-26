@@ -68,8 +68,9 @@ impl EzspNetworkParameters {
             )));
         }
         // node_type byte = bytes[1].
-        let ext_pan_bytes: [u8; 8] = bytes[2..10].try_into().expect("bounds checked");
-        let extended_pan_id = u64::from_le_bytes(ext_pan_bytes);
+        let extended_pan_id = u64::from_le_bytes([
+            bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9],
+        ]);
         let pan_id = u16::from_le_bytes([bytes[10], bytes[11]]);
         // tx_power = bytes[12]
         let channel = bytes[13];

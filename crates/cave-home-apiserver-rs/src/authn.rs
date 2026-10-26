@@ -104,7 +104,7 @@ impl Authenticator for RequestHeaderAuthenticator {
     fn authenticate(&self, req: &Request) -> Result<Option<UserInfo>> {
         match req.headers.get("x-remote-user") {
             None => Ok(None),
-            Some(name) if name.is_empty() => Ok(None),
+            Some("") => Ok(None),
             Some(name) => {
                 let groups = req
                     .headers

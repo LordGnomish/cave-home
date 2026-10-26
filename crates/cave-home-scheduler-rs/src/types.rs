@@ -65,17 +65,12 @@ pub struct ResourceRequirements {
 // ---------- Container --------------------------------------------------------
 
 /// Upstream: `k8s.io/api/core/v1.Protocol`.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub enum Protocol {
+    #[default]
     Tcp,
     Udp,
     Sctp,
-}
-
-impl Default for Protocol {
-    fn default() -> Self {
-        Self::Tcp
-    }
 }
 
 /// Upstream: `k8s.io/api/core/v1.ContainerPort`.
@@ -223,16 +218,11 @@ pub struct Taint {
 }
 
 /// Upstream: `k8s.io/api/core/v1.TolerationOperator`.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub enum TolerationOperator {
+    #[default]
     Equal,
     Exists,
-}
-
-impl Default for TolerationOperator {
-    fn default() -> Self {
-        Self::Equal
-    }
 }
 
 /// Upstream: `k8s.io/api/core/v1.Toleration`.
@@ -287,19 +277,14 @@ pub struct PodSpec {
 }
 
 /// Upstream: `k8s.io/api/core/v1.PodPhase`.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub enum PodPhase {
+    #[default]
     Pending,
     Running,
     Succeeded,
     Failed,
     Unknown,
-}
-
-impl Default for PodPhase {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 /// Upstream: `k8s.io/api/core/v1.PodStatus` (subset).

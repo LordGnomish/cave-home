@@ -16,7 +16,6 @@
 //! This module computes that publish set. It is a behavioural reimplementation
 //! of the documented status flow.
 
-use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::net::IpAddr;
 
@@ -89,6 +88,7 @@ where
 mod tests {
     use super::*;
     use crate::service::{Protocol, ServicePort};
+    use std::collections::BTreeMap;
 
     fn ip(s: &str) -> IpAddr {
         s.parse().expect("test ip")

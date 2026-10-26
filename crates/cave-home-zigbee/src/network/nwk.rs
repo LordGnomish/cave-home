@@ -16,7 +16,7 @@ use parking_lot::RwLock;
 use super::routing::RoutingTable;
 
 /// Network Information Base — §3.5.2.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct NetworkInformationBase {
     /// PAN ID (network-wide identifier for the local network).
     pub pan_id: u16,
@@ -28,18 +28,6 @@ pub struct NetworkInformationBase {
     pub update_id: u8,
     /// Coordinator's short address (always 0x0000 in centralised mode).
     pub coordinator_short_address: u16,
-}
-
-impl Default for NetworkInformationBase {
-    fn default() -> Self {
-        Self {
-            pan_id: 0,
-            extended_pan_id: 0,
-            channel: 0,
-            update_id: 0,
-            coordinator_short_address: 0x0000,
-        }
-    }
 }
 
 /// Network layer — exposes the NIB + routing table.

@@ -253,8 +253,7 @@ fn three_endpoints_emit_two_probability_rules_then_unconditional() {
     // The last endpoint dispatch line MUST NOT carry --probability.
     let last_line = nat
         .lines()
-        .filter(|l| l.contains("-A KUBE-SVC-") && l.contains("-j KUBE-SEP-"))
-        .last()
+        .rfind(|l| l.contains("-A KUBE-SVC-") && l.contains("-j KUBE-SEP-"))
         .unwrap_or("");
     assert!(
         !last_line.contains("--probability"),

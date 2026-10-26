@@ -7,6 +7,11 @@
 //! ingress IP ("endpoint health"), the svclb DaemonSet (pod-set) count to apply /
 //! delete, and the host-port conflict count. These are computed purely from a
 //! `Reconciliation` and rendered as Prometheus text exposition.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use std::collections::BTreeMap;
 use std::net::IpAddr;

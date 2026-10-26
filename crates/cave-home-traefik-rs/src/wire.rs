@@ -185,8 +185,10 @@ mod tests {
 
     #[test]
     fn short_circuit_parts_carries_status_and_location() {
-        let mut resp = ResponseDescriptor::default();
-        resp.status = Some(302);
+        let mut resp = ResponseDescriptor {
+            status: Some(302),
+            ..Default::default()
+        };
         resp.headers
             .insert("location".to_string(), "https://x/y".to_string());
         let (status, headers) = short_circuit_parts(&resp);

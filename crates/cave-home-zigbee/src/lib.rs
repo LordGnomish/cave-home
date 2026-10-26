@@ -12,9 +12,9 @@
 //! Phase 1 MVP scope:
 //! - [`transport`]  — abstracted USB UART + TCP socket transport.
 //! - [`ezsp`]       — EZSP frame layer + ASH transport for Silicon Labs
-//!                    NCPs (Sonoff ZBDongle-E + SMLIGHT SLZB-06).
+//!   NCPs (Sonoff ZBDongle-E + SMLIGHT SLZB-06).
 //! - [`deconz`]     — deCONZ serial protocol + SLIP framer for the
-//!                    dresden-elektronik ConBee II.
+//!   dresden-elektronik ConBee II.
 //! - [`coordinator`] — coordinator init / form-network entry point.
 //! - [`network`]    — NWK + APS layers + routing table.
 //! - [`zcl`]        — ZCL frame format + Foundation commands.

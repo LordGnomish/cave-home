@@ -2,6 +2,11 @@
 //! RED — failing tests for the local-path-provisioner **helper-pod command**
 //! decision (port of rancher/local-path-provisioner v0.0.36 `createHelperPod`'s
 //! pure command/env/args/name construction). References API not yet implemented.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use cave_home_orchestration::local_path_provisioner::ProvisionerConfig;
 use cave_home_orchestration::local_path_provisioner::config::{ActionType, StorageClassConfig};

@@ -147,6 +147,7 @@ struct QueueSignal {
     closed: AtomicBool,
 }
 
+#[derive(Default)]
 struct PriorityQueueInner {
     active: BinaryHeap<HeapEntry>,
     backoff: Vec<QueuedPodInfo>,
@@ -161,19 +162,6 @@ struct PriorityQueueInner {
     /// `MoveAllToActiveOrBackoffQueue` ran. `None` means "never" (upstream's
     /// `-1` sentinel).
     move_request_cycle: Option<u64>,
-}
-
-impl Default for PriorityQueueInner {
-    fn default() -> Self {
-        Self {
-            active: BinaryHeap::new(),
-            backoff: Vec::new(),
-            unschedulable: HashMap::new(),
-            seq: 0,
-            scheduling_cycle: 0,
-            move_request_cycle: None,
-        }
-    }
 }
 
 /// Upstream: `pkg/scheduler/backend/queue/scheduling_queue.go::
@@ -430,10 +418,12 @@ mod tests {
     use crate::types::{ObjectMeta, Pod};
 
     fn pod(name: &str, priority: i32) -> Pod {
-        let mut p = Pod::default();
-        p.metadata = ObjectMeta {
-            name: name.into(),
-            uid: name.into(),
+        let mut p = Pod {
+            metadata: ObjectMeta {
+                name: name.into(),
+                uid: name.into(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         p.spec.priority = priority;

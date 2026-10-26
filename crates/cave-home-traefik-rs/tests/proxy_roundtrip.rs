@@ -4,6 +4,11 @@
 //! forwarding engine, X-Forwarded-* injection, middleware redirect short-circuit
 //! and metrics.
 #![cfg(feature = "runtime")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use std::convert::Infallible;
 use std::sync::Arc;

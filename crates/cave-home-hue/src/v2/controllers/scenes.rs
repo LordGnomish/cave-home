@@ -45,6 +45,12 @@ impl ScenesController {
         self.inner.len()
     }
 
+    /// Whether no scenes are tracked.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
     /// `aiohue.v2.controllers.scenes.ScenesController.recall` — convenience
     /// that PUTs `{"recall": {"action": "active"}}` to activate a scene.
     pub async fn recall(

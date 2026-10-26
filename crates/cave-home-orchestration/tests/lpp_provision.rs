@@ -4,6 +4,11 @@
 //! validation (selector / access mode / node), volume-type resolution, node
 //! affinity, and the resulting PersistentVolume spec. References API not yet
 //! implemented.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use cave_home_orchestration::local_path_provisioner::config::StorageClassConfig;
 use cave_home_orchestration::local_path_provisioner::provision::{

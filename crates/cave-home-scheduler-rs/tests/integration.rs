@@ -3,6 +3,11 @@
 //!
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
 //!         pkg/scheduler/scheduler_test.go (slice covered by Phase 2).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use std::sync::Arc;
 

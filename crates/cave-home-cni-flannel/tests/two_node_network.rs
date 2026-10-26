@@ -11,6 +11,11 @@
 //! i.e. that the datapath this crate programs would really carry pod traffic.
 //!
 //! It also runs the host-gw equivalent (direct routes, no encapsulation).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};

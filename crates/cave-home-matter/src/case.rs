@@ -13,11 +13,12 @@
 //! `[[unmapped]] attestation_verifier` for the Phase 1b upgrade.
 
 use hkdf::Hkdf;
-use hmac::{Hmac, Mac};
+use hmac::Mac;
 use sha2::Sha256;
 
 use crate::error::{MatterError, Result};
 use crate::fabric::{FabricId, NodeId};
+use crate::pase::hmac_sha256;
 
 const SESSION_KEY_BYTES: usize = 16;
 
@@ -187,8 +188,7 @@ impl CaseSession {
             return Err(MatterError::Handshake("Sigma3 signature mismatch".into()));
         }
         let keys = self.derive_secure_session()?;
-        self.keys = Some(keys);
-        Ok(self.keys.as_ref().expect("populated"))
+        Ok(self.keys.insert(keys))
     }
 
     /// Initiator-side finalisation (after sending Sigma3).
@@ -199,8 +199,7 @@ impl CaseSession {
             ));
         }
         let keys = self.derive_secure_session()?;
-        self.keys = Some(keys);
-        Ok(self.keys.as_ref().expect("populated"))
+        Ok(self.keys.insert(keys))
     }
 
     /// Derive the per-direction CASE session keys.
@@ -263,10 +262,8 @@ fn random_32() -> [u8; 32] {
     out
 }
 
-type HmacSha256 = Hmac<Sha256>;
-
 fn hmac_sign(domain: &[u8], key: &[u8; 32], a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
-    let mut mac = HmacSha256::new_from_slice(key).expect("hmac key");
+    let mut mac = hmac_sha256(key);
     mac.update(domain);
     mac.update(a);
     mac.update(b);

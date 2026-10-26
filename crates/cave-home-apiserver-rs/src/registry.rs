@@ -707,8 +707,10 @@ mod tests {
         r.create(&pods(), a).expect("a");
         r.create(&pods(), pod("default", "b")).expect("b");
 
-        let mut opts = ListOptions::default();
-        opts.label_selector = LabelSelector::parse("app=web").expect("sel");
+        let opts = ListOptions {
+            label_selector: LabelSelector::parse("app=web").expect("sel"),
+            ..Default::default()
+        };
         let res = r.list(&pods(), &opts).expect("list");
         assert_eq!(res.items.len(), 1);
         assert_eq!(meta::read_meta(&res.items[0]).name, "a");
@@ -719,8 +721,10 @@ mod tests {
         let mut r = Registry::new();
         r.create(&pods(), pod("ns1", "a")).expect("a");
         r.create(&pods(), pod("ns2", "b")).expect("b");
-        let mut opts = ListOptions::default();
-        opts.field_selector = FieldSelector::parse("metadata.namespace=ns1").expect("fs");
+        let opts = ListOptions {
+            field_selector: FieldSelector::parse("metadata.namespace=ns1").expect("fs"),
+            ..Default::default()
+        };
         let res = r.list(&pods(), &opts).expect("list");
         assert_eq!(res.items.len(), 1);
     }

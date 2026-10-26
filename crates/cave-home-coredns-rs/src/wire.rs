@@ -534,7 +534,7 @@ mod tests {
         };
         let b = h.to_bytes();
         // byte 2: QR(1) Opcode(0101=5) AA(0) TC(0) RD(1) => 1_0101_0_0_1 = 0xA9
-        assert_eq!(b[2], 0b1_0101_0_0_1);
+        assert_eq!(b[2], 0xA9);
         // byte 3: RA(0) Z(0) AD(0) CD(0) RCODE(0000) => 0x00
         assert_eq!(b[3], 0x00);
         assert_eq!(&b[0..2], &[0x12, 0x34]);

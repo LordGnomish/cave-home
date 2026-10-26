@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Integration tests for the StatefulSet controller — ordered, stable pod
 //! identities (`pkg/controller/statefulset` contract).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "integration-test helpers: a failed unwrap is a failed test"
+)]
 
 use cave_home_controller_manager_rs::apis::{
     Cluster, PodManagementPolicy, PodPhase, PodTemplateSpec, StatefulSet, StatefulSetSpec,

@@ -81,11 +81,9 @@ impl MeterReading {
 
         // Meter event flags: a bitfield32 (hi word first). The "no events"
         // value is all-zero, so read the raw 32 bits and test for any set bit.
-        let evt_raw = point::uint32(payload, 164)?.unwrap_or_else(|| {
-            // `uint32` returns None on the 0xFFFF_FFFF sentinel; for a bitfield
-            // that still means "all bits set" => an event is present.
-            u32::MAX
-        });
+        // `uint32` returns None on the 0xFFFF_FFFF sentinel; for a bitfield
+        // that still means "all bits set" => an event is present.
+        let evt_raw = point::uint32(payload, 164)?.unwrap_or(u32::MAX);
         let has_event = evt_raw != 0;
 
         Ok(Self {

@@ -20,7 +20,7 @@ use crate::state::StateMachine;
 
 /// Snapshot of a single state for the template environment.
 fn state_to_jinja(state: &crate::state::State) -> JinjaValue {
-    JinjaValue::from_serialize(&serde_json::json!({
+    JinjaValue::from_serialize(serde_json::json!({
         "entity_id": state.entity_id,
         "domain": state.domain,
         "object_id": state.object_id,

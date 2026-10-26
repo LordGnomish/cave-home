@@ -36,34 +36,36 @@ pub fn short_config(identity: &BridgeIdentity) -> Value {
 #[must_use]
 pub fn full_config(identity: &BridgeIdentity, pairing: &PairingService) -> Value {
     let mut base = short_config(identity);
-    let obj = base.as_object_mut().expect("short_config is an object");
-    // Whitelist map keyed by app_key — published shape.
-    let mut whitelist = Map::new();
-    for entry in pairing.whitelist_all() {
-        whitelist.insert(
-            entry.app_key.clone(),
-            json!({
-                "last use date": entry.create_date,
-                "create date": entry.create_date,
-                "name": entry.device_type,
-            }),
+    // `short_config` always renders an object.
+    if let Some(obj) = base.as_object_mut() {
+        // Whitelist map keyed by app_key — published shape.
+        let mut whitelist = Map::new();
+        for entry in pairing.whitelist_all() {
+            whitelist.insert(
+                entry.app_key.clone(),
+                json!({
+                    "last use date": entry.create_date,
+                    "create date": entry.create_date,
+                    "name": entry.device_type,
+                }),
+            );
+        }
+        obj.insert("whitelist".into(), Value::Object(whitelist));
+        obj.insert(
+            "linkbutton".into(),
+            Value::Bool(pairing.is_link_button_pressed()),
         );
+        obj.insert("portalservices".into(), Value::Bool(false));
+        obj.insert(
+            "portalconnection".into(),
+            Value::String("disconnected".into()),
+        );
+        obj.insert("zigbeechannel".into(), Value::from(25));
+        obj.insert("ipaddress".into(), Value::String(identity.host.clone()));
+        obj.insert("netmask".into(), Value::String("255.255.255.0".into()));
+        obj.insert("gateway".into(), Value::String("0.0.0.0".into()));
+        obj.insert("dhcp".into(), Value::Bool(true));
     }
-    obj.insert("whitelist".into(), Value::Object(whitelist));
-    obj.insert(
-        "linkbutton".into(),
-        Value::Bool(pairing.is_link_button_pressed()),
-    );
-    obj.insert("portalservices".into(), Value::Bool(false));
-    obj.insert(
-        "portalconnection".into(),
-        Value::String("disconnected".into()),
-    );
-    obj.insert("zigbeechannel".into(), Value::from(25));
-    obj.insert("ipaddress".into(), Value::String(identity.host.clone()));
-    obj.insert("netmask".into(), Value::String("255.255.255.0".into()));
-    obj.insert("gateway".into(), Value::String("0.0.0.0".into()));
-    obj.insert("dhcp".into(), Value::Bool(true));
     base
 }
 
@@ -269,7 +271,7 @@ mod tests {
             .unwrap()
             .as_i64()
             .unwrap();
-        assert!(bri >= 126 && bri <= 128, "bri = {bri} expected ~127");
+        assert!((126..=128).contains(&bri), "bri = {bri} expected ~127");
     }
 
     #[test]

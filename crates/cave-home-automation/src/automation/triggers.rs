@@ -203,12 +203,13 @@ impl Trigger {
                         })?
                 };
                 if let Some(a) = above {
-                    if !(state_value > *a) {
+                    // NaN compares as unordered and fails the bound.
+                    if state_value.partial_cmp(a) != Some(std::cmp::Ordering::Greater) {
                         return Ok(false);
                     }
                 }
                 if let Some(b) = below {
-                    if !(state_value < *b) {
+                    if state_value.partial_cmp(b) != Some(std::cmp::Ordering::Less) {
                         return Ok(false);
                     }
                 }

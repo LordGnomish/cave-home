@@ -53,6 +53,12 @@ impl GroupedLightController {
         self.inner.len()
     }
 
+    /// Whether no grouped lights are tracked.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
     /// PUT a pre-built body. Source: `GroupedLightController.set_state`.
     pub async fn set_state(
         &self,

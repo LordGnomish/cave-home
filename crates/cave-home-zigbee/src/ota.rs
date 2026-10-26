@@ -167,9 +167,7 @@ impl OtaQueue {
             .filter(|(_, j)| j.status == OtaJobStatus::Complete)
             .map(|(k, _)| *k)
             .collect();
-        keys.into_iter()
-            .map(|k| guard.remove(&k).expect("just collected"))
-            .collect()
+        keys.into_iter().filter_map(|k| guard.remove(&k)).collect()
     }
 
     /// Handle an incoming ZCL Query Next Image Request — consult the

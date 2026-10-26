@@ -80,9 +80,7 @@ impl MemoryTransport {
     /// Drain every byte written so far.
     #[must_use]
     pub fn take_written(&self) -> Vec<u8> {
-        let mut guard = self.written.lock();
-        let bytes = guard.split().to_vec();
-        bytes
+        self.written.lock().split().to_vec()
     }
 
     /// Push bytes that will be returned by subsequent `read` calls.

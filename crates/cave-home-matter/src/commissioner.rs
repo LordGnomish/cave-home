@@ -121,7 +121,7 @@ impl Commissioner {
         commissioner_pase.pair(&mut device_pase)?;
 
         // 2. Assign the device a node id and add the fabric (pending then commit).
-        let device_node_id = self.allocate_node_id();
+        let device_node_id = self.allocate_node_id()?;
         let fabric = FabricInfo {
             index: FabricIndex(0),
             fabric_id: self.cfg.admin_fabric_id,
@@ -132,16 +132,13 @@ impl Commissioner {
             icac_public_key: None,
             noc_public_key: derive_device_noc(self.cfg.admin_noc_public_key, device_node_id),
         };
-        let pending = self.fabrics.add_pending(fabric.clone());
-        let fabric_index = match pending {
-            Ok(idx) => match self.fabrics.commit_pending() {
-                Ok(committed) => committed,
-                Err(e) => {
-                    self.fabrics.revert_pending();
-                    return Err(e);
-                }
-            },
-            Err(e) => return Err(e),
+        self.fabrics.add_pending(fabric.clone())?;
+        let fabric_index = match self.fabrics.commit_pending() {
+            Ok(committed) => committed,
+            Err(e) => {
+                self.fabrics.revert_pending();
+                return Err(e);
+            }
         };
 
         // 3. NetworkCommissioning — Thread is the credential-required path.
@@ -211,10 +208,12 @@ impl Commissioner {
         self.paired.lock().clone()
     }
 
-    fn allocate_node_id(&self) -> NodeId {
+    fn allocate_node_id(&self) -> Result<NodeId> {
         let mut n = self.next_node_id_inc.lock();
-        *n = n.checked_add(1).expect("node id counter overflow");
-        NodeId(0x1000_0000_0000_0000 | *n)
+        *n = n
+            .checked_add(1)
+            .ok_or_else(|| MatterError::Internal("node id counter overflow".into()))?;
+        Ok(NodeId(0x1000_0000_0000_0000 | *n))
     }
 }
 

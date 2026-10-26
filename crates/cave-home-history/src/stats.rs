@@ -7,7 +7,7 @@
 //! went quiet. No clock, no storage — the storage layer (Phase 1b, ADR-023)
 //! feeds the slice.
 
-use crate::sample::{Sample, Series};
+use crate::sample::Series;
 
 /// A descriptive summary of a window of samples.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -158,6 +158,7 @@ pub fn find_gaps(series: &Series, expected_interval: i64) -> Vec<Gap> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sample::Sample;
 
     fn s(t: i64, v: f64) -> Sample {
         Sample::new(t, v).expect("finite test sample")

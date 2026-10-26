@@ -205,9 +205,9 @@ mod tests {
     fn event_stream_parser_handles_one_event() {
         let mut p = EventStreamParser::default();
         let body = r#"[{"id":"e1","creationtime":"2026-05-17T20:00:00Z","type":"add","data":[{"id":"light-1","type":"light"}]}]"#;
-        p.feed(parse_sse_line("id: 42"));
-        p.feed(parse_sse_line("event: add"));
-        p.feed(parse_sse_line(&format!("data: {body}")));
+        assert!(p.feed(parse_sse_line("id: 42")).is_empty());
+        assert!(p.feed(parse_sse_line("event: add")).is_empty());
+        assert!(p.feed(parse_sse_line(&format!("data: {body}"))).is_empty());
         let events = p.feed(parse_sse_line(""));
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0].kind, EventType::ResourceAdded));

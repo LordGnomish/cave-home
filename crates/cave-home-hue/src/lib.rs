@@ -24,13 +24,13 @@
 //! - [`util`]      — bridge-ID normalisation, MAC parsing.
 //! - [`errors`]    — Hue error taxonomy mirroring `aiohue.errors`.
 //! - [`discovery`] — NUPNP, mDNS-style host probe, v2-capability check
-//!                   (matches `aiohue.discovery`).
+//!   (matches `aiohue.discovery`).
 //! - [`v1`]        — Hue API v1 REST surface (`aiohue.v1`: lights, groups,
-//!                   scenes, sensors, config).
+//!   scenes, sensors, config).
 //! - [`v2`]        — Hue API v2 CLIP surface (`aiohue.v2`: HueBridgeV2,
-//!                   EventStream / SSE, controllers + models).
+//!   EventStream / SSE, controllers + models).
 //! - [`bridge`]    — high-level HueBridge wrapper that mirrors HA's
-//!                   `homeassistant.components.hue.bridge.HueBridge`.
+//!   `homeassistant.components.hue.bridge.HueBridge`.
 //!
 //! Out-of-MVP (tracked in [`parity.manifest.toml`](../parity.manifest.toml)):
 //!   Entertainment / DTLS streaming, the HomeKit / Matter bridges, advanced

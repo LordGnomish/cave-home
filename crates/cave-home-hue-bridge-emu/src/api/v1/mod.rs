@@ -88,7 +88,7 @@ pub fn anonymous_config(ctx: &V1Context) -> Value {
 
 /// `GET /api/<appkey>/config` — authenticated config.
 pub fn full_config(ctx: &V1Context, app_key: &str) -> ApiResult {
-    if let Err(_) = require_app_key(ctx, app_key, &format!("/api/{app_key}/config")) {
+    if require_app_key(ctx, app_key, &format!("/api/{app_key}/config")).is_err() {
         return Err(vec![HueProtocolError::unauthorized(format!(
             "/api/{app_key}/config"
         ))]);
@@ -98,7 +98,7 @@ pub fn full_config(ctx: &V1Context, app_key: &str) -> ApiResult {
 
 /// `GET /api/<appkey>` — entire datastore.
 pub fn full_state(ctx: &V1Context, app_key: &str) -> ApiResult {
-    if let Err(_) = require_app_key(ctx, app_key, &format!("/api/{app_key}")) {
+    if require_app_key(ctx, app_key, &format!("/api/{app_key}")).is_err() {
         return Err(vec![HueProtocolError::unauthorized(format!(
             "/api/{app_key}"
         ))]);
@@ -118,7 +118,7 @@ pub fn full_state(ctx: &V1Context, app_key: &str) -> ApiResult {
 
 /// `GET /api/<appkey>/lights`.
 pub fn get_lights(ctx: &V1Context, app_key: &str) -> ApiResult {
-    if let Err(_) = require_app_key(ctx, app_key, &format!("/api/{app_key}/lights")) {
+    if require_app_key(ctx, app_key, &format!("/api/{app_key}/lights")).is_err() {
         return Err(vec![HueProtocolError::unauthorized(format!(
             "/api/{app_key}/lights"
         ))]);
@@ -129,7 +129,7 @@ pub fn get_lights(ctx: &V1Context, app_key: &str) -> ApiResult {
 /// `GET /api/<appkey>/lights/<id>`.
 pub fn get_light(ctx: &V1Context, app_key: &str, id: &str) -> ApiResult {
     let address = format!("/api/{app_key}/lights/{id}");
-    if let Err(_) = require_app_key(ctx, app_key, &address) {
+    if require_app_key(ctx, app_key, &address).is_err() {
         return Err(vec![HueProtocolError::unauthorized(address)]);
     }
     match ctx.registry.light(id) {
@@ -200,7 +200,7 @@ pub fn put_light_state(ctx: &V1Context, app_key: &str, id: &str, body: &Value) -
 /// `GET /api/<appkey>/groups`.
 pub fn get_groups(ctx: &V1Context, app_key: &str) -> ApiResult {
     let address = format!("/api/{app_key}/groups");
-    if let Err(_) = require_app_key(ctx, app_key, &address) {
+    if require_app_key(ctx, app_key, &address).is_err() {
         return Err(vec![HueProtocolError::unauthorized(address)]);
     }
     Ok(views::groups_map(&ctx.registry))
@@ -274,7 +274,7 @@ pub fn put_group_action(ctx: &V1Context, app_key: &str, id: &str, body: &Value) 
 /// `GET /api/<appkey>/scenes`.
 pub fn get_scenes(ctx: &V1Context, app_key: &str) -> ApiResult {
     let address = format!("/api/{app_key}/scenes");
-    if let Err(_) = require_app_key(ctx, app_key, &address) {
+    if require_app_key(ctx, app_key, &address).is_err() {
         return Err(vec![HueProtocolError::unauthorized(address)]);
     }
     Ok(views::scenes_map(&ctx.registry))
@@ -283,7 +283,7 @@ pub fn get_scenes(ctx: &V1Context, app_key: &str) -> ApiResult {
 /// `GET /api/<appkey>/sensors`.
 pub fn get_sensors(ctx: &V1Context, app_key: &str) -> ApiResult {
     let address = format!("/api/{app_key}/sensors");
-    if let Err(_) = require_app_key(ctx, app_key, &address) {
+    if require_app_key(ctx, app_key, &address).is_err() {
         return Err(vec![HueProtocolError::unauthorized(address)]);
     }
     Ok(views::sensors_map(&ctx.registry))

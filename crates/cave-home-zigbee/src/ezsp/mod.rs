@@ -8,11 +8,11 @@
 //!
 //! Layering:
 //! - [`ash`]      — ASH (Async Serial Host) framer: SLIP-style framing
-//!                  with sequence numbers + CRC over the host serial link.
+//!   with sequence numbers + CRC over the host serial link.
 //! - [`frame`]    — EZSP application frame format (sequence + frame
-//!                  control + frame ID + parameters).
+//!   control + frame ID + parameters).
 //! - [`commands`] — concrete EZSP commands cave-home Phase 1 uses
-//!                  (version, network init, permit-joining, …).
+//!   (version, network init, permit-joining, …).
 
 pub mod ash;
 pub mod commands;

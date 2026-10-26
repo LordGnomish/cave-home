@@ -78,10 +78,7 @@ impl SlipFramer {
     pub fn feed(&mut self, chunk: &[u8]) -> Result<Vec<Vec<u8>>> {
         self.buf.extend_from_slice(chunk);
         let mut out = Vec::new();
-        loop {
-            let Some(end) = self.buf.iter().position(|b| *b == SLIP_END) else {
-                break;
-            };
+        while let Some(end) = self.buf.iter().position(|b| *b == SLIP_END) {
             let body: Vec<u8> = self.buf[..end].to_vec();
             let _ = self.buf.split_to(end + 1);
             if body.is_empty() {

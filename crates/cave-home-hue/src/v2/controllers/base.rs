@@ -110,6 +110,11 @@ impl<T: DeserializeOwned + ResourceIdAccess + Clone> ResourcesController<T> {
         self.items.len()
     }
 
+    /// Whether no items are tracked.
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
     /// Underlying path (e.g. `resource/light`). Used by sub-controllers.
     pub fn path(&self) -> &str {
         &self.path

@@ -4,8 +4,8 @@
 //! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/transport/raw/UDP.cpp
 //!
 //! Phase 1 wraps `tokio::net::UdpSocket` and exposes the chip-side
-//! Send/Receive surface verbatim. The Matter framing (message header
-//! + counter + nonce) is the responsibility of higher layers
+//! Send/Receive surface verbatim. The Matter framing (message header +
+//! counter + nonce) is the responsibility of higher layers
 //! (`MessageHeader.cpp`), which Phase 1 leaves to the secure-channel
 //! crypto in `pase.rs` / `case.rs`.
 

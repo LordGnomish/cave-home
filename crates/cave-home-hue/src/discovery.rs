@@ -129,10 +129,7 @@ pub async fn is_hue_bridge(client: &dyn HueHttpClient, host: &str) -> HueResult<
 /// without an `hue-application-key` header.
 pub async fn is_v2_bridge(client: &dyn HueHttpClient, host: &str) -> bool {
     let url = format!("https://{host}/clip/v2/resource");
-    match client.get_status(&url).await {
-        Ok(403) => true,
-        _ => false,
-    }
+    matches!(client.get_status(&url).await, Ok(403))
 }
 
 #[cfg(test)]

@@ -709,8 +709,8 @@ mod tests {
     fn dpt1_roundtrip_and_reject() {
         assert_eq!(dpt1::encode(true), 1);
         assert_eq!(dpt1::encode(false), 0);
-        assert_eq!(dpt1::decode(1).unwrap(), true);
-        assert_eq!(dpt1::decode(0).unwrap(), false);
+        assert!(dpt1::decode(1).unwrap());
+        assert!(!dpt1::decode(0).unwrap());
         assert!(dpt1::decode(2).is_err());
     }
 

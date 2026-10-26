@@ -13,7 +13,7 @@
 //! engine (Phase 1b, ADR-023). No clock here — "now" is supplied by the caller.
 
 use crate::aggregate::Aggregator;
-use crate::sample::{Sample, Series};
+use crate::sample::Series;
 
 /// One rung of a retention ladder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -162,6 +162,7 @@ impl Partitioned {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sample::Sample;
 
     fn s(t: i64, v: f64) -> Sample {
         Sample::new(t, v).expect("finite test sample")

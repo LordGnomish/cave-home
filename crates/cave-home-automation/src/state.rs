@@ -512,12 +512,10 @@ impl StateMachine {
             None => (false, false, None),
         };
 
-        if same_state && same_attr {
+        // `same_state` is only true when `old_state` is present.
+        if let (true, true, Some(prev)) = (same_state, same_attr, old_state.as_ref()) {
             // No change → fire state_reported, mutate last_reported in-place.
-            let mut existing = states
-                .get(entity_id)
-                .cloned()
-                .expect("same_state implies old_state present");
+            let mut existing = prev.clone();
             let old_last_reported = existing.last_reported;
             existing.last_reported = now;
             states.set(existing.clone());

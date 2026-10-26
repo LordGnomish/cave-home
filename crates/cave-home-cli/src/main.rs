@@ -191,7 +191,7 @@ mod tests {
             "mobile",
         ] {
             assert!(
-                names.iter().any(|n| *n == required),
+                names.contains(&required),
                 "missing subcommand '{required}' in CLI"
             );
         }

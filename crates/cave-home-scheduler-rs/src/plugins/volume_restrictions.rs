@@ -72,11 +72,13 @@ mod tests {
     }
 
     fn pvc_pod(name: &str, claim: &str, ro: bool) -> Pod {
-        let mut p = Pod::default();
-        p.metadata = ObjectMeta {
-            namespace: "default".into(),
-            name: name.into(),
-            uid: name.into(),
+        let mut p = Pod {
+            metadata: ObjectMeta {
+                namespace: "default".into(),
+                name: name.into(),
+                uid: name.into(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         p.spec.volumes.push(Volume {

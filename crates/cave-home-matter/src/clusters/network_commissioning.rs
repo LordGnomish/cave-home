@@ -3,8 +3,8 @@
 //!
 //! # Upstream: project-chip/connectedhomeip@5bb5c9e2:src/app/clusters/network-commissioning/network-commissioning.cpp
 //!
-//! Phase 1 ports the Thread provisioning subset: AddOrUpdateThreadNetwork
-//! + ConnectNetwork. Wi-Fi provisioning lives behind the same trait and
+//! Phase 1 ports the Thread provisioning subset: AddOrUpdateThreadNetwork +
+//! ConnectNetwork. Wi-Fi provisioning lives behind the same trait and
 //! lands in Phase 1b (cave-home assumes Wi-Fi is already up via the
 //! homeowner's normal Wi-Fi setup; Thread is the credential-required
 //! commissioning path).
