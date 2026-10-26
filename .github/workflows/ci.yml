@@ -9,6 +9,19 @@ on:
 # Charter rule 6: track latest stable. CI uses `stable` from rustup, never
 # pins a specific version. If a clippy/rustc release breaks us, we fix
 # code, not the toolchain.
+#
+# Run the same gates locally with `tools/ci-local.sh`.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
 
 jobs:
   fmt:
@@ -17,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: install rust stable
-        run: rustup update stable && rustup default stable
+        run: rustup update stable && rustup default stable && rustup component add rustfmt
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
 
@@ -28,18 +41,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: install rust stable
         run: rustup update stable && rustup default stable && rustup component add clippy
+      - uses: Swatinem/rust-cache@v2
       - name: cargo clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-  check:
-    name: cargo check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: install rust stable
-        run: rustup update stable && rustup default stable
-      - name: cargo check
-        run: cargo check --workspace --all-targets
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   test:
     name: cargo test
@@ -48,9 +52,83 @@ jobs:
       - uses: actions/checkout@v4
       - name: install rust stable
         run: rustup update stable && rustup default stable
+      - uses: Swatinem/rust-cache@v2
       - name: cargo test
-        run: cargo test --workspace --all-targets
+        run: cargo test --workspace --all-targets --locked
+      - name: cargo test --doc
+        run: cargo test --workspace --doc --locked
 
-  # Placeholder: the workspace currently has zero crates, so fmt/clippy/check/test
-  # are all no-ops. They are wired up now so the *first* crate added under
-  # crates/ is automatically gated by them.
+  # Off-by-default features are real shipping code (TLS listeners, async
+  # runtimes, the etcd gRPC transport, the CRI client) that the default
+  # workspace build never compiles. Lint and test each one on its own.
+  features:
+    name: features (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: apiserver-rs tls
+            package: cave-home-apiserver-rs
+            features: --features tls
+          - name: binary tls
+            package: cave-home-binary
+            features: --features tls
+          - name: mqtt runtime
+            package: cave-home-mqtt
+            features: --features runtime
+          # `runtime` is on by default for hue and traefik-rs (covered by the
+          # workspace jobs); check that the pure decision core still builds.
+          - name: hue pure core
+            package: cave-home-hue
+            features: --no-default-features
+          - name: traefik-rs pure core
+            package: cave-home-traefik-rs
+            features: --no-default-features
+          - name: kine-rs grpc
+            package: cave-home-kine-rs
+            features: --features grpc
+            protoc: true
+          # Live Postgres/MySQL tests need a running server; build and lint only.
+          - name: kine-rs postgres+mysql
+            package: cave-home-kine-rs
+            features: --features postgres,mysql
+            build-only: true
+          - name: kubelet-rs remote-cri
+            package: cave-home-kubelet-rs
+            features: --features remote-cri
+            protoc: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: install rust stable
+        run: rustup update stable && rustup default stable && rustup component add clippy
+      - name: install protoc
+        if: ${{ matrix.protoc }}
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.package }}-${{ matrix.features }}
+      - name: cargo clippy
+        run: cargo clippy -p ${{ matrix.package }} --all-targets --locked ${{ matrix.features }} -- -D warnings
+      - name: cargo test
+        if: ${{ !matrix.build-only }}
+        run: cargo test -p ${{ matrix.package }} --all-targets --locked ${{ matrix.features }}
+
+  # Policy lives in deny.toml. Licence, ban and source checks gate merges.
+  # New RustSec advisories appear without any change on our side, so the
+  # advisories check reports (red job, annotations) without blocking a PR.
+  deny:
+    name: cargo deny (${{ matrix.checks }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        checks:
+          - advisories
+          - bans licenses sources
+    continue-on-error: ${{ matrix.checks == 'advisories' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check ${{ matrix.checks }}

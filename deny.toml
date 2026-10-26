@@ -1,0 +1,70 @@
+# cargo-deny configuration — run with `cargo deny check`.
+# Reference: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Check the dependency graph of every feature, not just the defaults: the
+# off-by-default transports (tls, runtime, grpc, postgres, mysql, remote-cri)
+# ship in real builds and must meet the same licence and advisory bar.
+all-features = true
+
+[output]
+feature-depth = 1
+
+# ---------------------------------------------------------------------------
+# Advisories (RustSec)
+# ---------------------------------------------------------------------------
+[advisories]
+# Vulnerabilities and unsound crates are errors. Yanked versions are errors.
+# Unmaintained crates are reported for direct dependencies of workspace crates.
+yanked = "deny"
+unmaintained = "workspace"
+ignore = [
+    # rustls-pemfile is unmaintained (not vulnerable); its parsers now live in
+    # rustls-pki-types (`pem::PemObject`). The four TLS call sites (apiserver-rs,
+    # binary, mqtt, traefik-rs) still need migrating; remove this entry then.
+    { id = "RUSTSEC-2025-0134", reason = "unmaintained only; migration to rustls-pki-types PemObject pending" },
+]
+
+# ---------------------------------------------------------------------------
+# Licences
+# ---------------------------------------------------------------------------
+[licenses]
+# cave-home is Apache-2.0 and follows a clean-room rule for copyleft upstreams
+# (Charter §6.1, ADR-002), so only permissive licences may enter the
+# dependency graph. Anything copyleft (GPL, LGPL, AGPL, MPL, EPL, ...) fails
+# the check unless the crate is also offered under a licence listed here.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.93
+exceptions = []
+
+# ---------------------------------------------------------------------------
+# Bans
+# ---------------------------------------------------------------------------
+[bans]
+# Several semver-incompatible versions of one crate bloat the single binary;
+# report them, but do not fail the build over them.
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+
+# ---------------------------------------------------------------------------
+# Sources
+# ---------------------------------------------------------------------------
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

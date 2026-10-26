@@ -78,6 +78,35 @@ Crates currently under the clean-room rule are listed in
 [`docs/upstream/REFERENCES.md`](docs/upstream/REFERENCES.md) under
 `Port method = clean-room` (or `hybrid` for mixed-licence upstreams).
 
+## Before you push: run the CI gates
+
+CI (`.github/workflows/ci.yml`) runs exactly these, and so should you:
+
+```sh
+tools/ci-local.sh          # everything CI runs
+tools/ci-local.sh --quick  # fmt + clippy + tests, no feature matrix / cargo-deny
+```
+
+That is `cargo fmt --all -- --check`, `cargo clippy --workspace
+--all-targets -- -D warnings`, `cargo test --workspace --all-targets`
+plus doctests, a clippy + test run for every off-by-default feature
+(`tls`, `runtime`, `grpc`, `postgres`/`mysql`, `remote-cri`; the
+protobuf ones need `protoc`), and `cargo deny check`. Note
+`--all-targets` and `-D warnings`: `clippy --lib` alone misses tests,
+examples and every feature-gated module.
+
+Lint policy (root `Cargo.toml`, `[workspace.lints]`):
+
+- clippy's default groups are errors in CI; `pedantic` and `nursery`
+  are not enabled workspace-wide (opt in per lint where it helps).
+- `unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented` are
+  errors in shipped code. `clippy.toml` allows them in `#[test]` fns
+  and `#[cfg(test)]` modules; integration-test files that need them in
+  helper fns carry a file-level `#![allow(..., reason = "...")]`.
+- `unsafe_code` is forbidden.
+- Dependencies must be permissively licensed (`deny.toml`); a copyleft
+  licence fails `cargo deny check`.
+
 ## Always-latest mandate
 
 Upstream stays current. We don't pin an integration to an old
