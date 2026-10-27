@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright 2026 Cave Runtime contributors
-/// Adds two integers and returns the result.
+/// Adds two integers and returns the sum.
 pub fn add(a: i32, b: i32) -> i32 {
     a + b
 }
@@ -16,7 +16,12 @@ mod tests {
 
     #[test]
     fn test_add_negative_numbers() {
-        assert_eq!(add(-1, 1), 0);
+        assert_eq!(add(-1, -1), -2);
+    }
+
+    #[test]
+    fn test_add_mixed_numbers() {
+        assert_eq!(add(-5, 10), 5);
     }
 
     #[test]
