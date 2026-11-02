@@ -118,11 +118,17 @@ pub fn advise(plant: &Plant, conditions: &Conditions) -> CareAdvice {
 
     let soil = moisture::assess(conditions.soil_moisture_percent, profile);
     let temperature = assess_temp(conditions.ambient_temp_c, profile);
-    let water =
-        moisture::recommend_water(plant.name(), conditions.soil_moisture_percent, profile);
+    let water = moisture::recommend_water(plant.name(), conditions.soil_moisture_percent, profile);
     let season = season::growing_season_in(conditions.month, conditions.hemisphere);
 
-    CareAdvice { frost, light, soil, temperature, water, season }
+    CareAdvice {
+        frost,
+        light,
+        soil,
+        temperature,
+        water,
+        season,
+    }
 }
 
 impl CareAdvice {
@@ -192,7 +198,10 @@ mod tests {
         assert!(advice.water.is_none());
         assert_eq!(advice.season, Season::Growing);
         assert!(!advice.needs_attention());
-        assert_eq!(advice.headline("Tomatoes", Lang::En), "Tomatoes are happy — nothing to do.");
+        assert_eq!(
+            advice.headline("Tomatoes", Lang::En),
+            "Tomatoes are happy — nothing to do."
+        );
     }
 
     #[test]
@@ -204,7 +213,10 @@ mod tests {
         assert_eq!(advice.soil, SoilFit::TooDry);
         assert!(advice.water.is_some());
         assert!(advice.needs_attention());
-        assert_eq!(advice.headline("Tomatoes", Lang::En), "Tomatoes need water.");
+        assert_eq!(
+            advice.headline("Tomatoes", Lang::En),
+            "Tomatoes need water."
+        );
     }
 
     #[test]

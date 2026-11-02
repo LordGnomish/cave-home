@@ -98,7 +98,11 @@ impl ReqwestTransport {
     }
 
     fn url(&self, path: &str) -> String {
-        format!("{}/{CLIP_V2_PREFIX}/{}", self.base_url, path.trim_start_matches('/'))
+        format!(
+            "{}/{CLIP_V2_PREFIX}/{}",
+            self.base_url,
+            path.trim_start_matches('/')
+        )
     }
 
     async fn execute(
@@ -190,8 +194,10 @@ mod tests {
 
     #[tokio::test]
     async fn put_light_sends_json_body_and_key() {
-        let (base, caps) =
-            spawn_mock(vec![http_ok(r#"{"errors":[],"data":[{"rid":"l1","rtype":"light"}]}"#)]).await;
+        let (base, caps) = spawn_mock(vec![http_ok(
+            r#"{"errors":[],"data":[{"rid":"l1","rtype":"light"}]}"#,
+        )])
+        .await;
         let t = ReqwestTransport::with_base_url(base, "k").unwrap();
 
         let put = LightPut {
@@ -232,9 +238,10 @@ mod tests {
 
     #[tokio::test]
     async fn envelope_error_in_200_surfaces_via_into_data() {
-        let (base, _caps) =
-            spawn_mock(vec![http_ok(r#"{"errors":[{"description":"device busy"}],"data":[]}"#)])
-                .await;
+        let (base, _caps) = spawn_mock(vec![http_ok(
+            r#"{"errors":[{"description":"device busy"}],"data":[]}"#,
+        )])
+        .await;
         let t = ReqwestTransport::with_base_url(base, "k").unwrap();
         let env = t.get("resource/light").await.unwrap();
         assert!(matches!(env.into_data(), Err(HueError::Generic(_))));

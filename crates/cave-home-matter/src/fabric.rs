@@ -195,7 +195,9 @@ mod tests {
     #[test]
     fn add_pending_then_commit_persists_fabric() {
         let table = FabricTable::new();
-        let idx = table.add_pending(sample(1, 0x1000_0000_0000_0001)).expect("pending");
+        let idx = table
+            .add_pending(sample(1, 0x1000_0000_0000_0001))
+            .expect("pending");
         assert_eq!(idx.0, 1, "first fabric index should be 1");
         assert_eq!(table.len(), 0, "still 0 until commit");
         let committed = table.commit_pending().expect("commit");
@@ -209,7 +211,9 @@ mod tests {
     #[test]
     fn delete_fabric_removes_entry() {
         let table = FabricTable::new();
-        table.add_pending(sample(1, 0x1000_0000_0000_0001)).expect("pending");
+        table
+            .add_pending(sample(1, 0x1000_0000_0000_0001))
+            .expect("pending");
         let idx = table.commit_pending().expect("commit");
         let removed = table.delete_fabric(idx).expect("delete");
         assert_eq!(removed.fabric_id, FabricId(1));

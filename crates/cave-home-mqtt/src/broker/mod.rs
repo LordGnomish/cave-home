@@ -19,9 +19,9 @@ use crate::broker::topic::{topic_matches, valid_topic_filter, valid_topic_name};
 use crate::metrics::BrokerMetrics;
 use crate::packet::QoS;
 use crate::v5::packet::{
-    ConnAckV5, ConnectV5, DisconnectV5, PacketV5, PubAckV5, PubCompV5, PubRecV5,
-    PubRelV5, PublishV5, RetainHandling, SubAckV5, SubscribeV5, SubscriptionV5,
-    UnsubAckV5, UnsubscribeV5, Will,
+    ConnAckV5, ConnectV5, DisconnectV5, PacketV5, PubAckV5, PubCompV5, PubRecV5, PubRelV5,
+    PublishV5, RetainHandling, SubAckV5, SubscribeV5, SubscriptionV5, UnsubAckV5, UnsubscribeV5,
+    Will,
 };
 use crate::v5::property::Property;
 use crate::v5::reason::ReasonCode;
@@ -41,7 +41,10 @@ pub struct BrokerConfig {
 
 impl Default for BrokerConfig {
     fn default() -> Self {
-        Self { max_qos: QoS::ExactlyOnce, retain_available: true }
+        Self {
+            max_qos: QoS::ExactlyOnce,
+            retain_available: true,
+        }
     }
 }
 
@@ -52,7 +55,10 @@ pub enum Action {
     /// Write `packet` to the connection bound to `client_id`.
     Send { client_id: String, packet: PacketV5 },
     /// Close the connection bound to `client_id` (e.g. session takeover).
-    Drop { client_id: String, reason: ReasonCode },
+    Drop {
+        client_id: String,
+        reason: ReasonCode,
+    },
 }
 
 /// The clean-room MQTT broker decision core.
@@ -108,7 +114,10 @@ impl Broker {
         let mut m = self.metrics.clone();
         m.set_retained(self.retained.len() as u64);
         m.set_subscriptions(
-            self.sessions.values().map(|s| s.subscriptions.len() as u64).sum(),
+            self.sessions
+                .values()
+                .map(|s| s.subscriptions.len() as u64)
+                .sum(),
         );
         m.render_prometheus()
     }
@@ -121,8 +130,15 @@ impl Broker {
         let mut actions = Vec::new();
         let username = c.username.clone();
         let password = c.password.clone();
-        if !self.auth.authenticate(username.as_deref(), password.as_deref()) {
-            let cid = if c.client_id.is_empty() { "<unauthenticated>".to_owned() } else { c.client_id.clone() };
+        if !self
+            .auth
+            .authenticate(username.as_deref(), password.as_deref())
+        {
+            let cid = if c.client_id.is_empty() {
+                "<unauthenticated>".to_owned()
+            } else {
+                c.client_id.clone()
+            };
             actions.push(Action::Send {
                 client_id: cid.clone(),
                 packet: PacketV5::ConnAck(ConnAckV5 {
@@ -131,7 +147,10 @@ impl Broker {
                     properties: vec![],
                 }),
             });
-            actions.push(Action::Drop { client_id: cid, reason: ReasonCode::BadUserNameOrPassword });
+            actions.push(Action::Drop {
+                client_id: cid,
+                reason: ReasonCode::BadUserNameOrPassword,
+            });
             return actions;
         }
 
@@ -278,7 +297,10 @@ impl Broker {
     // ---- SUBSCRIBE / UNSUBSCRIBE -----------------------------------------
 
     fn on_subscribe(&mut self, client_id: &str, s: &SubscribeV5) -> Vec<Action> {
-        let username = self.sessions.get(client_id).and_then(|s| s.username.clone());
+        let username = self
+            .sessions
+            .get(client_id)
+            .and_then(|s| s.username.clone());
         let mut reason_codes = Vec::with_capacity(s.subscriptions.len());
         // (filter, granted-qos) pairs whose retained messages to deliver.
         let mut deliver_retained: Vec<(String, QoS)> = Vec::new();
@@ -288,12 +310,18 @@ impl Broker {
                 reason_codes.push(ReasonCode::TopicFilterInvalid);
                 continue;
             }
-            if !self.auth.authorize(username.as_deref(), AclAction::Subscribe, &sub.topic_filter) {
+            if !self
+                .auth
+                .authorize(username.as_deref(), AclAction::Subscribe, &sub.topic_filter)
+            {
                 reason_codes.push(ReasonCode::NotAuthorized);
                 continue;
             }
             let granted = qos_min(sub.qos, self.config.max_qos);
-            let stored = SubscriptionV5 { qos: granted, ..sub.clone() };
+            let stored = SubscriptionV5 {
+                qos: granted,
+                ..sub.clone()
+            };
             let existed = self
                 .sessions
                 .get_mut(client_id)
@@ -332,7 +360,11 @@ impl Broker {
             for (topic, msg) in hits {
                 let qos = qos_min(msg.qos, granted);
                 if let Some(sess) = self.sessions.get_mut(client_id) {
-                    let packet_id = if qos == QoS::AtMostOnce { None } else { Some(sess.next_id()) };
+                    let packet_id = if qos == QoS::AtMostOnce {
+                        None
+                    } else {
+                        Some(sess.next_id())
+                    };
                     let p = PublishV5 {
                         topic,
                         qos,
@@ -401,8 +433,14 @@ impl Broker {
             }
         }
 
-        let username = self.sessions.get(client_id).and_then(|s| s.username.clone());
-        if !self.auth.authorize(username.as_deref(), AclAction::Publish, &p.topic) {
+        let username = self
+            .sessions
+            .get(client_id)
+            .and_then(|s| s.username.clone());
+        if !self
+            .auth
+            .authorize(username.as_deref(), AclAction::Publish, &p.topic)
+        {
             self.metrics.on_message_dropped();
             return ack_publish_error(client_id, p, ReasonCode::NotAuthorized);
         }
@@ -410,7 +448,11 @@ impl Broker {
         // §3.3.1.2 — QoS 2 duplicate: re-acknowledge without re-routing.
         if p.qos == QoS::ExactlyOnce {
             if let Some(pid) = p.packet_id {
-                if self.sessions.get(client_id).is_some_and(|s| s.incoming_qos2.contains(&pid)) {
+                if self
+                    .sessions
+                    .get(client_id)
+                    .is_some_and(|s| s.incoming_qos2.contains(&pid))
+                {
                     return vec![pubrec(client_id, pid, ReasonCode::Success)];
                 }
             }
@@ -507,8 +549,14 @@ impl Broker {
         for (id, qos, rap) in targets {
             delivered += 1;
             let forward_retain = retain_src && rap;
-            let Some(sess) = self.sessions.get_mut(&id) else { continue };
-            let packet_id = if qos == QoS::AtMostOnce { None } else { Some(sess.next_id()) };
+            let Some(sess) = self.sessions.get_mut(&id) else {
+                continue;
+            };
+            let packet_id = if qos == QoS::AtMostOnce {
+                None
+            } else {
+                Some(sess.next_id())
+            };
             let pkt = PublishV5 {
                 topic: topic.to_owned(),
                 qos,
@@ -522,7 +570,10 @@ impl Broker {
                 if let Some(pid) = packet_id {
                     sess.outgoing_unacked.insert(pid, pkt.clone());
                 }
-                actions.push(Action::Send { client_id: id, packet: PacketV5::Publish(pkt) });
+                actions.push(Action::Send {
+                    client_id: id,
+                    packet: PacketV5::Publish(pkt),
+                });
             } else if qos != QoS::AtMostOnce {
                 sess.queued.push_back(pkt); // persistent session: queue QoS 1/2
             }
@@ -627,7 +678,11 @@ fn granted_code(qos: QoS) -> ReasonCode {
 fn pubrec(client_id: &str, packet_id: u16, reason: ReasonCode) -> Action {
     Action::Send {
         client_id: client_id.to_owned(),
-        packet: PacketV5::PubRec(PubRecV5 { packet_id, reason_code: reason, properties: vec![] }),
+        packet: PacketV5::PubRec(PubRecV5 {
+            packet_id,
+            reason_code: reason,
+            properties: vec![],
+        }),
     }
 }
 
@@ -636,7 +691,11 @@ fn ack_publish_error(client_id: &str, p: &PublishV5, reason: ReasonCode) -> Vec<
     match (p.qos, p.packet_id) {
         (QoS::AtLeastOnce, Some(pid)) => vec![Action::Send {
             client_id: client_id.to_owned(),
-            packet: PacketV5::PubAck(PubAckV5 { packet_id: pid, reason_code: reason, properties: vec![] }),
+            packet: PacketV5::PubAck(PubAckV5 {
+                packet_id: pid,
+                reason_code: reason,
+                properties: vec![],
+            }),
         }],
         (QoS::ExactlyOnce, Some(pid)) => vec![pubrec(client_id, pid, reason)],
         _ => vec![],
@@ -686,7 +745,13 @@ mod router_tests {
         })
     }
 
-    fn publish(topic: &str, qos: QoS, packet_id: Option<u16>, retain: bool, body: &'static [u8]) -> PacketV5 {
+    fn publish(
+        topic: &str,
+        qos: QoS,
+        packet_id: Option<u16>,
+        retain: bool,
+        body: &'static [u8],
+    ) -> PacketV5 {
         PacketV5::Publish(PublishV5 {
             topic: topic.into(),
             qos,
@@ -711,7 +776,10 @@ mod router_tests {
 
     fn find_publish_to<'a>(actions: &'a [Action], who: &str) -> Option<&'a PublishV5> {
         actions.iter().find_map(|a| match a {
-            Action::Send { client_id, packet: PacketV5::Publish(p) } if client_id == who => Some(p),
+            Action::Send {
+                client_id,
+                packet: PacketV5::Publish(p),
+            } if client_id == who => Some(p),
             _ => None,
         })
     }
@@ -743,7 +811,9 @@ mod router_tests {
         c.password = Some(Bytes::from_static(b"wrong"));
         let acts = b.connect(c);
         match &sends(&acts)[0].1 {
-            PacketV5::ConnAck(ack) => assert_eq!(ack.reason_code, ReasonCode::BadUserNameOrPassword),
+            PacketV5::ConnAck(ack) => {
+                assert_eq!(ack.reason_code, ReasonCode::BadUserNameOrPassword)
+            }
             other => panic!("expected CONNACK, got {other:?}"),
         }
         assert!(acts.iter().any(|a| matches!(a, Action::Drop { .. })));
@@ -760,7 +830,10 @@ mod router_tests {
             other => panic!("expected SUBACK, got {other:?}"),
         }
         b.connect(connect("pub", true));
-        let acts = b.handle("pub", publish("home/loft/temp", QoS::AtMostOnce, None, false, b"21"));
+        let acts = b.handle(
+            "pub",
+            publish("home/loft/temp", QoS::AtMostOnce, None, false, b"21"),
+        );
         let p = find_publish_to(&acts, "sub").expect("routed to sub");
         assert_eq!(p.topic, "home/loft/temp");
         assert_eq!(p.qos, QoS::AtMostOnce);
@@ -773,21 +846,29 @@ mod router_tests {
         b.connect(connect("sub", true));
         b.handle("sub", subscribe("home/#", QoS::AtLeastOnce, 1));
         b.connect(connect("pub", true));
-        let acts = b.handle("pub", publish("home/x", QoS::AtLeastOnce, Some(5), false, b"v"));
+        let acts = b.handle(
+            "pub",
+            publish("home/x", QoS::AtLeastOnce, Some(5), false, b"v"),
+        );
         // Publisher gets a PUBACK(5) Success.
-        assert!(acts.iter().any(|a| matches!(a,
+        assert!(
+            acts.iter().any(|a| matches!(a,
             Action::Send { client_id, packet: PacketV5::PubAck(ack) }
-            if client_id == "pub" && ack.packet_id == 5 && ack.reason_code == ReasonCode::Success)));
+            if client_id == "pub" && ack.packet_id == 5 && ack.reason_code == ReasonCode::Success))
+        );
         // Subscriber gets a PUBLISH with a server-assigned packet id.
         let p = find_publish_to(&acts, "sub").expect("delivered");
         let pid = p.packet_id.expect("qos1 needs id");
         assert_eq!(p.qos, QoS::AtLeastOnce);
         // Subscriber acks; inflight is cleared (no resend on takeover later).
-        let after = b.handle("sub", PacketV5::PubAck(PubAckV5 {
-            packet_id: pid,
-            reason_code: ReasonCode::Success,
-            properties: vec![],
-        }));
+        let after = b.handle(
+            "sub",
+            PacketV5::PubAck(PubAckV5 {
+                packet_id: pid,
+                reason_code: ReasonCode::Success,
+                properties: vec![],
+            }),
+        );
         assert!(sends(&after).is_empty());
     }
 
@@ -795,7 +876,10 @@ mod router_tests {
     fn qos1_publish_with_no_subscribers_reports_no_matching() {
         let mut b = allow_all();
         b.connect(connect("pub", true));
-        let acts = b.handle("pub", publish("nobody/here", QoS::AtLeastOnce, Some(9), false, b"v"));
+        let acts = b.handle(
+            "pub",
+            publish("nobody/here", QoS::AtLeastOnce, Some(9), false, b"v"),
+        );
         assert!(acts.iter().any(|a| matches!(a,
             Action::Send { packet: PacketV5::PubAck(ack), .. }
             if ack.packet_id == 9 && ack.reason_code == ReasonCode::NoMatchingSubscribers)));
@@ -809,29 +893,50 @@ mod router_tests {
         b.connect(connect("pub", true));
 
         // Publisher → broker: PUBLISH qos2 ⇒ PUBREC to publisher + PUBLISH to sub.
-        let acts = b.handle("pub", publish("home/x", QoS::ExactlyOnce, Some(7), false, b"v"));
+        let acts = b.handle(
+            "pub",
+            publish("home/x", QoS::ExactlyOnce, Some(7), false, b"v"),
+        );
         assert!(acts.iter().any(|a| matches!(a,
             Action::Send { client_id, packet: PacketV5::PubRec(r) }
             if client_id == "pub" && r.packet_id == 7)));
         let pid = find_publish_to(&acts, "sub").unwrap().packet_id.unwrap();
 
         // Publisher → broker: PUBREL(7) ⇒ PUBCOMP(7) to publisher.
-        let comp = b.handle("pub", PacketV5::PubRel(PubRelV5 {
-            packet_id: 7, reason_code: ReasonCode::Success, properties: vec![] }));
+        let comp = b.handle(
+            "pub",
+            PacketV5::PubRel(PubRelV5 {
+                packet_id: 7,
+                reason_code: ReasonCode::Success,
+                properties: vec![],
+            }),
+        );
         assert!(comp.iter().any(|a| matches!(a,
             Action::Send { client_id, packet: PacketV5::PubComp(c) }
             if client_id == "pub" && c.packet_id == 7)));
 
         // Subscriber → broker: PUBREC(pid) ⇒ PUBREL(pid) to subscriber.
-        let rel = b.handle("sub", PacketV5::PubRec(PubRecV5 {
-            packet_id: pid, reason_code: ReasonCode::Success, properties: vec![] }));
+        let rel = b.handle(
+            "sub",
+            PacketV5::PubRec(PubRecV5 {
+                packet_id: pid,
+                reason_code: ReasonCode::Success,
+                properties: vec![],
+            }),
+        );
         assert!(rel.iter().any(|a| matches!(a,
             Action::Send { client_id, packet: PacketV5::PubRel(r) }
             if client_id == "sub" && r.packet_id == pid)));
 
         // Subscriber → broker: PUBCOMP(pid) completes; nothing further.
-        let done = b.handle("sub", PacketV5::PubComp(PubCompV5 {
-            packet_id: pid, reason_code: ReasonCode::Success, properties: vec![] }));
+        let done = b.handle(
+            "sub",
+            PacketV5::PubComp(PubCompV5 {
+                packet_id: pid,
+                reason_code: ReasonCode::Success,
+                properties: vec![],
+            }),
+        );
         assert!(sends(&done).is_empty());
     }
 
@@ -839,7 +944,10 @@ mod router_tests {
     fn retained_message_delivered_on_new_subscription() {
         let mut b = allow_all();
         b.connect(connect("pub", true));
-        b.handle("pub", publish("home/loft/temp", QoS::AtLeastOnce, Some(1), true, b"21.0"));
+        b.handle(
+            "pub",
+            publish("home/loft/temp", QoS::AtLeastOnce, Some(1), true, b"21.0"),
+        );
         assert_eq!(b.retained_count(), 1);
 
         b.connect(connect("sub", true));
@@ -854,8 +962,14 @@ mod router_tests {
     fn empty_retained_publish_clears_the_topic() {
         let mut b = allow_all();
         b.connect(connect("pub", true));
-        b.handle("pub", publish("home/loft/temp", QoS::AtLeastOnce, Some(1), true, b"21.0"));
-        b.handle("pub", publish("home/loft/temp", QoS::AtLeastOnce, Some(2), true, b""));
+        b.handle(
+            "pub",
+            publish("home/loft/temp", QoS::AtLeastOnce, Some(1), true, b"21.0"),
+        );
+        b.handle(
+            "pub",
+            publish("home/loft/temp", QoS::AtLeastOnce, Some(2), true, b""),
+        );
         assert_eq!(b.retained_count(), 0);
     }
 
@@ -871,8 +985,14 @@ mod router_tests {
         b.network_disconnect("sub");
 
         b.connect(connect("pub", true));
-        let while_offline = b.handle("pub", publish("home/x", QoS::AtLeastOnce, Some(5), false, b"v"));
-        assert!(find_publish_to(&while_offline, "sub").is_none(), "offline: nothing sent");
+        let while_offline = b.handle(
+            "pub",
+            publish("home/x", QoS::AtLeastOnce, Some(5), false, b"v"),
+        );
+        assert!(
+            find_publish_to(&while_offline, "sub").is_none(),
+            "offline: nothing sent"
+        );
 
         // Resume: CONNACK session_present=true, queued PUBLISH delivered.
         let resume = b.connect(sub_connect);
@@ -933,8 +1053,13 @@ mod router_tests {
         });
         b.connect(dier);
         // Normal DISCONNECT then network teardown: no will.
-        b.handle("dier", PacketV5::Disconnect(DisconnectV5 {
-            reason_code: ReasonCode::Success, properties: vec![] }));
+        b.handle(
+            "dier",
+            PacketV5::Disconnect(DisconnectV5 {
+                reason_code: ReasonCode::Success,
+                properties: vec![],
+            }),
+        );
         let acts = b.network_disconnect("dier");
         assert!(find_publish_to(&acts, "watcher").is_none());
     }
@@ -950,8 +1075,14 @@ mod router_tests {
         b.connect(connect("sub", true));
         b.handle("sub", subscribe("#", QoS::AtLeastOnce, 1));
         b.connect(connect("pub", true));
-        let acts = b.handle("pub", publish("factory/secret", QoS::AtLeastOnce, Some(3), false, b"x"));
-        assert!(find_publish_to(&acts, "sub").is_none(), "denied publish not routed");
+        let acts = b.handle(
+            "pub",
+            publish("factory/secret", QoS::AtLeastOnce, Some(3), false, b"x"),
+        );
+        assert!(
+            find_publish_to(&acts, "sub").is_none(),
+            "denied publish not routed"
+        );
         assert!(acts.iter().any(|a| matches!(a,
             Action::Send { packet: PacketV5::PubAck(ack), .. }
             if ack.packet_id == 3 && ack.reason_code == ReasonCode::NotAuthorized)));
@@ -961,19 +1092,25 @@ mod router_tests {
     fn no_local_subscription_does_not_echo_to_publisher() {
         let mut b = allow_all();
         b.connect(connect("c", true));
-        b.handle("c", PacketV5::Subscribe(SubscribeV5 {
-            packet_id: 1,
-            properties: vec![],
-            subscriptions: vec![SubscriptionV5 {
-                topic_filter: "home/#".into(),
-                qos: QoS::AtMostOnce,
-                no_local: true,
-                retain_as_published: false,
-                retain_handling: RetainHandling::SendOnSubscribe,
-            }],
-        }));
+        b.handle(
+            "c",
+            PacketV5::Subscribe(SubscribeV5 {
+                packet_id: 1,
+                properties: vec![],
+                subscriptions: vec![SubscriptionV5 {
+                    topic_filter: "home/#".into(),
+                    qos: QoS::AtMostOnce,
+                    no_local: true,
+                    retain_as_published: false,
+                    retain_handling: RetainHandling::SendOnSubscribe,
+                }],
+            }),
+        );
         let acts = b.handle("c", publish("home/x", QoS::AtMostOnce, None, false, b"v"));
-        assert!(find_publish_to(&acts, "c").is_none(), "no-local must not echo");
+        assert!(
+            find_publish_to(&acts, "c").is_none(),
+            "no-local must not echo"
+        );
     }
 
     #[test]

@@ -147,8 +147,8 @@ pub fn spread_group_volume(member_volumes: &[(Volume, bool)], target: Volume) ->
             if current == 0 {
                 target
             } else {
-                let scaled = i32::from(vol.percent()) * i32::from(target.percent())
-                    / i32::from(current);
+                let scaled =
+                    i32::from(vol.percent()) * i32::from(target.percent()) / i32::from(current);
                 Volume::clamped(scaled)
             }
         })

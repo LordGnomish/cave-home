@@ -78,13 +78,13 @@ pub mod plan;
 pub use antiflap::AntiFlapTimer;
 pub use balance::{BatteryPolicy, PowerSnapshot};
 pub use current::{
-    current_for_surplus, decide_current, power_for_current, ChargeSetpoint, CurrentLimits,
+    ChargeSetpoint, CurrentLimits, current_for_surplus, decide_current, power_for_current,
 };
 pub use error::EvccError;
 pub use label::{ChargeStatus, Lang};
 pub use mode::ChargeMode;
-pub use phase::{decide_phases, PhaseCount};
-pub use plan::{plan, ChargePlan, PlanInputs, PlanOutcome};
+pub use phase::{PhaseCount, decide_phases};
+pub use plan::{ChargePlan, PlanInputs, PlanOutcome, plan};
 
 /// The result of a single charge-control decision: the electrical setpoint plus
 /// the plain-language status the household sees.
@@ -138,7 +138,11 @@ pub fn decide(
         }
     };
 
-    Ok(ChargeDecision { setpoint, status, surplus_watts })
+    Ok(ChargeDecision {
+        setpoint,
+        status,
+        surplus_watts,
+    })
 }
 
 #[cfg(test)]

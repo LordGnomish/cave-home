@@ -7,7 +7,7 @@
 
 use std::io::Cursor;
 
-use cave_home_kubelet_rs::cri::remote::ws::conn::{WsConnection, V5_CHANNEL_PROTOCOL};
+use cave_home_kubelet_rs::cri::remote::ws::conn::{V5_CHANNEL_PROTOCOL, WsConnection};
 use cave_home_kubelet_rs::cri::remote::ws::frame::Frame;
 use cave_home_kubelet_rs::cri::remote::ws::proxy::{
     channel, channel_frame, dial, run_exec, run_port_forward,
@@ -26,7 +26,9 @@ where
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        let conn = WsConnection::accept(sock, V5_CHANNEL_PROTOCOL).await.unwrap();
+        let conn = WsConnection::accept(sock, V5_CHANNEL_PROTOCOL)
+            .await
+            .unwrap();
         handler(conn).await;
     });
     format!("http://{addr}/exec/tok")
@@ -41,9 +43,15 @@ async fn exec_streams_stdin_to_stdout_and_stderr() {
         let (ch, data) = (msg.payload[0], &msg.payload[1..]);
         assert_eq!(ch, channel::STDIN);
         let upper = data.to_ascii_uppercase();
-        conn.send(&channel_frame(channel::STDOUT, &upper)).await.unwrap();
-        conn.send(&channel_frame(channel::STDERR, b"warn: noop")).await.unwrap();
-        conn.send(&channel_frame(channel::ERROR, b"")).await.unwrap();
+        conn.send(&channel_frame(channel::STDOUT, &upper))
+            .await
+            .unwrap();
+        conn.send(&channel_frame(channel::STDERR, b"warn: noop"))
+            .await
+            .unwrap();
+        conn.send(&channel_frame(channel::ERROR, b""))
+            .await
+            .unwrap();
         conn.send(&Frame::close()).await.unwrap();
         while let Ok(Some(_)) = conn.recv().await {} // polite close (drain to EOF)
     })
@@ -85,9 +93,15 @@ async fn exec_half_closes_stdin_on_eof() {
     let client = dial(&url, &[V5_CHANNEL_PROTOCOL]).await.unwrap();
     let mut out = Vec::new();
     let mut err = Vec::new();
-    run_exec(client, Some(Cursor::new(b"ping".to_vec())), &mut out, &mut err, None)
-        .await
-        .unwrap();
+    run_exec(
+        client,
+        Some(Cursor::new(b"ping".to_vec())),
+        &mut out,
+        &mut err,
+        None,
+    )
+    .await
+    .unwrap();
 }
 
 #[tokio::test]
@@ -100,7 +114,9 @@ async fn port_forward_bridges_a_local_stream() {
         let port = u16::from_le_bytes([first.payload[1], first.payload[2]]);
         assert_eq!(port, 8080);
         let echo = &first.payload[3..];
-        conn.send(&channel_frame(channel::STDIN, echo)).await.unwrap();
+        conn.send(&channel_frame(channel::STDIN, echo))
+            .await
+            .unwrap();
         conn.send(&Frame::close()).await.unwrap();
         while let Ok(Some(_)) = conn.recv().await {} // polite close (drain to EOF)
     })

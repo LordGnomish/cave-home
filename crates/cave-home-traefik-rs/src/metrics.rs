@@ -6,12 +6,12 @@
 //! exposition format. This registers an equivalent set on a
 //! `prometheus-client` registry and renders the text format.
 
-use prometheus_client::encoding::text::encode;
 use prometheus_client::encoding::EncodeLabelSet;
+use prometheus_client::encoding::text::encode;
 use prometheus_client::metrics::counter::Counter;
 use prometheus_client::metrics::family::Family;
 use prometheus_client::metrics::gauge::Gauge;
-use prometheus_client::metrics::histogram::{exponential_buckets, Histogram};
+use prometheus_client::metrics::histogram::{Histogram, exponential_buckets};
 use prometheus_client::registry::Registry;
 
 /// The label set for a handled request.
@@ -69,7 +69,12 @@ impl Metrics {
             open_connections.clone(),
         );
 
-        Self { registry, requests_total, request_duration_seconds, open_connections }
+        Self {
+            registry,
+            requests_total,
+            request_duration_seconds,
+            open_connections,
+        }
     }
 
     /// Count a handled request.

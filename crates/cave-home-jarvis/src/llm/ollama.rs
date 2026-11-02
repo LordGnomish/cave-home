@@ -121,12 +121,10 @@ mod tests {
             "tool_calls":[{"function":{"name":"set_light",
                 "arguments":{"room":"kitchen","on":true}}}]},"done":false}"#;
         let g = gateway(MockTransport::new().route("/api/chat", 200, reply));
-        let req = ChatRequest::new("llama3.1", vec![ChatMessage::user("kitchen on")])
-            .with_tools(vec![ToolSpec::function(
-                "set_light",
-                "switch a light",
-                json!({"type":"object"}),
-            )]);
+        let req =
+            ChatRequest::new("llama3.1", vec![ChatMessage::user("kitchen on")]).with_tools(vec![
+                ToolSpec::function("set_light", "switch a light", json!({"type":"object"})),
+            ]);
         let resp = g.chat(req).await.unwrap();
         assert!(resp.wants_tools());
         assert_eq!(resp.tool_calls()[0].name(), "set_light");

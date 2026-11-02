@@ -77,40 +77,48 @@ fn dpt10_time_midnight_no_day_is_all_zero() {
 #[test]
 fn dpt10_time_rejects_out_of_range_fields() {
     // hour 24 is out of range (valid 0..=23) — must error, never panic.
-    assert!(dpt10::encode(dpt10::Time {
-        day: 0,
-        hour: 24,
-        minute: 0,
-        second: 0,
-    })
-    .is_err());
+    assert!(
+        dpt10::encode(dpt10::Time {
+            day: 0,
+            hour: 24,
+            minute: 0,
+            second: 0,
+        })
+        .is_err()
+    );
 
     // minute 60 is out of range (valid 0..=59).
-    assert!(dpt10::encode(dpt10::Time {
-        day: 0,
-        hour: 0,
-        minute: 60,
-        second: 0,
-    })
-    .is_err());
+    assert!(
+        dpt10::encode(dpt10::Time {
+            day: 0,
+            hour: 0,
+            minute: 60,
+            second: 0,
+        })
+        .is_err()
+    );
 
     // second 60 is out of range (valid 0..=59).
-    assert!(dpt10::encode(dpt10::Time {
-        day: 0,
-        hour: 0,
-        minute: 0,
-        second: 60,
-    })
-    .is_err());
+    assert!(
+        dpt10::encode(dpt10::Time {
+            day: 0,
+            hour: 0,
+            minute: 0,
+            second: 60,
+        })
+        .is_err()
+    );
 
     // day 8 is out of range (valid 0..=7).
-    assert!(dpt10::encode(dpt10::Time {
-        day: 8,
-        hour: 0,
-        minute: 0,
-        second: 0,
-    })
-    .is_err());
+    assert!(
+        dpt10::encode(dpt10::Time {
+            day: 8,
+            hour: 0,
+            minute: 0,
+            second: 0,
+        })
+        .is_err()
+    );
 }
 
 #[test]
@@ -167,28 +175,34 @@ fn dpt11_date_year_code_mapping() {
 #[test]
 fn dpt11_date_rejects_out_of_range_fields() {
     // month 13 is out of range (valid 1..=12) — must error, never panic.
-    assert!(dpt11::encode(dpt11::Date {
-        day: 1,
-        month: 13,
-        year: 2024,
-    })
-    .is_err());
+    assert!(
+        dpt11::encode(dpt11::Date {
+            day: 1,
+            month: 13,
+            year: 2024,
+        })
+        .is_err()
+    );
 
     // day 0 is out of range (valid 1..=31).
-    assert!(dpt11::encode(dpt11::Date {
-        day: 0,
-        month: 1,
-        year: 2024,
-    })
-    .is_err());
+    assert!(
+        dpt11::encode(dpt11::Date {
+            day: 0,
+            month: 1,
+            year: 2024,
+        })
+        .is_err()
+    );
 
     // day 32 is out of range (valid 1..=31).
-    assert!(dpt11::encode(dpt11::Date {
-        day: 32,
-        month: 1,
-        year: 2024,
-    })
-    .is_err());
+    assert!(
+        dpt11::encode(dpt11::Date {
+            day: 32,
+            month: 1,
+            year: 2024,
+        })
+        .is_err()
+    );
 }
 
 #[test]

@@ -175,7 +175,10 @@ mod tests {
     fn parse_sse_line_classifies_fields() {
         assert_eq!(parse_sse_line(""), SseLine::Dispatch);
         assert_eq!(parse_sse_line(": keepalive"), SseLine::Comment);
-        assert_eq!(parse_sse_line("event: update"), SseLine::Event("update".into()));
+        assert_eq!(
+            parse_sse_line("event: update"),
+            SseLine::Event("update".into())
+        );
         assert_eq!(parse_sse_line("data: hi"), SseLine::Data("hi".into()));
         assert_eq!(parse_sse_line("id: 7"), SseLine::Id("7".into()));
         assert_eq!(parse_sse_line("retry: 5000"), SseLine::Retry(5000));
@@ -186,12 +189,7 @@ mod tests {
     fn event_stream_parser_assembles_payload_at_dispatch() {
         let mut p = EventStreamParser::default();
         let body = r#"[{"id":"abc","creationtime":"2026-05-17T20:00:00Z","type":"update","data":[{"id":"light-1","type":"light","on":{"on":true}}]}]"#;
-        for line in [
-            "id: 7",
-            "event: update",
-            &format!("data: {body}"),
-            "",
-        ] {
+        for line in ["id: 7", "event: update", &format!("data: {body}"), ""] {
             let parsed = parse_sse_line(line);
             let _events = p.feed(parsed);
             // Only dispatch (the "" line) returns events.

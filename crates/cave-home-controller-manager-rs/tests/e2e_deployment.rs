@@ -4,7 +4,7 @@
 //! work queue + resync manager, with kubelet pod-admission simulated.
 
 use cave_home_controller_manager_rs::apis::{
-    template_hash, Deployment, DeploymentSpec, DeploymentStrategy, PodPhase, PodTemplateSpec,
+    Deployment, DeploymentSpec, DeploymentStrategy, PodPhase, PodTemplateSpec, template_hash,
 };
 use cave_home_controller_manager_rs::manager::Manager;
 use cave_home_controller_manager_rs::types::{Object, ObjectMeta};
@@ -22,7 +22,10 @@ fn deploy(replicas: i32, ver: &str) -> Deployment {
             replicas,
             selector: sel("web"),
             template: PodTemplateSpec::with_labels(&[("app", "web"), ("ver", ver)]),
-            strategy: DeploymentStrategy::RollingUpdate { max_unavailable: 1, max_surge: 1 },
+            strategy: DeploymentStrategy::RollingUpdate {
+                max_unavailable: 1,
+                max_surge: 1,
+            },
         },
     )
 }
@@ -48,7 +51,10 @@ fn deployment_creates_replicaset_creates_pods_to_convergence() {
     let rses = m.cluster.replicasets.list_owned_by(&d.meta().uid);
     assert_eq!(rses.len(), 1, "exactly one RS");
     assert_eq!(rses[0].spec.replicas, 3);
-    assert_eq!(rses[0].status.available_replicas, 3, "RS reports all pods available");
+    assert_eq!(
+        rses[0].status.available_replicas, 3,
+        "RS reports all pods available"
+    );
 
     // Three pods, owned by the RS, all running+ready.
     let pods = m.cluster.pods.list_owned_by(&rses[0].meta().uid);
@@ -81,7 +87,16 @@ fn scaling_the_deployment_up_and_down_converges() {
     d.spec.replicas = 1;
     m.cluster.deployments.update(d);
     m.run_until_stable(2, 50);
-    assert_eq!(m.cluster.pods.list().iter().filter(|p| p.is_active()).count(), 1, "scaled down to 1");
+    assert_eq!(
+        m.cluster
+            .pods
+            .list()
+            .iter()
+            .filter(|p| p.is_active())
+            .count(),
+        1,
+        "scaled down to 1"
+    );
 }
 
 #[test]
@@ -102,15 +117,33 @@ fn rolling_update_replaces_pods_with_the_new_revision() {
     assert!(rounds < 100, "rollout converged in {rounds} rounds");
 
     // The new RS is at desired; the old RS is scaled to zero.
-    let new_rs = m.cluster.replicasets.get(&format!("prod/web-{v2_hash}")).expect("new RS exists");
+    let new_rs = m
+        .cluster
+        .replicasets
+        .get(&format!("prod/web-{v2_hash}"))
+        .expect("new RS exists");
     assert_eq!(new_rs.spec.replicas, 3, "new revision at desired");
-    let old_rs = m.cluster.replicasets.get(&format!("prod/web-{v1_hash}")).expect("old RS still tracked");
+    let old_rs = m
+        .cluster
+        .replicasets
+        .get(&format!("prod/web-{v1_hash}"))
+        .expect("old RS still tracked");
     assert_eq!(old_rs.spec.replicas, 0, "old revision drained to zero");
 
     // Total active pods equal desired, all on the new revision.
-    let active: Vec<_> = m.cluster.pods.list().into_iter().filter(|p| p.is_active()).collect();
+    let active: Vec<_> = m
+        .cluster
+        .pods
+        .list()
+        .into_iter()
+        .filter(|p| p.is_active())
+        .collect();
     assert_eq!(active.len(), 3, "exactly desired pods remain active");
     for p in &active {
-        assert_eq!(p.meta().labels.get("ver").map(String::as_str), Some("v2"), "all pods on v2");
+        assert_eq!(
+            p.meta().labels.get("ver").map(String::as_str),
+            Some("v2"),
+            "all pods on v2"
+        );
     }
 }

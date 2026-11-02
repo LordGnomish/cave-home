@@ -83,7 +83,10 @@ impl DoorbellEvent {
     /// event the door or the timeout logic raises).
     #[must_use]
     pub const fn is_household_action(self) -> bool {
-        matches!(self, Self::CallAnswered | Self::CallDeclined | Self::CallEnded)
+        matches!(
+            self,
+            Self::CallAnswered | Self::CallDeclined | Self::CallEnded
+        )
     }
 
     /// Whether this event originates at the door itself (a press or motion).

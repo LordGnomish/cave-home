@@ -142,12 +142,7 @@ impl OtaQueue {
         self.inner
             .lock()
             .values()
-            .filter(|j| {
-                matches!(
-                    j.status,
-                    OtaJobStatus::Pending | OtaJobStatus::InFlight
-                )
-            })
+            .filter(|j| matches!(j.status, OtaJobStatus::Pending | OtaJobStatus::InFlight))
             .count()
     }
 

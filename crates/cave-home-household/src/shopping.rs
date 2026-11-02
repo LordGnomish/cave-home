@@ -146,7 +146,12 @@ mod tests {
     #[test]
     fn below_min_lists_only_short_products() {
         let products = [
-            p("Milk", QuantityUnit::Millilitres { step: 1000.0 }, 500.0, 2000.0),
+            p(
+                "Milk",
+                QuantityUnit::Millilitres { step: 1000.0 },
+                500.0,
+                2000.0,
+            ),
             p("Eggs", QuantityUnit::Piece, 12.0, 6.0), // plenty
         ];
         let list = below_min(&products);

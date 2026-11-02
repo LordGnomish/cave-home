@@ -70,7 +70,8 @@ impl<T: V1Item> ApiItems<T> {
             match self.items.get_mut(id) {
                 Some(existing) => existing.set_raw(obj.clone()),
                 None => {
-                    self.items.insert(id.clone(), T::from_raw(id.clone(), obj.clone()));
+                    self.items
+                        .insert(id.clone(), T::from_raw(id.clone(), obj.clone()));
                 }
             }
         }
@@ -164,12 +165,7 @@ mod tests {
                 .clone(),
         );
         // Second fetch drops id "2".
-        items.process_raw(
-            json!({"1": {"name": "A"}})
-                .as_object()
-                .unwrap()
-                .clone(),
-        );
+        items.process_raw(json!({"1": {"name": "A"}}).as_object().unwrap().clone());
         assert_eq!(items.len(), 1);
         assert!(items.get("2").is_none());
     }

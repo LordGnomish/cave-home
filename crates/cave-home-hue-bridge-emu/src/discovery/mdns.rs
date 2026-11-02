@@ -79,15 +79,9 @@ mod tests {
     fn txt_record_carries_bridgeid_and_modelid() {
         let id = BridgeIdentity::fresh("10.0.0.7");
         let ad = build_advertisement(&id);
-        let txt: std::collections::HashMap<_, _> = ad
-            .txt
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        assert_eq!(
-            txt.get("bridgeid").unwrap(),
-            &id.bridge_id.to_uppercase()
-        );
+        let txt: std::collections::HashMap<_, _> =
+            ad.txt.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        assert_eq!(txt.get("bridgeid").unwrap(), &id.bridge_id.to_uppercase());
         assert_eq!(txt.get("modelid").unwrap(), &id.model_id);
     }
 

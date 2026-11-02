@@ -136,7 +136,10 @@ impl EncryptionMetrics {
 
         // Latency histogram (cumulative bucket counts).
         let metric = "cave_home_secrets_op_latency_micros";
-        let _ = writeln!(out, "# HELP {metric} Envelope operation latency (microseconds).");
+        let _ = writeln!(
+            out,
+            "# HELP {metric} Envelope operation latency (microseconds)."
+        );
         let _ = writeln!(out, "# TYPE {metric} histogram");
         let mut cumulative = 0u64;
         for (i, &bound) in BUCKETS_MICROS.iter().enumerate() {
@@ -153,7 +156,12 @@ impl EncryptionMetrics {
         let _ = writeln!(out, "# HELP {gauge} Age of each encryption key (seconds).");
         let _ = writeln!(out, "# TYPE {gauge} gauge");
         for ka in key_ages {
-            let _ = writeln!(out, "{gauge}{{key_id=\"{}\"}} {}", escape_label(&ka.key_id), ka.age_secs);
+            let _ = writeln!(
+                out,
+                "{gauge}{{key_id=\"{}\"}} {}",
+                escape_label(&ka.key_id),
+                ka.age_secs
+            );
         }
 
         out
@@ -169,12 +177,19 @@ fn counter(out: &mut String, name: &str, help: &str, value: u64) {
 
 /// Escape a Prometheus label value (`\`, `"`, newline).
 fn escape_label(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n")
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
 }
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::float_cmp)]
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::float_cmp
+    )]
 
     use super::*;
 
@@ -218,8 +233,14 @@ mod tests {
         m.record_decrypt_ok(120);
         m.record_decrypt_error();
         let ages = vec![
-            KeyAge { key_id: "key-1".to_owned(), age_secs: 3600 },
-            KeyAge { key_id: "key-2".to_owned(), age_secs: 10 },
+            KeyAge {
+                key_id: "key-1".to_owned(),
+                age_secs: 3600,
+            },
+            KeyAge {
+                key_id: "key-2".to_owned(),
+                age_secs: 10,
+            },
         ];
         let text = m.to_prometheus(&ages);
 

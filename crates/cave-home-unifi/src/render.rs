@@ -157,7 +157,10 @@ mod tests {
     #[test]
     fn device_line_renders_kind_and_state() {
         let d = NetworkDevice::new("d1", "Salon switch", "m", DeviceKind::Switch);
-        assert_eq!(device_line(&d, Lang::En), "• Salon switch (switch) — online");
+        assert_eq!(
+            device_line(&d, Lang::En),
+            "• Salon switch (switch) — online"
+        );
         let off = NetworkDevice::new("d2", "Garaj", "m", DeviceKind::AccessPoint).offline();
         assert_eq!(
             device_line(&off, Lang::Tr),
@@ -170,7 +173,10 @@ mod tests {
         let c = NetworkClient::new("aa", "Kid tablet")
             .wireless("Home", "ap1")
             .blocked();
-        assert_eq!(client_line(&c, Lang::En), "• Kid tablet — on Home [blocked]");
+        assert_eq!(
+            client_line(&c, Lang::En),
+            "• Kid tablet — on Home [blocked]"
+        );
     }
 
     #[test]

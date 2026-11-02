@@ -71,4 +71,4 @@ pub use discovery::{Discovered, Transport};
 pub use integration::{ConfigFlow, Integration, IotClass, Registry};
 pub use label::Lang;
 pub use lifecycle::{Failure, State, Transition, TransitionError};
-pub use resolver::{resolve_setup_order, ResolveError};
+pub use resolver::{ResolveError, resolve_setup_order};

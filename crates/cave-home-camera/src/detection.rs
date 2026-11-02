@@ -10,7 +10,7 @@
 //! The crate reads no clock: a tick is a caller-supplied whole-second (or
 //! frame) counter.
 
-use crate::geometry::{iou, BBox, Point};
+use crate::geometry::{BBox, Point, iou};
 use crate::label::ObjectLabel;
 
 /// A whole-second (or frame) counter supplied by the caller. The crate never
@@ -36,7 +36,11 @@ impl Detection {
     /// garbage.
     #[must_use]
     pub const fn new(label: ObjectLabel, score: f64, bbox: BBox, tick: Tick) -> Self {
-        let score = if score.is_nan() { 0.0 } else { score.clamp(0.0, 1.0) };
+        let score = if score.is_nan() {
+            0.0
+        } else {
+            score.clamp(0.0, 1.0)
+        };
         Self {
             label,
             score,
@@ -62,8 +66,7 @@ impl Detection {
 }
 
 /// Which point of a detection's box is tested for zone membership.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ZoneAnchor {
     /// The geometric centre of the box.
     Center,
@@ -72,7 +75,6 @@ pub enum ZoneAnchor {
     #[default]
     BottomCenter,
 }
-
 
 /// Whether a thing is holding still or moving, judged by how much its box moved
 /// between two frames.
@@ -123,7 +125,10 @@ mod tests {
         let b = BBox::new(0.0, 0.0, 1.0, 1.0);
         assert_eq!(Detection::new(ObjectLabel::Person, 1.5, b, 0).score, 1.0);
         assert_eq!(Detection::new(ObjectLabel::Person, -0.2, b, 0).score, 0.0);
-        assert_eq!(Detection::new(ObjectLabel::Person, f64::NAN, b, 0).score, 0.0);
+        assert_eq!(
+            Detection::new(ObjectLabel::Person, f64::NAN, b, 0).score,
+            0.0
+        );
         assert!((Detection::new(ObjectLabel::Person, 0.73, b, 0).score - 0.73).abs() < 1e-9);
     }
 

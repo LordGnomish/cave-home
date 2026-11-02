@@ -149,9 +149,21 @@ mod tests {
         // Charter §6.3 / ADR-028: the UI must never surface protocol, vendor or
         // implementation terms — only household words.
         const BANNED: &[&str] = &[
-            "CEC", "DLNA", "MQTT", "entity_id", "media_player", "webOS", "WebOS",
-            "Tizen", "Cast", "logical address", "WoWLAN", "pod", "kubelet",
-            "PlaybackState", "PowerState",
+            "CEC",
+            "DLNA",
+            "MQTT",
+            "entity_id",
+            "media_player",
+            "webOS",
+            "WebOS",
+            "Tizen",
+            "Cast",
+            "logical address",
+            "WoWLAN",
+            "pod",
+            "kubelet",
+            "PlaybackState",
+            "PowerState",
         ];
         let mut texts: Vec<&'static str> = Vec::new();
         for lang in [Lang::En, Lang::De, Lang::Tr] {

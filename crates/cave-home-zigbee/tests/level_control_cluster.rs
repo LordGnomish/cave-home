@@ -6,8 +6,8 @@
 //! Wire vectors hand-computed from the ZCL §3.10.2.4 command tables.
 
 use cave_home_zigbee::level_control::{
-    attribute_id, command_id, LevelCommand, LevelControlState, MoveMode, StartUpCurrentLevel,
-    StepMode, LEVEL_CONTROL_CLUSTER_ID,
+    LEVEL_CONTROL_CLUSTER_ID, LevelCommand, LevelControlState, MoveMode, StartUpCurrentLevel,
+    StepMode, attribute_id, command_id,
 };
 
 #[test]
@@ -65,7 +65,8 @@ fn parse_move_to_level() {
         }
     );
     // The with-on/off variant carries the same payload but a different id.
-    let cmd2 = LevelCommand::parse(command_id::MOVE_TO_LEVEL_WITH_ON_OFF, &[0x80, 0x0a, 0x00]).unwrap();
+    let cmd2 =
+        LevelCommand::parse(command_id::MOVE_TO_LEVEL_WITH_ON_OFF, &[0x80, 0x0a, 0x00]).unwrap();
     assert_eq!(
         cmd2,
         LevelCommand::MoveToLevel {

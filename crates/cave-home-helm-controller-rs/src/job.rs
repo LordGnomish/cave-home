@@ -186,9 +186,10 @@ mod tests {
     #[test]
     fn repo_flag_present_when_set() {
         let a = build_args(&spec(), Operation::Install);
-        assert!(a
-            .windows(2)
-            .any(|w| w == ["--repo", "https://helm.traefik.io/traefik"]));
+        assert!(
+            a.windows(2)
+                .any(|w| w == ["--repo", "https://helm.traefik.io/traefik"])
+        );
     }
 
     #[test]

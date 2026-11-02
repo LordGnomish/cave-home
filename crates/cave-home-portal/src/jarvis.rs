@@ -195,7 +195,10 @@ mod tests {
     #[test]
     fn summary_reflects_room_count() {
         assert_eq!(page().summary(Lang::En), "Listening in 2 rooms.");
-        assert_eq!(JarvisPage::new().summary(Lang::En), "Not listening right now.");
+        assert_eq!(
+            JarvisPage::new().summary(Lang::En),
+            "Not listening right now."
+        );
         assert_eq!(
             JarvisPage::new().with_mic("den", true).summary(Lang::En),
             "Listening in 1 room."

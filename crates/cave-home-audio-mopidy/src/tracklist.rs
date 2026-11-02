@@ -119,7 +119,12 @@ impl Tracklist {
     /// Ids are monotonic for the life of the queue and are *not* reused after a
     /// [`Tracklist::clear`], matching MPD's behaviour where a client cannot
     /// confuse a stale id with a new song.
-    pub fn add(&mut self, uri: impl Into<String>, title: Option<String>, artist: Option<String>) -> u64 {
+    pub fn add(
+        &mut self,
+        uri: impl Into<String>,
+        title: Option<String>,
+        artist: Option<String>,
+    ) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
         self.songs.push(Song {
@@ -360,28 +365,43 @@ mod tests {
     #[test]
     fn repeat_wraps_at_end() {
         let t = fixture();
-        let m = Modes { repeat: true, ..Modes::default() };
+        let m = Modes {
+            repeat: true,
+            ..Modes::default()
+        };
         assert_eq!(t.next_after(2, m, 0), NextSong::Play(0));
     }
 
     #[test]
     fn single_without_repeat_stops_after_one() {
         let t = fixture();
-        let m = Modes { single: true, ..Modes::default() };
+        let m = Modes {
+            single: true,
+            ..Modes::default()
+        };
         assert_eq!(t.next_after(0, m, 0), NextSong::Stop);
     }
 
     #[test]
     fn single_with_repeat_replays_same_song() {
         let t = fixture();
-        let m = Modes { single: true, repeat: true, ..Modes::default() };
+        let m = Modes {
+            single: true,
+            repeat: true,
+            ..Modes::default()
+        };
         assert_eq!(t.next_after(1, m, 0), NextSong::Play(1));
     }
 
     #[test]
     fn single_takes_precedence_over_random() {
         let t = fixture();
-        let m = Modes { single: true, random: true, repeat: true, ..Modes::default() };
+        let m = Modes {
+            single: true,
+            random: true,
+            repeat: true,
+            ..Modes::default()
+        };
         // single+repeat means "this one again", regardless of shuffle.
         assert_eq!(t.next_after(2, m, 12345), NextSong::Play(2));
     }
@@ -389,7 +409,11 @@ mod tests {
     #[test]
     fn random_visits_every_song_once_before_wrapping() {
         let t = fixture();
-        let m = Modes { random: true, repeat: true, ..Modes::default() };
+        let m = Modes {
+            random: true,
+            repeat: true,
+            ..Modes::default()
+        };
         let order = t.shuffle_order(777);
         // It is a permutation of all positions.
         let mut sorted = order.clone();
@@ -410,7 +434,10 @@ mod tests {
     #[test]
     fn random_without_repeat_stops_at_end_of_shuffle() {
         let t = fixture();
-        let m = Modes { random: true, ..Modes::default() };
+        let m = Modes {
+            random: true,
+            ..Modes::default()
+        };
         let order = t.shuffle_order(99);
         let last = *order.last().unwrap();
         assert_eq!(t.next_after(last, m, 99), NextSong::Stop);
@@ -419,7 +446,10 @@ mod tests {
     #[test]
     fn consume_removes_finished_song_and_advances_onto_next() {
         let mut t = fixture(); // A B C, positions 0 1 2
-        let m = Modes { consume: true, ..Modes::default() };
+        let m = Modes {
+            consume: true,
+            ..Modes::default()
+        };
         // Finished playing position 0 (A). Consume it: B shifts to position 0
         // and is what plays next.
         let next = t.consume_finished(0, m);
@@ -431,7 +461,10 @@ mod tests {
     #[test]
     fn consume_of_last_song_stops_without_repeat() {
         let mut t = fixture(); // A B C
-        let m = Modes { consume: true, ..Modes::default() };
+        let m = Modes {
+            consume: true,
+            ..Modes::default()
+        };
         // Finished the last song (position 2). Consuming it leaves A B and ends
         // playback — there is nothing after it.
         let next = t.consume_finished(2, m);
@@ -442,7 +475,11 @@ mod tests {
     #[test]
     fn consume_of_last_song_wraps_with_repeat() {
         let mut t = fixture(); // A B C
-        let m = Modes { consume: true, repeat: true, ..Modes::default() };
+        let m = Modes {
+            consume: true,
+            repeat: true,
+            ..Modes::default()
+        };
         let next = t.consume_finished(2, m);
         assert_eq!(next, NextSong::Play(0)); // back to A
     }
@@ -450,7 +487,10 @@ mod tests {
     #[test]
     fn consume_drains_queue_one_song_at_a_time() {
         let mut t = fixture();
-        let m = Modes { consume: true, ..Modes::default() };
+        let m = Modes {
+            consume: true,
+            ..Modes::default()
+        };
         // Always finishing position 0 drains front-to-back.
         assert_eq!(t.consume_finished(0, m), NextSong::Play(0)); // A gone, play B
         assert_eq!(t.consume_finished(0, m), NextSong::Play(0)); // B gone, play C

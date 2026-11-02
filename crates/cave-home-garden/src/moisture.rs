@@ -87,9 +87,15 @@ impl SoilFit {
             (Self::Ideal, Lang::En) => format!("{plant_name} have plenty to drink."),
             (Self::Ideal, Lang::De) => format!("{plant_name} haben genug zu trinken."),
             (Self::Ideal, Lang::Tr) => format!("{plant_name} yeterince su almış."),
-            (Self::TooWet, Lang::En) => format!("{plant_name} are sitting in too much water — let them dry out."),
-            (Self::TooWet, Lang::De) => format!("{plant_name} stehen zu nass — etwas abtrocknen lassen."),
-            (Self::TooWet, Lang::Tr) => format!("{plant_name} fazla ıslak — biraz kurumasını bekleyin."),
+            (Self::TooWet, Lang::En) => {
+                format!("{plant_name} are sitting in too much water — let them dry out.")
+            }
+            (Self::TooWet, Lang::De) => {
+                format!("{plant_name} stehen zu nass — etwas abtrocknen lassen.")
+            }
+            (Self::TooWet, Lang::Tr) => {
+                format!("{plant_name} fazla ıslak — biraz kurumasını bekleyin.")
+            }
         }
     }
 }

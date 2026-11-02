@@ -48,7 +48,8 @@ impl Authenticator {
     }
 
     pub fn add_user(&mut self, username: &str, password: &[u8]) {
-        self.credentials.insert(username.to_owned(), password.to_vec());
+        self.credentials
+            .insert(username.to_owned(), password.to_vec());
     }
 
     pub fn allow(&mut self, username: &str, action: AclAction, topic: &str) {

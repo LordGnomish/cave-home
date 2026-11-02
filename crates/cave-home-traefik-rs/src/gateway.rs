@@ -67,7 +67,10 @@ impl GwHeaderMatch {
     /// Build a header match.
     #[must_use]
     pub fn new(name: &str, value: &str) -> Self {
-        Self { name: name.to_string(), value: value.to_string() }
+        Self {
+            name: name.to_string(),
+            value: value.to_string(),
+        }
     }
 }
 
@@ -86,7 +89,11 @@ impl HttpRouteMatch {
     /// A match on a path only.
     #[must_use]
     pub const fn path(path: GwPathMatch) -> Self {
-        Self { path: Some(path), method: None, headers: Vec::new() }
+        Self {
+            path: Some(path),
+            method: None,
+            headers: Vec::new(),
+        }
     }
 }
 
@@ -105,7 +112,11 @@ impl HttpBackendRef {
     /// A backend with the default weight of 1.
     #[must_use]
     pub fn new(service_name: &str, port: u16) -> Self {
-        Self { service_name: service_name.to_string(), port, weight: 1 }
+        Self {
+            service_name: service_name.to_string(),
+            port,
+            weight: 1,
+        }
     }
 
     /// Builder: set the weight.
@@ -264,10 +275,17 @@ impl HttpRoute {
     }
 
     /// Build a router, mapping a rule parse failure to a [`GatewayError`].
-    fn router(&self, name: &str, rule_text: &str, service_id: &str) -> Result<Router, GatewayError> {
-        Router::new(name, rule_text, service_id).map_err(|_: ParseError| GatewayError::InvalidRule {
-            route: self.id(),
-            rule: rule_text.to_string(),
+    fn router(
+        &self,
+        name: &str,
+        rule_text: &str,
+        service_id: &str,
+    ) -> Result<Router, GatewayError> {
+        Router::new(name, rule_text, service_id).map_err(|_: ParseError| {
+            GatewayError::InvalidRule {
+                route: self.id(),
+                rule: rule_text.to_string(),
+            }
         })
     }
 
@@ -296,8 +314,11 @@ impl HttpRoute {
             let service_id = format!("{}-{}-{}", self.namespace, self.name, ri);
 
             // No matches => the rule matches everything.
-            let matches: Vec<HttpRouteMatch> =
-                if rule.matches.is_empty() { vec![HttpRouteMatch::default()] } else { rule.matches.clone() };
+            let matches: Vec<HttpRouteMatch> = if rule.matches.is_empty() {
+                vec![HttpRouteMatch::default()]
+            } else {
+                rule.matches.clone()
+            };
 
             for (mi, m) in matches.iter().enumerate() {
                 let mut clauses = Vec::new();
@@ -325,7 +346,10 @@ impl HttpRoute {
                 out.routers.push(router);
             }
 
-            out.services.push(GwServiceRef { service_id, backends: rule.backend_refs.clone() });
+            out.services.push(GwServiceRef {
+                service_id,
+                backends: rule.backend_refs.clone(),
+            });
         }
         Ok(())
     }
@@ -359,19 +383,27 @@ mod tests {
     }
 
     fn rule(matches: Vec<HttpRouteMatch>, backends: Vec<HttpBackendRef>) -> HttpRouteRule {
-        HttpRouteRule { matches, backend_refs: backends }
+        HttpRouteRule {
+            matches,
+            backend_refs: backends,
+        }
     }
 
     #[test]
     fn host_and_path_build_combined_rule() {
         let mut r = route(vec![rule(
-            vec![HttpRouteMatch::path(GwPathMatch::PathPrefix("/api".to_string()))],
+            vec![HttpRouteMatch::path(GwPathMatch::PathPrefix(
+                "/api".to_string(),
+            ))],
             vec![HttpBackendRef::new("api", 80)],
         )]);
         r.hostnames = vec!["example.com".to_string()];
         let t = r.translate().unwrap();
         assert_eq!(t.routers.len(), 1);
-        assert_eq!(t.routers[0].rule_text, "Host(`example.com`) && PathPrefix(`/api`)");
+        assert_eq!(
+            t.routers[0].rule_text,
+            "Host(`example.com`) && PathPrefix(`/api`)"
+        );
         assert_eq!(t.routers[0].service, "default-rt-0");
     }
 
@@ -410,14 +442,20 @@ mod tests {
     #[test]
     fn empty_match_with_no_host_is_catch_all() {
         let r = route(vec![rule(vec![], vec![HttpBackendRef::new("a", 80)])]);
-        assert_eq!(r.translate().unwrap().routers[0].rule_text, "PathPrefix(`/`)");
+        assert_eq!(
+            r.translate().unwrap().routers[0].rule_text,
+            "PathPrefix(`/`)"
+        );
     }
 
     #[test]
     fn host_with_empty_match_omits_path() {
         let mut r = route(vec![rule(vec![], vec![HttpBackendRef::new("a", 80)])]);
         r.hostnames = vec!["only.com".to_string()];
-        assert_eq!(r.translate().unwrap().routers[0].rule_text, "Host(`only.com`)");
+        assert_eq!(
+            r.translate().unwrap().routers[0].rule_text,
+            "Host(`only.com`)"
+        );
     }
 
     #[test]
@@ -440,12 +478,16 @@ mod tests {
     #[test]
     fn rule_without_backends_is_rejected() {
         let r = route(vec![rule(
-            vec![HttpRouteMatch::path(GwPathMatch::PathPrefix("/".to_string()))],
+            vec![HttpRouteMatch::path(GwPathMatch::PathPrefix(
+                "/".to_string(),
+            ))],
             vec![],
         )]);
         assert_eq!(
             r.translate().unwrap_err(),
-            GatewayError::NoBackend { route: "default/rt".to_string() }
+            GatewayError::NoBackend {
+                route: "default/rt".to_string()
+            }
         );
     }
 
@@ -454,7 +496,10 @@ mod tests {
         let r1 = route(vec![rule(vec![], vec![HttpBackendRef::new("", 80)])]);
         assert_eq!(r1.translate().unwrap_err(), GatewayError::EmptyBackendName);
         let r2 = route(vec![rule(vec![], vec![HttpBackendRef::new("a", 0)])]);
-        assert_eq!(r2.translate().unwrap_err(), GatewayError::InvalidPort("a".to_string()));
+        assert_eq!(
+            r2.translate().unwrap_err(),
+            GatewayError::InvalidPort("a".to_string())
+        );
     }
 
     #[test]
@@ -472,7 +517,9 @@ mod tests {
         // Two backends, weights 3 and 1: of every 4 requests, 3 go to the
         // first backend's server and 1 to the second's.
         let r = route(vec![rule(
-            vec![HttpRouteMatch::path(GwPathMatch::PathPrefix("/".to_string()))],
+            vec![HttpRouteMatch::path(GwPathMatch::PathPrefix(
+                "/".to_string(),
+            ))],
             vec![
                 HttpBackendRef::new("heavy", 80).with_weight(3),
                 HttpBackendRef::new("light", 80).with_weight(1),
@@ -484,8 +531,9 @@ mod tests {
             .into_config(|b| vec![Server::new(&format!("http://{}:80", b.service_name))])
             .unwrap();
         let svc = cfg.service("default-rt-0").unwrap();
-        let picks: Vec<&str> =
-            (0..4).map(|i| svc.pick_round_robin(i).unwrap().url.as_str()).collect();
+        let picks: Vec<&str> = (0..4)
+            .map(|i| svc.pick_round_robin(i).unwrap().url.as_str())
+            .collect();
         let heavy = picks.iter().filter(|u| u.contains("heavy")).count();
         let light = picks.iter().filter(|u| u.contains("light")).count();
         assert_eq!((heavy, light), (3, 1));
@@ -494,7 +542,9 @@ mod tests {
     #[test]
     fn into_config_is_routable_end_to_end() {
         let mut r = route(vec![rule(
-            vec![HttpRouteMatch::path(GwPathMatch::PathPrefix("/api".to_string()))],
+            vec![HttpRouteMatch::path(GwPathMatch::PathPrefix(
+                "/api".to_string(),
+            ))],
             vec![HttpBackendRef::new("api", 80)],
         )]);
         r.hostnames = vec!["example.com".to_string()];

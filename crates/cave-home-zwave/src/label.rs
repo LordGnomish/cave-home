@@ -172,20 +172,32 @@ mod tests {
     fn switch_on_with_room() {
         let v = Value::Bool(true);
         assert_eq!(describe(&v, Some("Bedroom"), Lang::En), "Bedroom switch on");
-        assert_eq!(describe(&v, Some("Schlafzimmer"), Lang::De), "Schlafzimmer Schalter an");
-        assert_eq!(describe(&v, Some("Yatak odası"), Lang::Tr), "Yatak odası anahtar açık");
+        assert_eq!(
+            describe(&v, Some("Schlafzimmer"), Lang::De),
+            "Schlafzimmer Schalter an"
+        );
+        assert_eq!(
+            describe(&v, Some("Yatak odası"), Lang::Tr),
+            "Yatak odası anahtar açık"
+        );
     }
 
     #[test]
     fn temperature_reads_as_sensor_degrees() {
-        let v = Value::Temperature { value: 21.0, unit: TemperatureUnit::Celsius };
+        let v = Value::Temperature {
+            value: 21.0,
+            unit: TemperatureUnit::Celsius,
+        };
         assert_eq!(describe(&v, None, Lang::En), "Sensor: 21°");
         assert_eq!(describe(&v, None, Lang::Tr), "Sensör: 21°");
     }
 
     #[test]
     fn fractional_temperature_keeps_one_decimal() {
-        let v = Value::Temperature { value: 24.4, unit: TemperatureUnit::Celsius };
+        let v = Value::Temperature {
+            value: 24.4,
+            unit: TemperatureUnit::Celsius,
+        };
         assert_eq!(describe(&v, None, Lang::En), "Sensor: 24.4°");
     }
 
@@ -208,14 +220,29 @@ mod tests {
         let samples = [
             Value::Bool(false),
             Value::Level(0),
-            Value::Temperature { value: 19.5, unit: TemperatureUnit::Fahrenheit },
+            Value::Temperature {
+                value: 19.5,
+                unit: TemperatureUnit::Fahrenheit,
+            },
             Value::Humidity(40.0),
-            Value::Measurement { value: 100.0, quantity: Quantity::Power },
+            Value::Measurement {
+                value: 100.0,
+                quantity: Quantity::Power,
+            },
             Value::BatteryPercent(80),
             Value::BatteryLow,
-            Value::ColorComponent { component: 2, intensity: 255 },
-            Value::Notification { notification_type: 1, event: 2 },
-            Value::ConfigParam { parameter: 3, value: 1 },
+            Value::ColorComponent {
+                component: 2,
+                intensity: 255,
+            },
+            Value::Notification {
+                notification_type: 1,
+                event: 2,
+            },
+            Value::ConfigParam {
+                parameter: 3,
+                value: 1,
+            },
         ];
         for v in &samples {
             for lang in [Lang::En, Lang::De, Lang::Tr] {
@@ -247,15 +274,33 @@ mod tests {
             Value::Bool(true),
             Value::Bool(false),
             Value::Level(50),
-            Value::Temperature { value: 21.0, unit: TemperatureUnit::Celsius },
+            Value::Temperature {
+                value: 21.0,
+                unit: TemperatureUnit::Celsius,
+            },
             Value::Humidity(42.0),
-            Value::Measurement { value: 7.0, quantity: Quantity::Luminance },
-            Value::Measurement { value: 7.0, quantity: Quantity::Energy },
+            Value::Measurement {
+                value: 7.0,
+                quantity: Quantity::Luminance,
+            },
+            Value::Measurement {
+                value: 7.0,
+                quantity: Quantity::Energy,
+            },
             Value::BatteryPercent(90),
             Value::BatteryLow,
-            Value::ColorComponent { component: 4, intensity: 10 },
-            Value::Notification { notification_type: 1, event: 2 },
-            Value::ConfigParam { parameter: 5, value: -1 },
+            Value::ColorComponent {
+                component: 4,
+                intensity: 10,
+            },
+            Value::Notification {
+                notification_type: 1,
+                event: 2,
+            },
+            Value::ConfigParam {
+                parameter: 5,
+                value: -1,
+            },
         ];
         for v in &samples {
             for lang in [Lang::En, Lang::De, Lang::Tr] {

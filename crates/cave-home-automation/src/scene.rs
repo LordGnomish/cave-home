@@ -64,11 +64,7 @@ impl Scene {
     /// Activate the scene — push every entry through the state machine.
     ///
     /// # Upstream: home-assistant/core@456202325ac4:homeassistant/components/scene/__init__.py::Scene.async_activate
-    pub fn activate(
-        &self,
-        sm: &Arc<StateMachine>,
-        context: Option<Context>,
-    ) -> HassResult<()> {
+    pub fn activate(&self, sm: &Arc<StateMachine>, context: Option<Context>) -> HassResult<()> {
         let ctx = context.unwrap_or_default();
         for entry in &self.entries {
             sm.async_set(

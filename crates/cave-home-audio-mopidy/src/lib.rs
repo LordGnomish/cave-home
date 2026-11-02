@@ -64,9 +64,9 @@ pub mod response;
 pub mod status;
 pub mod tracklist;
 
-pub use command::{parse, Command, ParseError};
+pub use command::{Command, ParseError, parse};
 pub use label::Lang;
 pub use playback::{PlayState, Playback, PlaybackError};
-pub use response::{ack, ok, AckError, Response};
+pub use response::{AckError, Response, ack, ok};
 pub use status::{current_song, playlist_info, status};
 pub use tracklist::{Modes, NextSong, QueueError, Song, Tracklist};

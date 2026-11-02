@@ -102,14 +102,26 @@ mod tests {
 
     #[test]
     fn and_requires_both() {
-        assert!(matches_str("Host(`example.com`) && PathPrefix(`/api`)", &req()));
-        assert!(!matches_str("Host(`example.com`) && PathPrefix(`/nope`)", &req()));
+        assert!(matches_str(
+            "Host(`example.com`) && PathPrefix(`/api`)",
+            &req()
+        ));
+        assert!(!matches_str(
+            "Host(`example.com`) && PathPrefix(`/nope`)",
+            &req()
+        ));
     }
 
     #[test]
     fn or_requires_either() {
-        assert!(matches_str("Host(`nope.com`) || PathPrefix(`/api`)", &req()));
-        assert!(!matches_str("Host(`nope.com`) || PathPrefix(`/nope`)", &req()));
+        assert!(matches_str(
+            "Host(`nope.com`) || PathPrefix(`/api`)",
+            &req()
+        ));
+        assert!(!matches_str(
+            "Host(`nope.com`) || PathPrefix(`/nope`)",
+            &req()
+        ));
     }
 
     #[test]
@@ -149,7 +161,8 @@ mod tests {
 
     #[test]
     fn complex_nested_rule() {
-        let rule = "Host(`example.com`) && (PathPrefix(`/api`) || PathPrefix(`/v2`)) && !Method(`DELETE`)";
+        let rule =
+            "Host(`example.com`) && (PathPrefix(`/api`) || PathPrefix(`/v2`)) && !Method(`DELETE`)";
         assert!(matches_str(rule, &req()));
     }
 }

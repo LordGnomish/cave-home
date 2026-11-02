@@ -140,11 +140,7 @@ impl Script {
     /// Run the script to completion.
     ///
     /// # Upstream: home-assistant/core@456202325ac4:homeassistant/helpers/script.py::Script.async_run
-    pub async fn run(
-        &self,
-        ctx: &ScriptContext,
-        context: Option<Context>,
-    ) -> HassResult<()> {
+    pub async fn run(&self, ctx: &ScriptContext, context: Option<Context>) -> HassResult<()> {
         let cx = context.unwrap_or_default();
         run_sequence(&self.sequence, ctx, &cx).await
     }
@@ -169,7 +165,11 @@ fn execute<'a>(
 ) -> futures::future::BoxFuture<'a, HassResult<()>> {
     Box::pin(async move {
         match action {
-            Action::Service { domain, service, data } => {
+            Action::Service {
+                domain,
+                service,
+                data,
+            } => {
                 rctx.services
                     .call(
                         domain,
@@ -192,9 +192,10 @@ fn execute<'a>(
                 sleep(Duration::from_millis(*milliseconds)).await;
                 Ok(())
             }
-            Action::WaitForTrigger { trigger, timeout_ms } => {
-                wait_for_trigger(trigger, *timeout_ms, rctx).await
-            }
+            Action::WaitForTrigger {
+                trigger,
+                timeout_ms,
+            } => wait_for_trigger(trigger, *timeout_ms, rctx).await,
             Action::Repeat { count, sequence } => {
                 for _ in 0..*count {
                     run_sequence(sequence, rctx, context).await?;
@@ -215,7 +216,11 @@ fn execute<'a>(
                 }
                 run_sequence(default, rctx, context).await
             }
-            Action::If { condition, then, otherwise } => {
+            Action::If {
+                condition,
+                then,
+                otherwise,
+            } => {
                 if condition.evaluate(&rctx.sm)? {
                     run_sequence(then, rctx, context).await
                 } else {
@@ -271,7 +276,7 @@ async fn wait_for_trigger(
 mod tests {
     use super::*;
     use crate::event_bus::InMemoryEventBus;
-    use crate::service::{service_handler, SupportsResponse};
+    use crate::service::{SupportsResponse, service_handler};
     use std::collections::BTreeMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -296,13 +301,8 @@ mod tests {
                 Ok(None)
             }
         });
-        ctx.services.register(
-            "light",
-            "turn_on",
-            handler,
-            None,
-            SupportsResponse::None,
-        );
+        ctx.services
+            .register("light", "turn_on", handler, None, SupportsResponse::None);
         let script = Script::new(
             "Bedtime",
             vec![Action::Service {
@@ -321,7 +321,9 @@ mod tests {
         let ctx = make_ctx();
         let script = Script::new(
             "Wait",
-            vec![Action::Delay { milliseconds: 5_000 }],
+            vec![Action::Delay {
+                milliseconds: 5_000,
+            }],
         );
         let start = tokio::time::Instant::now();
         let fut = script.run(&ctx, None);
@@ -427,9 +429,7 @@ mod tests {
             vec![Action::If {
                 condition: Condition::State {
                     entity_id: "light.kitchen".into(),
-                    state: crate::automation::conditions::ConditionStateValue::Single(
-                        "on".into(),
-                    ),
+                    state: crate::automation::conditions::ConditionStateValue::Single("on".into()),
                 },
                 then: vec![],
                 otherwise: vec![Action::Service {

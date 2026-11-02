@@ -10,7 +10,7 @@
 //! (which lets the apiserver delete the namespace object itself).
 
 use crate::apis::Cluster;
-use crate::controllers::cleanup::{namespace_sweep, NamespaceSweep, NAMESPACE_FINALIZER};
+use crate::controllers::cleanup::{NAMESPACE_FINALIZER, NamespaceSweep, namespace_sweep};
 use crate::reconcile::Outcome;
 use crate::types::Object;
 
@@ -51,49 +51,159 @@ impl NamespaceController {
 /// Every namespaced object's key living in `namespace`, across all kinds.
 fn namespaced_keys(cluster: &Cluster, namespace: &str) -> Vec<String> {
     let mut keys = Vec::new();
-    keys.extend(cluster.pods.list_namespaced(namespace).iter().map(Object::key));
-    keys.extend(cluster.replicasets.list_namespaced(namespace).iter().map(Object::key));
-    keys.extend(cluster.deployments.list_namespaced(namespace).iter().map(Object::key));
-    keys.extend(cluster.statefulsets.list_namespaced(namespace).iter().map(Object::key));
-    keys.extend(cluster.daemonsets.list_namespaced(namespace).iter().map(Object::key));
-    keys.extend(cluster.jobs.list_namespaced(namespace).iter().map(Object::key));
-    keys.extend(cluster.cronjobs.list_namespaced(namespace).iter().map(Object::key));
-    keys.extend(cluster.endpoints.list_namespaced(namespace).iter().map(Object::key));
-    keys.extend(cluster.services.list_namespaced(namespace).iter().map(Object::key));
-    keys.extend(cluster.service_accounts.list_namespaced(namespace).iter().map(Object::key));
+    keys.extend(
+        cluster
+            .pods
+            .list_namespaced(namespace)
+            .iter()
+            .map(Object::key),
+    );
+    keys.extend(
+        cluster
+            .replicasets
+            .list_namespaced(namespace)
+            .iter()
+            .map(Object::key),
+    );
+    keys.extend(
+        cluster
+            .deployments
+            .list_namespaced(namespace)
+            .iter()
+            .map(Object::key),
+    );
+    keys.extend(
+        cluster
+            .statefulsets
+            .list_namespaced(namespace)
+            .iter()
+            .map(Object::key),
+    );
+    keys.extend(
+        cluster
+            .daemonsets
+            .list_namespaced(namespace)
+            .iter()
+            .map(Object::key),
+    );
+    keys.extend(
+        cluster
+            .jobs
+            .list_namespaced(namespace)
+            .iter()
+            .map(Object::key),
+    );
+    keys.extend(
+        cluster
+            .cronjobs
+            .list_namespaced(namespace)
+            .iter()
+            .map(Object::key),
+    );
+    keys.extend(
+        cluster
+            .endpoints
+            .list_namespaced(namespace)
+            .iter()
+            .map(Object::key),
+    );
+    keys.extend(
+        cluster
+            .services
+            .list_namespaced(namespace)
+            .iter()
+            .map(Object::key),
+    );
+    keys.extend(
+        cluster
+            .service_accounts
+            .list_namespaced(namespace)
+            .iter()
+            .map(Object::key),
+    );
     keys
 }
 
 /// Delete every namespaced object in `namespace`, across all kinds.
 fn delete_namespaced(cluster: &mut Cluster, namespace: &str) {
-    for k in cluster.pods.list_namespaced(namespace).iter().map(Object::key) {
+    for k in cluster
+        .pods
+        .list_namespaced(namespace)
+        .iter()
+        .map(Object::key)
+    {
         cluster.pods.delete(&k);
     }
-    for k in cluster.replicasets.list_namespaced(namespace).iter().map(Object::key) {
+    for k in cluster
+        .replicasets
+        .list_namespaced(namespace)
+        .iter()
+        .map(Object::key)
+    {
         cluster.replicasets.delete(&k);
     }
-    for k in cluster.deployments.list_namespaced(namespace).iter().map(Object::key) {
+    for k in cluster
+        .deployments
+        .list_namespaced(namespace)
+        .iter()
+        .map(Object::key)
+    {
         cluster.deployments.delete(&k);
     }
-    for k in cluster.statefulsets.list_namespaced(namespace).iter().map(Object::key) {
+    for k in cluster
+        .statefulsets
+        .list_namespaced(namespace)
+        .iter()
+        .map(Object::key)
+    {
         cluster.statefulsets.delete(&k);
     }
-    for k in cluster.daemonsets.list_namespaced(namespace).iter().map(Object::key) {
+    for k in cluster
+        .daemonsets
+        .list_namespaced(namespace)
+        .iter()
+        .map(Object::key)
+    {
         cluster.daemonsets.delete(&k);
     }
-    for k in cluster.jobs.list_namespaced(namespace).iter().map(Object::key) {
+    for k in cluster
+        .jobs
+        .list_namespaced(namespace)
+        .iter()
+        .map(Object::key)
+    {
         cluster.jobs.delete(&k);
     }
-    for k in cluster.cronjobs.list_namespaced(namespace).iter().map(Object::key) {
+    for k in cluster
+        .cronjobs
+        .list_namespaced(namespace)
+        .iter()
+        .map(Object::key)
+    {
         cluster.cronjobs.delete(&k);
     }
-    for k in cluster.endpoints.list_namespaced(namespace).iter().map(Object::key) {
+    for k in cluster
+        .endpoints
+        .list_namespaced(namespace)
+        .iter()
+        .map(Object::key)
+    {
         cluster.endpoints.delete(&k);
     }
-    for k in cluster.services.list_namespaced(namespace).iter().map(Object::key) {
+    for k in cluster
+        .services
+        .list_namespaced(namespace)
+        .iter()
+        .map(Object::key)
+    {
         cluster.services.delete(&k);
     }
-    for k in cluster.service_accounts.list_namespaced(namespace).iter().map(Object::key) {
+    for k in cluster
+        .service_accounts
+        .list_namespaced(namespace)
+        .iter()
+        .map(Object::key)
+    {
         cluster.service_accounts.delete(&k);
     }
 }

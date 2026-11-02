@@ -111,12 +111,16 @@ pub fn min_max(series: &Series, buckets: usize) -> Series {
         let end = (start + bucket_size).min(n);
         let chunk = &data[start..end];
         if let (Some(lo), Some(hi)) = (
-            chunk
-                .iter()
-                .min_by(|a, b| a.value().partial_cmp(&b.value()).unwrap_or(core::cmp::Ordering::Equal)),
-            chunk
-                .iter()
-                .max_by(|a, b| a.value().partial_cmp(&b.value()).unwrap_or(core::cmp::Ordering::Equal)),
+            chunk.iter().min_by(|a, b| {
+                a.value()
+                    .partial_cmp(&b.value())
+                    .unwrap_or(core::cmp::Ordering::Equal)
+            }),
+            chunk.iter().max_by(|a, b| {
+                a.value()
+                    .partial_cmp(&b.value())
+                    .unwrap_or(core::cmp::Ordering::Equal)
+            }),
         ) {
             // Emit in timestamp order so the result is monotonic.
             if lo.timestamp() <= hi.timestamp() {

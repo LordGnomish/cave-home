@@ -11,20 +11,20 @@ use bytes::Bytes;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum PacketType {
-    Connect     = 1,
-    ConnAck     = 2,
-    Publish     = 3,
-    PubAck      = 4,
-    PubRec      = 5,
-    PubRel      = 6,
-    PubComp     = 7,
-    Subscribe   = 8,
-    SubAck      = 9,
+    Connect = 1,
+    ConnAck = 2,
+    Publish = 3,
+    PubAck = 4,
+    PubRec = 5,
+    PubRel = 6,
+    PubComp = 7,
+    Subscribe = 8,
+    SubAck = 9,
     Unsubscribe = 10,
-    UnsubAck    = 11,
-    PingReq     = 12,
-    PingResp    = 13,
-    Disconnect  = 14,
+    UnsubAck = 11,
+    PingReq = 12,
+    PingResp = 13,
+    Disconnect = 14,
 }
 
 impl PacketType {
@@ -53,7 +53,7 @@ impl PacketType {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum QoS {
-    AtMostOnce  = 0,
+    AtMostOnce = 0,
     AtLeastOnce = 1,
     ExactlyOnce = 2,
 }
@@ -83,12 +83,12 @@ pub struct Connect {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ConnAckReturnCode {
-    Accepted                    = 0,
+    Accepted = 0,
     UnacceptableProtocolVersion = 1,
-    IdentifierRejected          = 2,
-    ServerUnavailable           = 3,
-    BadUsernameOrPassword       = 4,
-    NotAuthorized               = 5,
+    IdentifierRejected = 2,
+    ServerUnavailable = 3,
+    BadUsernameOrPassword = 4,
+    NotAuthorized = 5,
 }
 
 impl ConnAckReturnCode {

@@ -191,7 +191,10 @@ mod tests {
     #[test]
     fn empty_name_rejected() {
         let reg = ZoneRegistry::new();
-        assert_eq!(reg.create("  ", 0.0, 0.0, 1.0).unwrap_err(), ZoneError::EmptyName);
+        assert_eq!(
+            reg.create("  ", 0.0, 0.0, 1.0).unwrap_err(),
+            ZoneError::EmptyName
+        );
     }
 
     #[test]

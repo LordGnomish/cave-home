@@ -77,7 +77,9 @@ impl FrostRisk {
             (Self::Warning, Lang::En) => "Frost tonight — cover the tender plants.",
             (Self::Warning, Lang::De) => "Heute Nacht Frost — die empfindlichen Pflanzen abdecken.",
             (Self::Warning, Lang::Tr) => "Bu gece don var — nazik bitkileri örtün.",
-            (Self::Danger, Lang::En) => "Hard freeze tonight — bring tender plants inside or cover them well.",
+            (Self::Danger, Lang::En) => {
+                "Hard freeze tonight — bring tender plants inside or cover them well."
+            }
             (Self::Danger, Lang::De) => {
                 "Heute Nacht starker Frost — empfindliche Pflanzen hereinholen oder gut abdecken."
             }
@@ -128,9 +130,18 @@ mod tests {
     #[test]
     fn the_same_cold_night_hits_tender_hardest() {
         // A 0 °C night: danger for tender, watch for half-hardy, fine for hardy.
-        assert_eq!(FrostRisk::classify(0.0, FrostSensitivity::Tender), FrostRisk::Danger);
-        assert_eq!(FrostRisk::classify(0.0, FrostSensitivity::HalfHardy), FrostRisk::Watch);
-        assert_eq!(FrostRisk::classify(0.0, FrostSensitivity::Hardy), FrostRisk::None);
+        assert_eq!(
+            FrostRisk::classify(0.0, FrostSensitivity::Tender),
+            FrostRisk::Danger
+        );
+        assert_eq!(
+            FrostRisk::classify(0.0, FrostSensitivity::HalfHardy),
+            FrostRisk::Watch
+        );
+        assert_eq!(
+            FrostRisk::classify(0.0, FrostSensitivity::Hardy),
+            FrostRisk::None
+        );
     }
 
     #[test]

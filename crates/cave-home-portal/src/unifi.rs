@@ -232,6 +232,9 @@ mod tests {
         let page = UnifiOverviewPage::new(sample());
         assert!(page.latest_event.is_none());
         let page = page.with_latest_event("Doorbell at the front door");
-        assert_eq!(page.latest_event.as_deref(), Some("Doorbell at the front door"));
+        assert_eq!(
+            page.latest_event.as_deref(),
+            Some("Doorbell at the front door")
+        );
     }
 }

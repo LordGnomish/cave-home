@@ -73,11 +73,7 @@ impl GroupTelegram {
     /// Build a "set this group's value" write telegram from a multi-byte
     /// payload (e.g. an encoded DPT 9 temperature).
     #[must_use]
-    pub fn write(
-        source: IndividualAddress,
-        destination: GroupAddress,
-        bytes: Vec<u8>,
-    ) -> Self {
+    pub fn write(source: IndividualAddress, destination: GroupAddress, bytes: Vec<u8>) -> Self {
         Self {
             source,
             destination,

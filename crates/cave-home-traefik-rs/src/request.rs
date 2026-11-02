@@ -38,7 +38,11 @@ impl RequestDescriptor {
         Self {
             method: method.to_ascii_uppercase(),
             host: host.to_ascii_lowercase(),
-            path: if path.is_empty() { "/".to_string() } else { path.to_string() },
+            path: if path.is_empty() {
+                "/".to_string()
+            } else {
+                path.to_string()
+            },
             headers: BTreeMap::new(),
             scheme: scheme.to_ascii_lowercase(),
         }
@@ -55,7 +59,9 @@ impl RequestDescriptor {
     /// Look up a header value by (case-insensitive) name.
     #[must_use]
     pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers.get(&name.to_ascii_lowercase()).map(String::as_str)
+        self.headers
+            .get(&name.to_ascii_lowercase())
+            .map(String::as_str)
     }
 }
 
@@ -75,7 +81,9 @@ impl ResponseDescriptor {
     /// Look up a response header value by (case-insensitive) name.
     #[must_use]
     pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers.get(&name.to_ascii_lowercase()).map(String::as_str)
+        self.headers
+            .get(&name.to_ascii_lowercase())
+            .map(String::as_str)
     }
 }
 

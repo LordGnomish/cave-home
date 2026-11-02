@@ -28,17 +28,24 @@ pub enum EntityIdError {
 }
 
 impl EntityId {
-    pub fn new(domain: impl Into<String>, object_id: impl Into<String>) -> Result<Self, EntityIdError> {
+    pub fn new(
+        domain: impl Into<String>,
+        object_id: impl Into<String>,
+    ) -> Result<Self, EntityIdError> {
         let d: String = domain.into();
         let o: String = object_id.into();
         let ok = |s: &str| {
             !s.is_empty()
-                && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+                && s.chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
         };
         if !ok(&d) || !ok(&o) {
             return Err(EntityIdError::Invalid(format!("{d}.{o}")));
         }
-        Ok(Self { domain: d, object_id: o })
+        Ok(Self {
+            domain: d,
+            object_id: o,
+        })
     }
 }
 
@@ -52,8 +59,12 @@ impl FromStr for EntityId {
     type Err = EntityIdError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.splitn(2, '.');
-        let d = parts.next().ok_or_else(|| EntityIdError::Invalid(s.to_owned()))?;
-        let o = parts.next().ok_or_else(|| EntityIdError::Invalid(s.to_owned()))?;
+        let d = parts
+            .next()
+            .ok_or_else(|| EntityIdError::Invalid(s.to_owned()))?;
+        let o = parts
+            .next()
+            .ok_or_else(|| EntityIdError::Invalid(s.to_owned()))?;
         if o.contains('.') {
             return Err(EntityIdError::Invalid(s.to_owned()));
         }

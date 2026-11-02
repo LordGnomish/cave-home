@@ -58,6 +58,6 @@ pub mod value;
 pub use address::{Address, DeviceRole};
 pub use command_class::{Command, CommandClass, LevelChange, ThermostatMode};
 pub use error::{ZwaveError, ZwaveResult};
-pub use label::{describe, Lang};
+pub use label::{Lang, describe};
 pub use sensor_decode::FixedPoint;
 pub use value::{Quantity, TemperatureUnit, Value};

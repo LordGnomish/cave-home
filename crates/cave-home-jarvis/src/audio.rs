@@ -320,7 +320,9 @@ mod tests {
 
     #[test]
     fn zero_crossing_rate_high_for_alternating() {
-        let alt: Vec<f32> = (0..100).map(|i| if i % 2 == 0 { 0.5 } else { -0.5 }).collect();
+        let alt: Vec<f32> = (0..100)
+            .map(|i| if i % 2 == 0 { 0.5 } else { -0.5 })
+            .collect();
         let f = AudioFrame::new("mic", alt);
         assert!(f.zero_crossing_rate() > 0.9);
     }
@@ -344,13 +346,25 @@ mod tests {
         // Silence -> idle.
         assert_eq!(vad.observe(&silent_frame("mic", 256)), VadEvent::Idle);
         // First loud frame starts speech.
-        assert_eq!(vad.observe(&voiced_frame("mic", 0.6, 256)), VadEvent::SpeechStart);
+        assert_eq!(
+            vad.observe(&voiced_frame("mic", 0.6, 256)),
+            VadEvent::SpeechStart
+        );
         assert_eq!(vad.state(), VadState::Speech);
         // More speech continues.
-        assert_eq!(vad.observe(&voiced_frame("mic", 0.6, 256)), VadEvent::SpeechContinue);
+        assert_eq!(
+            vad.observe(&voiced_frame("mic", 0.6, 256)),
+            VadEvent::SpeechContinue
+        );
         // Two silent frames: still within hangover.
-        assert_eq!(vad.observe(&silent_frame("mic", 256)), VadEvent::SpeechContinue);
-        assert_eq!(vad.observe(&silent_frame("mic", 256)), VadEvent::SpeechContinue);
+        assert_eq!(
+            vad.observe(&silent_frame("mic", 256)),
+            VadEvent::SpeechContinue
+        );
+        assert_eq!(
+            vad.observe(&silent_frame("mic", 256)),
+            VadEvent::SpeechContinue
+        );
         // Third silent frame trips hangover -> end.
         assert_eq!(vad.observe(&silent_frame("mic", 256)), VadEvent::SpeechEnd);
         assert_eq!(vad.state(), VadState::Silence);
@@ -360,7 +374,9 @@ mod tests {
     fn vad_rejects_loud_hiss_by_zcr() {
         let vad = Vad::new(VadConfig::default());
         // Loud but alternating every sample => very high ZCR => not speech.
-        let hiss: Vec<f32> = (0..256).map(|i| if i % 2 == 0 { 0.6 } else { -0.6 }).collect();
+        let hiss: Vec<f32> = (0..256)
+            .map(|i| if i % 2 == 0 { 0.6 } else { -0.6 })
+            .collect();
         assert!(!vad.frame_is_speech(&AudioFrame::new("mic", hiss)));
     }
 }

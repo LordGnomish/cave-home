@@ -44,21 +44,32 @@ impl EventBus {
         self.subscribe(event_type, false)
     }
 
-    pub fn listen_once(&self, event_type: impl Into<String>) -> (ListenerId, UnboundedReceiver<Event>) {
+    pub fn listen_once(
+        &self,
+        event_type: impl Into<String>,
+    ) -> (ListenerId, UnboundedReceiver<Event>) {
         self.subscribe(event_type, true)
     }
 
-    fn subscribe(&self, event_type: impl Into<String>, once: bool) -> (ListenerId, UnboundedReceiver<Event>) {
+    fn subscribe(
+        &self,
+        event_type: impl Into<String>,
+        once: bool,
+    ) -> (ListenerId, UnboundedReceiver<Event>) {
         let (tx, rx) = unbounded_channel();
         let mut guard = self.inner.write();
         let id = guard.next_id.fetch_add(1, Ordering::Relaxed);
         let key = event_type.into();
-        guard.listeners.entry(key.clone()).or_default().push(Listener {
-            id,
-            event_type: key,
-            once,
-            tx,
-        });
+        guard
+            .listeners
+            .entry(key.clone())
+            .or_default()
+            .push(Listener {
+                id,
+                event_type: key,
+                once,
+                tx,
+            });
         (id, rx)
     }
 

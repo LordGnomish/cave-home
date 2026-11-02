@@ -16,16 +16,10 @@ pub fn cmd() -> Command {
         .subcommand(
             Command::new("answer")
                 .about("Open intercom to the door")
-                .arg(Arg::new("name").long("name").required(true))
+                .arg(Arg::new("name").long("name").required(true)),
         )
-        .subcommand(
-            Command::new("history")
-                .about("Show recent button presses")
-        )
-        .subcommand(
-            Command::new("list")
-                .about("List every doorbell")
-        )
+        .subcommand(Command::new("history").about("Show recent button presses"))
+        .subcommand(Command::new("list").about("List every doorbell"))
 }
 
 pub fn run() -> i32 {
@@ -40,7 +34,10 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
+        let names: Vec<_> = c
+            .get_subcommands()
+            .map(|s| s.get_name().to_string())
+            .collect();
         for sub in ["answer", "history", "list"] {
             assert!(
                 names.iter().any(|n| n == sub),

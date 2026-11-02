@@ -30,9 +30,8 @@ pub mod core;
 
 pub use apps::{
     DaemonSet, DaemonSetSpec, DaemonSetStatus, Deployment, DeploymentSpec, DeploymentStatus,
-    DeploymentStrategy,
-    PodManagementPolicy, ReplicaSet, ReplicaSetSpec, ReplicaSetStatus, StatefulSet,
-    StatefulSetSpec, StatefulSetStatus,
+    DeploymentStrategy, PodManagementPolicy, ReplicaSet, ReplicaSetSpec, ReplicaSetStatus,
+    StatefulSet, StatefulSetSpec, StatefulSetStatus,
 };
 pub use batch::{ConcurrencyPolicy, CronJob, CronJobSpec, Job, JobSpec, JobStatus};
 pub use client::{Api, Cluster};

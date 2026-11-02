@@ -38,7 +38,11 @@ impl ResourcePath {
     /// The GVR named by this path.
     #[must_use]
     pub fn gvr(&self) -> GroupVersionResource {
-        GroupVersionResource::new(self.group.clone(), self.version.clone(), self.resource.clone())
+        GroupVersionResource::new(
+            self.group.clone(),
+            self.version.clone(),
+            self.resource.clone(),
+        )
     }
 
     /// True if the path addresses a single named object (vs a collection).
@@ -117,11 +121,12 @@ pub fn parse(path: &str) -> Result<ResourcePath, Status> {
     // itself — `namespaces` is both the scoping keyword and a cluster-scoped
     // resource, and the trailing segment count disambiguates them.
     let rest: Vec<&str> = it.collect();
-    let (namespace, tail): (String, &[&str]) = if rest.first() == Some(&"namespaces") && rest.len() >= 3 {
-        (rest[1].to_string(), &rest[2..])
-    } else {
-        (String::new(), rest.as_slice())
-    };
+    let (namespace, tail): (String, &[&str]) =
+        if rest.first() == Some(&"namespaces") && rest.len() >= 3 {
+            (rest[1].to_string(), &rest[2..])
+        } else {
+            (String::new(), rest.as_slice())
+        };
 
     let resource = match tail.first() {
         Some(r) => (*r).to_string(),
@@ -145,8 +150,12 @@ fn finish(
     subresource: String,
 ) -> Result<ResourcePath, Status> {
     let gvr = GroupVersionResource::new(group.clone(), version.clone(), resource.clone());
-    let ns_scoped = gvk::is_namespaced(&gvr)
-        .ok_or_else(|| Status::new(StatusReason::NotFound, format!("the server could not find the requested resource ({resource})")))?;
+    let ns_scoped = gvk::is_namespaced(&gvr).ok_or_else(|| {
+        Status::new(
+            StatusReason::NotFound,
+            format!("the server could not find the requested resource ({resource})"),
+        )
+    })?;
 
     if ns_scoped && namespace.is_empty() && name.is_empty() {
         // collection across all namespaces — allowed (list/watch).
@@ -272,7 +281,10 @@ mod tests {
 
     #[test]
     fn bad_prefix_is_bad_request() {
-        assert_eq!(parse("/foo/v1/pods").unwrap_err().reason, StatusReason::BadRequest);
+        assert_eq!(
+            parse("/foo/v1/pods").unwrap_err().reason,
+            StatusReason::BadRequest
+        );
         assert_eq!(parse("/api").unwrap_err().reason, StatusReason::BadRequest);
     }
 }

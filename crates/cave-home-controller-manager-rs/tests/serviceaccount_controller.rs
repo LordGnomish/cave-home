@@ -13,7 +13,10 @@ fn creates_a_default_service_account_for_a_namespace() {
     let mut ctrl = ServiceAccountController::new();
 
     assert_eq!(ctrl.reconcile("team-a", &mut c, 0), Outcome::Done);
-    let sa = c.service_accounts.get("team-a/default").expect("default SA created");
+    let sa = c
+        .service_accounts
+        .get("team-a/default")
+        .expect("default SA created");
     assert_eq!(sa.meta.namespace, "team-a");
 }
 
@@ -25,8 +28,16 @@ fn is_idempotent_when_default_already_exists() {
     ctrl.reconcile("team-a", &mut c, 0);
     let uid = c.service_accounts.get("team-a/default").unwrap().meta.uid;
     ctrl.reconcile("team-a", &mut c, 1);
-    assert_eq!(c.service_accounts.list().len(), 1, "no duplicate default SA");
-    assert_eq!(c.service_accounts.get("team-a/default").unwrap().meta.uid, uid, "same object");
+    assert_eq!(
+        c.service_accounts.list().len(),
+        1,
+        "no duplicate default SA"
+    );
+    assert_eq!(
+        c.service_accounts.get("team-a/default").unwrap().meta.uid,
+        uid,
+        "same object"
+    );
 }
 
 #[test]
@@ -37,7 +48,10 @@ fn terminating_namespace_gets_no_service_account() {
     c.namespaces.create(ns);
     let mut ctrl = ServiceAccountController::new();
     ctrl.reconcile("dying", &mut c, 10);
-    assert!(c.service_accounts.get("dying/default").is_none(), "no SA for a terminating namespace");
+    assert!(
+        c.service_accounts.get("dying/default").is_none(),
+        "no SA for a terminating namespace"
+    );
 }
 
 #[test]

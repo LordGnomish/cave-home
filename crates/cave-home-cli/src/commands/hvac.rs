@@ -17,23 +17,20 @@ pub fn cmd() -> Command {
             Command::new("set")
                 .about("Set target temperature (°C)")
                 .arg(Arg::new("name").long("name").required(true))
-                .arg(Arg::new("temp").long("temp").required(true))
+                .arg(Arg::new("temp").long("temp").required(true)),
         )
         .subcommand(
             Command::new("mode")
                 .about("Set mode (heat/cool/auto/off)")
                 .arg(Arg::new("name").long("name").required(true))
-                .arg(Arg::new("value").long("value").required(true))
+                .arg(Arg::new("value").long("value").required(true)),
         )
         .subcommand(
             Command::new("status")
                 .about("Show current + target temp")
-                .arg(Arg::new("name").long("name").required(true))
+                .arg(Arg::new("name").long("name").required(true)),
         )
-        .subcommand(
-            Command::new("list")
-                .about("List every thermostat by room")
-        )
+        .subcommand(Command::new("list").about("List every thermostat by room"))
 }
 
 pub fn run() -> i32 {
@@ -48,7 +45,10 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
+        let names: Vec<_> = c
+            .get_subcommands()
+            .map(|s| s.get_name().to_string())
+            .collect();
         for sub in ["set", "mode", "status", "list"] {
             assert!(
                 names.iter().any(|n| n == sub),

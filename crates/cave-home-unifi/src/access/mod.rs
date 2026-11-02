@@ -12,7 +12,5 @@
 pub mod api;
 pub mod types;
 
-pub use api::{AccessClient, AccessConfig, LockRule, DEFAULT_ACCESS_PORT};
-pub use types::{
-    AccessEnvelope, AccessNotification, DoorStatus, NotificationKind, Visitor,
-};
+pub use api::{AccessClient, AccessConfig, DEFAULT_ACCESS_PORT, LockRule};
+pub use types::{AccessEnvelope, AccessNotification, DoorStatus, NotificationKind, Visitor};

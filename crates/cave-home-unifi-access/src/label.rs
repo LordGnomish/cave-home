@@ -105,7 +105,9 @@ impl AccessMessage {
             },
             Self::Lockdown => match lang {
                 Lang::En => "Every door is locked to keep everyone safe inside.".to_string(),
-                Lang::De => "Alle Türen sind abgeschlossen, um alle drinnen zu schützen.".to_string(),
+                Lang::De => {
+                    "Alle Türen sind abgeschlossen, um alle drinnen zu schützen.".to_string()
+                }
                 Lang::Tr => "Herkesi içeride güvende tutmak için tüm kapılar kilitli.".to_string(),
             },
             Self::AccessGranted { door } => match lang {
@@ -143,13 +145,24 @@ mod tests {
 
     fn sample_messages() -> Vec<AccessMessage> {
         vec![
-            AccessMessage::Unlocked { door: "Front door".into() },
-            AccessMessage::Locked { door: "Front door".into() },
-            AccessMessage::TempUnlocked { door: "Front door".into(), seconds: 30 },
-            AccessMessage::HeldOpen { door: "Back door".into() },
+            AccessMessage::Unlocked {
+                door: "Front door".into(),
+            },
+            AccessMessage::Locked {
+                door: "Front door".into(),
+            },
+            AccessMessage::TempUnlocked {
+                door: "Front door".into(),
+                seconds: 30,
+            },
+            AccessMessage::HeldOpen {
+                door: "Back door".into(),
+            },
             AccessMessage::Evacuation,
             AccessMessage::Lockdown,
-            AccessMessage::AccessGranted { door: "Front door".into() },
+            AccessMessage::AccessGranted {
+                door: "Front door".into(),
+            },
             AccessMessage::DeniedOutsideHours,
             AccessMessage::DeniedNoPermission,
             AccessMessage::DeniedLockdown,
@@ -168,7 +181,10 @@ mod tests {
 
     #[test]
     fn temp_unlock_states_the_duration() {
-        let m = AccessMessage::TempUnlocked { door: "Front door".into(), seconds: 30 };
+        let m = AccessMessage::TempUnlocked {
+            door: "Front door".into(),
+            seconds: 30,
+        };
         assert!(m.text(Lang::En).contains("30 seconds"));
         assert!(m.text(Lang::De).contains("30 Sekunden"));
         assert!(m.text(Lang::Tr).contains("30 saniye"));
@@ -177,7 +193,9 @@ mod tests {
     #[test]
     fn held_open_prompts_the_user_to_close_it() {
         // Safety-critical wording: must be an actionable plain prompt.
-        let m = AccessMessage::HeldOpen { door: "Front door".into() };
+        let m = AccessMessage::HeldOpen {
+            door: "Front door".into(),
+        };
         assert_eq!(m.text(Lang::En), "Front door held open — please close it.");
     }
 
@@ -197,10 +215,30 @@ mod tests {
         // Charter §6.3: door UI uses home words only, never vendor/protocol
         // or hardware terms.
         const BANNED: &[&str] = &[
-            "DPS", "relay", "OSDP", "reader", "MQTT", "entity_id", "Ubiquiti",
-            "UniFi", "REST", "WebSocket", "API", "token", "GPIO", "NFC", "PIN",
-            "credential", "hub", "tamper", "anti-passback", "lockdown mode",
-            "GUID", "UUID", "schedule window", "capability",
+            "DPS",
+            "relay",
+            "OSDP",
+            "reader",
+            "MQTT",
+            "entity_id",
+            "Ubiquiti",
+            "UniFi",
+            "REST",
+            "WebSocket",
+            "API",
+            "token",
+            "GPIO",
+            "NFC",
+            "PIN",
+            "credential",
+            "hub",
+            "tamper",
+            "anti-passback",
+            "lockdown mode",
+            "GUID",
+            "UUID",
+            "schedule window",
+            "capability",
         ];
         for m in sample_messages() {
             for lang in Lang::all() {

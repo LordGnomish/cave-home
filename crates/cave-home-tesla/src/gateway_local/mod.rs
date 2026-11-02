@@ -14,5 +14,5 @@
 pub mod client;
 pub mod types;
 
-pub use client::{login_body, GatewayClient, LoginRequest};
+pub use client::{GatewayClient, LoginRequest, login_body};
 pub use types::{MeterReading, MetersAggregates, SystemSoe};

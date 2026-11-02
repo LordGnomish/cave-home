@@ -2,8 +2,10 @@
 //! Integration tests for the DaemonSet controller — one pod per node
 //! (`pkg/controller/daemonset` contract).
 
-use cave_home_controller_manager_rs::apis::{Cluster, DaemonSet, DaemonSetSpec, Node, PodPhase, PodTemplateSpec};
-use cave_home_controller_manager_rs::controllers::daemonset::{DaemonSetController, DS_NODE_LABEL};
+use cave_home_controller_manager_rs::apis::{
+    Cluster, DaemonSet, DaemonSetSpec, Node, PodPhase, PodTemplateSpec,
+};
+use cave_home_controller_manager_rs::controllers::daemonset::{DS_NODE_LABEL, DaemonSetController};
 use cave_home_controller_manager_rs::reconcile::Outcome;
 use cave_home_controller_manager_rs::types::{Object, ObjectMeta};
 
@@ -51,11 +53,17 @@ fn schedules_one_pod_per_node() {
     let d = c.daemonsets.create(ds());
     let mut ctrl = DaemonSetController::new();
 
-    assert_eq!(ctrl.reconcile("kube-system/agent", &mut c, 0), Outcome::Done);
+    assert_eq!(
+        ctrl.reconcile("kube-system/agent", &mut c, 0),
+        Outcome::Done
+    );
     assert_eq!(nodes_covered(&c, &d.meta().uid), vec!["n1", "n2", "n3"]);
     // Each pod carries the daemonset template label and a controller owner ref.
     for p in c.pods.list_owned_by(&d.meta().uid) {
-        assert_eq!(p.meta().labels.get("app").map(String::as_str), Some("agent"));
+        assert_eq!(
+            p.meta().labels.get("app").map(String::as_str),
+            Some("agent")
+        );
     }
 }
 
@@ -70,7 +78,11 @@ fn a_new_node_gets_a_pod() {
 
     c.nodes.create(Node::new("n2", "", 0));
     ctrl.reconcile("kube-system/agent", &mut c, 1);
-    assert_eq!(nodes_covered(&c, &d.meta().uid), vec!["n1", "n2"], "new node covered");
+    assert_eq!(
+        nodes_covered(&c, &d.meta().uid),
+        vec!["n1", "n2"],
+        "new node covered"
+    );
 }
 
 #[test]
@@ -85,7 +97,11 @@ fn a_removed_node_has_its_pod_deleted() {
 
     c.nodes.delete("n2");
     ctrl.reconcile("kube-system/agent", &mut c, 1);
-    assert_eq!(nodes_covered(&c, &d.meta().uid), vec!["n1"], "orphaned pod for n2 deleted");
+    assert_eq!(
+        nodes_covered(&c, &d.meta().uid),
+        vec!["n1"],
+        "orphaned pod for n2 deleted"
+    );
 }
 
 #[test]
@@ -95,9 +111,19 @@ fn steady_state_is_a_noop() {
     let d = c.daemonsets.create(ds());
     let mut ctrl = DaemonSetController::new();
     ctrl.reconcile("kube-system/agent", &mut c, 0);
-    let before: Vec<_> = c.pods.list_owned_by(&d.meta().uid).iter().map(|p| p.meta().uid.clone()).collect();
+    let before: Vec<_> = c
+        .pods
+        .list_owned_by(&d.meta().uid)
+        .iter()
+        .map(|p| p.meta().uid.clone())
+        .collect();
     ctrl.reconcile("kube-system/agent", &mut c, 1);
-    let after: Vec<_> = c.pods.list_owned_by(&d.meta().uid).iter().map(|p| p.meta().uid.clone()).collect();
+    let after: Vec<_> = c
+        .pods
+        .list_owned_by(&d.meta().uid)
+        .iter()
+        .map(|p| p.meta().uid.clone())
+        .collect();
     assert_eq!(before, after, "no pod churn at steady state");
 }
 
@@ -105,7 +131,10 @@ fn steady_state_is_a_noop() {
 fn missing_daemonset_is_a_noop() {
     let mut c = Cluster::new();
     let mut ctrl = DaemonSetController::new();
-    assert_eq!(ctrl.reconcile("kube-system/ghost", &mut c, 0), Outcome::Done);
+    assert_eq!(
+        ctrl.reconcile("kube-system/ghost", &mut c, 0),
+        Outcome::Done
+    );
 }
 
 // --- nodeSelector eligibility -------------------------------------------
@@ -133,7 +162,11 @@ fn only_nodes_matching_the_node_selector_get_a_pod() {
     let mut ctrl = DaemonSetController::new();
 
     ctrl.reconcile("kube-system/agent", &mut c, 0);
-    assert_eq!(nodes_covered(&c, &d.meta().uid), vec!["gpu1", "gpu2"], "only gpu nodes scheduled");
+    assert_eq!(
+        nodes_covered(&c, &d.meta().uid),
+        vec!["gpu1", "gpu2"],
+        "only gpu nodes scheduled"
+    );
 }
 
 #[test]
@@ -150,7 +183,10 @@ fn a_pod_is_removed_when_its_node_stops_matching_the_selector() {
     n1.meta.labels.clear();
     c.nodes.update(n1);
     ctrl.reconcile("kube-system/agent", &mut c, 1);
-    assert!(nodes_covered(&c, &d.meta().uid).is_empty(), "pod removed from the now-ineligible node");
+    assert!(
+        nodes_covered(&c, &d.meta().uid).is_empty(),
+        "pod removed from the now-ineligible node"
+    );
 }
 
 // --- status -------------------------------------------------------------
@@ -167,7 +203,13 @@ fn status_counts_desired_current_ready_and_misscheduled() {
 
     // Mark the pod on n1 ready.
     let mut pods = c.pods.list_owned_by(&d.meta().uid);
-    pods.sort_by_key(|p| p.meta().labels.get(DS_NODE_LABEL).cloned().unwrap_or_default());
+    pods.sort_by_key(|p| {
+        p.meta()
+            .labels
+            .get(DS_NODE_LABEL)
+            .cloned()
+            .unwrap_or_default()
+    });
     let mut p = pods[0].clone();
     p.status.phase = PodPhase::Running;
     p.status.ready = true;

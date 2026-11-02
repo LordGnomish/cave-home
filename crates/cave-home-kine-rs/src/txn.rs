@@ -36,7 +36,7 @@
 //! reimplementation from public sources, Apache-2.0.
 
 use crate::error::{KineError, Result};
-use crate::range::{execute, RangeEnd, RangeRequest, RangeResponse};
+use crate::range::{RangeEnd, RangeRequest, RangeResponse, execute};
 use crate::revision::Revision;
 use crate::store::Store;
 
@@ -143,7 +143,12 @@ impl Compare {
     /// Shared builder for the four numeric-target compares.
     #[must_use]
     fn numeric(key: &[u8], target: CompareTarget, result: CompareResult, operand: i64) -> Self {
-        Self { key: key.to_vec(), target, result, operand: CompareOperand::Int(operand) }
+        Self {
+            key: key.to_vec(),
+            target,
+            result,
+            operand: CompareOperand::Int(operand),
+        }
     }
 }
 
@@ -174,13 +179,21 @@ impl TxnOp {
     /// An unleased put of `value` at `key`.
     #[must_use]
     pub fn put(key: &[u8], value: &[u8]) -> Self {
-        Self::Put { key: key.to_vec(), value: value.to_vec(), lease: 0 }
+        Self::Put {
+            key: key.to_vec(),
+            value: value.to_vec(),
+            lease: 0,
+        }
     }
 
     /// A put of `value` at `key` attached to `lease`.
     #[must_use]
     pub fn put_leased(key: &[u8], value: &[u8], lease: i64) -> Self {
-        Self::Put { key: key.to_vec(), value: value.to_vec(), lease }
+        Self::Put {
+            key: key.to_vec(),
+            value: value.to_vec(),
+            lease,
+        }
     }
 
     /// A point read of `key`.
@@ -198,13 +211,19 @@ impl TxnOp {
     /// A point delete of `key`.
     #[must_use]
     pub fn delete(key: &[u8]) -> Self {
-        Self::DeleteRange { key: key.to_vec(), end: RangeEnd::Single }
+        Self::DeleteRange {
+            key: key.to_vec(),
+            end: RangeEnd::Single,
+        }
     }
 
     /// A prefix delete of everything under `prefix`.
     #[must_use]
     pub fn delete_prefix(prefix: &[u8]) -> Self {
-        Self::DeleteRange { key: prefix.to_vec(), end: RangeEnd::Prefix }
+        Self::DeleteRange {
+            key: prefix.to_vec(),
+            end: RangeEnd::Prefix,
+        }
     }
 }
 
@@ -229,7 +248,11 @@ impl Txn {
     /// Start a txn with the given guard predicates.
     #[must_use]
     pub const fn when(compares: Vec<Compare>) -> Self {
-        Self { compares, success: Vec::new(), failure: Vec::new() }
+        Self {
+            compares,
+            success: Vec::new(),
+            failure: Vec::new(),
+        }
     }
 
     /// Set the success (`then`) ops.
@@ -306,10 +329,18 @@ pub fn apply(store: &mut Store, txn: &Txn) -> Result<TxnResponse> {
         Ok::<bool, KineError>(acc && eval_compare(store, c)?)
     })?;
 
-    let ops = if succeeded { &txn.success } else { &txn.failure };
+    let ops = if succeeded {
+        &txn.success
+    } else {
+        &txn.failure
+    };
     let responses = run_ops(store, ops)?;
 
-    Ok(TxnResponse { succeeded, revision: store.current_revision(), responses })
+    Ok(TxnResponse {
+        succeeded,
+        revision: store.current_revision(),
+        responses,
+    })
 }
 
 /// Reject a compare whose operand kind does not match its target, or whose key
@@ -387,7 +418,10 @@ fn run_ops(store: &mut Store, ops: &[TxnOp]) -> Result<Vec<TxnOpResponse>> {
             }
             TxnOp::DeleteRange { key, end } => {
                 let deleted = delete_range(store, key, end)?;
-                TxnOpResponse::DeleteRange { deleted, revision: store.current_revision() }
+                TxnOpResponse::DeleteRange {
+                    deleted,
+                    revision: store.current_revision(),
+                }
             }
         };
         out.push(resp);
@@ -399,8 +433,17 @@ fn run_ops(store: &mut Store, ops: &[TxnOp]) -> Result<Vec<TxnOpResponse>> {
 /// count. Reuses the [`execute`] range plan to pick the keys, then tombstones
 /// each (one revision per delete — kine's row-per-write model).
 fn delete_range(store: &mut Store, key: &[u8], end: &RangeEnd) -> Result<i64> {
-    let req = RangeRequest { key: key.to_vec(), end: end.clone(), revision: 0, limit: 0 };
-    let victims: Vec<Vec<u8>> = execute(store, &req)?.kvs.into_iter().map(|r| r.key).collect();
+    let req = RangeRequest {
+        key: key.to_vec(),
+        end: end.clone(),
+        revision: 0,
+        limit: 0,
+    };
+    let victims: Vec<Vec<u8>> = execute(store, &req)?
+        .kvs
+        .into_iter()
+        .map(|r| r.key)
+        .collect();
     let mut deleted = 0;
     for k in victims {
         if store.delete(&k)?.is_some() {
@@ -448,9 +491,15 @@ fn write_span(op: &TxnOp) -> Option<Span> {
         TxnOp::Put { key, .. } => {
             let mut hi = key.clone();
             hi.push(0); // the immediate successor of the point key
-            Some(Span { lo: key.clone(), hi: Some(hi) })
+            Some(Span {
+                lo: key.clone(),
+                hi: Some(hi),
+            })
         }
-        TxnOp::DeleteRange { key, end } => Some(Span { lo: key.clone(), hi: span_upper(end, key) }),
+        TxnOp::DeleteRange { key, end } => Some(Span {
+            lo: key.clone(),
+            hi: span_upper(end, key),
+        }),
     }
 }
 
@@ -506,9 +555,13 @@ mod tests {
     #[test]
     fn mod_revision_guard_runs_success_when_matched() {
         let mut s = seeded(); // /k/a at mod_revision 1
-        let txn = Txn::when(vec![Compare::mod_revision(b"/k/a", CompareResult::Equal, 1)])
-            .and_then(vec![TxnOp::put(b"/k/a", b"va2")])
-            .or_else(vec![TxnOp::get(b"/k/a")]);
+        let txn = Txn::when(vec![Compare::mod_revision(
+            b"/k/a",
+            CompareResult::Equal,
+            1,
+        )])
+        .and_then(vec![TxnOp::put(b"/k/a", b"va2")])
+        .or_else(vec![TxnOp::get(b"/k/a")]);
         let resp = apply(&mut s, &txn).unwrap();
         assert!(resp.succeeded);
         assert_eq!(s.get_live(b"/k/a").unwrap().value, b"va2");
@@ -523,9 +576,13 @@ mod tests {
     fn mod_revision_guard_runs_failure_when_stale() {
         let mut s = seeded();
         // Guard on a stale revision: success put must NOT run, failure get does.
-        let txn = Txn::when(vec![Compare::mod_revision(b"/k/a", CompareResult::Equal, 99)])
-            .and_then(vec![TxnOp::put(b"/k/a", b"clobber")])
-            .or_else(vec![TxnOp::get(b"/k/a")]);
+        let txn = Txn::when(vec![Compare::mod_revision(
+            b"/k/a",
+            CompareResult::Equal,
+            99,
+        )])
+        .and_then(vec![TxnOp::put(b"/k/a", b"clobber")])
+        .or_else(vec![TxnOp::get(b"/k/a")]);
         let resp = apply(&mut s, &txn).unwrap();
         assert!(!resp.succeeded);
         assert_eq!(s.get_live(b"/k/a").unwrap().value, b"va", "value untouched");
@@ -540,8 +597,12 @@ mod tests {
     fn create_revision_zero_is_the_create_if_absent_idiom() {
         let mut s = Store::new();
         // "create if absent": create_revision == 0 holds only for a missing key.
-        let txn = Txn::when(vec![Compare::create_revision(b"/k/new", CompareResult::Equal, 0)])
-            .and_then(vec![TxnOp::put(b"/k/new", b"first")]);
+        let txn = Txn::when(vec![Compare::create_revision(
+            b"/k/new",
+            CompareResult::Equal,
+            0,
+        )])
+        .and_then(vec![TxnOp::put(b"/k/new", b"first")]);
         let resp = apply(&mut s, &txn).unwrap();
         assert!(resp.succeeded);
         assert_eq!(s.get_live(b"/k/new").unwrap().value, b"first");
@@ -550,9 +611,13 @@ mod tests {
     #[test]
     fn create_if_absent_fails_when_key_exists() {
         let mut s = seeded();
-        let txn = Txn::when(vec![Compare::create_revision(b"/k/a", CompareResult::Equal, 0)])
-            .and_then(vec![TxnOp::put(b"/k/a", b"clobber")])
-            .or_else(vec![TxnOp::get(b"/k/a")]);
+        let txn = Txn::when(vec![Compare::create_revision(
+            b"/k/a",
+            CompareResult::Equal,
+            0,
+        )])
+        .and_then(vec![TxnOp::put(b"/k/a", b"clobber")])
+        .or_else(vec![TxnOp::get(b"/k/a")]);
         let resp = apply(&mut s, &txn).unwrap();
         assert!(!resp.succeeded, "key exists, so create_revision != 0");
         assert_eq!(s.get_live(b"/k/a").unwrap().value, b"va");
@@ -572,7 +637,11 @@ mod tests {
     #[test]
     fn greater_and_less_operators_on_mod_revision() {
         let mut s = seeded(); // /k/a mod_revision 1
-        let gt = Txn::when(vec![Compare::mod_revision(b"/k/a", CompareResult::Greater, 0)]);
+        let gt = Txn::when(vec![Compare::mod_revision(
+            b"/k/a",
+            CompareResult::Greater,
+            0,
+        )]);
         assert!(apply(&mut s.clone(), &gt).unwrap().succeeded);
         let lt = Txn::when(vec![Compare::mod_revision(b"/k/a", CompareResult::Less, 5)]);
         assert!(apply(&mut s.clone(), &lt).unwrap().succeeded);
@@ -585,7 +654,11 @@ mod tests {
         let mut s = seeded();
         let eq = Txn::when(vec![Compare::value(b"/k/a", CompareResult::Equal, b"va")]);
         assert!(apply(&mut s.clone(), &eq).unwrap().succeeded);
-        let ne = Txn::when(vec![Compare::value(b"/k/a", CompareResult::NotEqual, b"zz")]);
+        let ne = Txn::when(vec![Compare::value(
+            b"/k/a",
+            CompareResult::NotEqual,
+            b"zz",
+        )]);
         assert!(apply(&mut s.clone(), &ne).unwrap().succeeded);
         let wrong = Txn::when(vec![Compare::value(b"/k/a", CompareResult::Equal, b"zz")]);
         assert!(!apply(&mut s, &wrong).unwrap().succeeded);
@@ -619,9 +692,8 @@ mod tests {
     #[test]
     fn success_branch_range_op_returns_a_range_response() {
         let mut s = seeded();
-        let txn = Txn::when(vec![]).and_then(vec![TxnOp::range(
-            crate::RangeRequest::prefix(b"/k/"),
-        )]);
+        let txn =
+            Txn::when(vec![]).and_then(vec![TxnOp::range(crate::RangeRequest::prefix(b"/k/"))]);
         let resp = apply(&mut s, &txn).unwrap();
         match &resp.responses[0] {
             TxnOpResponse::Range(r) => assert_eq!(r.count, 2),
@@ -649,7 +721,10 @@ mod tests {
         let resp = apply(&mut s, &txn).unwrap();
         assert!(s.get_live(b"/k/a").is_none());
         assert!(s.get_live(b"/k/b").is_none());
-        assert!(s.get_live(b"/other/z").is_some(), "sibling subtree untouched");
+        assert!(
+            s.get_live(b"/other/z").is_some(),
+            "sibling subtree untouched"
+        );
         match &resp.responses[0] {
             TxnOpResponse::DeleteRange { deleted, .. } => assert_eq!(*deleted, 2),
             other => panic!("expected DeleteRange, got {other:?}"),
@@ -665,7 +740,11 @@ mod tests {
             TxnOpResponse::DeleteRange { deleted, .. } => assert_eq!(*deleted, 0),
             other => panic!("expected DeleteRange, got {other:?}"),
         }
-        assert_eq!(s.current_revision(), 0, "no-op delete does not bump revision");
+        assert_eq!(
+            s.current_revision(),
+            0,
+            "no-op delete does not bump revision"
+        );
     }
 
     #[test]
@@ -676,7 +755,10 @@ mod tests {
             .or_else(vec![]);
         let resp = apply(&mut s, &txn).unwrap();
         assert!(!resp.succeeded);
-        assert!(resp.responses.is_empty(), "empty failure branch ran nothing");
+        assert!(
+            resp.responses.is_empty(),
+            "empty failure branch ran nothing"
+        );
         assert_eq!(s.get_live(b"/k/a").unwrap().value, b"va");
         assert!(s.get_live(b"/k/b").is_some());
         assert_eq!(s.current_revision(), 2, "no success write leaked");
@@ -719,16 +801,16 @@ mod tests {
     #[test]
     fn duplicate_key_across_writes_in_one_branch_is_rejected() {
         let mut s = Store::new();
-        let txn = Txn::when(vec![])
-            .and_then(vec![TxnOp::put(b"/k/a", b"1"), TxnOp::put(b"/k/a", b"2")]);
+        let txn =
+            Txn::when(vec![]).and_then(vec![TxnOp::put(b"/k/a", b"1"), TxnOp::put(b"/k/a", b"2")]);
         assert_eq!(apply(&mut s, &txn), Err(KineError::TxnDuplicateKey));
     }
 
     #[test]
     fn put_and_delete_of_the_same_key_in_one_branch_is_rejected() {
         let mut s = seeded();
-        let txn = Txn::when(vec![])
-            .and_then(vec![TxnOp::put(b"/k/a", b"1"), TxnOp::delete(b"/k/a")]);
+        let txn =
+            Txn::when(vec![]).and_then(vec![TxnOp::put(b"/k/a", b"1"), TxnOp::delete(b"/k/a")]);
         assert_eq!(apply(&mut s, &txn), Err(KineError::TxnDuplicateKey));
     }
 
@@ -742,8 +824,15 @@ mod tests {
     #[test]
     fn a_read_only_txn_does_not_advance_the_revision() {
         let mut s = seeded();
-        let txn = Txn::when(vec![Compare::mod_revision(b"/k/a", CompareResult::Equal, 1)])
-            .and_then(vec![TxnOp::get(b"/k/a"), TxnOp::range(RangeRequest::prefix(b"/k/"))]);
+        let txn = Txn::when(vec![Compare::mod_revision(
+            b"/k/a",
+            CompareResult::Equal,
+            1,
+        )])
+        .and_then(vec![
+            TxnOp::get(b"/k/a"),
+            TxnOp::range(RangeRequest::prefix(b"/k/")),
+        ]);
         let resp = apply(&mut s, &txn).unwrap();
         assert!(resp.succeeded);
         assert_eq!(s.current_revision(), 2, "pure reads keep the revision");
@@ -756,8 +845,8 @@ mod tests {
     #[test]
     fn multi_write_branch_takes_sequential_revisions_kine_model() {
         let mut s = Store::new(); // revision 0
-        let txn = Txn::when(vec![])
-            .and_then(vec![TxnOp::put(b"/k/a", b"1"), TxnOp::put(b"/k/b", b"2")]);
+        let txn =
+            Txn::when(vec![]).and_then(vec![TxnOp::put(b"/k/a", b"1"), TxnOp::put(b"/k/b", b"2")]);
         let resp = apply(&mut s, &txn).unwrap();
         let revs: Vec<_> = resp
             .responses

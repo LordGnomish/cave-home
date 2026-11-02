@@ -141,10 +141,7 @@ fn join_rejects_garbage_token() {
 
 #[test]
 fn destroy_with_yes_and_missing_dir_is_noop() {
-    let tmp = std::env::temp_dir().join(format!(
-        "cave-home-destroy-test-{}",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("cave-home-destroy-test-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     cavehomectl()
         .args([

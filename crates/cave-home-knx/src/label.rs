@@ -100,10 +100,16 @@ mod tests {
             Action::Blinds { up: false }.describe(Lang::En),
             "Blinds going down"
         );
-        assert!(Action::Blinds { up: true }.describe(Lang::De).contains("hoch"));
-        assert!(Action::Blinds { up: false }
-            .describe(Lang::Tr)
-            .contains("aşağı"));
+        assert!(
+            Action::Blinds { up: true }
+                .describe(Lang::De)
+                .contains("hoch")
+        );
+        assert!(
+            Action::Blinds { up: false }
+                .describe(Lang::Tr)
+                .contains("aşağı")
+        );
     }
 
     #[test]
@@ -138,8 +144,19 @@ mod tests {
     fn ui_strings_carry_no_implementation_jargon() {
         // Charter §6.3: the UI must never surface protocol/decode terms.
         const BANNED: &[&str] = &[
-            "DPT", "APCI", "cEMI", "KNX", "group address", "1/2/3", "1.1.5",
-            "MQTT", "Zigbee", "telegram", "datapoint", "0x", "byte",
+            "DPT",
+            "APCI",
+            "cEMI",
+            "KNX",
+            "group address",
+            "1/2/3",
+            "1.1.5",
+            "MQTT",
+            "Zigbee",
+            "telegram",
+            "datapoint",
+            "0x",
+            "byte",
         ];
         let actions = [
             Action::Light { on: true },

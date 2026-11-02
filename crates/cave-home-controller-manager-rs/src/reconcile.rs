@@ -170,11 +170,23 @@ mod tests {
         q.add("a");
         let key = q.get(0).expect("ready");
         let a1 = apply_outcome(&mut q, &key, &Outcome::Err("boom".into()), 0);
-        assert_eq!(a1, LoopAction::RateLimited { failures: 1, delay: 10 });
+        assert_eq!(
+            a1,
+            LoopAction::RateLimited {
+                failures: 1,
+                delay: 10
+            }
+        );
 
         let key = q.get(1_000_000).expect("ready after backoff");
         let a2 = apply_outcome(&mut q, &key, &Outcome::Err("boom".into()), 1_000_000);
-        assert_eq!(a2, LoopAction::RateLimited { failures: 2, delay: 20 });
+        assert_eq!(
+            a2,
+            LoopAction::RateLimited {
+                failures: 2,
+                delay: 20
+            }
+        );
 
         let key = q.get(2_000_000).expect("ready after backoff");
         let a3 = apply_outcome(&mut q, &key, &Outcome::Err("boom".into()), 2_000_000);
@@ -227,7 +239,11 @@ mod tests {
         assert_eq!(ctx, vec!["k", "k", "k"]);
         assert_eq!(
             actions,
-            vec![LoopAction::Requeued, LoopAction::Requeued, LoopAction::Forgotten]
+            vec![
+                LoopAction::Requeued,
+                LoopAction::Requeued,
+                LoopAction::Forgotten
+            ]
         );
     }
 

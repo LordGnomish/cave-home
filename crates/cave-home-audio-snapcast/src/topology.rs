@@ -187,11 +187,7 @@ impl Topology {
     /// - [`TopologyError::DuplicateGroup`] if the group id already exists.
     /// - [`TopologyError::DuplicateClient`] if any supplied client already
     ///   exists in another group (the one-group invariant).
-    pub fn add_group(
-        &mut self,
-        group: Group,
-        clients: Vec<Client>,
-    ) -> Result<(), TopologyError> {
+    pub fn add_group(&mut self, group: Group, clients: Vec<Client>) -> Result<(), TopologyError> {
         if self.group(group.id()).is_some() {
             return Err(TopologyError::DuplicateGroup);
         }
@@ -292,7 +288,12 @@ mod tests {
     #[test]
     fn build_topology_and_check_invariant() {
         let mut t = Topology::new();
-        t.add_stream(Stream::new("spotify", StreamStatus::Playing, "flac", "48000:16:2"));
+        t.add_stream(Stream::new(
+            "spotify",
+            StreamStatus::Playing,
+            "flac",
+            "48000:16:2",
+        ));
         t.add_group(
             Group::new("g1", "Kitchen", "spotify", vec!["c1".into()]),
             vec![client("c1", "Kitchen")],
@@ -305,11 +306,8 @@ mod tests {
     #[test]
     fn duplicate_group_rejected() {
         let mut t = Topology::new();
-        t.add_group(
-            Group::new("g1", "Kitchen", "s", vec![]),
-            vec![],
-        )
-        .expect("first");
+        t.add_group(Group::new("g1", "Kitchen", "s", vec![]), vec![])
+            .expect("first");
         assert_eq!(
             t.add_group(Group::new("g1", "Other", "s", vec![]), vec![]),
             Err(TopologyError::DuplicateGroup)
@@ -342,8 +340,16 @@ mod tests {
     fn stream_replace_by_id() {
         let mut t = Topology::new();
         t.add_stream(Stream::new("s", StreamStatus::Idle, "pcm", "44100:16:2"));
-        t.add_stream(Stream::new("s", StreamStatus::Playing, "flac", "48000:16:2"));
+        t.add_stream(Stream::new(
+            "s",
+            StreamStatus::Playing,
+            "flac",
+            "48000:16:2",
+        ));
         assert_eq!(t.streams().len(), 1);
-        assert_eq!(t.stream("s").map(Stream::status), Some(StreamStatus::Playing));
+        assert_eq!(
+            t.stream("s").map(Stream::status),
+            Some(StreamStatus::Playing)
+        );
     }
 }

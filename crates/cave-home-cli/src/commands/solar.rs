@@ -23,10 +23,7 @@ pub fn cmd() -> Command {
     Command::new("solar")
         .about("Solar, EV charging, battery and weather forecast")
         .subcommand_required(false)
-        .subcommand(
-            Command::new("status")
-                .about("Show how much solar you're producing right now"),
-        )
+        .subcommand(Command::new("status").about("Show how much solar you're producing right now"))
         .subcommand(
             Command::new("sunspec")
                 .about("Solar inverter & home battery readings")
@@ -278,10 +275,7 @@ pub fn render_loadpoints(rows: &[LoadpointRow], verbose: bool) -> String {
     out.push_str("EV chargers & heat-pump\n");
     out.push_str("=======================\n");
     for r in rows {
-        out.push_str(&format!(
-            "  {:<20}  {}  mode={}\n",
-            r.name, r.kind, r.mode
-        ));
+        out.push_str(&format!("  {:<20}  {}  mode={}\n", r.name, r.kind, r.mode));
         if verbose {
             out.push_str(&format!("    [developer] current_a={}\n", r.current_a));
         }
@@ -323,7 +317,10 @@ pub fn render_forecast(f: &ForecastRow, verbose: bool) -> String {
     out.push_str("Solar forecast\n");
     out.push_str("==============\n");
     out.push_str(&format!("  Today      {:.1} kWh expected\n", f.kwh_today));
-    out.push_str(&format!("  Tomorrow   {:.1} kWh expected\n", f.kwh_tomorrow));
+    out.push_str(&format!(
+        "  Tomorrow   {:.1} kWh expected\n",
+        f.kwh_tomorrow
+    ));
     out.push_str(&format!("  Peak hour  {:.1} kW\n", f.peak_kw));
     if verbose {
         out.push_str(&format!("\n[developer] source={}\n", f.source));

@@ -209,7 +209,14 @@ mod tests {
 
     #[test]
     fn track_carries_its_fields() {
-        let t = Track::new("t1", "Clair de Lune", "Debussy", "Suite", 300, ProviderId::Local);
+        let t = Track::new(
+            "t1",
+            "Clair de Lune",
+            "Debussy",
+            "Suite",
+            300,
+            ProviderId::Local,
+        );
         assert_eq!(t.id.as_str(), "t1");
         assert_eq!(t.title, "Clair de Lune");
         assert_eq!(t.duration_secs, 300);
@@ -242,7 +249,10 @@ mod tests {
             .with_track("mvt1")
             .with_track("mvt2");
         let item = MediaItem::Album(album);
-        assert_eq!(item.track_ids(), vec![TrackId::new("mvt1"), TrackId::new("mvt2")]);
+        assert_eq!(
+            item.track_ids(),
+            vec![TrackId::new("mvt1"), TrackId::new("mvt2")]
+        );
     }
 
     #[test]

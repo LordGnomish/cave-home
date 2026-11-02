@@ -192,7 +192,9 @@ pub struct Registry {
 impl Registry {
     #[must_use]
     pub const fn new() -> Self {
-        Self { integrations: Vec::new() }
+        Self {
+            integrations: Vec::new(),
+        }
     }
 
     /// Register (or replace, by domain) an integration descriptor.

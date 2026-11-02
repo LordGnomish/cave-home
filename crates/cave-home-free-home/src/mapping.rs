@@ -64,10 +64,7 @@ mod tests {
 
     #[test]
     fn function_kind_covers_every_function() {
-        assert_eq!(
-            function_kind(Function::DimmingActuator),
-            DeviceKind::Light
-        );
+        assert_eq!(function_kind(Function::DimmingActuator), DeviceKind::Light);
         assert_eq!(function_kind(Function::BlindActuator), DeviceKind::Cover);
         assert_eq!(
             function_kind(Function::RoomTemperatureController),
@@ -103,6 +100,10 @@ mod tests {
         tags.sort_unstable();
         tags.dedup();
         assert_eq!(tags.len(), n, "tags must be unique");
-        assert!(kinds.iter().all(|k| k.tag().chars().all(|c| c.is_ascii_lowercase())));
+        assert!(
+            kinds
+                .iter()
+                .all(|k| k.tag().chars().all(|c| c.is_ascii_lowercase()))
+        );
     }
 }

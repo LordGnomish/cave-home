@@ -30,14 +30,20 @@ impl Tier {
     /// A raw (full-resolution) tier covering the most recent `max_age`.
     #[must_use]
     pub const fn raw(max_age: i64) -> Self {
-        Self { max_age, rollup_interval: 0 }
+        Self {
+            max_age,
+            rollup_interval: 0,
+        }
     }
 
     /// A rolled-up tier: keep `rollup_interval`-wide aggregates back to
     /// `max_age`.
     #[must_use]
     pub const fn rollup(max_age: i64, rollup_interval: i64) -> Self {
-        Self { max_age, rollup_interval }
+        Self {
+            max_age,
+            rollup_interval,
+        }
     }
 
     /// Whether this tier keeps samples at full resolution.
@@ -223,7 +229,10 @@ mod tests {
         // Exactly 7 days old -> still raw (age <= max_age).
         assert_eq!(p_classify(now - 7 * DAY, now), Disposition::KeepRaw);
         // One second past -> next tier.
-        assert_eq!(p_classify(now - (7 * DAY + 1), now), Disposition::RollUp(60));
+        assert_eq!(
+            p_classify(now - (7 * DAY + 1), now),
+            Disposition::RollUp(60)
+        );
     }
 
     #[test]
@@ -243,10 +252,10 @@ mod tests {
     fn partition_splits_a_series_three_ways() {
         let now = 1_000_000_000;
         let series = Series::sorted(vec![
-            s(now - DAY, 1.0),           // raw
-            s(now - 14 * DAY, 2.0),      // 1-min rollup
-            s(now - 100 * DAY, 3.0),     // 1-hr rollup
-            s(now - 730 * DAY, 4.0),     // evict
+            s(now - DAY, 1.0),       // raw
+            s(now - 14 * DAY, 2.0),  // 1-min rollup
+            s(now - 100 * DAY, 3.0), // 1-hr rollup
+            s(now - 730 * DAY, 4.0), // evict
         ]);
         let parts = ladder().partition(&series, now);
         assert_eq!(parts.keep_raw.len(), 1);

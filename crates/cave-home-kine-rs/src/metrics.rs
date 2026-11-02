@@ -54,7 +54,9 @@ impl KineMetrics {
     /// whether it succeeded. `operation` is a low-cardinality verb
     /// (`range` / `put` / `delete` / `txn` / `compact` / `watch`).
     pub fn record_request(&self, operation: &str, duration_secs: f64, ok: bool) {
-        let Ok(mut inner) = self.inner.lock() else { return };
+        let Ok(mut inner) = self.inner.lock() else {
+            return;
+        };
         let stat = inner.ops.entry(operation.to_string()).or_default();
         stat.count += 1;
         stat.duration_secs += duration_secs;
@@ -90,7 +92,9 @@ impl KineMetrics {
     /// Render the registry as Prometheus text exposition.
     #[must_use]
     pub fn render(&self) -> String {
-        let Ok(inner) = self.inner.lock() else { return String::new() };
+        let Ok(inner) = self.inner.lock() else {
+            return String::new();
+        };
         let mut out = String::new();
 
         out.push_str("# HELP kine_request_duration_seconds Time spent serving each kine backend operation.\n");
@@ -111,13 +115,21 @@ impl KineMetrics {
         out.push_str("# HELP kine_request_total Total kine backend operations.\n");
         out.push_str("# TYPE kine_request_total counter\n");
         for (op, stat) in &inner.ops {
-            let _ = writeln!(out, "kine_request_total{{operation=\"{op}\"}} {}", stat.count);
+            let _ = writeln!(
+                out,
+                "kine_request_total{{operation=\"{op}\"}} {}",
+                stat.count
+            );
         }
 
         out.push_str("# HELP kine_request_errors_total Failed kine backend operations.\n");
         out.push_str("# TYPE kine_request_errors_total counter\n");
         for (op, stat) in &inner.ops {
-            let _ = writeln!(out, "kine_request_errors_total{{operation=\"{op}\"}} {}", stat.errors);
+            let _ = writeln!(
+                out,
+                "kine_request_errors_total{{operation=\"{op}\"}} {}",
+                stat.errors
+            );
         }
 
         out.push_str("# HELP kine_db_connections Open backend database connections.\n");
@@ -130,15 +142,25 @@ impl KineMetrics {
 
         out.push_str("# HELP kine_compaction_rows_removed_total Rows removed by compaction.\n");
         out.push_str("# TYPE kine_compaction_rows_removed_total counter\n");
-        let _ = writeln!(out, "kine_compaction_rows_removed_total {}", inner.compaction_rows_removed);
+        let _ = writeln!(
+            out,
+            "kine_compaction_rows_removed_total {}",
+            inner.compaction_rows_removed
+        );
 
         out.push_str("# HELP kine_defragment_runs_total Total defragment (VACUUM) runs.\n");
         out.push_str("# TYPE kine_defragment_runs_total counter\n");
         let _ = writeln!(out, "kine_defragment_runs_total {}", inner.defragment_runs);
 
-        out.push_str("# HELP kine_defragment_bytes_reclaimed_total Bytes reclaimed by defragment.\n");
+        out.push_str(
+            "# HELP kine_defragment_bytes_reclaimed_total Bytes reclaimed by defragment.\n",
+        );
         out.push_str("# TYPE kine_defragment_bytes_reclaimed_total counter\n");
-        let _ = writeln!(out, "kine_defragment_bytes_reclaimed_total {}", inner.defragment_bytes_reclaimed);
+        let _ = writeln!(
+            out,
+            "kine_defragment_bytes_reclaimed_total {}",
+            inner.defragment_bytes_reclaimed
+        );
 
         out
     }
@@ -150,7 +172,11 @@ impl KineMetrics {
 fn fmt_f64(v: f64) -> String {
     let s = format!("{v:.9}");
     let trimmed = s.trim_end_matches('0').trim_end_matches('.');
-    if trimmed.is_empty() { "0".to_string() } else { trimmed.to_string() }
+    if trimmed.is_empty() {
+        "0".to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 #[cfg(test)]
@@ -168,8 +194,14 @@ mod tests {
             "kine_db_connections",
             "kine_compaction_runs_total",
         ] {
-            assert!(out.contains(&format!("# TYPE {name}")), "missing TYPE for {name}");
-            assert!(out.contains(&format!("# HELP {name}")), "missing HELP for {name}");
+            assert!(
+                out.contains(&format!("# TYPE {name}")),
+                "missing TYPE for {name}"
+            );
+            assert!(
+                out.contains(&format!("# HELP {name}")),
+                "missing HELP for {name}"
+            );
         }
     }
 
@@ -240,7 +272,10 @@ mod tests {
         let out = m.render();
         // every non-comment, non-empty line is `name value` or `name{..} value`
         for line in out.lines().filter(|l| !l.is_empty() && !l.starts_with('#')) {
-            assert!(line.rsplit_once(' ').is_some(), "malformed sample line: {line}");
+            assert!(
+                line.rsplit_once(' ').is_some(),
+                "malformed sample line: {line}"
+            );
         }
     }
 }

@@ -25,13 +25,21 @@ impl VisitorEntry {
     /// A log entry for an in-flight event with no settled outcome yet.
     #[must_use]
     pub const fn observed(event: DoorbellEvent, at: Tick) -> Self {
-        Self { event, at, outcome: None }
+        Self {
+            event,
+            at,
+            outcome: None,
+        }
     }
 
     /// A log entry that records a visit's settled outcome.
     #[must_use]
     pub const fn settled(event: DoorbellEvent, at: Tick, outcome: CallState) -> Self {
-        Self { event, at, outcome: Some(outcome) }
+        Self {
+            event,
+            at,
+            outcome: Some(outcome),
+        }
     }
 
     /// Whether this entry closed a visit (carries a terminal outcome).
@@ -55,7 +63,10 @@ impl VisitorLog {
     /// A log that retains at most `cap` most-recent entries.
     #[must_use]
     pub const fn with_capacity(cap: usize) -> Self {
-        Self { entries: Vec::new(), cap }
+        Self {
+            entries: Vec::new(),
+            cap,
+        }
     }
 
     /// Append an entry, evicting the oldest if the cap would be exceeded.
@@ -112,15 +123,26 @@ mod tests {
 
     #[test]
     fn non_terminal_outcome_is_not_settled() {
-        let e = VisitorEntry { event: DoorbellEvent::CallAnswered, at: 1, outcome: Some(CallState::Answered) };
-        assert!(!e.is_settled(), "an in-progress call is not a settled visit");
+        let e = VisitorEntry {
+            event: DoorbellEvent::CallAnswered,
+            at: 1,
+            outcome: Some(CallState::Answered),
+        };
+        assert!(
+            !e.is_settled(),
+            "an in-progress call is not a settled visit"
+        );
     }
 
     #[test]
     fn log_keeps_entries_in_order() {
         let mut log = VisitorLog::with_capacity(8);
         log.record(VisitorEntry::observed(DoorbellEvent::ButtonPressed, 1));
-        log.record(VisitorEntry::settled(DoorbellEvent::CallAnswered, 3, CallState::Answered));
+        log.record(VisitorEntry::settled(
+            DoorbellEvent::CallAnswered,
+            3,
+            CallState::Answered,
+        ));
         assert_eq!(log.entries().len(), 2);
         assert_eq!(log.entries()[0].at, 1);
         assert_eq!(log.latest().map(|e| e.at), Some(3));
@@ -148,9 +170,21 @@ mod tests {
     #[test]
     fn missed_count_tallies_only_misses() {
         let mut log = VisitorLog::with_capacity(8);
-        log.record(VisitorEntry::settled(DoorbellEvent::VisitorTimeout, 1, CallState::Missed));
-        log.record(VisitorEntry::settled(DoorbellEvent::CallAnswered, 2, CallState::Ended));
-        log.record(VisitorEntry::settled(DoorbellEvent::VisitorTimeout, 3, CallState::Missed));
+        log.record(VisitorEntry::settled(
+            DoorbellEvent::VisitorTimeout,
+            1,
+            CallState::Missed,
+        ));
+        log.record(VisitorEntry::settled(
+            DoorbellEvent::CallAnswered,
+            2,
+            CallState::Ended,
+        ));
+        log.record(VisitorEntry::settled(
+            DoorbellEvent::VisitorTimeout,
+            3,
+            CallState::Missed,
+        ));
         assert_eq!(log.missed_count(), 2);
     }
 }

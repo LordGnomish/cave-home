@@ -33,12 +33,7 @@ impl LevelControlClient {
     /// Issue MoveToLevel.
     ///
     /// # Upstream: src/app/clusters/level-control/level-control.cpp::moveToLevelHandler
-    pub fn move_to_level(
-        &self,
-        node: NodeId,
-        level: u8,
-        _transition_time_ds: u16,
-    ) -> Result<()> {
+    pub fn move_to_level(&self, node: NodeId, level: u8, _transition_time_ds: u16) -> Result<()> {
         if level > LEVEL_MAX {
             return Err(MatterError::InvalidArgument(format!(
                 "level {level} > {LEVEL_MAX}"
@@ -83,9 +78,7 @@ mod tests {
     #[test]
     fn move_to_level_rejects_out_of_range() {
         let c = LevelControlClient::new();
-        let err = c
-            .move_to_level(NodeId(1), 255, 0)
-            .expect_err("must reject");
+        let err = c.move_to_level(NodeId(1), 255, 0).expect_err("must reject");
         match err {
             MatterError::InvalidArgument(_) => {}
             other => panic!("unexpected error {other:?}"),

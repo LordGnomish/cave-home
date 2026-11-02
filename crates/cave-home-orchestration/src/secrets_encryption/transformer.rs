@@ -74,7 +74,10 @@ impl<P: KmsProvider> Transformer<P> {
     /// Build a transformer over `provider`, writing per `write_mode`.
     #[must_use]
     pub const fn new(provider: P, write_mode: WriteMode) -> Self {
-        Self { provider, write_mode }
+        Self {
+            provider,
+            write_mode,
+        }
     }
 
     /// The current write mode.
@@ -103,8 +106,9 @@ impl<P: KmsProvider> Transformer<P> {
         match self.write_mode {
             WriteMode::Encrypt => {
                 let obj = self.provider.encrypt(plaintext)?;
-                let mut out =
-                    Vec::with_capacity(ENC_PREFIX.len() + obj.key_id.as_str().len() + 1 + obj.blob.len());
+                let mut out = Vec::with_capacity(
+                    ENC_PREFIX.len() + obj.key_id.as_str().len() + 1 + obj.blob.len(),
+                );
                 out.extend_from_slice(ENC_PREFIX.as_bytes());
                 out.extend_from_slice(obj.key_id.as_str().as_bytes());
                 out.push(b':');
@@ -135,9 +139,12 @@ impl<P: KmsProvider> Transformer<P> {
             let (key_id_bytes, blob) = (&rest[..delim], &rest[delim + 1..]);
             let key_id_str =
                 core::str::from_utf8(key_id_bytes).map_err(|_| TransformError::Malformed)?;
-            let key_id = super::keyring::KeyId::new(key_id_str)
-                .map_err(|_| TransformError::Malformed)?;
-            let obj = EncryptedObject { key_id, blob: blob.to_vec() };
+            let key_id =
+                super::keyring::KeyId::new(key_id_str).map_err(|_| TransformError::Malformed)?;
+            let obj = EncryptedObject {
+                key_id,
+                blob: blob.to_vec(),
+            };
             Ok(self.provider.decrypt(&obj)?)
         } else if let Some(plaintext) = stored.strip_prefix(IDENTITY_PREFIX.as_bytes()) {
             Ok(plaintext.to_vec())
@@ -225,7 +232,10 @@ mod tests {
         // Has the encrypt prefix but no ':' terminating the key id.
         let mut bad = ENC_PREFIX.as_bytes().to_vec();
         bad.extend_from_slice(b"key-1-no-delimiter-then-blob");
-        assert!(matches!(t.from_storage(&bad), Err(TransformError::Malformed)));
+        assert!(matches!(
+            t.from_storage(&bad),
+            Err(TransformError::Malformed)
+        ));
     }
 
     #[test]
@@ -234,7 +244,10 @@ mod tests {
         let mut stored = t.to_storage(b"secret").unwrap();
         let last = stored.len() - 1;
         stored[last] ^= 0x01;
-        assert!(matches!(t.from_storage(&stored), Err(TransformError::Provider(_))));
+        assert!(matches!(
+            t.from_storage(&stored),
+            Err(TransformError::Provider(_))
+        ));
     }
 
     #[test]
@@ -246,7 +259,10 @@ mod tests {
             .rotate_keys(KeyId::new("key-2").unwrap(), KekKeypair::from_seed([2; 64]))
             .unwrap();
         let new = t.to_storage(b"under-2").unwrap();
-        assert_eq!(&new[..b"cave:enc:mlkem768:v1:key-2:".len()], b"cave:enc:mlkem768:v1:key-2:");
+        assert_eq!(
+            &new[..b"cave:enc:mlkem768:v1:key-2:".len()],
+            b"cave:enc:mlkem768:v1:key-2:"
+        );
         assert_eq!(t.from_storage(&old).unwrap(), b"under-1");
         assert_eq!(t.from_storage(&new).unwrap(), b"under-2");
     }

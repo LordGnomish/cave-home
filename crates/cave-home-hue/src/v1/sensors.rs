@@ -219,11 +219,7 @@ impl GenericSensor {
     }
 
     /// `aiohue.v1.sensors.GenericCLIPSensor.set_state`.
-    pub async fn set_state(
-        &self,
-        req: &dyn V1Request,
-        state: Value,
-    ) -> HueResult<()> {
+    pub async fn set_state(&self, req: &dyn V1Request, state: Value) -> HueResult<()> {
         let _ = req
             .put(&format!("sensors/{}/state", self.id), state)
             .await?;
@@ -233,11 +229,7 @@ impl GenericSensor {
     /// `aiohue.v1.sensors.GenericCLIPSensor.set_config` /
     /// `GenericSwitchSensor.set_config` — switch wraps `{on: bool}`, CLIP
     /// passes the raw dict. We expose the raw form.
-    pub async fn set_config(
-        &self,
-        req: &dyn V1Request,
-        config: Value,
-    ) -> HueResult<()> {
+    pub async fn set_config(&self, req: &dyn V1Request, config: Value) -> HueResult<()> {
         let _ = req
             .put(&format!("sensors/{}/config", self.id), config)
             .await?;
@@ -247,11 +239,7 @@ impl GenericSensor {
     /// Convenience over `set_config` for switch-style sensors, where the
     /// only writable knob is `{on: bool}`. Source:
     /// `aiohue.v1.sensors.GenericSwitchSensor.set_config`.
-    pub async fn set_switch_on(
-        &self,
-        req: &dyn V1Request,
-        on: Option<bool>,
-    ) -> HueResult<()> {
+    pub async fn set_switch_on(&self, req: &dyn V1Request, on: Option<bool>) -> HueResult<()> {
         let body = match on {
             Some(value) => json!({ "on": value }),
             None => json!({}),

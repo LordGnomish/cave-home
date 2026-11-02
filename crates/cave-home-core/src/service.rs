@@ -288,14 +288,25 @@ mod tests {
     #[test]
     fn re_register_overwrites_and_returns_previous() {
         let (_bus, reg) = registry();
-        reg.register("climate", "set_temperature", Service::new().with_target(false))
-            .expect("first");
+        reg.register(
+            "climate",
+            "set_temperature",
+            Service::new().with_target(false),
+        )
+        .expect("first");
         let prev = reg
-            .register("climate", "set_temperature", Service::new().with_target(true))
+            .register(
+                "climate",
+                "set_temperature",
+                Service::new().with_target(true),
+            )
             .expect("second")
             .expect("previous descriptor");
         assert!(!prev.supports_target);
-        assert!(reg.services_for_domain("climate").contains("set_temperature"));
+        assert!(
+            reg.services_for_domain("climate")
+                .contains("set_temperature")
+        );
     }
 
     #[test]
@@ -316,7 +327,8 @@ mod tests {
     fn services_snapshot_and_per_domain_listing() {
         let (_bus, reg) = registry();
         reg.register("light", "turn_on", Service::new()).expect("a");
-        reg.register("light", "turn_off", Service::new()).expect("b");
+        reg.register("light", "turn_off", Service::new())
+            .expect("b");
         reg.register("lock", "lock", Service::new()).expect("c");
 
         let snap = reg.services();
@@ -335,7 +347,8 @@ mod tests {
         let (_id_reg, mut rx_reg) = bus.listen(EVENT_SERVICE_REGISTERED);
         let (_id_rem, mut rx_rem) = bus.listen(EVENT_SERVICE_REMOVED);
 
-        reg.register("light", "turn_on", Service::new()).expect("register");
+        reg.register("light", "turn_on", Service::new())
+            .expect("register");
         let evt = rx_reg.recv().await.expect("registered event");
         assert_eq!(evt.data["domain"], "light");
         assert_eq!(evt.data["service"], "turn_on");

@@ -18,6 +18,6 @@ pub mod ash;
 pub mod commands;
 pub mod frame;
 
-pub use ash::{AshFramer, AshFrame};
+pub use ash::{AshFrame, AshFramer};
 pub use commands::{EzspCommand, EzspNetworkParameters, EzspResponse};
 pub use frame::{EzspFrame, EzspFrameControl};

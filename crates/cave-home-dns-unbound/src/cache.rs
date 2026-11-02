@@ -167,7 +167,13 @@ mod tests {
     #[test]
     fn insert_then_lookup_within_ttl() {
         let mut c = ResponseCache::new();
-        c.insert(name("nas.home.arpa"), RecordType::A, recs("10.0.0.1"), 300, 1_000);
+        c.insert(
+            name("nas.home.arpa"),
+            RecordType::A,
+            recs("10.0.0.1"),
+            300,
+            1_000,
+        );
         let hit = c.lookup(&name("nas.home.arpa"), RecordType::A, 1_100);
         assert!(hit.is_some());
         assert_eq!(hit.expect("hit").records()[0].data.to_text(), "10.0.0.1");
@@ -176,15 +182,30 @@ mod tests {
     #[test]
     fn lookup_misses_after_expiry() {
         let mut c = ResponseCache::new();
-        c.insert(name("nas.home.arpa"), RecordType::A, recs("10.0.0.1"), 300, 1_000);
+        c.insert(
+            name("nas.home.arpa"),
+            RecordType::A,
+            recs("10.0.0.1"),
+            300,
+            1_000,
+        );
         // At exactly now+ttl it is expired (now < expires_at is false).
-        assert!(c.lookup(&name("nas.home.arpa"), RecordType::A, 1_300).is_none());
-        assert!(c.lookup(&name("nas.home.arpa"), RecordType::A, 5_000).is_none());
+        assert!(
+            c.lookup(&name("nas.home.arpa"), RecordType::A, 1_300)
+                .is_none()
+        );
+        assert!(
+            c.lookup(&name("nas.home.arpa"), RecordType::A, 5_000)
+                .is_none()
+        );
     }
 
     #[test]
     fn ttl_is_clamped_to_min_and_max() {
-        let clamp = TtlClamp { min: 60, max: 3_600 };
+        let clamp = TtlClamp {
+            min: 60,
+            max: 3_600,
+        };
         let mut c = ResponseCache::with_clamp(clamp);
         // Below min -> raised.
         let used = c.insert(name("a.home.arpa"), RecordType::A, recs("10.0.0.2"), 5, 0);
@@ -193,14 +214,26 @@ mod tests {
         assert!(c.lookup(&name("a.home.arpa"), RecordType::A, 60).is_none());
 
         // Above max -> lowered.
-        let used = c.insert(name("b.home.arpa"), RecordType::A, recs("10.0.0.3"), 99_999, 0);
+        let used = c.insert(
+            name("b.home.arpa"),
+            RecordType::A,
+            recs("10.0.0.3"),
+            99_999,
+            0,
+        );
         assert_eq!(used, 3_600);
     }
 
     #[test]
     fn ttl_remaining_counts_down_and_floors_at_zero() {
         let mut c = ResponseCache::new();
-        c.insert(name("nas.home.arpa"), RecordType::A, recs("10.0.0.1"), 300, 1_000);
+        c.insert(
+            name("nas.home.arpa"),
+            RecordType::A,
+            recs("10.0.0.1"),
+            300,
+            1_000,
+        );
         let e = c
             .map
             .get(&(name("nas.home.arpa"), RecordType::A))
@@ -213,20 +246,47 @@ mod tests {
     #[test]
     fn evict_expired_reaps_only_dead_entries() {
         let mut c = ResponseCache::new();
-        c.insert(name("short.home.arpa"), RecordType::A, recs("10.0.0.4"), 10, 0);
-        c.insert(name("long.home.arpa"), RecordType::A, recs("10.0.0.5"), 1_000, 0);
+        c.insert(
+            name("short.home.arpa"),
+            RecordType::A,
+            recs("10.0.0.4"),
+            10,
+            0,
+        );
+        c.insert(
+            name("long.home.arpa"),
+            RecordType::A,
+            recs("10.0.0.5"),
+            1_000,
+            0,
+        );
         assert_eq!(c.len(), 2);
         let removed = c.evict_expired(100);
         assert_eq!(removed, 1);
         assert_eq!(c.len(), 1);
-        assert!(c.lookup(&name("long.home.arpa"), RecordType::A, 100).is_some());
+        assert!(
+            c.lookup(&name("long.home.arpa"), RecordType::A, 100)
+                .is_some()
+        );
     }
 
     #[test]
     fn insert_replaces_existing_entry() {
         let mut c = ResponseCache::new();
-        c.insert(name("nas.home.arpa"), RecordType::A, recs("10.0.0.1"), 300, 0);
-        c.insert(name("nas.home.arpa"), RecordType::A, recs("10.0.0.99"), 300, 0);
+        c.insert(
+            name("nas.home.arpa"),
+            RecordType::A,
+            recs("10.0.0.1"),
+            300,
+            0,
+        );
+        c.insert(
+            name("nas.home.arpa"),
+            RecordType::A,
+            recs("10.0.0.99"),
+            300,
+            0,
+        );
         assert_eq!(c.len(), 1);
         assert_eq!(
             c.lookup(&name("nas.home.arpa"), RecordType::A, 1)

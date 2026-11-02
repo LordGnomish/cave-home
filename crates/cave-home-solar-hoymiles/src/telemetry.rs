@@ -129,7 +129,10 @@ fn reg(payload: &[u8], at: usize) -> u16 {
 pub fn decode(payload: &[u8], family: Family) -> Result<Telemetry, DecodeError> {
     let expected = payload_len(family);
     if payload.len() < expected {
-        return Err(DecodeError::Truncated { expected, got: payload.len() });
+        return Err(DecodeError::Truncated {
+            expected,
+            got: payload.len(),
+        });
     }
     // The body is everything before the 2-byte CRC trailer.
     let body = &payload[..expected - 2];
@@ -185,17 +188,17 @@ mod tests {
     // totalHi, totalLo, temp].
     fn one_panel_regs() -> Vec<u16> {
         vec![
-            340, // PV 34.0 V
-            850, // PV 8.50 A
-            2890, // PV 289.0 W
-            0, // reserved
-            2301, // grid 230.1 V
-            5000, // 50.00 Hz
-            2800, // AC 280.0 W
-            123, // today 123 Wh
+            340,    // PV 34.0 V
+            850,    // PV 8.50 A
+            2890,   // PV 289.0 W
+            0,      // reserved
+            2301,   // grid 230.1 V
+            5000,   // 50.00 Hz
+            2800,   // AC 280.0 W
+            123,    // today 123 Wh
             0x0001, // total hi
             0x86A0, // total lo -> 0x000186A0 = 100000 Wh
-            452, // temp 45.2 °C
+            452,    // temp 45.2 °C
         ]
     }
 
@@ -275,7 +278,10 @@ mod tests {
     fn rejects_bad_checksum() {
         let mut payload = build_payload(&one_panel_regs());
         payload[0] ^= 0xFF; // corrupt the body, CRC trailer no longer matches
-        assert_eq!(decode(&payload, Family::OnePanel), Err(DecodeError::BadChecksum));
+        assert_eq!(
+            decode(&payload, Family::OnePanel),
+            Err(DecodeError::BadChecksum)
+        );
     }
 
     #[test]

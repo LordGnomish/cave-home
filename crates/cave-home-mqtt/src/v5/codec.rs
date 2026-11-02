@@ -3,15 +3,15 @@
 use crate::codec::decode_var_int;
 use crate::packet::QoS;
 use crate::v5::packet::{
-    AuthV5, ConnAckV5, ConnectV5, DisconnectV5, PacketV5, PubAckV5, PubCompV5,
-    PubRecV5, PubRelV5, PublishV5, RetainHandling, SubAckV5, SubscribeV5,
-    SubscriptionV5, UnsubAckV5, UnsubscribeV5, Will,
+    AuthV5, ConnAckV5, ConnectV5, DisconnectV5, PacketV5, PubAckV5, PubCompV5, PubRecV5, PubRelV5,
+    PublishV5, RetainHandling, SubAckV5, SubscribeV5, SubscriptionV5, UnsubAckV5, UnsubscribeV5,
+    Will,
 };
-use crate::v5::property::{decode_properties, encode_properties, Property};
+use crate::v5::property::{Property, decode_properties, encode_properties};
 use crate::v5::reason::ReasonCode;
 use crate::v5::wire::{
-    get_binary, get_string, get_u16, get_u8, put_binary, put_string, put_u16,
-    put_u8, put_var_int, Error,
+    Error, get_binary, get_string, get_u8, get_u16, put_binary, put_string, put_u8, put_u16,
+    put_var_int,
 };
 use bytes::{Bytes, BytesMut};
 
@@ -81,7 +81,10 @@ pub fn encode_v5(p: &PacketV5) -> Result<BytesMut, Error> {
 
     let mut out = BytesMut::with_capacity(body.len() + 5);
     put_u8((ty << 4) | (flags & 0x0f), &mut out);
-    put_var_int(u32::try_from(body.len()).map_err(|_| Error::VarIntTooLong)?, &mut out)?;
+    put_var_int(
+        u32::try_from(body.len()).map_err(|_| Error::VarIntTooLong)?,
+        &mut out,
+    )?;
     out.extend_from_slice(&body);
     Ok(out)
 }
@@ -98,7 +101,9 @@ pub fn decode_v5(input: &[u8]) -> Result<(PacketV5, usize), Error> {
     let (remaining, len_bytes) = decode_var_int(&input[1..])?;
     let total = 1 + len_bytes + remaining as usize;
     if input.len() < total {
-        return Err(Error::Underflow { needed: total - input.len() });
+        return Err(Error::Underflow {
+            needed: total - input.len(),
+        });
     }
     let mut body = &input[1 + len_bytes..total];
 
@@ -108,20 +113,36 @@ pub fn decode_v5(input: &[u8]) -> Result<(PacketV5, usize), Error> {
         3 => PacketV5::Publish(decode_publish(&mut body, flags)?),
         4 => {
             let (id, rc, props) = decode_ack(&mut body, "PUBACK")?;
-            PacketV5::PubAck(PubAckV5 { packet_id: id, reason_code: rc, properties: props })
+            PacketV5::PubAck(PubAckV5 {
+                packet_id: id,
+                reason_code: rc,
+                properties: props,
+            })
         }
         5 => {
             let (id, rc, props) = decode_ack(&mut body, "PUBREC")?;
-            PacketV5::PubRec(PubRecV5 { packet_id: id, reason_code: rc, properties: props })
+            PacketV5::PubRec(PubRecV5 {
+                packet_id: id,
+                reason_code: rc,
+                properties: props,
+            })
         }
         6 => {
             require_flags(flags, RESERVED_0010, "PUBREL")?;
             let (id, rc, props) = decode_ack(&mut body, "PUBREL")?;
-            PacketV5::PubRel(PubRelV5 { packet_id: id, reason_code: rc, properties: props })
+            PacketV5::PubRel(PubRelV5 {
+                packet_id: id,
+                reason_code: rc,
+                properties: props,
+            })
         }
         7 => {
             let (id, rc, props) = decode_ack(&mut body, "PUBCOMP")?;
-            PacketV5::PubComp(PubCompV5 { packet_id: id, reason_code: rc, properties: props })
+            PacketV5::PubComp(PubCompV5 {
+                packet_id: id,
+                reason_code: rc,
+                properties: props,
+            })
         }
         8 => {
             require_flags(flags, RESERVED_0010, "SUBSCRIBE")?;
@@ -137,11 +158,17 @@ pub fn decode_v5(input: &[u8]) -> Result<(PacketV5, usize), Error> {
         13 => PacketV5::PingResp,
         14 => {
             let (rc, props) = decode_reason_props(&mut body, "DISCONNECT")?;
-            PacketV5::Disconnect(DisconnectV5 { reason_code: rc, properties: props })
+            PacketV5::Disconnect(DisconnectV5 {
+                reason_code: rc,
+                properties: props,
+            })
         }
         15 => {
             let (rc, props) = decode_reason_props(&mut body, "AUTH")?;
-            PacketV5::Auth(AuthV5 { reason_code: rc, properties: props })
+            PacketV5::Auth(AuthV5 {
+                reason_code: rc,
+                properties: props,
+            })
         }
         other => return Err(Error::Malformed(unknown_type(other))),
     };
@@ -156,7 +183,9 @@ fn require_flags(actual: u8, expected: u8, _packet: &'static str) -> Result<(), 
     if actual == expected {
         Ok(())
     } else {
-        Err(Error::Malformed("reserved fixed-header flags must be 0b0010"))
+        Err(Error::Malformed(
+            "reserved fixed-header flags must be 0b0010",
+        ))
     }
 }
 
@@ -223,15 +252,29 @@ fn decode_connect(buf: &mut &[u8]) -> Result<ConnectV5, Error> {
         let topic = get_string(buf)?;
         let payload = get_binary(buf)?;
         let qos = QoS::from_u8((flags >> 3) & 0x03).ok_or(Error::BadQoS((flags >> 3) & 0x03))?;
-        Some(Will { topic, payload, qos, retain: flags & 0x20 != 0, properties: will_properties })
+        Some(Will {
+            topic,
+            payload,
+            qos,
+            retain: flags & 0x20 != 0,
+            properties: will_properties,
+        })
     } else {
         if (flags >> 3) & 0x03 != 0 || flags & 0x20 != 0 {
             return Err(Error::Malformed("Will QoS/Retain set without Will Flag"));
         }
         None
     };
-    let username = if flags & 0x80 != 0 { Some(get_string(buf)?) } else { None };
-    let password = if flags & 0x40 != 0 { Some(get_binary(buf)?) } else { None };
+    let username = if flags & 0x80 != 0 {
+        Some(get_string(buf)?)
+    } else {
+        None
+    };
+    let password = if flags & 0x40 != 0 {
+        Some(get_binary(buf)?)
+    } else {
+        None
+    };
 
     Ok(ConnectV5 {
         client_id,
@@ -253,10 +296,16 @@ fn encode_connack(c: &ConnAckV5, out: &mut BytesMut) -> Result<(), Error> {
 fn decode_connack(buf: &mut &[u8]) -> Result<ConnAckV5, Error> {
     let ack_flags = get_u8(buf)?;
     let code = get_u8(buf)?;
-    let reason_code =
-        ReasonCode::from_u8(code).ok_or(Error::BadReasonCode { packet: "CONNACK", code })?;
+    let reason_code = ReasonCode::from_u8(code).ok_or(Error::BadReasonCode {
+        packet: "CONNACK",
+        code,
+    })?;
     let properties = decode_properties(buf)?;
-    Ok(ConnAckV5 { session_present: ack_flags & 0x01 != 0, reason_code, properties })
+    Ok(ConnAckV5 {
+        session_present: ack_flags & 0x01 != 0,
+        reason_code,
+        properties,
+    })
 }
 
 // ---- PUBLISH -------------------------------------------------------------
@@ -264,7 +313,9 @@ fn decode_connack(buf: &mut &[u8]) -> Result<ConnAckV5, Error> {
 fn encode_publish(p: &PublishV5, out: &mut BytesMut) -> Result<u8, Error> {
     put_string(&p.topic, out)?;
     if p.qos != QoS::AtMostOnce {
-        let pid = p.packet_id.ok_or(Error::Malformed("PUBLISH QoS > 0 missing packet id"))?;
+        let pid = p
+            .packet_id
+            .ok_or(Error::Malformed("PUBLISH QoS > 0 missing packet id"))?;
         put_u16(pid, out);
     }
     encode_properties(&p.properties, out)?;
@@ -277,14 +328,28 @@ fn decode_publish(buf: &mut &[u8], flags: u8) -> Result<PublishV5, Error> {
     let qos = QoS::from_u8((flags >> 1) & 0x03).ok_or(Error::BadQoS((flags >> 1) & 0x03))?;
     let retain = flags & 0x01 != 0;
     if dup && qos == QoS::AtMostOnce {
-        return Err(Error::Malformed("PUBLISH DUP must be 0 for QoS 0 (§3.3.1.1)"));
+        return Err(Error::Malformed(
+            "PUBLISH DUP must be 0 for QoS 0 (§3.3.1.1)",
+        ));
     }
     let topic = get_string(buf)?;
-    let packet_id = if qos == QoS::AtMostOnce { None } else { Some(get_u16(buf)?) };
+    let packet_id = if qos == QoS::AtMostOnce {
+        None
+    } else {
+        Some(get_u16(buf)?)
+    };
     let properties = decode_properties(buf)?;
     let payload = Bytes::copy_from_slice(buf);
     *buf = &buf[buf.len()..];
-    Ok(PublishV5 { topic, qos, retain, dup, packet_id, properties, payload })
+    Ok(PublishV5 {
+        topic,
+        qos,
+        retain,
+        dup,
+        packet_id,
+        properties,
+        payload,
+    })
 }
 
 // ---- PUBACK / PUBREC / PUBREL / PUBCOMP ----------------------------------
@@ -314,7 +379,11 @@ fn decode_ack(
     }
     let code = get_u8(buf)?;
     let reason = ReasonCode::from_u8(code).ok_or(Error::BadReasonCode { packet, code })?;
-    let properties = if buf.is_empty() { Vec::new() } else { decode_properties(buf)? };
+    let properties = if buf.is_empty() {
+        Vec::new()
+    } else {
+        decode_properties(buf)?
+    };
     Ok((packet_id, reason, properties))
 }
 
@@ -346,11 +415,14 @@ fn decode_subscribe(buf: &mut &[u8]) -> Result<SubscribeV5, Error> {
         let topic_filter = get_string(buf)?;
         let opt = get_u8(buf)?;
         if opt & 0xC0 != 0 {
-            return Err(Error::Malformed("subscription options reserved bits 6-7 must be 0"));
+            return Err(Error::Malformed(
+                "subscription options reserved bits 6-7 must be 0",
+            ));
         }
         let qos = QoS::from_u8(opt & 0x03).ok_or(Error::BadQoS(opt & 0x03))?;
-        let retain_handling = RetainHandling::from_u8((opt >> 4) & 0x03)
-            .ok_or(Error::Malformed("invalid Retain Handling value 3 (§3.8.3.1)"))?;
+        let retain_handling = RetainHandling::from_u8((opt >> 4) & 0x03).ok_or(
+            Error::Malformed("invalid Retain Handling value 3 (§3.8.3.1)"),
+        )?;
         subscriptions.push(SubscriptionV5 {
             topic_filter,
             qos,
@@ -360,9 +432,15 @@ fn decode_subscribe(buf: &mut &[u8]) -> Result<SubscribeV5, Error> {
         });
     }
     if subscriptions.is_empty() {
-        return Err(Error::Malformed("SUBSCRIBE must contain at least one topic filter"));
+        return Err(Error::Malformed(
+            "SUBSCRIBE must contain at least one topic filter",
+        ));
     }
-    Ok(SubscribeV5 { packet_id, properties, subscriptions })
+    Ok(SubscribeV5 {
+        packet_id,
+        properties,
+        subscriptions,
+    })
 }
 
 fn encode_id_props_codes(
@@ -381,12 +459,20 @@ fn encode_id_props_codes(
 
 fn decode_suback(buf: &mut &[u8]) -> Result<SubAckV5, Error> {
     let (packet_id, properties, reason_codes) = decode_id_props_codes(buf, "SUBACK")?;
-    Ok(SubAckV5 { packet_id, properties, reason_codes })
+    Ok(SubAckV5 {
+        packet_id,
+        properties,
+        reason_codes,
+    })
 }
 
 fn decode_unsuback(buf: &mut &[u8]) -> Result<UnsubAckV5, Error> {
     let (packet_id, properties, reason_codes) = decode_id_props_codes(buf, "UNSUBACK")?;
-    Ok(UnsubAckV5 { packet_id, properties, reason_codes })
+    Ok(UnsubAckV5 {
+        packet_id,
+        properties,
+        reason_codes,
+    })
 }
 
 fn decode_id_props_codes(
@@ -398,9 +484,7 @@ fn decode_id_props_codes(
     let mut reason_codes = Vec::new();
     while !buf.is_empty() {
         let code = get_u8(buf)?;
-        reason_codes.push(
-            ReasonCode::from_u8(code).ok_or(Error::BadReasonCode { packet, code })?,
-        );
+        reason_codes.push(ReasonCode::from_u8(code).ok_or(Error::BadReasonCode { packet, code })?);
     }
     Ok((packet_id, properties, reason_codes))
 }
@@ -422,9 +506,15 @@ fn decode_unsubscribe(buf: &mut &[u8]) -> Result<UnsubscribeV5, Error> {
         topic_filters.push(get_string(buf)?);
     }
     if topic_filters.is_empty() {
-        return Err(Error::Malformed("UNSUBSCRIBE must contain at least one topic filter"));
+        return Err(Error::Malformed(
+            "UNSUBSCRIBE must contain at least one topic filter",
+        ));
     }
-    Ok(UnsubscribeV5 { packet_id, properties, topic_filters })
+    Ok(UnsubscribeV5 {
+        packet_id,
+        properties,
+        topic_filters,
+    })
 }
 
 // ---- DISCONNECT / AUTH ---------------------------------------------------
@@ -451,7 +541,11 @@ fn decode_reason_props(
     }
     let code = get_u8(buf)?;
     let reason = ReasonCode::from_u8(code).ok_or(Error::BadReasonCode { packet, code })?;
-    let properties = if buf.is_empty() { Vec::new() } else { decode_properties(buf)? };
+    let properties = if buf.is_empty() {
+        Vec::new()
+    } else {
+        decode_properties(buf)?
+    };
     Ok((reason, properties))
 }
 
@@ -523,7 +617,10 @@ mod tests {
         let mut bytes = encode_v5(&PacketV5::Connect(c)).unwrap();
         // Locate the protocol level byte: header(1) + remlen(1) + "MQTT"(6) = idx 8.
         bytes[8] = 4;
-        assert!(matches!(decode_v5(&bytes), Err(crate::v5::Error::BadProtocolLevel(4))));
+        assert!(matches!(
+            decode_v5(&bytes),
+            Err(crate::v5::Error::BadProtocolLevel(4))
+        ));
     }
 
     #[test]
@@ -658,7 +755,10 @@ mod tests {
         // Flip a reserved high bit in the last byte (the options byte).
         let last = bytes.len() - 1;
         bytes[last] |= 0x40;
-        assert!(matches!(decode_v5(&bytes), Err(crate::v5::Error::Malformed(_))));
+        assert!(matches!(
+            decode_v5(&bytes),
+            Err(crate::v5::Error::Malformed(_))
+        ));
     }
 
     #[test]
@@ -698,7 +798,10 @@ mod tests {
     #[test]
     fn disconnect_v5_short_and_long_form() {
         // §3.14.2.1: Remaining Length 0 ⇒ reason Normal disconnection (0x00).
-        let short = DisconnectV5 { reason_code: ReasonCode::Success, properties: vec![] };
+        let short = DisconnectV5 {
+            reason_code: ReasonCode::Success,
+            properties: vec![],
+        };
         let bytes = encode_v5(&PacketV5::Disconnect(short.clone())).unwrap();
         assert_eq!(bytes.len(), 2, "header byte + zero remaining length");
         let (back, _) = decode_v5(&bytes).unwrap();
@@ -725,6 +828,9 @@ mod tests {
     fn decode_v5_reports_underflow_on_partial_frame() {
         let full = encode_v5(&PacketV5::PingReq).unwrap();
         // PINGREQ is 2 bytes; one byte must be insufficient.
-        assert!(matches!(decode_v5(&full[..1]), Err(crate::v5::Error::Underflow { .. })));
+        assert!(matches!(
+            decode_v5(&full[..1]),
+            Err(crate::v5::Error::Underflow { .. })
+        ));
     }
 }

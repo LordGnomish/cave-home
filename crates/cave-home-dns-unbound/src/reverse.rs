@@ -130,7 +130,8 @@ mod tests {
     fn reverse_zone_resolves_by_ptr_name() {
         let mut z = ReverseZone::new();
         let nas = DnsName::parse("nas.home.arpa").expect("name");
-        z.insert(IpAddr::V4(v4(10, 0, 0, 9)), nas.clone()).expect("insert");
+        z.insert(IpAddr::V4(v4(10, 0, 0, 9)), nas.clone())
+            .expect("insert");
         let ptr = DnsName::parse("9.0.0.10.in-addr.arpa").expect("ptr");
         assert_eq!(z.resolve_name(&ptr), Some(&nas));
     }

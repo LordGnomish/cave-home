@@ -11,7 +11,7 @@
 //! suite drives [`MockToolExecutor`].
 
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use cave_home_voice::route::{IntentAction, QueryKind};
 
@@ -55,12 +55,14 @@ pub fn intent_to_tool_call(action: &IntentAction) -> ToolCall {
         IntentAction::SetLight { target, on } => {
             ToolCall::new("set_light", json!({"target": target, "on": on}))
         }
-        IntentAction::SetBrightness { target, percent } => {
-            ToolCall::new("set_brightness", json!({"target": target, "percent": percent}))
-        }
-        IntentAction::SetTemperature { target, celsius } => {
-            ToolCall::new("set_temperature", json!({"target": target, "celsius": celsius}))
-        }
+        IntentAction::SetBrightness { target, percent } => ToolCall::new(
+            "set_brightness",
+            json!({"target": target, "percent": percent}),
+        ),
+        IntentAction::SetTemperature { target, celsius } => ToolCall::new(
+            "set_temperature",
+            json!({"target": target, "celsius": celsius}),
+        ),
         IntentAction::SetCover { target, open } => {
             ToolCall::new("set_cover", json!({"target": target, "open": open}))
         }
@@ -253,7 +255,11 @@ impl MockToolExecutor {
     /// The names of the calls executed, in order.
     #[must_use]
     pub fn call_names(&self) -> Vec<String> {
-        self.calls.lock().iter().map(|c| c.name().to_string()).collect()
+        self.calls
+            .lock()
+            .iter()
+            .map(|c| c.name().to_string())
+            .collect()
     }
 }
 
@@ -310,7 +316,10 @@ mod tests {
     #[test]
     fn validate_accepts_well_formed_call() {
         let reg = ToolRegistry::default();
-        let call = ToolCall::new("set_light", serde_json::json!({"target": "kitchen", "on": true}));
+        let call = ToolCall::new(
+            "set_light",
+            serde_json::json!({"target": "kitchen", "on": true}),
+        );
         assert!(reg.validate(&call).is_ok());
     }
 
@@ -346,7 +355,10 @@ mod tests {
     #[tokio::test]
     async fn mock_executor_returns_scripted_result() {
         let exec = MockToolExecutor::new().returning(ToolResult::failed("device offline"));
-        let call = ToolCall::new("set_cover", serde_json::json!({"target": "garage", "open": true}));
+        let call = ToolCall::new(
+            "set_cover",
+            serde_json::json!({"target": "garage", "open": true}),
+        );
         let r = exec.execute(&call).await.unwrap();
         assert!(!r.ok);
         assert_eq!(r.message, "device offline");

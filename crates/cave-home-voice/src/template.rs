@@ -350,10 +350,7 @@ mod tests {
     #[test]
     fn collapses_extra_whitespace_and_strips_punctuation() {
         let t = Template::parse("  what's   the   weather?  ").expect("valid");
-        assert_eq!(
-            t.elements(),
-            &[word("whats"), word("the"), word("weather")]
-        );
+        assert_eq!(t.elements(), &[word("whats"), word("the"), word("weather")]);
     }
 
     #[test]
@@ -376,10 +373,7 @@ mod tests {
         assert_eq!(
             t.elements(),
             &[
-                Element::Alternatives(vec![
-                    vec![word("what"), word("is")],
-                    vec![word("whats")],
-                ]),
+                Element::Alternatives(vec![vec![word("what"), word("is")], vec![word("whats")],]),
                 word("it"),
             ]
         );
@@ -421,10 +415,7 @@ mod tests {
 
     #[test]
     fn rejects_unclosed_alternatives_and_slot() {
-        assert_eq!(
-            Template::parse("(a|b"),
-            Err(TemplateError::Unclosed('('))
-        );
+        assert_eq!(Template::parse("(a|b"), Err(TemplateError::Unclosed('(')));
         assert_eq!(
             Template::parse("turn {name on"),
             Err(TemplateError::Unclosed('{'))

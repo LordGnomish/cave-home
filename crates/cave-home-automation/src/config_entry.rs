@@ -116,11 +116,7 @@ pub trait ConfigFlowHandler: Send + Sync {
     ///
     /// `step_id` selects the step ("user", "discovery_confirm", ...);
     /// `user_input` carries form data (may be `None` on first invocation).
-    async fn step(
-        &self,
-        step_id: &str,
-        user_input: Option<Value>,
-    ) -> HassResult<FlowResult>;
+    async fn step(&self, step_id: &str, user_input: Option<Value>) -> HassResult<FlowResult>;
 }
 
 /// The collection of all known config entries.
@@ -254,11 +250,7 @@ mod tests {
             "hue"
         }
 
-        async fn step(
-            &self,
-            step_id: &str,
-            user_input: Option<Value>,
-        ) -> HassResult<FlowResult> {
+        async fn step(&self, step_id: &str, user_input: Option<Value>) -> HassResult<FlowResult> {
             if step_id == "user" && user_input.is_none() {
                 return Ok(FlowResult::Form {
                     step_id: "user".into(),

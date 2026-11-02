@@ -186,6 +186,9 @@ mod tests {
 
     #[test]
     fn parse_rejects_malformed_line() {
-        assert_eq!(SubnetEnv::parse("not-a-kv-line"), Err(EnvParseError::Malformed));
+        assert_eq!(
+            SubnetEnv::parse("not-a-kv-line"),
+            Err(EnvParseError::Malformed)
+        );
     }
 }

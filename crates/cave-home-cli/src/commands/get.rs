@@ -40,7 +40,9 @@ pub fn cmd() -> Command {
 }
 
 pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
-    let server = matches.get_one::<String>("server").map_or(DEFAULT_SERVER, String::as_str);
+    let server = matches
+        .get_one::<String>("server")
+        .map_or(DEFAULT_SERVER, String::as_str);
     let (kind, path) = match matches.subcommand() {
         Some(("nodes", _)) => ("nodes", "/api/v1/nodes"),
         Some(("pods", _)) => ("pods", "/api/v1/pods"),
@@ -67,15 +69,23 @@ pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
 /// Build the raw HTTP/1.1 GET request for `path` against `host`.
 #[must_use]
 fn build_request(host: &str, path: &str) -> String {
-    format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nAccept: application/json\r\nConnection: close\r\n\r\n")
+    format!(
+        "GET {path} HTTP/1.1\r\nHost: {host}\r\nAccept: application/json\r\nConnection: close\r\n\r\n"
+    )
 }
 
 /// Open a connection, send the GET, and return the full response text.
 fn fetch(server: &str, path: &str) -> Result<String, String> {
     let mut stream = TcpStream::connect(server).map_err(|e| e.to_string())?;
-    stream.set_read_timeout(Some(Duration::from_secs(5))).map_err(|e| e.to_string())?;
-    stream.set_write_timeout(Some(Duration::from_secs(5))).map_err(|e| e.to_string())?;
-    stream.write_all(build_request(server, path).as_bytes()).map_err(|e| e.to_string())?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .map_err(|e| e.to_string())?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(5)))
+        .map_err(|e| e.to_string())?;
+    stream
+        .write_all(build_request(server, path).as_bytes())
+        .map_err(|e| e.to_string())?;
     let mut buf = String::new();
     stream.read_to_string(&mut buf).map_err(|e| e.to_string())?;
     Ok(buf)
@@ -84,7 +94,9 @@ fn fetch(server: &str, path: &str) -> Result<String, String> {
 /// The body of an HTTP response (everything after the blank line).
 #[must_use]
 fn extract_body(response: &str) -> &str {
-    response.split_once("\r\n\r\n").map_or("", |(_head, body)| body)
+    response
+        .split_once("\r\n\r\n")
+        .map_or("", |(_head, body)| body)
 }
 
 /// Pull every `metadata.name` out of a K8s list body. Each item carries exactly
@@ -169,7 +181,10 @@ mod tests {
 
     #[test]
     fn cmd_exposes_nodes_and_pods() {
-        let names: Vec<_> = cmd().get_subcommands().map(|s| s.get_name().to_string()).collect();
+        let names: Vec<_> = cmd()
+            .get_subcommands()
+            .map(|s| s.get_name().to_string())
+            .collect();
         assert!(names.iter().any(|n| n == "nodes"));
         assert!(names.iter().any(|n| n == "pods"));
     }

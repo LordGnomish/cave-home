@@ -7,9 +7,9 @@
 //! event log records it — exercised across module boundaries.
 
 use cave_home_unifi_access::{
-    minute_of_week, AccessController, AccessDoor, AccessEvent, AccessLog, AccessMessage,
-    Credential, DenyReason, Direction, DoorId, DoorPosition, EnrolledCredential, Lang, LockState,
-    Permission, Policy, Schedule, Window,
+    AccessController, AccessDoor, AccessEvent, AccessLog, AccessMessage, Credential, DenyReason,
+    Direction, DoorId, DoorPosition, EnrolledCredential, Lang, LockState, Permission, Policy,
+    Schedule, Window, minute_of_week,
 };
 
 fn front() -> DoorId {
@@ -49,8 +49,15 @@ fn granted_entry_drives_controller_and_log() {
     assert!(decision.granted);
 
     // Act: temporarily unlock for 30s, record the entry.
-    controller.temporary_unlock(&front(), 1_000, 30).expect("temp unlock");
-    log.record(AccessEvent::granted("alice", front(), Direction::Entry, 1_000));
+    controller
+        .temporary_unlock(&front(), 1_000, 30)
+        .expect("temp unlock");
+    log.record(AccessEvent::granted(
+        "alice",
+        front(),
+        Direction::Entry,
+        1_000,
+    ));
     assert_eq!(
         controller.door(&front()).expect("door").lock_state(),
         LockState::Unlocked
@@ -92,7 +99,12 @@ fn denied_outside_hours_is_logged_with_reason() {
     let decision = policy.decide("alice", &attempt, &front(), now, false);
     assert_eq!(decision.reason, Some(DenyReason::OutsideSchedule));
 
-    log.record(AccessEvent::denied("alice", front(), DenyReason::OutsideSchedule, 5));
+    log.record(AccessEvent::denied(
+        "alice",
+        front(),
+        DenyReason::OutsideSchedule,
+        5,
+    ));
     assert!(!log.events()[0].outcome.is_granted());
     assert_eq!(
         decision.message("Front door").text(Lang::De),
@@ -125,7 +137,10 @@ fn lockdown_blocks_everyone_and_controller_locks_all() {
     let attempt = Credential::pin("1234").expect("valid");
     let decision = policy.decide("alice", &attempt, &front(), 0, true);
     assert_eq!(decision.reason, Some(DenyReason::LockedDown));
-    assert_eq!(decision.message("Front door"), AccessMessage::DeniedLockdown);
+    assert_eq!(
+        decision.message("Front door"),
+        AccessMessage::DeniedLockdown
+    );
 }
 
 #[test]
@@ -137,9 +152,16 @@ fn held_open_alarm_after_evacuation() {
     controller.evacuate();
 
     // A door left open 45s past a 30s limit raises the held-open alarm.
-    assert!(controller.is_held_open(&front(), 45, 30).expect("known door"));
+    assert!(
+        controller
+            .is_held_open(&front(), 45, 30)
+            .expect("known door")
+    );
     let msg = AccessMessage::HeldOpen {
         door: "Front door".into(),
     };
-    assert_eq!(msg.text(Lang::Tr), "Front door açık kaldı — lütfen kapatın.");
+    assert_eq!(
+        msg.text(Lang::Tr),
+        "Front door açık kaldı — lütfen kapatın."
+    );
 }

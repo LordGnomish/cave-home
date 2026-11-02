@@ -18,8 +18,8 @@ use crate::automation::conditions::Condition;
 use crate::automation::triggers::Trigger;
 use crate::error::HassResult;
 use crate::event_bus::{Event, EventBus, ListenerFn, MATCH_ALL};
-use crate::script::{Action, Script, ScriptContext};
 use crate::scene::SceneRegistry;
+use crate::script::{Action, Script, ScriptContext};
 use crate::service::ServiceRegistry;
 use crate::state::StateMachine;
 
@@ -122,7 +122,9 @@ impl AutomationEngine {
             run_count: 0,
             error_count: 0,
         };
-        self.automations.write().insert(config.id.clone(), automation);
+        self.automations
+            .write()
+            .insert(config.id.clone(), automation);
 
         let mut handles = Vec::new();
         for trigger in &config.triggers {
@@ -155,12 +157,8 @@ impl AutomationEngine {
                 if !conditions.iter().all(|c| c.evaluate(&sm).unwrap_or(false)) {
                     return;
                 }
-                let rctx = ScriptContext::new(
-                    sm.clone(),
-                    services.clone(),
-                    bus.clone(),
-                    scenes.clone(),
-                );
+                let rctx =
+                    ScriptContext::new(sm.clone(), services.clone(), bus.clone(), scenes.clone());
                 let script = Script::new(alias.clone(), actions.clone());
                 let context = event.context.clone();
                 let automations_for_count = automations.clone();
@@ -168,9 +166,7 @@ impl AutomationEngine {
                 tokio::spawn(async move {
                     match script.run(&rctx, Some(context)).await {
                         Ok(()) => {
-                            if let Some(a) =
-                                automations_for_count.write().get_mut(&id_for_count)
-                            {
+                            if let Some(a) = automations_for_count.write().get_mut(&id_for_count) {
                                 a.run_count += 1;
                                 a.last_triggered = Some(time::OffsetDateTime::now_utc());
                             }
@@ -182,9 +178,7 @@ impl AutomationEngine {
                                 error = %err,
                                 "automation actions failed"
                             );
-                            if let Some(a) =
-                                automations_for_count.write().get_mut(&id_for_count)
-                            {
+                            if let Some(a) = automations_for_count.write().get_mut(&id_for_count) {
                                 a.error_count += 1;
                             }
                         }
@@ -193,7 +187,9 @@ impl AutomationEngine {
             });
             handles.push(self.bus.async_listen_dyn(&event_type, cb));
         }
-        Ok(AutomationHandle { _listeners: handles })
+        Ok(AutomationHandle {
+            _listeners: handles,
+        })
     }
 
     /// Disable an automation by id. Returns true if found.
@@ -235,7 +231,11 @@ impl AutomationEngine {
     /// Manually fire an automation (bypassing triggers, but conditions
     /// still apply). Useful for the cavectl `automate run <id>`
     /// command.
-    pub async fn run_manual(&self, id: &str, context: Option<crate::context::Context>) -> HassResult<()> {
+    pub async fn run_manual(
+        &self,
+        id: &str,
+        context: Option<crate::context::Context>,
+    ) -> HassResult<()> {
         let (actions, alias) = {
             let g = self.automations.read();
             let Some(a) = g.get(id) else {
@@ -263,7 +263,7 @@ mod tests {
     use super::*;
     use crate::automation::conditions::ConditionStateValue;
     use crate::event_bus::InMemoryEventBus;
-    use crate::service::{service_handler, SupportsResponse};
+    use crate::service::{SupportsResponse, service_handler};
     use std::collections::BTreeMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
@@ -300,13 +300,7 @@ mod tests {
                 Ok(None)
             }
         });
-        services.register(
-            "notify",
-            "ring",
-            handler,
-            None,
-            SupportsResponse::None,
-        );
+        services.register("notify", "ring", handler, None, SupportsResponse::None);
 
         let cfg = AutomationConfig {
             id: "doorbell".into(),
@@ -334,14 +328,8 @@ mod tests {
             None,
         )
         .unwrap();
-        sm.async_set(
-            "binary_sensor.doorbell",
-            "on",
-            BTreeMap::new(),
-            false,
-            None,
-        )
-        .unwrap();
+        sm.async_set("binary_sensor.doorbell", "on", BTreeMap::new(), false, None)
+            .unwrap();
 
         // Give the spawned task a moment to run.
         tokio::time::sleep(Duration::from_millis(20)).await;
@@ -389,36 +377,18 @@ mod tests {
         // Switch is off → condition fails → no service call.
         sm.async_set("switch.guard", "off", BTreeMap::new(), false, None)
             .unwrap();
-        sm.async_set(
-            "binary_sensor.motion",
-            "on",
-            BTreeMap::new(),
-            false,
-            None,
-        )
-        .unwrap();
+        sm.async_set("binary_sensor.motion", "on", BTreeMap::new(), false, None)
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(20)).await;
         assert_eq!(count.load(Ordering::SeqCst), 0);
 
         // Now turn the switch on — next motion should fire.
         sm.async_set("switch.guard", "on", BTreeMap::new(), false, None)
             .unwrap();
-        sm.async_set(
-            "binary_sensor.motion",
-            "off",
-            BTreeMap::new(),
-            false,
-            None,
-        )
-        .unwrap();
-        sm.async_set(
-            "binary_sensor.motion",
-            "on",
-            BTreeMap::new(),
-            false,
-            None,
-        )
-        .unwrap();
+        sm.async_set("binary_sensor.motion", "off", BTreeMap::new(), false, None)
+            .unwrap();
+        sm.async_set("binary_sensor.motion", "on", BTreeMap::new(), false, None)
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(20)).await;
         assert_eq!(count.load(Ordering::SeqCst), 1);
     }
@@ -455,14 +425,8 @@ mod tests {
         };
         let _handle = engine.register(cfg).unwrap();
         engine.disable("toggle");
-        sm.async_set(
-            "binary_sensor.motion",
-            "on",
-            BTreeMap::new(),
-            false,
-            None,
-        )
-        .unwrap();
+        sm.async_set("binary_sensor.motion", "on", BTreeMap::new(), false, None)
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(20)).await;
         assert_eq!(count.load(Ordering::SeqCst), 0);
     }

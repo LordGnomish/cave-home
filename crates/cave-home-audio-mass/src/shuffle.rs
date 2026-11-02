@@ -97,7 +97,10 @@ mod tests {
     fn different_seed_usually_differs() {
         let a = shuffled_order(50, 1);
         let b = shuffled_order(50, 2);
-        assert_ne!(a, b, "different seeds should give different orders for a large list");
+        assert_ne!(
+            a, b,
+            "different seeds should give different orders for a large list"
+        );
     }
 
     #[test]

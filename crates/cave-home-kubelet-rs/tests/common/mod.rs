@@ -74,7 +74,10 @@ fn not_found(what: &str, id: &str) -> Status {
 
 #[tonic::async_trait]
 impl RuntimeService for MockCriRuntime {
-    async fn version(&self, _req: Request<proto::VersionRequest>) -> RpcResult<proto::VersionResponse> {
+    async fn version(
+        &self,
+        _req: Request<proto::VersionRequest>,
+    ) -> RpcResult<proto::VersionResponse> {
         Ok(Response::new(proto::VersionResponse {
             version: "v1".into(),
             runtime_name: "mock-containerd".into(),
@@ -102,7 +105,9 @@ impl RuntimeService for MockCriRuntime {
                 ..Default::default()
             },
         );
-        Ok(Response::new(proto::RunPodSandboxResponse { pod_sandbox_id: id }))
+        Ok(Response::new(proto::RunPodSandboxResponse {
+            pod_sandbox_id: id,
+        }))
     }
 
     async fn stop_pod_sandbox(
@@ -111,7 +116,10 @@ impl RuntimeService for MockCriRuntime {
     ) -> RpcResult<proto::StopPodSandboxResponse> {
         let id = req.into_inner().pod_sandbox_id;
         let mut st = self.state.lock();
-        let sb = st.sandboxes.get_mut(&id).ok_or_else(|| not_found("pod sandbox", &id))?;
+        let sb = st
+            .sandboxes
+            .get_mut(&id)
+            .ok_or_else(|| not_found("pod sandbox", &id))?;
         sb.state = proto::PodSandboxState::SandboxNotready as i32;
         Ok(Response::new(proto::StopPodSandboxResponse {}))
     }
@@ -131,7 +139,11 @@ impl RuntimeService for MockCriRuntime {
     ) -> RpcResult<proto::PodSandboxStatusResponse> {
         let id = req.into_inner().pod_sandbox_id;
         let st = self.state.lock();
-        let status = st.sandboxes.get(&id).cloned().ok_or_else(|| not_found("pod sandbox", &id))?;
+        let status = st
+            .sandboxes
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| not_found("pod sandbox", &id))?;
         Ok(Response::new(proto::PodSandboxStatusResponse {
             status: Some(status),
             ..Default::default()
@@ -187,7 +199,9 @@ impl RuntimeService for MockCriRuntime {
             },
         );
         st.container_sandbox.insert(id.clone(), r.pod_sandbox_id);
-        Ok(Response::new(proto::CreateContainerResponse { container_id: id }))
+        Ok(Response::new(proto::CreateContainerResponse {
+            container_id: id,
+        }))
     }
 
     async fn start_container(
@@ -196,7 +210,10 @@ impl RuntimeService for MockCriRuntime {
     ) -> RpcResult<proto::StartContainerResponse> {
         let id = req.into_inner().container_id;
         let mut st = self.state.lock();
-        let c = st.containers.get_mut(&id).ok_or_else(|| not_found("container", &id))?;
+        let c = st
+            .containers
+            .get_mut(&id)
+            .ok_or_else(|| not_found("container", &id))?;
         c.state = proto::ContainerState::ContainerRunning as i32;
         c.started_at = c.created_at + 1;
         Ok(Response::new(proto::StartContainerResponse {}))
@@ -208,7 +225,10 @@ impl RuntimeService for MockCriRuntime {
     ) -> RpcResult<proto::StopContainerResponse> {
         let id = req.into_inner().container_id;
         let mut st = self.state.lock();
-        let c = st.containers.get_mut(&id).ok_or_else(|| not_found("container", &id))?;
+        let c = st
+            .containers
+            .get_mut(&id)
+            .ok_or_else(|| not_found("container", &id))?;
         c.state = proto::ContainerState::ContainerExited as i32;
         c.finished_at = c.started_at + 1;
         c.exit_code = 0;
@@ -232,7 +252,11 @@ impl RuntimeService for MockCriRuntime {
     ) -> RpcResult<proto::ContainerStatusResponse> {
         let id = req.into_inner().container_id;
         let st = self.state.lock();
-        let status = st.containers.get(&id).cloned().ok_or_else(|| not_found("container", &id))?;
+        let status = st
+            .containers
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| not_found("container", &id))?;
         Ok(Response::new(proto::ContainerStatusResponse {
             status: Some(status),
             ..Default::default()
@@ -252,7 +276,8 @@ impl RuntimeService for MockCriRuntime {
             .filter(|c| filter.id.is_empty() || c.id == filter.id)
             .filter(|c| {
                 filter.pod_sandbox_id.is_empty()
-                    || st.container_sandbox.get(&c.id).map(String::as_str) == Some(&filter.pod_sandbox_id)
+                    || st.container_sandbox.get(&c.id).map(String::as_str)
+                        == Some(&filter.pod_sandbox_id)
             })
             .filter(|c| want_state.is_none_or(|ws| ws == c.state))
             .map(|c| proto::Container {
@@ -282,7 +307,10 @@ impl RuntimeService for MockCriRuntime {
     ) -> RpcResult<proto::ReopenContainerLogResponse> {
         Err(Status::unimplemented("mock: reopen_container_log"))
     }
-    async fn exec_sync(&self, _r: Request<proto::ExecSyncRequest>) -> RpcResult<proto::ExecSyncResponse> {
+    async fn exec_sync(
+        &self,
+        _r: Request<proto::ExecSyncRequest>,
+    ) -> RpcResult<proto::ExecSyncResponse> {
         Err(Status::unimplemented("mock: exec_sync"))
     }
     async fn exec(&self, r: Request<proto::ExecRequest>) -> RpcResult<proto::ExecResponse> {
@@ -346,8 +374,9 @@ impl RuntimeService for MockCriRuntime {
         Err(Status::unimplemented("mock: checkpoint_container"))
     }
 
-    type GetContainerEventsStream =
-        Pin<Box<dyn tokio_stream::Stream<Item = Result<proto::ContainerEventResponse, Status>> + Send>>;
+    type GetContainerEventsStream = Pin<
+        Box<dyn tokio_stream::Stream<Item = Result<proto::ContainerEventResponse, Status>> + Send>,
+    >;
     async fn get_container_events(
         &self,
         _r: Request<proto::GetEventsRequest>,
@@ -444,7 +473,8 @@ impl ImageService for MockCriRuntime {
     ) -> RpcResult<proto::RemoveImageResponse> {
         let spec = req.into_inner().image.unwrap_or_default();
         let mut st = self.state.lock();
-        st.images.retain(|id, i| *id != spec.image && i.repo_tags.iter().all(|t| *t != spec.image));
+        st.images
+            .retain(|id, i| *id != spec.image && i.repo_tags.iter().all(|t| *t != spec.image));
         Ok(Response::new(proto::RemoveImageResponse {}))
     }
 

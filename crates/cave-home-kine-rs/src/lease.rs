@@ -79,7 +79,11 @@ impl LeaseTable {
         if ttl_seconds <= 0 {
             return Err(KineError::InvalidTtl { ttl_seconds });
         }
-        let lease = Lease { id, ttl_seconds, granted_at: now };
+        let lease = Lease {
+            id,
+            ttl_seconds,
+            granted_at: now,
+        };
         self.leases.insert(id, lease);
         Ok(lease)
     }
@@ -162,7 +166,7 @@ pub fn revoke_keys(store: &mut Store, id: i64) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::range::{execute, RangeRequest};
+    use crate::range::{RangeRequest, execute};
 
     #[test]
     fn grant_rejects_zero_lease_id() {
@@ -173,13 +177,23 @@ mod tests {
     #[test]
     fn grant_rejects_non_positive_ttl() {
         let mut t = LeaseTable::new();
-        assert_eq!(t.grant(1, 0, 0), Err(KineError::InvalidTtl { ttl_seconds: 0 }));
-        assert_eq!(t.grant(1, -5, 0), Err(KineError::InvalidTtl { ttl_seconds: -5 }));
+        assert_eq!(
+            t.grant(1, 0, 0),
+            Err(KineError::InvalidTtl { ttl_seconds: 0 })
+        );
+        assert_eq!(
+            t.grant(1, -5, 0),
+            Err(KineError::InvalidTtl { ttl_seconds: -5 })
+        );
     }
 
     #[test]
     fn lease_expires_at_granted_plus_ttl_inclusive() {
-        let l = Lease { id: 1, ttl_seconds: 10, granted_at: 100 };
+        let l = Lease {
+            id: 1,
+            ttl_seconds: 10,
+            granted_at: 100,
+        };
         assert!(!l.is_expired(109));
         assert!(l.is_expired(110), "expiry boundary is inclusive");
         assert!(l.is_expired(200));
@@ -216,9 +230,22 @@ mod tests {
         let report = t.expire(&mut store, 10);
         assert_eq!(report, vec![(7, 2)], "both lease-7 keys deleted");
         // lease-owned keys gone, unleased key survives
-        assert!(execute(&store, &RangeRequest::key(b"/a")).unwrap().kvs.is_empty());
-        assert!(execute(&store, &RangeRequest::key(b"/b")).unwrap().kvs.is_empty());
-        assert_eq!(execute(&store, &RangeRequest::key(b"/c")).unwrap().kvs[0].value, b"3");
+        assert!(
+            execute(&store, &RangeRequest::key(b"/a"))
+                .unwrap()
+                .kvs
+                .is_empty()
+        );
+        assert!(
+            execute(&store, &RangeRequest::key(b"/b"))
+                .unwrap()
+                .kvs
+                .is_empty()
+        );
+        assert_eq!(
+            execute(&store, &RangeRequest::key(b"/c")).unwrap().kvs[0].value,
+            b"3"
+        );
         // lease removed from the table
         assert!(t.get(7).is_none());
     }
@@ -231,13 +258,16 @@ mod tests {
         t.grant(7, 100, 0).unwrap();
         let report = t.expire(&mut store, 5);
         assert!(report.is_empty());
-        assert_eq!(execute(&store, &RangeRequest::key(b"/a")).unwrap().kvs[0].value, b"1");
+        assert_eq!(
+            execute(&store, &RangeRequest::key(b"/a")).unwrap().kvs[0].value,
+            b"1"
+        );
         assert_eq!(t.len(), 1);
     }
 
     #[test]
     fn expiry_deletion_bumps_revision_and_is_watchable() {
-        use crate::watch::{watch, EventKind};
+        use crate::watch::{EventKind, watch};
         let mut store = Store::new();
         store.create(b"/a", b"1", 7).unwrap(); // rev 1
         let mut t = LeaseTable::new();
@@ -263,6 +293,12 @@ mod tests {
         let mut store = Store::new();
         store.create(b"/a", b"1", 0).unwrap();
         assert_eq!(revoke_keys(&mut store, 0), 0);
-        assert_eq!(execute(&store, &RangeRequest::key(b"/a")).unwrap().kvs.len(), 1);
+        assert_eq!(
+            execute(&store, &RangeRequest::key(b"/a"))
+                .unwrap()
+                .kvs
+                .len(),
+            1
+        );
     }
 }

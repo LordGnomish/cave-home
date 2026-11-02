@@ -93,7 +93,9 @@ pub fn compose_meta(precision: u8, scale: u8, size: u8) -> ZwaveResult<u8> {
 /// - [`ZwaveError::Truncated`] if `bytes` is empty or shorter than `1 + size`.
 /// - [`ZwaveError::BadValueSize`] if the size field is not 1, 2 or 4.
 pub fn decode(bytes: &[u8]) -> ZwaveResult<FixedPoint> {
-    let &meta = bytes.first().ok_or(ZwaveError::Truncated { need: 1, got: 0 })?;
+    let &meta = bytes
+        .first()
+        .ok_or(ZwaveError::Truncated { need: 1, got: 0 })?;
     let (precision, scale, size) = split_meta(meta);
     if !matches!(size, 1 | 2 | 4) {
         return Err(ZwaveError::BadValueSize { size });
@@ -229,7 +231,10 @@ mod tests {
     #[test]
     fn rejects_illegal_size() {
         // size field = 3 (0b011) is not 1/2/4.
-        assert_eq!(decode(&[0x03, 0x00, 0x00, 0x00]), Err(ZwaveError::BadValueSize { size: 3 }));
+        assert_eq!(
+            decode(&[0x03, 0x00, 0x00, 0x00]),
+            Err(ZwaveError::BadValueSize { size: 3 })
+        );
     }
 
     #[test]
@@ -252,6 +257,9 @@ mod tests {
     fn compose_meta_rejects_bad_fields() {
         assert!(compose_meta(8, 0, 2).is_err());
         assert!(compose_meta(0, 4, 2).is_err());
-        assert_eq!(compose_meta(0, 0, 3), Err(ZwaveError::BadValueSize { size: 3 }));
+        assert_eq!(
+            compose_meta(0, 0, 3),
+            Err(ZwaveError::BadValueSize { size: 3 })
+        );
     }
 }

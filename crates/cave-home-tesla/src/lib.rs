@@ -61,7 +61,7 @@ pub mod token_store;
 pub use adapter::{EnergyProvider, TeslaProvider};
 pub use config::TeslaConfig;
 pub use error::{Result, TeslaError};
-pub use token_store::{Credentials, Secret};
 pub use models::{
     BatteryData, DateRange, HistoryData, HistorySample, Lang, OpMode, PowerFlowData, SiteStatus,
 };
+pub use token_store::{Credentials, Secret};

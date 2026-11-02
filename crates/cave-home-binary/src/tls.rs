@@ -44,7 +44,11 @@ impl TlsConfig {
     /// A server-auth-only config (no client-certificate requirement).
     #[must_use]
     pub fn new(cert: impl Into<PathBuf>, key: impl Into<PathBuf>) -> Self {
-        Self { cert: cert.into(), key: key.into(), client_ca: None }
+        Self {
+            cert: cert.into(),
+            key: key.into(),
+            client_ca: None,
+        }
     }
 
     /// Add a client-CA bundle, switching the listener into mutual-TLS mode.
@@ -98,7 +102,9 @@ impl From<TlsError> for std::io::Error {
 
 /// Open `path` as a buffered reader, mapping I/O failure onto [`TlsError::Io`].
 fn open(path: &Path) -> Result<BufReader<File>, TlsError> {
-    File::open(path).map(BufReader::new).map_err(|e| TlsError::Io(path.to_path_buf(), e))
+    File::open(path)
+        .map(BufReader::new)
+        .map_err(|e| TlsError::Io(path.to_path_buf(), e))
 }
 
 /// Read the certificate chain from a PEM file (leaf first).
@@ -249,7 +255,10 @@ mod tests {
         std::fs::write(&empty, b"# no certs here\n").expect("write");
         let cfg = TlsConfig::new(empty.clone(), key);
         let err = load_server_config(&cfg).expect_err("empty cert must error");
-        assert!(matches!(&err, TlsError::NoCertificates(p) if *p == empty), "got {err:?}");
+        assert!(
+            matches!(&err, TlsError::NoCertificates(p) if *p == empty),
+            "got {err:?}"
+        );
     }
 
     #[test]
@@ -257,6 +266,9 @@ mod tests {
         let dir = tmpdir();
         let (cert, key) = self_signed(&dir, &["localhost"]);
         let cfg = TlsConfig::new(cert, key);
-        assert!(acceptor(&cfg).is_ok(), "acceptor builds from valid material");
+        assert!(
+            acceptor(&cfg).is_ok(),
+            "acceptor builds from valid material"
+        );
     }
 }

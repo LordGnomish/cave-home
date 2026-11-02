@@ -30,7 +30,10 @@ impl Default for HealthThresholds {
         // Example mapping: heartbeat ~every tick; degraded after 5 missed,
         // presumed down after 15. The transport layer (Phase 1b) picks the real
         // numbers; these keep the engine testable and give a sensible fallback.
-        Self { degraded_after: 5, unreachable_after: 15 }
+        Self {
+            degraded_after: 5,
+            unreachable_after: 15,
+        }
     }
 }
 
@@ -44,7 +47,10 @@ impl HealthThresholds {
         } else {
             unreachable_after
         };
-        Self { degraded_after, unreachable_after }
+        Self {
+            degraded_after,
+            unreachable_after,
+        }
     }
 
     #[must_use]

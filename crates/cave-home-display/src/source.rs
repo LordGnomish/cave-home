@@ -198,7 +198,10 @@ mod tests {
     fn find_source_only_matches_known_inputs() {
         let cat = SourceCatalog::typical_smart_tv();
         assert!(cat.find_source("hdmi2").is_some());
-        assert!(cat.find_source("hdmi9").is_none(), "unknown input not found");
+        assert!(
+            cat.find_source("hdmi9").is_none(),
+            "unknown input not found"
+        );
         assert!(cat.find_source("scart").is_none());
     }
 
@@ -206,12 +209,18 @@ mod tests {
     fn find_app_only_matches_installed_apps() {
         let cat = SourceCatalog::typical_smart_tv();
         assert!(cat.find_app("netflix").is_some());
-        assert!(cat.find_app("disney").is_none(), "uninstalled app not found");
+        assert!(
+            cat.find_app("disney").is_none(),
+            "uninstalled app not found"
+        );
     }
 
     #[test]
     fn empty_catalog_is_inputs_only() {
-        assert_eq!(SourceCatalog::new().app_capability(), AppCapability::InputsOnly);
+        assert_eq!(
+            SourceCatalog::new().app_capability(),
+            AppCapability::InputsOnly
+        );
     }
 
     #[test]

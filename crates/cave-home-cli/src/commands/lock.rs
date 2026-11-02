@@ -16,22 +16,19 @@ pub fn cmd() -> Command {
         .subcommand(
             Command::new("lock")
                 .about("Lock a door")
-                .arg(Arg::new("name").long("name").required(true))
+                .arg(Arg::new("name").long("name").required(true)),
         )
         .subcommand(
             Command::new("unlock")
                 .about("Unlock a door")
-                .arg(Arg::new("name").long("name").required(true))
+                .arg(Arg::new("name").long("name").required(true)),
         )
         .subcommand(
             Command::new("status")
                 .about("Show lock status")
-                .arg(Arg::new("name").long("name").required(true))
+                .arg(Arg::new("name").long("name").required(true)),
         )
-        .subcommand(
-            Command::new("list")
-                .about("List every lock grouped by door")
-        )
+        .subcommand(Command::new("list").about("List every lock grouped by door"))
 }
 
 pub fn run() -> i32 {
@@ -46,7 +43,10 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
+        let names: Vec<_> = c
+            .get_subcommands()
+            .map(|s| s.get_name().to_string())
+            .collect();
         for sub in ["lock", "unlock", "status", "list"] {
             assert!(
                 names.iter().any(|n| n == sub),

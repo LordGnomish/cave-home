@@ -13,10 +13,10 @@
 //! one remaining I/O adapter; everything it drives lives here and is exercised
 //! by the mock-issuance test.
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use ring::rand::SystemRandom;
-use ring::signature::{EcdsaKeyPair, ECDSA_P256_SHA256_FIXED_SIGNING};
+use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -75,8 +75,12 @@ pub trait AcmeTransport {
     ///
     /// # Errors
     /// [`AcmeError::Transport`] on a transport-level failure.
-    fn request(&self, method: &str, url: &str, body: Option<&[u8]>)
-        -> Result<HttpResponse, AcmeError>;
+    fn request(
+        &self,
+        method: &str,
+        url: &str,
+        body: Option<&[u8]>,
+    ) -> Result<HttpResponse, AcmeError>;
 }
 
 /// The ACME directory (entry-point URLs).
@@ -148,10 +152,13 @@ impl AcmeAccountKey {
     /// [`AcmeError::Crypto`] if the bytes are not a valid P-256 PKCS#8 key.
     pub fn from_pkcs8(pkcs8: &[u8]) -> Result<Self, AcmeError> {
         let rng = SystemRandom::new();
-        let key_pair =
-            EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, pkcs8, &rng)
-                .map_err(|e| AcmeError::Crypto(e.to_string()))?;
-        Ok(Self { key_pair, pkcs8: pkcs8.to_vec(), rng })
+        let key_pair = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, pkcs8, &rng)
+            .map_err(|e| AcmeError::Crypto(e.to_string()))?;
+        Ok(Self {
+            key_pair,
+            pkcs8: pkcs8.to_vec(),
+            rng,
+        })
     }
 
     /// The PKCS#8 serialization (for persistence).
@@ -226,7 +233,13 @@ impl<T: AcmeTransport> AcmeClient<T> {
     /// Create a client for a known directory and account key.
     #[must_use]
     pub const fn new(transport: T, directory: Directory, account_key: AcmeAccountKey) -> Self {
-        Self { transport, directory, account_key, account_url: None, nonce: None }
+        Self {
+            transport,
+            directory,
+            account_key,
+            account_url: None,
+            nonce: None,
+        }
     }
 
     /// Run a full HTTP-01 issuance for `domains`, posting `csr_der` at finalize,
@@ -275,12 +288,7 @@ impl<T: AcmeTransport> AcmeClient<T> {
         Ok(resp)
     }
 
-    fn protected_header(
-        &self,
-        url: &str,
-        nonce: &str,
-        use_jwk: bool,
-    ) -> Result<String, AcmeError> {
+    fn protected_header(&self, url: &str, nonce: &str, use_jwk: bool) -> Result<String, AcmeError> {
         let mut h = serde_json::Map::new();
         h.insert("alg".into(), serde_json::json!("ES256"));
         h.insert("nonce".into(), serde_json::json!(nonce));
@@ -320,7 +328,10 @@ impl<T: AcmeTransport> AcmeClient<T> {
         let payload = serde_json::json!({ "termsOfServiceAgreed": true }).to_string();
         let resp = self.post(&url, &payload, true)?;
         if resp.status >= 400 {
-            return Err(AcmeError::Protocol(format!("newAccount status {}", resp.status)));
+            return Err(AcmeError::Protocol(format!(
+                "newAccount status {}",
+                resp.status
+            )));
         }
         let kid = resp
             .header("location")
@@ -338,7 +349,10 @@ impl<T: AcmeTransport> AcmeClient<T> {
         let payload = serde_json::json!({ "identifiers": identifiers }).to_string();
         let resp = self.post(&url, &payload, false)?;
         if resp.status >= 400 {
-            return Err(AcmeError::Protocol(format!("newOrder status {}", resp.status)));
+            return Err(AcmeError::Protocol(format!(
+                "newOrder status {}",
+                resp.status
+            )));
         }
         let order_url = resp
             .header("location")
@@ -382,8 +396,7 @@ impl<T: AcmeTransport> AcmeClient<T> {
         finalize_url: &str,
         csr_der: &[u8],
     ) -> Result<String, AcmeError> {
-        let payload =
-            serde_json::json!({ "csr": URL_SAFE_NO_PAD.encode(csr_der) }).to_string();
+        let payload = serde_json::json!({ "csr": URL_SAFE_NO_PAD.encode(csr_der) }).to_string();
         self.post(finalize_url, &payload, false)?;
 
         for _ in 0..16 {
@@ -478,7 +491,10 @@ mod tests {
         fn resp(status: u16, headers: &[(&str, &str)], body: &str) -> HttpResponse {
             HttpResponse {
                 status,
-                headers: headers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
                 body: body.as_bytes().to_vec(),
             }
         }
@@ -508,12 +524,18 @@ mod tests {
                 "https://acme/newNonce" => Ok(Self::resp(200, &nonce, "")),
                 "https://acme/newAccount" => Ok(Self::resp(
                     201,
-                    &[("replay-nonce", "nonce-xyz"), ("location", "https://acme/acct/1")],
+                    &[
+                        ("replay-nonce", "nonce-xyz"),
+                        ("location", "https://acme/acct/1"),
+                    ],
                     "{}",
                 )),
                 "https://acme/newOrder" => Ok(Self::resp(
                     201,
-                    &[("replay-nonce", "nonce-xyz"), ("location", "https://acme/order/1")],
+                    &[
+                        ("replay-nonce", "nonce-xyz"),
+                        ("location", "https://acme/order/1"),
+                    ],
                     r#"{"status":"pending","authorizations":["https://acme/authz/1"],"finalize":"https://acme/order/1/finalize"}"#,
                 )),
                 "https://acme/authz/1" => {

@@ -101,9 +101,8 @@ impl Transport for BleTransport {
             let peers = self.peers.lock();
             peers.get(peer).cloned()
         };
-        let tx = tx.ok_or_else(|| {
-            MatterError::Transport(format!("BLE send: not connected to {peer}"))
-        })?;
+        let tx =
+            tx.ok_or_else(|| MatterError::Transport(format!("BLE send: not connected to {peer}")))?;
         tx.send((self.addr.0.clone(), frame.to_vec()))
             .await
             .map_err(|e| MatterError::Transport(format!("BLE send: channel closed: {e}")))

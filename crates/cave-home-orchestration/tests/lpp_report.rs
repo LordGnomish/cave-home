@@ -26,7 +26,9 @@ fn pv_spec(name: &str, source: VolumeSource, affinity: Option<NodeAffinityTerm>)
 fn row_derives_host_path_and_node_from_local_fs_pv() {
     let pv = pv_spec(
         "pvc-1",
-        VolumeSource::HostPath { path: "/opt/lpp/pvc-1_default_data".to_string() },
+        VolumeSource::HostPath {
+            path: "/opt/lpp/pvc-1_default_data".to_string(),
+        },
         Some(NodeAffinityTerm {
             key: "kubernetes.io/hostname".to_string(),
             values: vec!["node1".to_string()],
@@ -47,7 +49,9 @@ fn row_derives_host_path_and_node_from_local_fs_pv() {
 fn row_handles_shared_fs_pv_with_no_affinity() {
     let pv = pv_spec(
         "pvc-2",
-        VolumeSource::Local { path: "/mnt/shared/pvc-2_team_vol".to_string() },
+        VolumeSource::Local {
+            path: "/mnt/shared/pvc-2_team_vol".to_string(),
+        },
         None,
     );
     let row = PvRow::from_pv_spec(&pv, "team", "vol", PvPhase::Available);
@@ -59,13 +63,25 @@ fn row_handles_shared_fs_pv_with_no_affinity() {
 fn report_lists_rows_and_describes_by_pvc() {
     let rows = vec![
         PvRow::from_pv_spec(
-            &pv_spec("pv-a", VolumeSource::HostPath { path: "/opt/a".to_string() }, None),
+            &pv_spec(
+                "pv-a",
+                VolumeSource::HostPath {
+                    path: "/opt/a".to_string(),
+                },
+                None,
+            ),
             "default",
             "claim-a",
             PvPhase::Bound,
         ),
         PvRow::from_pv_spec(
-            &pv_spec("pv-b", VolumeSource::HostPath { path: "/opt/b".to_string() }, None),
+            &pv_spec(
+                "pv-b",
+                VolumeSource::HostPath {
+                    path: "/opt/b".to_string(),
+                },
+                None,
+            ),
             "team",
             "claim-b",
             PvPhase::Released,

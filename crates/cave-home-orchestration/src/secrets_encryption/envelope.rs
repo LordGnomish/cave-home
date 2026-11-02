@@ -110,13 +110,18 @@ impl KekKeypair {
     pub fn from_seed(seed: [u8; KEK_SEED_LEN]) -> Self {
         let seed_array: Seed = Array(seed);
         let dk = DecapsulationKey768::from_seed(seed_array);
-        Self { seed: Zeroizing::new(seed), dk }
+        Self {
+            seed: Zeroizing::new(seed),
+            dk,
+        }
     }
 
     /// The public encapsulation key — safe to share; secrets seal to it.
     #[must_use]
     pub fn public(&self) -> KekPublic {
-        KekPublic { ek: self.dk.encapsulation_key().clone() }
+        KekPublic {
+            ek: self.dk.encapsulation_key().clone(),
+        }
     }
 
     /// The 64-byte seed, for compact persistence of the private key.
@@ -153,7 +158,8 @@ impl KekPublic {
     /// not a valid ML-KEM-768 encapsulation key.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, EnvelopeError> {
         let array = Array::try_from(bytes).map_err(|_| EnvelopeError::BadPublicKey)?;
-        let ek = EncapsulationKey::<MlKem768>::new(&array).map_err(|_| EnvelopeError::BadPublicKey)?;
+        let ek =
+            EncapsulationKey::<MlKem768>::new(&array).map_err(|_| EnvelopeError::BadPublicKey)?;
         Ok(Self { ek })
     }
 }
@@ -333,7 +339,11 @@ mod tests {
     fn blob_carries_pqc_magic_and_minimum_size() {
         let kp = kek(3);
         let blob = seal(b"x", &kp.public(), b"v1", &fixed_randomness()).unwrap();
-        assert_eq!(&blob[..MAGIC.len()], MAGIC, "blob must start with PQC magic");
+        assert_eq!(
+            &blob[..MAGIC.len()],
+            MAGIC,
+            "blob must start with PQC magic"
+        );
         assert!(blob.len() >= HEADER_LEN, "blob shorter than fixed header");
     }
 
@@ -361,7 +371,10 @@ mod tests {
         let kp = kek(6);
         let other = kek(7);
         let blob = seal(b"secret", &kp.public(), b"v1", &fixed_randomness()).unwrap();
-        assert!(matches!(open(&blob, &other, b"v1"), Err(EnvelopeError::Aead)));
+        assert!(matches!(
+            open(&blob, &other, b"v1"),
+            Err(EnvelopeError::Aead)
+        ));
     }
 
     #[test]
@@ -376,7 +389,10 @@ mod tests {
         let kp = kek(9);
         let mut blob = seal(b"secret", &kp.public(), b"v1", &fixed_randomness()).unwrap();
         blob[0] ^= 0xFF;
-        assert!(matches!(open(&blob, &kp, b"v1"), Err(EnvelopeError::BadMagic)));
+        assert!(matches!(
+            open(&blob, &kp, b"v1"),
+            Err(EnvelopeError::BadMagic)
+        ));
     }
 
     #[test]
@@ -384,7 +400,10 @@ mod tests {
         let kp = kek(10);
         let blob = seal(b"secret", &kp.public(), b"v1", &fixed_randomness()).unwrap();
         let short = &blob[..HEADER_LEN - 1];
-        assert!(matches!(open(short, &kp, b"v1"), Err(EnvelopeError::Truncated)));
+        assert!(matches!(
+            open(short, &kp, b"v1"),
+            Err(EnvelopeError::Truncated)
+        ));
     }
 
     #[test]

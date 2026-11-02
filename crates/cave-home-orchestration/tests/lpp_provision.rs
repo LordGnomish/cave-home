@@ -7,8 +7,8 @@
 
 use cave_home_orchestration::local_path_provisioner::config::StorageClassConfig;
 use cave_home_orchestration::local_path_provisioner::provision::{
-    decide_provision, AccessMode, ProvisionError, ProvisionRequest, ProvisioningState,
-    ReclaimPolicy, VolumeMode, VolumeSource,
+    AccessMode, ProvisionError, ProvisionRequest, ProvisioningState, ReclaimPolicy, VolumeMode,
+    VolumeSource, decide_provision,
 };
 
 fn local_cfg() -> StorageClassConfig {
@@ -35,10 +35,15 @@ fn happy_path_hostpath_pv_spec() {
     assert_eq!(pv.capacity_bytes, 1024);
     assert_eq!(
         pv.source,
-        VolumeSource::HostPath { path: "/opt/lpp/pvc-123_default_data".to_string() }
+        VolumeSource::HostPath {
+            path: "/opt/lpp/pvc-123_default_data".to_string()
+        }
     );
     // default node affinity: kubernetes.io/hostname In [node1]
-    let aff = pv.node_affinity.as_ref().expect("local FS pins node affinity");
+    let aff = pv
+        .node_affinity
+        .as_ref()
+        .expect("local FS pins node affinity");
     assert_eq!(aff.key, "kubernetes.io/hostname");
     assert_eq!(aff.values, vec!["node1".to_string()]);
 }
@@ -47,7 +52,10 @@ fn happy_path_hostpath_pv_spec() {
 fn selector_is_rejected() {
     let req = ProvisionRequest::new("pvc-1", "default", "data", "node1").with_selector(true);
     let err = decide_provision(&req, &local_cfg(), 0).unwrap_err();
-    assert!(matches!(err, ProvisionError::SelectorNotSupported), "got {err:?}");
+    assert!(
+        matches!(err, ProvisionError::SelectorNotSupported),
+        "got {err:?}"
+    );
 }
 
 #[test]
@@ -61,14 +69,20 @@ fn access_modes_rwo_and_rwop_ok_others_rejected() {
     let rwx = ProvisionRequest::new("pvc-1", "default", "data", "node1")
         .with_access_modes(vec![AccessMode::ReadWriteMany]);
     let err = decide_provision(&rwx, &local_cfg(), 0).unwrap_err();
-    assert!(matches!(err, ProvisionError::UnsupportedAccessMode { .. }), "got {err:?}");
+    assert!(
+        matches!(err, ProvisionError::UnsupportedAccessMode { .. }),
+        "got {err:?}"
+    );
 }
 
 #[test]
 fn local_fs_requires_a_node() {
     let req = ProvisionRequest::new("pvc-1", "default", "data", ""); // empty node
     let err = decide_provision(&req, &local_cfg(), 0).unwrap_err();
-    assert!(matches!(err, ProvisionError::NoNodeSpecified), "got {err:?}");
+    assert!(
+        matches!(err, ProvisionError::NoNodeSpecified),
+        "got {err:?}"
+    );
 }
 
 #[test]
@@ -78,10 +92,15 @@ fn shared_fs_has_no_node_affinity_and_no_node_requirement() {
     let req = ProvisionRequest::new("pvc-9", "team", "vol", "").with_selector(true);
     let out = decide_provision(&req, &shared, 0).unwrap();
     assert_eq!(out.volume_path, "/mnt/shared/pvc-9_team_vol");
-    assert!(out.pv.node_affinity.is_none(), "shared FS has no node affinity");
+    assert!(
+        out.pv.node_affinity.is_none(),
+        "shared FS has no node affinity"
+    );
     assert_eq!(
         out.pv.source,
-        VolumeSource::HostPath { path: "/mnt/shared/pvc-9_team_vol".to_string() }
+        VolumeSource::HostPath {
+            path: "/mnt/shared/pvc-9_team_vol".to_string()
+        }
     );
 }
 
@@ -91,13 +110,20 @@ fn volume_type_resolution_annotations_then_default() {
     let pvc_local = ProvisionRequest::new("pvc-1", "default", "data", "node1")
         .with_pvc_volume_type(Some("local".to_string()));
     let out = decide_provision(&pvc_local, &local_cfg(), 0).unwrap();
-    assert!(matches!(out.pv.source, VolumeSource::Local { .. }), "got {:?}", out.pv.source);
+    assert!(
+        matches!(out.pv.source, VolumeSource::Local { .. }),
+        "got {:?}",
+        out.pv.source
+    );
 
     // SC defaultVolumeType=local annotation, no PVC override → Local.
     let sc_local = ProvisionRequest::new("pvc-1", "default", "data", "node1")
         .with_default_volume_type(Some("local".to_string()));
     assert!(matches!(
-        decide_provision(&sc_local, &local_cfg(), 0).unwrap().pv.source,
+        decide_provision(&sc_local, &local_cfg(), 0)
+            .unwrap()
+            .pv
+            .source,
         VolumeSource::Local { .. }
     ));
 
@@ -114,7 +140,10 @@ fn volume_type_resolution_annotations_then_default() {
     let bad = ProvisionRequest::new("pvc-1", "default", "data", "node1")
         .with_pvc_volume_type(Some("nfs".to_string()));
     let err = decide_provision(&bad, &local_cfg(), 0).unwrap_err();
-    assert!(matches!(err, ProvisionError::UnrecognizedVolumeType { .. }), "got {err:?}");
+    assert!(
+        matches!(err, ProvisionError::UnrecognizedVolumeType { .. }),
+        "got {err:?}"
+    );
 }
 
 #[test]

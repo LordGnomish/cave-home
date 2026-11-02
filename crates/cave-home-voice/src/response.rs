@@ -138,8 +138,9 @@ pub fn not_understood(lang: Lang) -> String {
 pub fn please_clarify(lang: Lang) -> String {
     match lang {
         Lang::En => "Did you mean one thing or another? Please say it again.".to_string(),
-        Lang::De => "Meinten Sie das eine oder das andere? Bitte sagen Sie es noch einmal."
-            .to_string(),
+        Lang::De => {
+            "Meinten Sie das eine oder das andere? Bitte sagen Sie es noch einmal.".to_string()
+        }
         Lang::Tr => "Hangisini kastettiniz? Lütfen tekrar söyleyin.".to_string(),
     }
 }
@@ -164,41 +165,49 @@ mod tests {
 
     #[test]
     fn brightness_temp_cover_scene_replies() {
-        assert!(respond(
-            &IntentAction::SetBrightness {
-                target: "bedroom".into(),
-                percent: 40
-            },
-            Lang::En,
-            Answer::default()
-        )
-        .contains("40 percent"));
-        assert!(respond(
-            &IntentAction::SetTemperature {
-                target: "living room".into(),
-                celsius: 21
-            },
-            Lang::De,
-            Answer::default()
-        )
-        .contains("21 Grad"));
-        assert!(respond(
-            &IntentAction::SetCover {
-                target: "blinds".into(),
-                open: true
-            },
-            Lang::En,
-            Answer::default()
-        )
-        .starts_with("Opening"));
-        assert!(respond(
-            &IntentAction::ActivateScene {
-                name: "movie night".into()
-            },
-            Lang::Tr,
-            Answer::default()
-        )
-        .contains("movie night"));
+        assert!(
+            respond(
+                &IntentAction::SetBrightness {
+                    target: "bedroom".into(),
+                    percent: 40
+                },
+                Lang::En,
+                Answer::default()
+            )
+            .contains("40 percent")
+        );
+        assert!(
+            respond(
+                &IntentAction::SetTemperature {
+                    target: "living room".into(),
+                    celsius: 21
+                },
+                Lang::De,
+                Answer::default()
+            )
+            .contains("21 Grad")
+        );
+        assert!(
+            respond(
+                &IntentAction::SetCover {
+                    target: "blinds".into(),
+                    open: true
+                },
+                Lang::En,
+                Answer::default()
+            )
+            .starts_with("Opening")
+        );
+        assert!(
+            respond(
+                &IntentAction::ActivateScene {
+                    name: "movie night".into()
+                },
+                Lang::Tr,
+                Answer::default()
+            )
+            .contains("movie night")
+        );
     }
 
     #[test]
@@ -238,24 +247,28 @@ mod tests {
             target: "kitchen".into(),
             what: QueryKind::OnState,
         };
-        assert!(respond(
-            &a,
-            Lang::En,
-            Answer {
-                is_on: Some(true),
-                ..Answer::default()
-            }
-        )
-        .contains("on"));
-        assert!(respond(
-            &a,
-            Lang::En,
-            Answer {
-                is_on: Some(false),
-                ..Answer::default()
-            }
-        )
-        .contains("off"));
+        assert!(
+            respond(
+                &a,
+                Lang::En,
+                Answer {
+                    is_on: Some(true),
+                    ..Answer::default()
+                }
+            )
+            .contains("on")
+        );
+        assert!(
+            respond(
+                &a,
+                Lang::En,
+                Answer {
+                    is_on: Some(false),
+                    ..Answer::default()
+                }
+            )
+            .contains("off")
+        );
     }
 
     #[test]
@@ -270,9 +283,21 @@ mod tests {
     fn ui_strings_carry_no_implementation_jargon() {
         // Charter §6.3 / ADR-024: spoken replies must never leak engine terms.
         const BANNED: &[&str] = &[
-            "intent", "slot", "NLU", "confidence", "MQTT", "entity_id", "entity",
-            "Padatious", "Adapt", "token", "whisper", "piper", "wake word",
-            "pod", "kubelet",
+            "intent",
+            "slot",
+            "NLU",
+            "confidence",
+            "MQTT",
+            "entity_id",
+            "entity",
+            "Padatious",
+            "Adapt",
+            "token",
+            "whisper",
+            "piper",
+            "wake word",
+            "pod",
+            "kubelet",
         ];
         let sample_actions = [
             IntentAction::SetLight {

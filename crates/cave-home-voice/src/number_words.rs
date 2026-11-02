@@ -91,11 +91,7 @@ fn parse_words_en(text: &str) -> Option<u32> {
         [tens, units] => {
             let t = ten_en(tens)?;
             let u = unit_en(units)?;
-            if u < 10 {
-                Some(t + u)
-            } else {
-                None
-            }
+            if u < 10 { Some(t + u) } else { None }
         }
         _ => None,
     }
@@ -200,11 +196,7 @@ fn parse_words_tr(text: &str) -> Option<u32> {
         [tens, units] => {
             let t = ten_tr(tens)?;
             let u = unit_tr(units)?;
-            if u < 10 {
-                Some(t + u)
-            } else {
-                None
-            }
+            if u < 10 { Some(t + u) } else { None }
         }
         _ => None,
     }

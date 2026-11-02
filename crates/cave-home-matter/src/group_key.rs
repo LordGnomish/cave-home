@@ -128,7 +128,9 @@ impl GroupDataProvider {
             .lock()
             .groups
             .remove(&(fabric, group))
-            .ok_or_else(|| MatterError::NotFound(format!("group {:?} on fabric {:?}", group, fabric)))
+            .ok_or_else(|| {
+                MatterError::NotFound(format!("group {:?} on fabric {:?}", group, fabric))
+            })
     }
 
     /// Set / overwrite a key set.
@@ -254,8 +256,6 @@ mod tests {
     #[test]
     fn remove_returns_not_found_for_missing() {
         let p = GroupDataProvider::new();
-        assert!(p
-            .remove_group_info(FabricIndex(99), GroupId(1))
-            .is_err());
+        assert!(p.remove_group_info(FabricIndex(99), GroupId(1)).is_err());
     }
 }

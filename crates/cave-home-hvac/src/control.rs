@@ -239,64 +239,124 @@ mod tests {
     fn heat_starts_at_lower_threshold() {
         let sp = Setpoint::single(c(21.0));
         // target 21, cold tol 0.5 -> heat at or below 20.5.
-        assert_eq!(decide(HvacMode::Heat, c(20.4), &sp, tol()), Ok(HvacAction::Heating));
-        assert_eq!(decide(HvacMode::Heat, c(20.5), &sp, tol()), Ok(HvacAction::Heating));
+        assert_eq!(
+            decide(HvacMode::Heat, c(20.4), &sp, tol()),
+            Ok(HvacAction::Heating)
+        );
+        assert_eq!(
+            decide(HvacMode::Heat, c(20.5), &sp, tol()),
+            Ok(HvacAction::Heating)
+        );
         // Just inside the dead-band -> idle (hold).
-        assert_eq!(decide(HvacMode::Heat, c(20.6), &sp, tol()), Ok(HvacAction::Idle));
+        assert_eq!(
+            decide(HvacMode::Heat, c(20.6), &sp, tol()),
+            Ok(HvacAction::Idle)
+        );
     }
 
     #[test]
     fn heat_stops_at_upper_threshold() {
         let sp = Setpoint::single(c(21.0));
         // hot tol 0.5 -> stop at or above 21.5.
-        assert_eq!(decide(HvacMode::Heat, c(21.5), &sp, tol()), Ok(HvacAction::Idle));
-        assert_eq!(decide(HvacMode::Heat, c(22.0), &sp, tol()), Ok(HvacAction::Idle));
+        assert_eq!(
+            decide(HvacMode::Heat, c(21.5), &sp, tol()),
+            Ok(HvacAction::Idle)
+        );
+        assert_eq!(
+            decide(HvacMode::Heat, c(22.0), &sp, tol()),
+            Ok(HvacAction::Idle)
+        );
     }
 
     #[test]
     fn cool_starts_at_upper_threshold() {
         let sp = Setpoint::single(c(24.0));
         // target 24, hot tol 0.5 -> cool at or above 24.5.
-        assert_eq!(decide(HvacMode::Cool, c(24.6), &sp, tol()), Ok(HvacAction::Cooling));
-        assert_eq!(decide(HvacMode::Cool, c(24.5), &sp, tol()), Ok(HvacAction::Cooling));
+        assert_eq!(
+            decide(HvacMode::Cool, c(24.6), &sp, tol()),
+            Ok(HvacAction::Cooling)
+        );
+        assert_eq!(
+            decide(HvacMode::Cool, c(24.5), &sp, tol()),
+            Ok(HvacAction::Cooling)
+        );
         // Below the threshold -> idle.
-        assert_eq!(decide(HvacMode::Cool, c(24.4), &sp, tol()), Ok(HvacAction::Idle));
+        assert_eq!(
+            decide(HvacMode::Cool, c(24.4), &sp, tol()),
+            Ok(HvacAction::Idle)
+        );
     }
 
     #[test]
     fn dry_acts_above_target() {
         let sp = Setpoint::single(c(22.0));
-        assert_eq!(decide(HvacMode::Dry, c(22.6), &sp, tol()), Ok(HvacAction::Drying));
-        assert_eq!(decide(HvacMode::Dry, c(22.0), &sp, tol()), Ok(HvacAction::Idle));
+        assert_eq!(
+            decide(HvacMode::Dry, c(22.6), &sp, tol()),
+            Ok(HvacAction::Drying)
+        );
+        assert_eq!(
+            decide(HvacMode::Dry, c(22.0), &sp, tol()),
+            Ok(HvacAction::Idle)
+        );
     }
 
     #[test]
     fn auto_heats_when_cold_cools_when_hot() {
         let sp = Setpoint::single(c(21.0));
-        assert_eq!(decide(HvacMode::Auto, c(20.0), &sp, tol()), Ok(HvacAction::Heating));
-        assert_eq!(decide(HvacMode::Auto, c(22.0), &sp, tol()), Ok(HvacAction::Cooling));
-        assert_eq!(decide(HvacMode::Auto, c(21.0), &sp, tol()), Ok(HvacAction::Idle));
+        assert_eq!(
+            decide(HvacMode::Auto, c(20.0), &sp, tol()),
+            Ok(HvacAction::Heating)
+        );
+        assert_eq!(
+            decide(HvacMode::Auto, c(22.0), &sp, tol()),
+            Ok(HvacAction::Cooling)
+        );
+        assert_eq!(
+            decide(HvacMode::Auto, c(21.0), &sp, tol()),
+            Ok(HvacAction::Idle)
+        );
     }
 
     #[test]
     fn heatcool_band_heats_below_cools_above_idles_inside() {
         let sp = Setpoint::band(c(19.0), c(24.0)).expect("ordered band");
         // low 19, cold tol 0.5 -> heat at or below 18.5.
-        assert_eq!(decide(HvacMode::HeatCool, c(18.4), &sp, tol()), Ok(HvacAction::Heating));
+        assert_eq!(
+            decide(HvacMode::HeatCool, c(18.4), &sp, tol()),
+            Ok(HvacAction::Heating)
+        );
         // high 24, hot tol 0.5 -> cool at or above 24.5.
-        assert_eq!(decide(HvacMode::HeatCool, c(24.6), &sp, tol()), Ok(HvacAction::Cooling));
+        assert_eq!(
+            decide(HvacMode::HeatCool, c(24.6), &sp, tol()),
+            Ok(HvacAction::Cooling)
+        );
         // Comfortable middle -> idle.
-        assert_eq!(decide(HvacMode::HeatCool, c(21.0), &sp, tol()), Ok(HvacAction::Idle));
+        assert_eq!(
+            decide(HvacMode::HeatCool, c(21.0), &sp, tol()),
+            Ok(HvacAction::Idle)
+        );
     }
 
     #[test]
     fn heatcool_boundaries_are_inclusive() {
         let sp = Setpoint::band(c(19.0), c(24.0)).expect("ordered band");
-        assert_eq!(decide(HvacMode::HeatCool, c(18.5), &sp, tol()), Ok(HvacAction::Heating));
-        assert_eq!(decide(HvacMode::HeatCool, c(24.5), &sp, tol()), Ok(HvacAction::Cooling));
+        assert_eq!(
+            decide(HvacMode::HeatCool, c(18.5), &sp, tol()),
+            Ok(HvacAction::Heating)
+        );
+        assert_eq!(
+            decide(HvacMode::HeatCool, c(24.5), &sp, tol()),
+            Ok(HvacAction::Cooling)
+        );
         // Just inside both thresholds -> idle.
-        assert_eq!(decide(HvacMode::HeatCool, c(18.6), &sp, tol()), Ok(HvacAction::Idle));
-        assert_eq!(decide(HvacMode::HeatCool, c(24.4), &sp, tol()), Ok(HvacAction::Idle));
+        assert_eq!(
+            decide(HvacMode::HeatCool, c(18.6), &sp, tol()),
+            Ok(HvacAction::Idle)
+        );
+        assert_eq!(
+            decide(HvacMode::HeatCool, c(24.4), &sp, tol()),
+            Ok(HvacAction::Idle)
+        );
     }
 
     #[test]
@@ -304,8 +364,14 @@ mod tests {
         let sp = Setpoint::single(c(21.0));
         let asym = Tolerance::new(1.0, 0.2).expect("valid");
         // cold tol 1.0 -> heat at or below 20.0.
-        assert_eq!(decide(HvacMode::Heat, c(20.0), &sp, asym), Ok(HvacAction::Heating));
-        assert_eq!(decide(HvacMode::Heat, c(20.5), &sp, asym), Ok(HvacAction::Idle));
+        assert_eq!(
+            decide(HvacMode::Heat, c(20.0), &sp, asym),
+            Ok(HvacAction::Heating)
+        );
+        assert_eq!(
+            decide(HvacMode::Heat, c(20.5), &sp, asym),
+            Ok(HvacAction::Idle)
+        );
     }
 
     #[test]

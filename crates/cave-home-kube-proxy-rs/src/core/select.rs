@@ -106,7 +106,10 @@ fn classify_all(
 /// when *all* candidates carry hints and the result is non-empty; otherwise
 /// returns the input unchanged (fail-open), matching upstream
 /// `pkg/proxy/topology.go`.
-fn apply_topology_hints(eps: Vec<(EndpointTarget, Vec<String>)>, node: &NodeContext) -> Vec<EndpointTarget> {
+fn apply_topology_hints(
+    eps: Vec<(EndpointTarget, Vec<String>)>,
+    node: &NodeContext,
+) -> Vec<EndpointTarget> {
     let Some(my_zone) = node.zone.as_deref() else {
         return eps.into_iter().map(|(t, _)| t).collect();
     };
@@ -169,7 +172,10 @@ pub fn select_endpoints(
     let ready: Vec<&Classified> = classified.iter().filter(|c| c.ready_serving).collect();
     let (working, from_terminating): (Vec<&Classified>, bool) = if ready.is_empty() {
         (
-            classified.iter().filter(|c| c.serving_terminating).collect(),
+            classified
+                .iter()
+                .filter(|c| c.serving_terminating)
+                .collect(),
             true,
         )
     } else {
@@ -190,9 +196,13 @@ pub fn select_endpoints(
     // External set.
     let external = match svc.external_traffic_policy {
         ExternalTrafficPolicy::Cluster => cluster.clone(),
-        ExternalTrafficPolicy::Local => {
-            dedup_sorted(working.iter().filter(|c| c.target.local).map(|c| c.target.clone()).collect())
-        }
+        ExternalTrafficPolicy::Local => dedup_sorted(
+            working
+                .iter()
+                .filter(|c| c.target.local)
+                .map(|c| c.target.clone())
+                .collect(),
+        ),
     };
 
     SelectedEndpoints {

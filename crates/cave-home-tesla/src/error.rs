@@ -76,7 +76,9 @@ impl TeslaError {
     pub fn from_status(status: u16, body: &str) -> Self {
         match status {
             401 | 403 => Self::Unauthorized,
-            429 => Self::RateLimited { retry_after_secs: 30 },
+            429 => Self::RateLimited {
+                retry_after_secs: 30,
+            },
             _ => Self::Http {
                 status,
                 body: body.to_string(),
@@ -103,7 +105,9 @@ mod tests {
 
     #[test]
     fn display_is_human_readable() {
-        let e = TeslaError::RateLimited { retry_after_secs: 30 };
+        let e = TeslaError::RateLimited {
+            retry_after_secs: 30,
+        };
         assert!(e.to_string().contains("30"));
         let e = TeslaError::Http {
             status: 503,
@@ -114,10 +118,27 @@ mod tests {
 
     #[test]
     fn retryable_classifies_transient_failures() {
-        assert!(TeslaError::RateLimited { retry_after_secs: 1 }.is_retryable());
+        assert!(
+            TeslaError::RateLimited {
+                retry_after_secs: 1
+            }
+            .is_retryable()
+        );
         assert!(TeslaError::Transport("reset".into()).is_retryable());
-        assert!(TeslaError::Http { status: 500, body: String::new() }.is_retryable());
-        assert!(TeslaError::Http { status: 502, body: String::new() }.is_retryable());
+        assert!(
+            TeslaError::Http {
+                status: 500,
+                body: String::new()
+            }
+            .is_retryable()
+        );
+        assert!(
+            TeslaError::Http {
+                status: 502,
+                body: String::new()
+            }
+            .is_retryable()
+        );
     }
 
     #[test]
@@ -125,7 +146,13 @@ mod tests {
         assert!(!TeslaError::Validation("percent > 100".into()).is_retryable());
         assert!(!TeslaError::NotConfigured("site_id".into()).is_retryable());
         assert!(!TeslaError::Unauthorized.is_retryable());
-        assert!(!TeslaError::Http { status: 400, body: String::new() }.is_retryable());
+        assert!(
+            !TeslaError::Http {
+                status: 400,
+                body: String::new()
+            }
+            .is_retryable()
+        );
         assert!(!TeslaError::Decode("bad json".into()).is_retryable());
     }
 
@@ -148,8 +175,14 @@ mod tests {
 
     #[test]
     fn unauthorized_maps_from_status() {
-        assert!(matches!(TeslaError::from_status(401, ""), TeslaError::Unauthorized));
-        assert!(matches!(TeslaError::from_status(403, ""), TeslaError::Unauthorized));
+        assert!(matches!(
+            TeslaError::from_status(401, ""),
+            TeslaError::Unauthorized
+        ));
+        assert!(matches!(
+            TeslaError::from_status(403, ""),
+            TeslaError::Unauthorized
+        ));
         assert!(matches!(
             TeslaError::from_status(429, ""),
             TeslaError::RateLimited { .. }

@@ -69,14 +69,46 @@ impl BrokerMetrics {
     #[must_use]
     pub fn render_prometheus(&self) -> String {
         const METRICS: &[(&str, &str, &str)] = &[
-            ("mqtt_clients_connected", "gauge", "Clients currently connected."),
-            ("mqtt_clients_total", "counter", "Connections accepted over the broker lifetime."),
-            ("mqtt_messages_received_total", "counter", "PUBLISH packets received from clients."),
-            ("mqtt_messages_sent_total", "counter", "PUBLISH packets delivered to subscribers."),
-            ("mqtt_messages_dropped_total", "counter", "PUBLISH packets dropped."),
-            ("mqtt_bytes_received_total", "counter", "Payload bytes received."),
-            ("mqtt_bytes_sent_total", "counter", "Payload bytes delivered."),
-            ("mqtt_retained_messages", "gauge", "Retained messages stored."),
+            (
+                "mqtt_clients_connected",
+                "gauge",
+                "Clients currently connected.",
+            ),
+            (
+                "mqtt_clients_total",
+                "counter",
+                "Connections accepted over the broker lifetime.",
+            ),
+            (
+                "mqtt_messages_received_total",
+                "counter",
+                "PUBLISH packets received from clients.",
+            ),
+            (
+                "mqtt_messages_sent_total",
+                "counter",
+                "PUBLISH packets delivered to subscribers.",
+            ),
+            (
+                "mqtt_messages_dropped_total",
+                "counter",
+                "PUBLISH packets dropped.",
+            ),
+            (
+                "mqtt_bytes_received_total",
+                "counter",
+                "Payload bytes received.",
+            ),
+            (
+                "mqtt_bytes_sent_total",
+                "counter",
+                "Payload bytes delivered.",
+            ),
+            (
+                "mqtt_retained_messages",
+                "gauge",
+                "Retained messages stored.",
+            ),
             ("mqtt_subscriptions", "gauge", "Active subscriptions."),
         ];
         let value = |name: &str| match name {

@@ -252,7 +252,11 @@ impl BridgeRegistry {
         patch(light);
         let snapshot = light.clone();
         drop(guard);
-        self.broadcast(StreamEventKind::Update, "light", &snapshot.id_v2.to_string());
+        self.broadcast(
+            StreamEventKind::Update,
+            "light",
+            &snapshot.id_v2.to_string(),
+        );
         Some(snapshot)
     }
 

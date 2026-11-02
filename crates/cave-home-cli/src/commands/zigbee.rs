@@ -16,16 +16,10 @@ pub fn cmd() -> Command {
         .subcommand(
             Command::new("pair")
                 .about("Open pairing for N seconds")
-                .arg(Arg::new("seconds").long("seconds").required(true))
+                .arg(Arg::new("seconds").long("seconds").required(true)),
         )
-        .subcommand(
-            Command::new("list")
-                .about("List Zigbee devices")
-        )
-        .subcommand(
-            Command::new("network")
-                .about("Show coordinator + network info")
-        )
+        .subcommand(Command::new("list").about("List Zigbee devices"))
+        .subcommand(Command::new("network").about("Show coordinator + network info"))
 }
 
 pub fn run() -> i32 {
@@ -40,7 +34,10 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
+        let names: Vec<_> = c
+            .get_subcommands()
+            .map(|s| s.get_name().to_string())
+            .collect();
         for sub in ["pair", "list", "network"] {
             assert!(
                 names.iter().any(|n| n == sub),

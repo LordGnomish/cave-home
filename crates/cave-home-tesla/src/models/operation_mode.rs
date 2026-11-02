@@ -87,8 +87,14 @@ mod tests {
 
     #[test]
     fn cli_accepts_friendly_aliases() {
-        assert_eq!(OpMode::from_cli("self-consumption"), Some(OpMode::SelfConsumption));
-        assert_eq!(OpMode::from_cli("self_consumption"), Some(OpMode::SelfConsumption));
+        assert_eq!(
+            OpMode::from_cli("self-consumption"),
+            Some(OpMode::SelfConsumption)
+        );
+        assert_eq!(
+            OpMode::from_cli("self_consumption"),
+            Some(OpMode::SelfConsumption)
+        );
         assert_eq!(OpMode::from_cli("backup"), Some(OpMode::Backup));
         assert_eq!(OpMode::from_cli("tbc"), Some(OpMode::Autonomous));
         assert_eq!(OpMode::from_cli("autonomous"), Some(OpMode::Autonomous));
@@ -100,7 +106,10 @@ mod tests {
         let label = OpMode::Backup.label(Lang::En);
         assert!(!label.is_empty());
         // Different languages render differently.
-        assert_ne!(OpMode::Backup.label(Lang::En), OpMode::Backup.label(Lang::Tr));
+        assert_ne!(
+            OpMode::Backup.label(Lang::En),
+            OpMode::Backup.label(Lang::Tr)
+        );
         for m in OpMode::ALL {
             for lang in [Lang::En, Lang::De, Lang::Tr] {
                 let l = m.label(lang).to_ascii_lowercase();

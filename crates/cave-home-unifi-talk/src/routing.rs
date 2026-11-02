@@ -38,13 +38,19 @@ impl RoutingPrefs {
     /// Convenience: preferences with do-not-disturb on.
     #[must_use]
     pub fn dnd() -> Self {
-        Self { do_not_disturb: true, forward: None }
+        Self {
+            do_not_disturb: true,
+            forward: None,
+        }
     }
 
     /// Convenience: preferences forwarding to another extension.
     #[must_use]
     pub fn forwarding_to(number: impl Into<String>) -> Self {
-        Self { do_not_disturb: false, forward: Some(ForwardTarget::Extension(number.into())) }
+        Self {
+            do_not_disturb: false,
+            forward: Some(ForwardTarget::Extension(number.into())),
+        }
     }
 }
 
@@ -166,7 +172,10 @@ where
     if available.is_empty() {
         RouteOutcome::Voicemail
     } else {
-        RouteOutcome::Ring(RingPlan { order: available, strategy: group.strategy() })
+        RouteOutcome::Ring(RingPlan {
+            order: available,
+            strategy: group.strategy(),
+        })
     }
 }
 
@@ -214,7 +223,10 @@ mod tests {
     fn emergency_overrides_dnd_and_rings() {
         let e = ext("101");
         let out = route_call(&e, &RoutingPrefs::dnd(), open(), noon(), true);
-        assert!(matches!(out, RouteOutcome::Ring(_)), "emergency must ring through DND");
+        assert!(
+            matches!(out, RouteOutcome::Ring(_)),
+            "emergency must ring through DND"
+        );
     }
 
     #[test]
@@ -250,13 +262,19 @@ mod tests {
         let hours = BusinessHours::new(Minute::at(8, 0).unwrap(), Minute::at(22, 0).unwrap());
         let late = Minute::at(23, 30).unwrap();
         let out = route_call(&e, &RoutingPrefs::default(), hours, late, true);
-        assert!(matches!(out, RouteOutcome::Ring(_)), "an emergency rings even after hours");
+        assert!(
+            matches!(out, RouteOutcome::Ring(_)),
+            "an emergency rings even after hours"
+        );
     }
 
     #[test]
     fn explicit_voicemail_forward_target() {
         let e = ext("101");
-        let prefs = RoutingPrefs { do_not_disturb: false, forward: Some(ForwardTarget::Voicemail) };
+        let prefs = RoutingPrefs {
+            do_not_disturb: false,
+            forward: Some(ForwardTarget::Voicemail),
+        };
         let out = route_call(&e, &prefs, open(), noon(), false);
         assert_eq!(out, RouteOutcome::Voicemail);
     }
@@ -291,7 +309,11 @@ mod tests {
         .unwrap();
         let dnd = RoutingPrefs::dnd();
         let out = route_group(&g, open(), noon(), false, 0, |n| {
-            if n.as_str() == "102" { Some(&dnd) } else { None }
+            if n.as_str() == "102" {
+                Some(&dnd)
+            } else {
+                None
+            }
         });
         match out {
             RouteOutcome::Ring(plan) => assert_eq!(plan.order, vec![num("101"), num("103")]),
@@ -301,8 +323,8 @@ mod tests {
 
     #[test]
     fn group_all_on_dnd_rolls_to_voicemail() {
-        let g = CallGroup::new("House", RingStrategy::RingAll, vec![num("101"), num("102")])
-            .unwrap();
+        let g =
+            CallGroup::new("House", RingStrategy::RingAll, vec![num("101"), num("102")]).unwrap();
         let dnd = RoutingPrefs::dnd();
         let out = route_group(&g, open(), noon(), false, 0, |_| Some(&dnd));
         assert_eq!(out, RouteOutcome::Voicemail);
@@ -310,8 +332,8 @@ mod tests {
 
     #[test]
     fn group_emergency_overrides_member_dnd() {
-        let g = CallGroup::new("House", RingStrategy::RingAll, vec![num("101"), num("102")])
-            .unwrap();
+        let g =
+            CallGroup::new("House", RingStrategy::RingAll, vec![num("101"), num("102")]).unwrap();
         let dnd = RoutingPrefs::dnd();
         let out = route_group(&g, open(), noon(), true, 0, |_| Some(&dnd));
         match out {

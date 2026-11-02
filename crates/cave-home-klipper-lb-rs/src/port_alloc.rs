@@ -146,13 +146,9 @@ impl HostPortAllocator {
 /// Service key paired with its outcome. Earlier Services win ports; later
 /// conflicting Services are skipped — matching K3s's first-come ordering.
 #[must_use]
-pub fn allocate_all(
-    svcs: &[LoadBalancerService],
-) -> Vec<(String, AllocationOutcome)> {
+pub fn allocate_all(svcs: &[LoadBalancerService]) -> Vec<(String, AllocationOutcome)> {
     let mut alloc = HostPortAllocator::new();
-    svcs.iter()
-        .map(|s| (s.key(), alloc.allocate(s)))
-        .collect()
+    svcs.iter().map(|s| (s.key(), alloc.allocate(s))).collect()
 }
 
 #[cfg(test)]
@@ -186,15 +182,19 @@ mod tests {
         let out = a.allocate(&svc("default", "web", &[(Protocol::Tcp, 80, 30080)]));
         assert!(out.is_allocated());
         assert_eq!(a.claimed_count(), 1);
-        assert_eq!(a.holder(HostPort::new(Protocol::Tcp, 80)), Some("default/web"));
+        assert_eq!(
+            a.holder(HostPort::new(Protocol::Tcp, 80)),
+            Some("default/web")
+        );
     }
 
     #[test]
     fn second_service_same_port_conflicts() {
         let mut a = HostPortAllocator::new();
-        assert!(a
-            .allocate(&svc("default", "web", &[(Protocol::Tcp, 80, 30080)]))
-            .is_allocated());
+        assert!(
+            a.allocate(&svc("default", "web", &[(Protocol::Tcp, 80, 30080)]))
+                .is_allocated()
+        );
         let out = a.allocate(&svc("default", "blog", &[(Protocol::Tcp, 80, 30081)]));
         match out {
             AllocationOutcome::Conflicted { conflicts } => {
@@ -212,12 +212,14 @@ mod tests {
     #[test]
     fn same_port_different_protocol_does_not_conflict() {
         let mut a = HostPortAllocator::new();
-        assert!(a
-            .allocate(&svc("default", "dns-t", &[(Protocol::Tcp, 53, 30053)]))
-            .is_allocated());
-        assert!(a
-            .allocate(&svc("default", "dns-u", &[(Protocol::Udp, 53, 30054)]))
-            .is_allocated());
+        assert!(
+            a.allocate(&svc("default", "dns-t", &[(Protocol::Tcp, 53, 30053)]))
+                .is_allocated()
+        );
+        assert!(
+            a.allocate(&svc("default", "dns-u", &[(Protocol::Udp, 53, 30054)]))
+                .is_allocated()
+        );
         assert_eq!(a.claimed_count(), 2);
     }
 
@@ -225,9 +227,10 @@ mod tests {
     fn conflict_is_all_or_nothing() {
         // Service wants 80 (free) and 443 (held) -> nothing is claimed.
         let mut a = HostPortAllocator::new();
-        assert!(a
-            .allocate(&svc("default", "tls", &[(Protocol::Tcp, 443, 30443)]))
-            .is_allocated());
+        assert!(
+            a.allocate(&svc("default", "tls", &[(Protocol::Tcp, 443, 30443)]))
+                .is_allocated()
+        );
         let out = a.allocate(&svc(
             "default",
             "web",
@@ -236,7 +239,10 @@ mod tests {
         assert!(!out.is_allocated());
         // 80 must NOT have been claimed by the rejected service.
         assert_eq!(a.holder(HostPort::new(Protocol::Tcp, 80)), None);
-        assert_eq!(a.holder(HostPort::new(Protocol::Tcp, 443)), Some("default/tls"));
+        assert_eq!(
+            a.holder(HostPort::new(Protocol::Tcp, 443)),
+            Some("default/tls")
+        );
     }
 
     #[test]
@@ -251,16 +257,18 @@ mod tests {
     #[test]
     fn release_frees_ports_for_reuse() {
         let mut a = HostPortAllocator::new();
-        assert!(a
-            .allocate(&svc("default", "web", &[(Protocol::Tcp, 80, 30080)]))
-            .is_allocated());
+        assert!(
+            a.allocate(&svc("default", "web", &[(Protocol::Tcp, 80, 30080)]))
+                .is_allocated()
+        );
         let freed = a.release("default/web");
         assert_eq!(freed, vec![HostPort::new(Protocol::Tcp, 80)]);
         assert_eq!(a.claimed_count(), 0);
         // Now a different service can take port 80.
-        assert!(a
-            .allocate(&svc("default", "blog", &[(Protocol::Tcp, 80, 30081)]))
-            .is_allocated());
+        assert!(
+            a.allocate(&svc("default", "blog", &[(Protocol::Tcp, 80, 30081)]))
+                .is_allocated()
+        );
     }
 
     #[test]

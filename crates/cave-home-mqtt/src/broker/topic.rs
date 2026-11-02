@@ -5,10 +5,7 @@
 /// character, must not contain the wildcards `+` or `#`, and must not
 /// contain the null character U+0000.
 pub fn valid_topic_name(name: &str) -> bool {
-    !name.is_empty()
-        && !name.contains('+')
-        && !name.contains('#')
-        && !name.contains('\0')
+    !name.is_empty() && !name.contains('+') && !name.contains('#') && !name.contains('\0')
 }
 
 /// §4.7.1 — a Topic Filter (used in SUBSCRIBE) must be at least one
@@ -90,14 +87,13 @@ pub fn parse_shared(filter: &str) -> Option<SharedFilter> {
     let slash = rest.find('/')?;
     let group = &rest[..slash];
     let inner = &rest[slash + 1..];
-    if group.is_empty()
-        || group.contains('+')
-        || group.contains('#')
-        || inner.is_empty()
-    {
+    if group.is_empty() || group.contains('+') || group.contains('#') || inner.is_empty() {
         return None;
     }
-    Some(SharedFilter { group: group.to_owned(), filter: inner.to_owned() })
+    Some(SharedFilter {
+        group: group.to_owned(),
+        filter: inner.to_owned(),
+    })
 }
 
 #[cfg(test)]
@@ -137,9 +133,18 @@ mod tests {
     #[test]
     fn multi_level_wildcard_matches_parent_and_descendants() {
         // §4.7.1.2 examples.
-        assert!(topic_matches("sport/tennis/player1/#", "sport/tennis/player1"));
-        assert!(topic_matches("sport/tennis/player1/#", "sport/tennis/player1/ranking"));
-        assert!(topic_matches("sport/tennis/player1/#", "sport/tennis/player1/score/wimbledon"));
+        assert!(topic_matches(
+            "sport/tennis/player1/#",
+            "sport/tennis/player1"
+        ));
+        assert!(topic_matches(
+            "sport/tennis/player1/#",
+            "sport/tennis/player1/ranking"
+        ));
+        assert!(topic_matches(
+            "sport/tennis/player1/#",
+            "sport/tennis/player1/score/wimbledon"
+        ));
         assert!(topic_matches("sport/#", "sport"));
         assert!(topic_matches("#", "anything/at/all"));
     }
@@ -148,7 +153,10 @@ mod tests {
     fn single_level_wildcard_matches_exactly_one_level() {
         // §4.7.1.3 examples.
         assert!(topic_matches("sport/tennis/+", "sport/tennis/player1"));
-        assert!(!topic_matches("sport/tennis/+", "sport/tennis/player1/ranking"));
+        assert!(!topic_matches(
+            "sport/tennis/+",
+            "sport/tennis/player1/ranking"
+        ));
         assert!(!topic_matches("sport/+", "sport"));
         assert!(topic_matches("sport/+", "sport/"));
         assert!(topic_matches("+/+", "/finance"));

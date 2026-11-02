@@ -5,8 +5,8 @@
 //! RED: references `cave_home_zigbee::occupancy_sensing`, not yet implemented.
 
 use cave_home_zigbee::occupancy_sensing::{
-    attribute_id, Occupancy, OccupancySensorType, OccupancyState, SensorTypeBitmap,
-    OCCUPANCY_SENSING_CLUSTER_ID,
+    OCCUPANCY_SENSING_CLUSTER_ID, Occupancy, OccupancySensorType, OccupancyState, SensorTypeBitmap,
+    attribute_id,
 };
 
 #[test]
@@ -23,8 +23,14 @@ fn attribute_ids_match_spec() {
     assert_eq!(attribute_id::PIR_OCCUPIED_TO_UNOCCUPIED_DELAY, 0x0010);
     assert_eq!(attribute_id::PIR_UNOCCUPIED_TO_OCCUPIED_DELAY, 0x0011);
     assert_eq!(attribute_id::PIR_UNOCCUPIED_TO_OCCUPIED_THRESHOLD, 0x0012);
-    assert_eq!(attribute_id::ULTRASONIC_OCCUPIED_TO_UNOCCUPIED_DELAY, 0x0020);
-    assert_eq!(attribute_id::PHYSICAL_CONTACT_OCCUPIED_TO_UNOCCUPIED_DELAY, 0x0030);
+    assert_eq!(
+        attribute_id::ULTRASONIC_OCCUPIED_TO_UNOCCUPIED_DELAY,
+        0x0020
+    );
+    assert_eq!(
+        attribute_id::PHYSICAL_CONTACT_OCCUPIED_TO_UNOCCUPIED_DELAY,
+        0x0030
+    );
 }
 
 #[test]

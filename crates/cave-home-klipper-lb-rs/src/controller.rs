@@ -31,10 +31,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
 
-use crate::daemonset::{build_pod_spec, SvclbPodSpec};
+use crate::daemonset::{SvclbPodSpec, build_pod_spec};
 use crate::node::Node;
 use crate::port_alloc::{AllocationOutcome, HostPortAllocator, PortConflict};
-use crate::service::{validate_service, LoadBalancerService, ServiceError};
+use crate::service::{LoadBalancerService, ServiceError, validate_service};
 use crate::status::compute_ingress_ips;
 
 /// The non-Service inputs a reconcile needs, all keyed by Service `key()`
@@ -148,7 +148,10 @@ impl Reconciliation {
     /// The set of svclb DaemonSet names this reconcile wants to exist.
     #[must_use]
     pub fn desired_daemonsets(&self) -> BTreeSet<String> {
-        self.apply.iter().map(|s| s.daemonset_name.clone()).collect()
+        self.apply
+            .iter()
+            .map(|s| s.daemonset_name.clone())
+            .collect()
     }
 
     /// The `status.loadBalancer.ingress` patches to push back: one

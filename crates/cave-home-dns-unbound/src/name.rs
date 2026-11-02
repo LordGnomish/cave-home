@@ -195,7 +195,10 @@ mod tests {
     #[test]
     fn rejects_bad_characters_and_hyphen_edges() {
         assert_eq!(DnsName::parse("ex ample.com"), Err(NameError::BadCharacter));
-        assert_eq!(DnsName::parse("under_score.com"), Err(NameError::BadCharacter));
+        assert_eq!(
+            DnsName::parse("under_score.com"),
+            Err(NameError::BadCharacter)
+        );
         assert_eq!(DnsName::parse("-lead.com"), Err(NameError::HyphenAtEdge));
         assert_eq!(DnsName::parse("trail-.com"), Err(NameError::HyphenAtEdge));
         // A hyphen in the middle is fine.

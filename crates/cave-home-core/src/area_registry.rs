@@ -78,12 +78,20 @@ impl AreaRegistry {
             return Err(AreaError::EmptyName);
         }
         let mut guard = self.inner.write();
-        if guard.areas.values().any(|a| normalize_name(&a.name) == normalized) {
+        if guard
+            .areas
+            .values()
+            .any(|a| normalize_name(&a.name) == normalized)
+        {
             return Err(AreaError::DuplicateName(name));
         }
         let existing: HashSet<String> = guard.areas.keys().cloned().collect();
         let id = ensure_unique_string(&slugify(&name), &existing);
-        let entry = AreaEntry { id: id.clone(), name, ..AreaEntry::default() };
+        let entry = AreaEntry {
+            id: id.clone(),
+            name,
+            ..AreaEntry::default()
+        };
         guard.areas.insert(id, entry.clone());
         Ok(entry)
     }
@@ -207,7 +215,10 @@ mod tests {
         let a = reg.create("Kitchen").expect("create");
         assert_eq!(reg.get(&a.id), Some(a.clone()));
         // name lookup is normalised (case / whitespace insensitive)
-        assert_eq!(reg.get_by_name("  kitchen ").map(|e| e.id), Some("kitchen".into()));
+        assert_eq!(
+            reg.get_by_name("  kitchen ").map(|e| e.id),
+            Some("kitchen".into())
+        );
         assert!(reg.get_by_name("nowhere").is_none());
     }
 
@@ -229,13 +240,19 @@ mod tests {
         assert_eq!(updated.id, "kitchen");
 
         // renaming bedroom → "Kitchen" collides
-        let rename = AreaUpdate { name: Some("Kitchen".into()), ..AreaUpdate::default() };
+        let rename = AreaUpdate {
+            name: Some("Kitchen".into()),
+            ..AreaUpdate::default()
+        };
         assert_eq!(
             reg.update(&bedroom.id, rename).unwrap_err(),
             AreaError::DuplicateName("Kitchen".into())
         );
         // renaming to a fresh name works and frees the old name
-        let rename_ok = AreaUpdate { name: Some("Main Bedroom".into()), ..AreaUpdate::default() };
+        let rename_ok = AreaUpdate {
+            name: Some("Main Bedroom".into()),
+            ..AreaUpdate::default()
+        };
         let r = reg.update(&bedroom.id, rename_ok).expect("rename");
         assert_eq!(r.name, "Main Bedroom");
         assert!(reg.get_by_name("bedroom").is_none());

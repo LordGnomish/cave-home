@@ -105,10 +105,16 @@ mod tests {
 
     #[test]
     fn render_localises() {
-        let n = Notification::new(topic("leak"), "Sızıntı", "Mutfakta", 0)
-            .with_priority(Priority::Max);
-        assert_eq!(n.render(Lang::Tr), "Acil — lütfen şimdi bakın: Sızıntı — Mutfakta");
-        assert_eq!(n.render(Lang::De), "Dringend — bitte jetzt nachsehen: Sızıntı — Mutfakta");
+        let n =
+            Notification::new(topic("leak"), "Sızıntı", "Mutfakta", 0).with_priority(Priority::Max);
+        assert_eq!(
+            n.render(Lang::Tr),
+            "Acil — lütfen şimdi bakın: Sızıntı — Mutfakta"
+        );
+        assert_eq!(
+            n.render(Lang::De),
+            "Dringend — bitte jetzt nachsehen: Sızıntı — Mutfakta"
+        );
     }
 
     #[test]

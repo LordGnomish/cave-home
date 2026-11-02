@@ -10,9 +10,7 @@
 //! deferred — see `parity.manifest.toml`.
 
 use crate::cache::NodeInfo;
-use crate::framework::{
-    CycleState, FilterFailureMap, PluginRegistry, PostFilterPlugin, Status,
-};
+use crate::framework::{CycleState, FilterFailureMap, PluginRegistry, PostFilterPlugin, Status};
 use crate::types::Pod;
 
 /// Upstream: `defaultpreemption.DefaultPreemption`.
@@ -147,7 +145,6 @@ impl DefaultPreemption {
             .iter()
             .all(|f| f.filter(&mut state, pod, &hypo).is_success())
     }
-
 }
 
 impl PostFilterPlugin for DefaultPreemption {
@@ -264,11 +261,7 @@ mod tests {
         fn name(&self) -> &'static str {
             "BlockingCount"
         }
-        fn pre_filter(
-            &self,
-            state: &mut CycleState,
-            _: &Pod,
-        ) -> (Option<PreFilterResult>, Status) {
+        fn pre_filter(&self, state: &mut CycleState, _: &Pod) -> (Option<PreFilterResult>, Status) {
             // Seed: assume one blocking pod is present (the victim).
             state.write(BLOCK_KEY, 1_i64);
             (None, Status::success())

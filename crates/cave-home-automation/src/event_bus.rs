@@ -104,12 +104,7 @@ impl Event {
     ///
     /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::Event.__init__
     #[must_use]
-    pub fn new(
-        event_type: String,
-        data: Value,
-        origin: EventOrigin,
-        context: Context,
-    ) -> Self {
+    pub fn new(event_type: String, data: Value, origin: EventOrigin, context: Context) -> Self {
         Self {
             event_type,
             data,
@@ -198,13 +193,7 @@ pub trait EventBus: Send + Sync + std::fmt::Debug {
     fn fire(&self, event: Event);
 
     /// Convenience: fire an event built from parts.
-    fn fire_parts(
-        &self,
-        event_type: &str,
-        data: Value,
-        origin: EventOrigin,
-        context: Context,
-    ) {
+    fn fire_parts(&self, event_type: &str, data: Value, origin: EventOrigin, context: Context) {
         self.fire(Event::new(event_type.to_owned(), data, origin, context));
     }
 
@@ -239,11 +228,7 @@ pub trait EventBus: Send + Sync + std::fmt::Debug {
     /// Subscribe for exactly one event, then auto-unsubscribe.
     ///
     /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::EventBus.async_listen_once
-    fn async_listen_once_dyn(
-        &self,
-        event_type: &str,
-        listener: ListenerFn,
-    ) -> ListenerHandle;
+    fn async_listen_once_dyn(&self, event_type: &str, listener: ListenerFn) -> ListenerHandle;
 
     /// Subscribe for exactly one event (generic helper).
     fn async_listen_once(
@@ -359,11 +344,14 @@ impl EventBus for InMemoryEventBus {
             let mut g = inner.lock();
             g.next_id += 1;
             let id = g.next_id;
-            g.listeners.entry(event_type_owned.clone()).or_default().push(Listener {
-                id,
-                cb: listener,
-                filter: None,
-            });
+            g.listeners
+                .entry(event_type_owned.clone())
+                .or_default()
+                .push(Listener {
+                    id,
+                    cb: listener,
+                    filter: None,
+                });
             id
         };
         let inner_for_drop = inner.clone();
@@ -391,11 +379,14 @@ impl EventBus for InMemoryEventBus {
             let mut g = inner.lock();
             g.next_id += 1;
             let id = g.next_id;
-            g.listeners.entry(event_type_owned.clone()).or_default().push(Listener {
-                id,
-                cb: listener,
-                filter: Some(filter),
-            });
+            g.listeners
+                .entry(event_type_owned.clone())
+                .or_default()
+                .push(Listener {
+                    id,
+                    cb: listener,
+                    filter: Some(filter),
+                });
             id
         };
         let inner_for_drop = inner.clone();
@@ -410,11 +401,7 @@ impl EventBus for InMemoryEventBus {
         })
     }
 
-    fn async_listen_once_dyn(
-        &self,
-        event_type: &str,
-        listener: ListenerFn,
-    ) -> ListenerHandle {
+    fn async_listen_once_dyn(&self, event_type: &str, listener: ListenerFn) -> ListenerHandle {
         verify_event_type(event_type);
         let inner = self.inner.clone();
         let event_type_owned = event_type.to_owned();
@@ -442,11 +429,14 @@ impl EventBus for InMemoryEventBus {
                     }
                 }
             });
-            g.listeners.entry(event_type_owned.clone()).or_default().push(Listener {
-                id,
-                cb: wrapper,
-                filter: None,
-            });
+            g.listeners
+                .entry(event_type_owned.clone())
+                .or_default()
+                .push(Listener {
+                    id,
+                    cb: wrapper,
+                    filter: None,
+                });
             id
         };
 
@@ -481,12 +471,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn fire_simple(bus: &InMemoryEventBus, t: &str) {
-        bus.fire_parts(
-            t,
-            Value::Null,
-            EventOrigin::Local,
-            Context::new(),
-        );
+        bus.fire_parts(t, Value::Null, EventOrigin::Local, Context::new());
     }
 
     /// Upstream: `tests/test_core.py::test_async_fire`
@@ -530,12 +515,8 @@ mod tests {
         let cb: ListenerFn = Arc::new(move |_| {
             c.fetch_add(1, Ordering::SeqCst);
         });
-        let filter: FilterFn = Arc::new(|evt: &Event| {
-            evt.data
-                .get("ok")
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-        });
+        let filter: FilterFn =
+            Arc::new(|evt: &Event| evt.data.get("ok").and_then(Value::as_bool).unwrap_or(false));
         let _h = bus.async_listen_filtered("filtered_event", cb, filter);
         bus.fire_parts(
             "filtered_event",

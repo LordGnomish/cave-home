@@ -81,7 +81,10 @@ impl ConfigEntry {
 
     #[must_use]
     pub fn data(&self, key: &str) -> Option<&str> {
-        self.data.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+        self.data
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
     }
 
     #[must_use]
@@ -173,7 +176,8 @@ mod tests {
     fn transient_failure_recorded_on_entry() {
         let mut e = ConfigEntry::new("cloud", "Cloud thing");
         e.apply(Transition::BeginSetup).expect("begin");
-        e.apply(Transition::SetupFailed(Failure::Unreachable)).expect("fail");
+        e.apply(Transition::SetupFailed(Failure::Unreachable))
+            .expect("fail");
         assert_eq!(e.state(), State::SetupRetry);
         assert!(e.state().wants_retry());
     }

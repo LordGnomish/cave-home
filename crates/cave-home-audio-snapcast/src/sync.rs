@@ -95,11 +95,7 @@ pub fn min_target_buffer_ms(latencies: &[LatencyMs], desired: u32) -> u32 {
     // exact and non-negative.
     #[allow(clippy::cast_sign_loss)]
     let floor = floor as u32;
-    if floor > desired {
-        floor
-    } else {
-        desired
-    }
+    if floor > desired { floor } else { desired }
 }
 
 #[cfg(test)]

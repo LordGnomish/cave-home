@@ -76,13 +76,13 @@ pub mod peer;
 pub mod record;
 
 pub use announce::announce_self;
-pub use compat::{compatibility, version_is_compatible, Compatibility, Version, VersionError};
+pub use compat::{Compatibility, Version, VersionError, compatibility, version_is_compatible};
 pub use dns_name::{DnsName, NameError};
 pub use join::{JoinToken, Pairing, PairingState, TokenError};
-pub use label::{decode_label, encode_label, LabelError};
+pub use label::{LabelError, decode_label, encode_label};
 pub use peer::{DiscoveredPeer, Lang, NodeRole, PeerError};
 pub use record::{
-    ARecord, PtrRecord, RecordError, ServiceRecord, SrvRecord, TxtRecord, SERVICE_TYPE,
+    ARecord, PtrRecord, RecordError, SERVICE_TYPE, ServiceRecord, SrvRecord, TxtRecord,
 };
 pub use registry::{ObserveEvent, PeerRegistry};
 

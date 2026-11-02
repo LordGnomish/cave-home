@@ -231,10 +231,7 @@ mod tests {
     fn transparent_answers_local_then_passes_through() {
         let mut z = zone("home.arpa", LocalZoneType::Transparent);
         z.add(a_record("nas.home.arpa", "192.168.1.10"));
-        assert!(
-            z.decide(&name("nas.home.arpa"), RecordType::A)
-                .is_answer()
-        );
+        assert!(z.decide(&name("nas.home.arpa"), RecordType::A).is_answer());
         // No local data for this one -> recursion handles it.
         assert_eq!(
             z.decide(&name("unknown.home.arpa"), RecordType::A),

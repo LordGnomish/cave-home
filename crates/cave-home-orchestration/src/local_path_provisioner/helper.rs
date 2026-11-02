@@ -12,7 +12,7 @@
 
 use super::config::ActionType;
 use super::path::clean_abs;
-use super::{ProvisionerConfig, HELPER_POD_NAME_MAX_LENGTH};
+use super::{HELPER_POD_NAME_MAX_LENGTH, ProvisionerConfig};
 use crate::local_path_provisioner::provision::VolumeMode;
 
 /// The helper-pod script mount directory (upstream `helperScriptDir`).

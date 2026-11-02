@@ -213,7 +213,11 @@ impl Console {
     /// The Protect binary-update WebSocket URL.
     #[must_use]
     pub fn protect_updates_ws_url(&self) -> String {
-        format!("{}{}/ws/updates", self.ws_base(), self.kind.protect_prefix())
+        format!(
+            "{}{}/ws/updates",
+            self.ws_base(),
+            self.kind.protect_prefix()
+        )
     }
 }
 
@@ -284,7 +288,9 @@ mod tests {
 
     #[test]
     fn with_tls_false_downgrades_to_http_for_mock() {
-        let c = Console::unifi_os("127.0.0.1").with_port(18080).with_tls(false);
+        let c = Console::unifi_os("127.0.0.1")
+            .with_port(18080)
+            .with_tls(false);
         assert_eq!(c.base_url(), "http://127.0.0.1:18080");
         assert_eq!(c.ws_base(), "ws://127.0.0.1:18080");
         assert_eq!(

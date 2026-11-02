@@ -132,10 +132,13 @@ impl DeviceRegistry {
             .map(|d| d.id.clone());
 
         let id = existing_id.unwrap_or_else(|| Uuid::new_v4().simple().to_string());
-        let entry = guard.devices.entry(id.clone()).or_insert_with(|| DeviceEntry {
-            id: id.clone(),
-            ..DeviceEntry::default()
-        });
+        let entry = guard
+            .devices
+            .entry(id.clone())
+            .or_insert_with(|| DeviceEntry {
+                id: id.clone(),
+                ..DeviceEntry::default()
+            });
 
         // Union the identity sets and record the config entry.
         entry.identifiers.extend(identifiers);
@@ -247,7 +250,10 @@ mod tests {
 
     fn info(ids: &[(&str, &str)]) -> DeviceInfo {
         DeviceInfo {
-            identifiers: ids.iter().map(|(d, i)| ((*d).to_owned(), (*i).to_owned())).collect(),
+            identifiers: ids
+                .iter()
+                .map(|(d, i)| ((*d).to_owned(), (*i).to_owned()))
+                .collect(),
             ..DeviceInfo::default()
         }
     }
@@ -298,7 +304,9 @@ mod tests {
     #[test]
     fn via_device_resolves_to_parent_id() {
         let reg = DeviceRegistry::new();
-        let bridge = reg.get_or_create("e", &info(&[("hue", "bridge")])).expect("bridge");
+        let bridge = reg
+            .get_or_create("e", &info(&[("hue", "bridge")]))
+            .expect("bridge");
         let mut bulb = info(&[("hue", "bulb1")]);
         bulb.via_device = Some(("hue".into(), "bridge".into()));
         let child = reg.get_or_create("e", &bulb).expect("child");

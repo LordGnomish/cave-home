@@ -87,7 +87,11 @@ impl NodeInfo {
 
     /// Upstream: `NodeInfo.RemovePod`.
     pub fn remove_pod(&mut self, pod: &Pod) {
-        if let Some(idx) = self.pods.iter().position(|p| p.metadata.uid == pod.metadata.uid) {
+        if let Some(idx) = self
+            .pods
+            .iter()
+            .position(|p| p.metadata.uid == pod.metadata.uid)
+        {
             let removed = self.pods.remove(idx);
             for c in &removed.spec.containers {
                 for (k, q) in &c.resources.requests {

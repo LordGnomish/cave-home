@@ -100,7 +100,10 @@ mod tests {
     #[test]
     fn signed_raw_with_factor() {
         let sf = ScaleFactor::new(-1);
-        assert!((sf.apply_i16(-500) + 50.0).abs() < 1e-9, "-50.0 W (consuming)");
+        assert!(
+            (sf.apply_i16(-500) + 50.0).abs() < 1e-9,
+            "-50.0 W (consuming)"
+        );
     }
 
     #[test]

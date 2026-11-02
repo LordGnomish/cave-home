@@ -136,7 +136,13 @@ impl Status {
 
 impl fmt::Display for Status {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} ({}): {}", self.reason.as_str(), self.code, self.message)
+        write!(
+            f,
+            "{} ({}): {}",
+            self.reason.as_str(),
+            self.code,
+            self.message
+        )
     }
 }
 

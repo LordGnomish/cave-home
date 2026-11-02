@@ -318,12 +318,11 @@ mod tests {
 
     #[test]
     fn classifies_shell_by_shebang() {
+        assert_eq!(Language::from_shebang("#!/bin/sh").unwrap().name(), "shell");
         assert_eq!(
-            Language::from_shebang("#!/bin/sh").unwrap().name(),
-            "shell"
-        );
-        assert_eq!(
-            Language::from_shebang("#!/usr/bin/env bash").unwrap().name(),
+            Language::from_shebang("#!/usr/bin/env bash")
+                .unwrap()
+                .name(),
             "shell"
         );
         assert!(Language::from_shebang("#!/usr/bin/env python3").is_none());

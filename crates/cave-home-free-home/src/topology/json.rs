@@ -113,13 +113,7 @@ impl Parser<'_> {
     fn number(&mut self) -> String {
         let start = self.pos;
         while let Some(b) = self.peek() {
-            if b.is_ascii_digit()
-                || b == b'-'
-                || b == b'+'
-                || b == b'.'
-                || b == b'e'
-                || b == b'E'
-            {
+            if b.is_ascii_digit() || b == b'-' || b == b'+' || b == b'.' || b == b'e' || b == b'E' {
                 self.pos += 1;
             } else {
                 break;
@@ -274,7 +268,9 @@ mod tests {
         let j = Json::parse(r#"{"a":{"b":"c"},"d":[1,2,3]}"#).expect("ok");
         let o = j.as_object().expect("object");
         assert_eq!(
-            o.get("a").and_then(Json::as_object).and_then(|m| m.get("b")),
+            o.get("a")
+                .and_then(Json::as_object)
+                .and_then(|m| m.get("b")),
             Some(&Json::Str("c".into()))
         );
         assert!(matches!(o.get("d"), Some(Json::Array(v)) if v.len() == 3));
@@ -300,7 +296,9 @@ mod tests {
     fn string_escapes_and_unicode() {
         let j = Json::parse(r#"{"k":"a\tbç\n"}"#).expect("ok");
         assert_eq!(
-            j.as_object().and_then(|m| m.get("k")).and_then(Json::as_str),
+            j.as_object()
+                .and_then(|m| m.get("k"))
+                .and_then(Json::as_str),
             Some("a\tbç\n")
         );
     }

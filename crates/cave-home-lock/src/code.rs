@@ -289,7 +289,10 @@ mod tests {
     fn debug_never_reveals_digits() {
         let c = LockCode::parse("4242").expect("valid");
         let rendered = format!("{c:?}");
-        assert!(!rendered.contains("4242"), "PIN leaked into Debug: {rendered}");
+        assert!(
+            !rendered.contains("4242"),
+            "PIN leaked into Debug: {rendered}"
+        );
         assert!(rendered.contains("len"));
     }
 

@@ -58,8 +58,10 @@ impl FilterPlugin for NodeResourcesFit {
         // fall back to computing inline (e.g. a registry without the PreFilter).
         let precomputed = state.read::<PreFilterFitState>(PRE_FILTER_FIT_KEY).copied();
         for resource in [ResourceName::Cpu, ResourceName::Memory] {
-            let request = precomputed
-                .map_or_else(|| pod.sum_requests(resource).value(), |s| s.request(resource));
+            let request = precomputed.map_or_else(
+                || pod.sum_requests(resource).value(),
+                |s| s.request(resource),
+            );
             if request == 0 {
                 continue;
             }

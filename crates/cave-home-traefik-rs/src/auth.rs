@@ -19,8 +19,12 @@ use subtle::ConstantTimeEq;
 /// Decode a `Basic` `Authorization` header value into `(user, password)`.
 #[must_use]
 pub fn parse_basic_auth(header_value: &str) -> Option<(String, String)> {
-    let token = header_value.strip_prefix("Basic ").or_else(|| header_value.strip_prefix("basic "))?;
-    let decoded = base64::engine::general_purpose::STANDARD.decode(token.trim()).ok()?;
+    let token = header_value
+        .strip_prefix("Basic ")
+        .or_else(|| header_value.strip_prefix("basic "))?;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(token.trim())
+        .ok()?;
     let text = String::from_utf8(decoded).ok()?;
     let (user, pass) = text.split_once(':')?;
     Some((user.to_string(), pass.to_string()))
@@ -83,7 +87,10 @@ impl BasicAuthChecker {
                 users.insert(user.to_string(), hash.to_string());
             }
         }
-        Self { realm: realm.to_string(), users }
+        Self {
+            realm: realm.to_string(),
+            users,
+        }
     }
 
     /// Check an inbound `Authorization` header value (if any).
@@ -112,15 +119,17 @@ mod tests {
     }
 
     fn basic_header(user: &str, password: &str) -> String {
-        let token =
-            base64::engine::general_purpose::STANDARD.encode(format!("{user}:{password}"));
+        let token = base64::engine::general_purpose::STANDARD.encode(format!("{user}:{password}"));
         format!("Basic {token}")
     }
 
     #[test]
     fn parses_basic_credentials() {
         let h = basic_header("user", "pass");
-        assert_eq!(parse_basic_auth(&h), Some(("user".to_string(), "pass".to_string())));
+        assert_eq!(
+            parse_basic_auth(&h),
+            Some(("user".to_string(), "pass".to_string()))
+        );
     }
 
     #[test]

@@ -21,7 +21,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::admission::{AdmissionRequest, MutatingPlugin, Operation, ValidatingPlugin};
-use crate::json::{self, obj, Value};
+use crate::json::{self, Value, obj};
 use crate::patch::{self, PatchOp};
 use crate::status::{Result, Status, StatusReason};
 
@@ -43,7 +43,9 @@ pub struct WebhookError {
 impl WebhookError {
     /// Wrap a message.
     pub fn new(message: impl Into<String>) -> Self {
-        Self { message: message.into() }
+        Self {
+            message: message.into(),
+        }
     }
 }
 
@@ -101,7 +103,12 @@ pub struct RuleWithOperations {
 impl RuleWithOperations {
     /// Build a rule from its four axes.
     #[must_use]
-    pub fn new(operations: &[&str], api_groups: &[&str], api_versions: &[&str], resources: &[&str]) -> Self {
+    pub fn new(
+        operations: &[&str],
+        api_groups: &[&str],
+        api_versions: &[&str],
+        resources: &[&str],
+    ) -> Self {
         let to_vec = |s: &[&str]| s.iter().map(|x| (*x).to_string()).collect();
         Self {
             operations: to_vec(operations),
@@ -116,8 +123,14 @@ impl RuleWithOperations {
     pub fn matches(&self, request: &AdmissionRequest) -> bool {
         let op = operation_token(request.operation);
         let op_ok = self.operations.iter().any(|o| o == "*" || o == op);
-        let group_ok = self.api_groups.iter().any(|g| g == "*" || g == &request.gvr.group);
-        let version_ok = self.api_versions.iter().any(|v| v == "*" || v == &request.gvr.version);
+        let group_ok = self
+            .api_groups
+            .iter()
+            .any(|g| g == "*" || g == &request.gvr.group);
+        let version_ok = self
+            .api_versions
+            .iter()
+            .any(|v| v == "*" || v == &request.gvr.version);
         let resource_ok = self
             .resources
             .iter()
@@ -162,7 +175,10 @@ impl WebhookRules {
     /// Build a rule set (no object selector).
     #[must_use]
     pub const fn new(rules: Vec<RuleWithOperations>) -> Self {
-        Self { rules, object_selector: None }
+        Self {
+            rules,
+            object_selector: None,
+        }
     }
 
     /// Attach an `objectSelector` matched against the object's labels (builder
@@ -183,7 +199,10 @@ impl WebhookRules {
             // Match against the labels of the object under admission (the new
             // object, or the old object on delete).
             let source = request.object.as_ref().or(request.old_object.as_ref());
-            let labels = source.map(crate::meta::read_meta).map(|m| m.labels).unwrap_or_default();
+            let labels = source
+                .map(crate::meta::read_meta)
+                .map(|m| m.labels)
+                .unwrap_or_default();
             sel.matches(&labels)
         })
     }
@@ -248,7 +267,10 @@ pub fn build_admission_review(uid: &str, request: &AdmissionRequest) -> Value {
         ("namespace", Value::from(request.namespace.clone())),
         ("operation", Value::from(operation_token(request.operation))),
         ("object", request.object.clone().unwrap_or(Value::Null)),
-        ("oldObject", request.old_object.clone().unwrap_or(Value::Null)),
+        (
+            "oldObject",
+            request.old_object.clone().unwrap_or(Value::Null),
+        ),
     ]);
     obj([
         ("apiVersion", Value::from(ADMISSION_API_VERSION)),
@@ -275,7 +297,12 @@ impl AdmissionResponse {
     /// A bare "allowed, no mutation" response (used by `Ignore` failure policy).
     #[must_use]
     pub fn allow() -> Self {
-        Self { allowed: true, code: None, message: None, json_patch: None }
+        Self {
+            allowed: true,
+            code: None,
+            message: None,
+            json_patch: None,
+        }
     }
 
     /// Render a denial into the [`Status`] the admission chain returns. The
@@ -283,7 +310,10 @@ impl AdmissionResponse {
     /// denial defaults to `Forbidden` (403).
     #[must_use]
     pub fn into_status(self) -> Status {
-        let reason = self.code.map(reason_from_code).unwrap_or(StatusReason::Forbidden);
+        let reason = self
+            .code
+            .map(reason_from_code)
+            .unwrap_or(StatusReason::Forbidden);
         let message = self
             .message
             .unwrap_or_else(|| "admission webhook denied the request".to_string());
@@ -312,13 +342,23 @@ fn reason_from_code(code: u16) -> StatusReason {
 /// `response`, or echoes a `uid` that does not match `expected_uid` (a webhook
 /// protocol violation), or if a returned JSONPatch is malformed.
 pub fn parse_admission_response(body: &[u8], expected_uid: &str) -> Result<AdmissionResponse> {
-    let text = std::str::from_utf8(body)
-        .map_err(|_| Status::new(StatusReason::InternalError, "webhook response was not UTF-8"))?;
+    let text = std::str::from_utf8(body).map_err(|_| {
+        Status::new(
+            StatusReason::InternalError,
+            "webhook response was not UTF-8",
+        )
+    })?;
     let root = json::parse(text).map_err(|e| {
-        Status::new(StatusReason::InternalError, format!("webhook response is not JSON: {e}"))
+        Status::new(
+            StatusReason::InternalError,
+            format!("webhook response is not JSON: {e}"),
+        )
     })?;
     let response = root.get("response").ok_or_else(|| {
-        Status::new(StatusReason::InternalError, "webhook response has no 'response' field")
+        Status::new(
+            StatusReason::InternalError,
+            "webhook response has no 'response' field",
+        )
     })?;
 
     if let Some(uid) = response.get("uid").and_then(Value::as_str) {
@@ -330,14 +370,15 @@ pub fn parse_admission_response(body: &[u8], expected_uid: &str) -> Result<Admis
         }
     }
 
-    let allowed = response.get("allowed").and_then(Value::as_bool).unwrap_or(false);
+    let allowed = response
+        .get("allowed")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let status = response.get("status");
-    let code = status
-        .and_then(|s| s.get("code"))
-        .and_then(|c| match c {
-            Value::Number(n) => Some(*n as u16),
-            _ => None,
-        });
+    let code = status.and_then(|s| s.get("code")).and_then(|c| match c {
+        Value::Number(n) => Some(*n as u16),
+        _ => None,
+    });
     let message = status
         .and_then(|s| s.get("message"))
         .and_then(Value::as_str)
@@ -345,7 +386,12 @@ pub fn parse_admission_response(body: &[u8], expected_uid: &str) -> Result<Admis
 
     let json_patch = decode_patch(response)?;
 
-    Ok(AdmissionResponse { allowed, code, message, json_patch })
+    Ok(AdmissionResponse {
+        allowed,
+        code,
+        message,
+        json_patch,
+    })
 }
 
 /// Decode a mutating webhook's `patch` (base64 JSONPatch) when `patchType` is
@@ -359,13 +405,18 @@ fn decode_patch(response: &Value) -> Result<Option<Vec<PatchOp>>> {
         return Ok(None);
     };
     let raw = b64_decode(encoded).ok_or_else(|| {
-        Status::new(StatusReason::InternalError, "webhook patch is not valid base64")
+        Status::new(
+            StatusReason::InternalError,
+            "webhook patch is not valid base64",
+        )
     })?;
-    let text = std::str::from_utf8(&raw).map_err(|_| {
-        Status::new(StatusReason::InternalError, "webhook patch is not UTF-8")
-    })?;
+    let text = std::str::from_utf8(&raw)
+        .map_err(|_| Status::new(StatusReason::InternalError, "webhook patch is not UTF-8"))?;
     let value = json::parse(text).map_err(|e| {
-        Status::new(StatusReason::InternalError, format!("webhook patch is not JSON: {e}"))
+        Status::new(
+            StatusReason::InternalError,
+            format!("webhook patch is not JSON: {e}"),
+        )
     })?;
     Ok(Some(patch::ops_from_json(&value)?))
 }
@@ -388,7 +439,11 @@ struct WebhookConfig {
 }
 
 impl WebhookConfig {
-    fn new(name: impl Into<String>, url: impl Into<String>, client: Arc<dyn WebhookClient>) -> Self {
+    fn new(
+        name: impl Into<String>,
+        url: impl Into<String>,
+        client: Arc<dyn WebhookClient>,
+    ) -> Self {
         Self {
             name: name.into(),
             url: url.into(),
@@ -400,7 +455,11 @@ impl WebhookConfig {
     }
 
     fn next_uid(&self) -> String {
-        format!("{}-{}", self.name, self.counter.fetch_add(1, Ordering::Relaxed))
+        format!(
+            "{}-{}",
+            self.name,
+            self.counter.fetch_add(1, Ordering::Relaxed)
+        )
     }
 
     /// Whether the webhook's rules select `request` (always true when no rules
@@ -413,7 +472,9 @@ impl WebhookConfig {
     /// transport error.
     fn invoke(&self, request: &AdmissionRequest) -> Result<AdmissionResponse> {
         let uid = self.next_uid();
-        let body = build_admission_review(&uid, request).to_json_string().into_bytes();
+        let body = build_admission_review(&uid, request)
+            .to_json_string()
+            .into_bytes();
         match self.client.post(&self.url, &body) {
             Ok(bytes) => parse_admission_response(&bytes, &uid),
             Err(e) => match self.failure_policy {
@@ -436,8 +497,14 @@ impl WebhookValidatingPlugin {
     /// Build a validating webhook named `name` posting to `url` over `client`
     /// (failure policy defaults to [`FailurePolicy::Fail`]).
     #[must_use]
-    pub fn new(name: impl Into<String>, url: impl Into<String>, client: Arc<dyn WebhookClient>) -> Self {
-        Self { config: WebhookConfig::new(name, url, client) }
+    pub fn new(
+        name: impl Into<String>,
+        url: impl Into<String>,
+        client: Arc<dyn WebhookClient>,
+    ) -> Self {
+        Self {
+            config: WebhookConfig::new(name, url, client),
+        }
     }
 
     /// Set the failure policy (builder style).
@@ -485,8 +552,14 @@ impl WebhookMutatingPlugin {
     /// Build a mutating webhook named `name` posting to `url` over `client`
     /// (failure policy defaults to [`FailurePolicy::Fail`]).
     #[must_use]
-    pub fn new(name: impl Into<String>, url: impl Into<String>, client: Arc<dyn WebhookClient>) -> Self {
-        Self { config: WebhookConfig::new(name, url, client) }
+    pub fn new(
+        name: impl Into<String>,
+        url: impl Into<String>,
+        client: Arc<dyn WebhookClient>,
+    ) -> Self {
+        Self {
+            config: WebhookConfig::new(name, url, client),
+        }
     }
 
     /// Set the failure policy (builder style).
@@ -533,8 +606,7 @@ impl MutatingPlugin for WebhookMutatingPlugin {
 // ---------------------------------------------------------------------------
 
 /// Standard base64 alphabet.
-const B64_ALPHABET: &[u8; 64] =
-    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const B64_ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 /// Encode bytes as standard base64 with `=` padding.
 #[must_use]
@@ -610,7 +682,10 @@ impl MockWebhookClient {
     pub fn new(
         responder: impl Fn(&[u8]) -> std::result::Result<Vec<u8>, WebhookError> + Send + Sync + 'static,
     ) -> Self {
-        Self { responder: Box::new(responder), requests: Mutex::new(Vec::new()) }
+        Self {
+            responder: Box::new(responder),
+            requests: Mutex::new(Vec::new()),
+        }
     }
 
     /// Build a client that always returns the same response body.
@@ -635,7 +710,10 @@ impl MockWebhookClient {
 
 impl WebhookClient for MockWebhookClient {
     fn post(&self, _url: &str, body: &[u8]) -> std::result::Result<Vec<u8>, WebhookError> {
-        self.requests.lock().expect("requests lock").push(body.to_vec());
+        self.requests
+            .lock()
+            .expect("requests lock")
+            .push(body.to_vec());
         (self.responder)(body)
     }
 }
@@ -713,9 +791,14 @@ impl WebhookClient for HttpWebhookClient {
             .windows(4)
             .position(|w| w == b"\r\n\r\n")
             .ok_or_else(|| WebhookError::new("webhook response had no header terminator"))?;
-        let status_line = std::str::from_utf8(&raw[..raw.iter().position(|&b| b == b'\r').unwrap_or(0)])
-            .unwrap_or("");
-        let code: u16 = status_line.split(' ').nth(1).and_then(|c| c.parse().ok()).unwrap_or(0);
+        let status_line =
+            std::str::from_utf8(&raw[..raw.iter().position(|&b| b == b'\r').unwrap_or(0)])
+                .unwrap_or("");
+        let code: u16 = status_line
+            .split(' ')
+            .nth(1)
+            .and_then(|c| c.parse().ok())
+            .unwrap_or(0);
         if !(200..300).contains(&code) {
             return Err(WebhookError::new(format!("webhook returned HTTP {code}")));
         }
@@ -748,12 +831,14 @@ mod tests {
 
     /// Build an `AdmissionReview` response body echoing `uid`.
     fn review_response(uid: &str, allowed: bool, extra: Vec<(&str, Value)>) -> Vec<u8> {
-        let mut fields = vec![
-            ("uid", Value::from(uid)),
-            ("allowed", Value::Bool(allowed)),
-        ];
+        let mut fields = vec![("uid", Value::from(uid)), ("allowed", Value::Bool(allowed))];
         fields.extend(extra);
-        let resp = Value::Object(fields.into_iter().map(|(k, v)| (k.to_string(), v)).collect());
+        let resp = Value::Object(
+            fields
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect(),
+        );
         obj([
             ("apiVersion", Value::from(ADMISSION_API_VERSION)),
             ("kind", Value::from("AdmissionReview")),
@@ -766,15 +851,40 @@ mod tests {
     #[test]
     fn build_review_has_v1_envelope_and_request_fields() {
         let review = build_admission_review("uid-1", &create_request("nginx"));
-        assert_eq!(review.pointer("apiVersion").and_then(Value::as_str), Some("admission.k8s.io/v1"));
-        assert_eq!(review.pointer("kind").and_then(Value::as_str), Some("AdmissionReview"));
-        assert_eq!(review.pointer("request.uid").and_then(Value::as_str), Some("uid-1"));
-        assert_eq!(review.pointer("request.operation").and_then(Value::as_str), Some("CREATE"));
-        assert_eq!(review.pointer("request.namespace").and_then(Value::as_str), Some("default"));
-        assert_eq!(review.pointer("request.resource.resource").and_then(Value::as_str), Some("pods"));
-        assert_eq!(review.pointer("request.kind.kind").and_then(Value::as_str), Some("Pod"));
         assert_eq!(
-            review.pointer("request.object.metadata.name").and_then(Value::as_str),
+            review.pointer("apiVersion").and_then(Value::as_str),
+            Some("admission.k8s.io/v1")
+        );
+        assert_eq!(
+            review.pointer("kind").and_then(Value::as_str),
+            Some("AdmissionReview")
+        );
+        assert_eq!(
+            review.pointer("request.uid").and_then(Value::as_str),
+            Some("uid-1")
+        );
+        assert_eq!(
+            review.pointer("request.operation").and_then(Value::as_str),
+            Some("CREATE")
+        );
+        assert_eq!(
+            review.pointer("request.namespace").and_then(Value::as_str),
+            Some("default")
+        );
+        assert_eq!(
+            review
+                .pointer("request.resource.resource")
+                .and_then(Value::as_str),
+            Some("pods")
+        );
+        assert_eq!(
+            review.pointer("request.kind.kind").and_then(Value::as_str),
+            Some("Pod")
+        );
+        assert_eq!(
+            review
+                .pointer("request.object.metadata.name")
+                .and_then(Value::as_str),
             Some("nginx")
         );
     }
@@ -782,19 +892,46 @@ mod tests {
     #[test]
     fn kind_block_derives_group_version_from_api_version() {
         let mut req = create_request("x");
-        req.object.as_mut().unwrap().insert("apiVersion", Value::from("apps/v1"));
-        req.object.as_mut().unwrap().insert("kind", Value::from("Deployment"));
+        req.object
+            .as_mut()
+            .unwrap()
+            .insert("apiVersion", Value::from("apps/v1"));
+        req.object
+            .as_mut()
+            .unwrap()
+            .insert("kind", Value::from("Deployment"));
         req.gvr = GroupVersionResource::new("apps", "v1", "deployments");
         let review = build_admission_review("u", &req);
-        assert_eq!(review.pointer("request.kind.group").and_then(Value::as_str), Some("apps"));
-        assert_eq!(review.pointer("request.kind.version").and_then(Value::as_str), Some("v1"));
+        assert_eq!(
+            review.pointer("request.kind.group").and_then(Value::as_str),
+            Some("apps")
+        );
+        assert_eq!(
+            review
+                .pointer("request.kind.version")
+                .and_then(Value::as_str),
+            Some("v1")
+        );
     }
 
     #[test]
     fn base64_round_trips() {
-        for sample in [&b""[..], b"f", b"fo", b"foo", b"foob", b"fooba", b"foobar", b"{\"op\":\"add\"}"] {
+        for sample in [
+            &b""[..],
+            b"f",
+            b"fo",
+            b"foo",
+            b"foob",
+            b"fooba",
+            b"foobar",
+            b"{\"op\":\"add\"}",
+        ] {
             let encoded = b64_encode(sample);
-            assert_eq!(b64_decode(&encoded).as_deref(), Some(sample), "sample {sample:?}");
+            assert_eq!(
+                b64_decode(&encoded).as_deref(),
+                Some(sample),
+                "sample {sample:?}"
+            );
         }
         // Known vector.
         assert_eq!(b64_encode(b"foobar"), "Zm9vYmFy");
@@ -813,7 +950,10 @@ mod tests {
 
     #[test]
     fn parse_denied_response_maps_code_to_reason() {
-        let status = obj([("code", Value::from(403_i64)), ("message", Value::from("nope"))]);
+        let status = obj([
+            ("code", Value::from(403_i64)),
+            ("message", Value::from("nope")),
+        ]);
         let body = review_response("uid-1", false, vec![("status", status)]);
         let parsed = parse_admission_response(&body, "uid-1").expect("parse");
         assert!(!parsed.allowed);
@@ -835,10 +975,14 @@ mod tests {
         let client = Arc::new(MockWebhookClient::new(|body| {
             // Echo the uid from the request to keep correlation honest.
             let review = json::parse(std::str::from_utf8(body).unwrap()).unwrap();
-            let uid = review.pointer("request.uid").and_then(Value::as_str).unwrap();
+            let uid = review
+                .pointer("request.uid")
+                .and_then(Value::as_str)
+                .unwrap();
             Ok(review_response(uid, true, vec![]))
         }));
-        let plugin = WebhookValidatingPlugin::new("policy.example.com", "http://unused", client.clone());
+        let plugin =
+            WebhookValidatingPlugin::new("policy.example.com", "http://unused", client.clone());
         plugin.validate(&create_request("nginx")).expect("allowed");
         // The webhook actually received an AdmissionReview.
         let recorded = client.requests();
@@ -850,8 +994,14 @@ mod tests {
     fn validating_plugin_denies_with_message() {
         let client = Arc::new(MockWebhookClient::new(|body| {
             let review = json::parse(std::str::from_utf8(body).unwrap()).unwrap();
-            let uid = review.pointer("request.uid").and_then(Value::as_str).unwrap();
-            let status = obj([("code", Value::from(422_i64)), ("message", Value::from("bad pod"))]);
+            let uid = review
+                .pointer("request.uid")
+                .and_then(Value::as_str)
+                .unwrap();
+            let status = obj([
+                ("code", Value::from(422_i64)),
+                ("message", Value::from("bad pod")),
+            ]);
             Ok(review_response(uid, false, vec![("status", status)]))
         }));
         let plugin = WebhookValidatingPlugin::new("policy", "http://unused", client);
@@ -865,7 +1015,10 @@ mod tests {
         // Webhook injects a label via JSONPatch.
         let client = Arc::new(MockWebhookClient::new(|body| {
             let review = json::parse(std::str::from_utf8(body).unwrap()).unwrap();
-            let uid = review.pointer("request.uid").and_then(Value::as_str).unwrap();
+            let uid = review
+                .pointer("request.uid")
+                .and_then(Value::as_str)
+                .unwrap();
             let ops = Value::Array(vec![obj([
                 ("op", Value::from("add")),
                 ("path", Value::from("/metadata/labels")),
@@ -875,7 +1028,10 @@ mod tests {
             Ok(review_response(
                 uid,
                 true,
-                vec![("patchType", Value::from("JSONPatch")), ("patch", Value::from(encoded))],
+                vec![
+                    ("patchType", Value::from("JSONPatch")),
+                    ("patch", Value::from(encoded)),
+                ],
             ))
         }));
         let plugin = WebhookMutatingPlugin::new("mutate", "http://unused", client);
@@ -909,19 +1065,34 @@ mod tests {
     fn webhook_plugs_into_admission_chain() {
         let client = Arc::new(MockWebhookClient::new(|body| {
             let review = json::parse(std::str::from_utf8(body).unwrap()).unwrap();
-            let uid = review.pointer("request.uid").and_then(Value::as_str).unwrap();
+            let uid = review
+                .pointer("request.uid")
+                .and_then(Value::as_str)
+                .unwrap();
             // Deny anything named "forbidden".
-            let name = review.pointer("request.object.metadata.name").and_then(Value::as_str).unwrap_or("");
+            let name = review
+                .pointer("request.object.metadata.name")
+                .and_then(Value::as_str)
+                .unwrap_or("");
             let allowed = name != "forbidden";
             let extra = if allowed {
                 vec![]
             } else {
-                vec![("status", obj([("code", Value::from(403_i64)), ("message", Value::from("denied by policy"))]))]
+                vec![(
+                    "status",
+                    obj([
+                        ("code", Value::from(403_i64)),
+                        ("message", Value::from("denied by policy")),
+                    ]),
+                )]
             };
             Ok(review_response(uid, allowed, extra))
         }));
-        let chain = AdmissionChain::new()
-            .with_validating(Box::new(WebhookValidatingPlugin::new("policy", "http://unused", client)));
+        let chain = AdmissionChain::new().with_validating(Box::new(WebhookValidatingPlugin::new(
+            "policy",
+            "http://unused",
+            client,
+        )));
         assert!(chain.run(create_request("ok")).is_ok());
         let err = chain.run(create_request("forbidden")).expect_err("deny");
         assert_eq!(err.reason, StatusReason::Forbidden);
@@ -936,9 +1107,15 @@ mod tests {
             let (mut stream, _) = listener.accept().expect("accept");
             // Drain the full request (head + Content-Length body) before
             // answering, so the client never sees a reset mid-write.
-            let req = crate::server::read_request(&mut stream).expect("io").expect("request");
+            let req = crate::server::read_request(&mut stream)
+                .expect("io")
+                .expect("request");
             let parsed = json::parse(std::str::from_utf8(&req.body).expect("utf8")).expect("json");
-            let uid = parsed.pointer("request.uid").and_then(Value::as_str).unwrap_or("").to_string();
+            let uid = parsed
+                .pointer("request.uid")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
             let body = review_response(&uid, true, vec![]);
             let head = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -951,15 +1128,26 @@ mod tests {
 
         let url = format!("http://127.0.0.1:{}/validate", addr.port());
         let plugin = WebhookValidatingPlugin::new("real", url, Arc::new(HttpWebhookClient::new()));
-        plugin.validate(&create_request("nginx")).expect("allowed over real HTTP");
+        plugin
+            .validate(&create_request("nginx"))
+            .expect("allowed over real HTTP");
         worker.join().expect("worker");
     }
 
     #[test]
     fn parse_http_url_splits_host_port_path() {
-        assert_eq!(parse_http_url("http://h:8443/x").unwrap(), ("h".into(), 8443, "/x".into()));
-        assert_eq!(parse_http_url("http://h/x").unwrap(), ("h".into(), 80, "/x".into()));
-        assert_eq!(parse_http_url("http://h").unwrap(), ("h".into(), 80, "/".into()));
+        assert_eq!(
+            parse_http_url("http://h:8443/x").unwrap(),
+            ("h".into(), 8443, "/x".into())
+        );
+        assert_eq!(
+            parse_http_url("http://h/x").unwrap(),
+            ("h".into(), 80, "/x".into())
+        );
+        assert_eq!(
+            parse_http_url("http://h").unwrap(),
+            ("h".into(), 80, "/".into())
+        );
         assert!(parse_http_url("https://h/x").is_err());
     }
 
@@ -1030,7 +1218,10 @@ mod tests {
         // rules (UPDATE-only), so the plugin must not call it and must allow.
         let client = Arc::new(MockWebhookClient::new(|body| {
             let review = json::parse(std::str::from_utf8(body).unwrap()).unwrap();
-            let uid = review.pointer("request.uid").and_then(Value::as_str).unwrap();
+            let uid = review
+                .pointer("request.uid")
+                .and_then(Value::as_str)
+                .unwrap();
             Ok(review_response(uid, false, vec![]))
         }));
         let plugin = WebhookValidatingPlugin::new("deny-updates", "http://unused", client.clone())
@@ -1041,7 +1232,9 @@ mod tests {
                 &["pods"],
             )]));
         // A CREATE is not selected -> allowed without calling the webhook.
-        plugin.validate(&create_request("x")).expect("allowed (skipped)");
+        plugin
+            .validate(&create_request("x"))
+            .expect("allowed (skipped)");
         assert!(client.requests().is_empty(), "webhook must not be called");
         // An UPDATE *is* selected -> the webhook is called and denies.
         let err = plugin.validate(&update_request()).expect_err("denied");
@@ -1053,7 +1246,10 @@ mod tests {
     fn mutating_plugin_skips_call_when_no_rule_matches() {
         let client = Arc::new(MockWebhookClient::new(|body| {
             let review = json::parse(std::str::from_utf8(body).unwrap()).unwrap();
-            let uid = review.pointer("request.uid").and_then(Value::as_str).unwrap();
+            let uid = review
+                .pointer("request.uid")
+                .and_then(Value::as_str)
+                .unwrap();
             let ops = Value::Array(vec![obj([
                 ("op", Value::from("add")),
                 ("path", Value::from("/metadata/labels")),
@@ -1063,26 +1259,39 @@ mod tests {
             Ok(review_response(
                 uid,
                 true,
-                vec![("patchType", Value::from("JSONPatch")), ("patch", Value::from(encoded))],
+                vec![
+                    ("patchType", Value::from("JSONPatch")),
+                    ("patch", Value::from(encoded)),
+                ],
             ))
         }));
-        let plugin = WebhookMutatingPlugin::new("label-deployments", "http://unused", client.clone())
-            .with_rules(WebhookRules::new(vec![RuleWithOperations::new(
-                &["CREATE"],
-                &["apps"],
-                &["v1"],
-                &["deployments"],
-            )]));
+        let plugin =
+            WebhookMutatingPlugin::new("label-deployments", "http://unused", client.clone())
+                .with_rules(WebhookRules::new(vec![RuleWithOperations::new(
+                    &["CREATE"],
+                    &["apps"],
+                    &["v1"],
+                    &["deployments"],
+                )]));
         // A core/v1 pod create is not selected -> object is left untouched.
         let mut pod = create_request("x");
         plugin.admit(&mut pod).expect("admit");
-        assert!(pod.object.as_ref().and_then(|o| o.pointer("metadata.labels.injected")).is_none());
+        assert!(
+            pod.object
+                .as_ref()
+                .and_then(|o| o.pointer("metadata.labels.injected"))
+                .is_none()
+        );
         assert!(client.requests().is_empty());
         // A deployment create IS selected -> label injected.
         let mut deploy = deploy_create();
         plugin.admit(&mut deploy).expect("admit");
         assert_eq!(
-            deploy.object.as_ref().and_then(|o| o.pointer("metadata.labels.injected")).and_then(Value::as_str),
+            deploy
+                .object
+                .as_ref()
+                .and_then(|o| o.pointer("metadata.labels.injected"))
+                .and_then(Value::as_str),
             Some("true")
         );
     }
@@ -1092,8 +1301,13 @@ mod tests {
         use crate::selector::LabelSelector;
         // The webhook only wants objects labelled app=web.
         let sel = LabelSelector::parse("app=web").expect("selector");
-        let rules = WebhookRules::new(vec![RuleWithOperations::new(&["*"], &["*"], &["*"], &["*"])])
-            .with_object_selector(sel);
+        let rules = WebhookRules::new(vec![RuleWithOperations::new(
+            &["*"],
+            &["*"],
+            &["*"],
+            &["*"],
+        )])
+        .with_object_selector(sel);
 
         // A pod with the matching label is selected.
         let mut labelled = create_request("web");
@@ -1116,13 +1330,21 @@ mod tests {
         use crate::selector::LabelSelector;
         let client = Arc::new(MockWebhookClient::new(|body| {
             let review = json::parse(std::str::from_utf8(body).unwrap()).unwrap();
-            let uid = review.pointer("request.uid").and_then(Value::as_str).unwrap();
+            let uid = review
+                .pointer("request.uid")
+                .and_then(Value::as_str)
+                .unwrap();
             Ok(review_response(uid, false, vec![]))
         }));
-        let rules = WebhookRules::new(vec![RuleWithOperations::new(&["*"], &["*"], &["*"], &["*"])])
-            .with_object_selector(LabelSelector::parse("app=web").expect("sel"));
-        let plugin =
-            WebhookValidatingPlugin::new("deny-web", "http://unused", client.clone()).with_rules(rules);
+        let rules = WebhookRules::new(vec![RuleWithOperations::new(
+            &["*"],
+            &["*"],
+            &["*"],
+            &["*"],
+        )])
+        .with_object_selector(LabelSelector::parse("app=web").expect("sel"));
+        let plugin = WebhookValidatingPlugin::new("deny-web", "http://unused", client.clone())
+            .with_rules(rules);
         // No matching label -> not selected -> allowed without a call.
         plugin.validate(&create_request("db")).expect("allowed");
         assert!(client.requests().is_empty());
@@ -1134,7 +1356,10 @@ mod tests {
         // on every request (the existing behaviour the chain relied on).
         let client = Arc::new(MockWebhookClient::new(|body| {
             let review = json::parse(std::str::from_utf8(body).unwrap()).unwrap();
-            let uid = review.pointer("request.uid").and_then(Value::as_str).unwrap();
+            let uid = review
+                .pointer("request.uid")
+                .and_then(Value::as_str)
+                .unwrap();
             Ok(review_response(uid, true, vec![]))
         }));
         let plugin = WebhookValidatingPlugin::new("all", "http://unused", client.clone());

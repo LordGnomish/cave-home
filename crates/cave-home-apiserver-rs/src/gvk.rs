@@ -20,7 +20,11 @@ pub struct GroupVersionKind {
 
 impl GroupVersionKind {
     /// Construct a GVK.
-    pub fn new(group: impl Into<String>, version: impl Into<String>, kind: impl Into<String>) -> Self {
+    pub fn new(
+        group: impl Into<String>,
+        version: impl Into<String>,
+        kind: impl Into<String>,
+    ) -> Self {
         Self {
             group: group.into(),
             version: version.into(),
@@ -104,23 +108,113 @@ struct KindEntry {
 /// registration is deferred (see `parity.manifest.toml`).
 const KINDS: &[KindEntry] = &[
     // core/v1 (group = "")
-    KindEntry { group: "", version: "v1", resource: "pods", kind: "Pod", namespaced: true },
-    KindEntry { group: "", version: "v1", resource: "services", kind: "Service", namespaced: true },
-    KindEntry { group: "", version: "v1", resource: "endpoints", kind: "Endpoints", namespaced: true },
-    KindEntry { group: "", version: "v1", resource: "configmaps", kind: "ConfigMap", namespaced: true },
-    KindEntry { group: "", version: "v1", resource: "secrets", kind: "Secret", namespaced: true },
-    KindEntry { group: "", version: "v1", resource: "serviceaccounts", kind: "ServiceAccount", namespaced: true },
-    KindEntry { group: "", version: "v1", resource: "namespaces", kind: "Namespace", namespaced: false },
-    KindEntry { group: "", version: "v1", resource: "nodes", kind: "Node", namespaced: false },
-    KindEntry { group: "", version: "v1", resource: "persistentvolumes", kind: "PersistentVolume", namespaced: false },
+    KindEntry {
+        group: "",
+        version: "v1",
+        resource: "pods",
+        kind: "Pod",
+        namespaced: true,
+    },
+    KindEntry {
+        group: "",
+        version: "v1",
+        resource: "services",
+        kind: "Service",
+        namespaced: true,
+    },
+    KindEntry {
+        group: "",
+        version: "v1",
+        resource: "endpoints",
+        kind: "Endpoints",
+        namespaced: true,
+    },
+    KindEntry {
+        group: "",
+        version: "v1",
+        resource: "configmaps",
+        kind: "ConfigMap",
+        namespaced: true,
+    },
+    KindEntry {
+        group: "",
+        version: "v1",
+        resource: "secrets",
+        kind: "Secret",
+        namespaced: true,
+    },
+    KindEntry {
+        group: "",
+        version: "v1",
+        resource: "serviceaccounts",
+        kind: "ServiceAccount",
+        namespaced: true,
+    },
+    KindEntry {
+        group: "",
+        version: "v1",
+        resource: "namespaces",
+        kind: "Namespace",
+        namespaced: false,
+    },
+    KindEntry {
+        group: "",
+        version: "v1",
+        resource: "nodes",
+        kind: "Node",
+        namespaced: false,
+    },
+    KindEntry {
+        group: "",
+        version: "v1",
+        resource: "persistentvolumes",
+        kind: "PersistentVolume",
+        namespaced: false,
+    },
     // apps/v1
-    KindEntry { group: "apps", version: "v1", resource: "deployments", kind: "Deployment", namespaced: true },
-    KindEntry { group: "apps", version: "v1", resource: "replicasets", kind: "ReplicaSet", namespaced: true },
-    KindEntry { group: "apps", version: "v1", resource: "statefulsets", kind: "StatefulSet", namespaced: true },
-    KindEntry { group: "apps", version: "v1", resource: "daemonsets", kind: "DaemonSet", namespaced: true },
+    KindEntry {
+        group: "apps",
+        version: "v1",
+        resource: "deployments",
+        kind: "Deployment",
+        namespaced: true,
+    },
+    KindEntry {
+        group: "apps",
+        version: "v1",
+        resource: "replicasets",
+        kind: "ReplicaSet",
+        namespaced: true,
+    },
+    KindEntry {
+        group: "apps",
+        version: "v1",
+        resource: "statefulsets",
+        kind: "StatefulSet",
+        namespaced: true,
+    },
+    KindEntry {
+        group: "apps",
+        version: "v1",
+        resource: "daemonsets",
+        kind: "DaemonSet",
+        namespaced: true,
+    },
     // batch/v1
-    KindEntry { group: "batch", version: "v1", resource: "jobs", kind: "Job", namespaced: true },
-    KindEntry { group: "batch", version: "v1", resource: "cronjobs", kind: "CronJob", namespaced: true },
+    KindEntry {
+        group: "batch",
+        version: "v1",
+        resource: "jobs",
+        kind: "Job",
+        namespaced: true,
+    },
+    KindEntry {
+        group: "batch",
+        version: "v1",
+        resource: "cronjobs",
+        kind: "CronJob",
+        namespaced: true,
+    },
 ];
 
 /// Map a GVR to its GVK (RESTMapper `KindFor`). Returns `None` for unknown
@@ -254,11 +348,23 @@ mod tests {
     #[test]
     fn registered_resources_includes_core_and_grouped() {
         let all = registered_resources();
-        let pods = all.iter().find(|r| r.resource == "pods").expect("pods registered");
-        assert_eq!((pods.group, pods.version, pods.kind, pods.namespaced), ("", "v1", "Pod", true));
-        let nodes = all.iter().find(|r| r.resource == "nodes").expect("nodes registered");
+        let pods = all
+            .iter()
+            .find(|r| r.resource == "pods")
+            .expect("pods registered");
+        assert_eq!(
+            (pods.group, pods.version, pods.kind, pods.namespaced),
+            ("", "v1", "Pod", true)
+        );
+        let nodes = all
+            .iter()
+            .find(|r| r.resource == "nodes")
+            .expect("nodes registered");
         assert!(!nodes.namespaced, "nodes are cluster-scoped");
-        assert!(all.iter().any(|r| r.group == "apps" && r.resource == "deployments"));
+        assert!(
+            all.iter()
+                .any(|r| r.group == "apps" && r.resource == "deployments")
+        );
     }
 
     #[test]
@@ -285,9 +391,18 @@ mod tests {
 
     #[test]
     fn namespaces_and_nodes_are_cluster_scoped() {
-        assert_eq!(is_namespaced(&GroupVersionResource::new("", "v1", "namespaces")), Some(false));
-        assert_eq!(is_namespaced(&GroupVersionResource::new("", "v1", "nodes")), Some(false));
-        assert_eq!(is_namespaced(&GroupVersionResource::new("", "v1", "pods")), Some(true));
+        assert_eq!(
+            is_namespaced(&GroupVersionResource::new("", "v1", "namespaces")),
+            Some(false)
+        );
+        assert_eq!(
+            is_namespaced(&GroupVersionResource::new("", "v1", "nodes")),
+            Some(false)
+        );
+        assert_eq!(
+            is_namespaced(&GroupVersionResource::new("", "v1", "pods")),
+            Some(true)
+        );
     }
 
     #[test]

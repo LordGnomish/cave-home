@@ -159,7 +159,11 @@ mod tests {
             ReasonCode::WildcardSubscriptionsNotSupported,
         ] {
             assert_eq!(ReasonCode::from_u8(code as u8), Some(code));
-            assert!(code.is_error(), "{code:?} (0x{:02x}) is an error code", code as u8);
+            assert!(
+                code.is_error(),
+                "{code:?} (0x{:02x}) is an error code",
+                code as u8
+            );
             assert!((code as u8) >= 0x80);
         }
     }

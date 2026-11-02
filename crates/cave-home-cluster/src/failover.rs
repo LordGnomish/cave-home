@@ -62,7 +62,10 @@ pub enum FailoverPlan {
     NoAction,
     /// Promote `node` (a backup hub) to the active primary. `demote` names the
     /// old primary to step down, when one exists.
-    Promote { node: String, demote: Option<String> },
+    Promote {
+        node: String,
+        demote: Option<String>,
+    },
     /// The primary is down and a backup is ready, but fencing could not confirm
     /// the old primary is really gone. We are holding to avoid split-brain. The
     /// homeowner is told "checking on the main hub", never the word "fencing".
@@ -122,9 +125,10 @@ pub fn decide_failover(cluster: &Cluster, fence: FenceStatus) -> FailoverPlan {
     let demote = primary.map(|p| p.id().to_owned());
 
     match fence {
-        FenceStatus::Confirmed | FenceStatus::NotNeeded => {
-            FailoverPlan::Promote { node: candidate, demote }
-        }
+        FenceStatus::Confirmed | FenceStatus::NotNeeded => FailoverPlan::Promote {
+            node: candidate,
+            demote,
+        },
         // Split-brain guard: refuse to promote when we cannot confirm the old
         // primary is gone.
         FenceStatus::Unconfirmed => FailoverPlan::BlockedOnFencing { candidate },
@@ -208,7 +212,9 @@ mod tests {
         let plan = c.decide_failover(1000, FenceStatus::Unconfirmed);
         assert_eq!(
             plan,
-            FailoverPlan::BlockedOnFencing { candidate: "hub-2".to_owned() }
+            FailoverPlan::BlockedOnFencing {
+                candidate: "hub-2".to_owned()
+            }
         );
         assert!(!plan.changes_primary());
     }
@@ -242,7 +248,10 @@ mod tests {
         let plan = c.decide_failover(1000, FenceStatus::NotNeeded);
         assert_eq!(
             plan,
-            FailoverPlan::Promote { node: "hub-2".to_owned(), demote: None }
+            FailoverPlan::Promote {
+                node: "hub-2".to_owned(),
+                demote: None
+            }
         );
     }
 

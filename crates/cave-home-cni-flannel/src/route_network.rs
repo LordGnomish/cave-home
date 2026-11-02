@@ -184,8 +184,11 @@ mod tests {
     fn add_installs_direct_route_via_public_ip() {
         let mut dp = MockDatapath::new();
         let mut nw = RouteNetwork::host_gw("self".to_owned(), 3);
-        nw.handle_event(&mut dp, &LeaseEvent::Added(peer("b", "10.42.1.0/24", "192.168.1.2")))
-            .expect("add");
+        nw.handle_event(
+            &mut dp,
+            &LeaseEvent::Added(peer("b", "10.42.1.0/24", "192.168.1.2")),
+        )
+        .expect("add");
         assert_eq!(dp.ops.len(), 1);
         match &dp.ops[0] {
             Op::RouteAdd(r) => {
@@ -214,11 +217,17 @@ mod tests {
     fn changed_gateway_replaces_stale_route() {
         let mut dp = MockDatapath::new();
         let mut nw = RouteNetwork::host_gw("self".to_owned(), 3);
-        nw.handle_event(&mut dp, &LeaseEvent::Added(peer("b", "10.42.1.0/24", "192.168.1.2")))
-            .expect("add");
+        nw.handle_event(
+            &mut dp,
+            &LeaseEvent::Added(peer("b", "10.42.1.0/24", "192.168.1.2")),
+        )
+        .expect("add");
         // Same subnet, new public IP (node re-homed) → del stale, add new.
-        nw.handle_event(&mut dp, &LeaseEvent::Added(peer("b", "10.42.1.0/24", "192.168.1.9")))
-            .expect("readd");
+        nw.handle_event(
+            &mut dp,
+            &LeaseEvent::Added(peer("b", "10.42.1.0/24", "192.168.1.9")),
+        )
+        .expect("readd");
         assert!(matches!(dp.ops[1], Op::RouteDel(_)));
         assert!(matches!(dp.ops[2], Op::RouteAdd(_)));
         let eff = dp.effective_routes();
@@ -231,10 +240,16 @@ mod tests {
     fn remove_deletes_route_and_untracks() {
         let mut dp = MockDatapath::new();
         let mut nw = RouteNetwork::host_gw("self".to_owned(), 3);
-        nw.handle_event(&mut dp, &LeaseEvent::Added(peer("b", "10.42.1.0/24", "192.168.1.2")))
-            .expect("add");
-        nw.handle_event(&mut dp, &LeaseEvent::Removed(peer("b", "10.42.1.0/24", "192.168.1.2")))
-            .expect("remove");
+        nw.handle_event(
+            &mut dp,
+            &LeaseEvent::Added(peer("b", "10.42.1.0/24", "192.168.1.2")),
+        )
+        .expect("add");
+        nw.handle_event(
+            &mut dp,
+            &LeaseEvent::Removed(peer("b", "10.42.1.0/24", "192.168.1.2")),
+        )
+        .expect("remove");
         assert!(matches!(dp.ops.last().expect("op"), Op::RouteDel(_)));
         assert!(nw.tracked().is_empty());
     }
@@ -243,8 +258,11 @@ mod tests {
     fn skips_own_and_non_hostgw_peers() {
         let mut dp = MockDatapath::new();
         let mut nw = RouteNetwork::host_gw("self".to_owned(), 3);
-        nw.handle_event(&mut dp, &LeaseEvent::Added(peer("self", "10.42.0.0/24", "192.168.1.1")))
-            .expect("self");
+        nw.handle_event(
+            &mut dp,
+            &LeaseEvent::Added(peer("self", "10.42.0.0/24", "192.168.1.1")),
+        )
+        .expect("self");
         let vx = PeerLease {
             node: "c".to_owned(),
             subnet: cidr("10.42.2.0/24"),
@@ -253,7 +271,8 @@ mod tests {
                 vtep_mac: crate::backend::MacAddr::new([3; 6]),
             },
         };
-        nw.handle_event(&mut dp, &LeaseEvent::Added(vx)).expect("vx");
+        nw.handle_event(&mut dp, &LeaseEvent::Added(vx))
+            .expect("vx");
         assert!(dp.ops.is_empty());
     }
 
@@ -261,10 +280,16 @@ mod tests {
     fn reconcile_readds_only_missing_routes() {
         let mut dp = MockDatapath::new();
         let mut nw = RouteNetwork::host_gw("self".to_owned(), 3);
-        nw.handle_event(&mut dp, &LeaseEvent::Added(peer("b", "10.42.1.0/24", "192.168.1.2")))
-            .expect("add b");
-        nw.handle_event(&mut dp, &LeaseEvent::Added(peer("c", "10.42.2.0/24", "192.168.1.3")))
-            .expect("add c");
+        nw.handle_event(
+            &mut dp,
+            &LeaseEvent::Added(peer("b", "10.42.1.0/24", "192.168.1.2")),
+        )
+        .expect("add b");
+        nw.handle_event(
+            &mut dp,
+            &LeaseEvent::Added(peer("c", "10.42.2.0/24", "192.168.1.3")),
+        )
+        .expect("add c");
         let added = dp.ops.len();
         // Kernel still has b's route but lost c's.
         let present = vec![Route::host_gw(cidr("10.42.1.0/24"), v4("192.168.1.2"), 3)];

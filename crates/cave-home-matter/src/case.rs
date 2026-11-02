@@ -119,7 +119,9 @@ impl CaseSession {
     /// + `SendSigma2`
     pub fn handle_sigma1(&mut self, msg: &Sigma1) -> Result<Sigma2> {
         if self.role != Role::Responder {
-            return Err(MatterError::IncorrectState("handle_sigma1 needs responder".into()));
+            return Err(MatterError::IncorrectState(
+                "handle_sigma1 needs responder".into(),
+            ));
         }
         if msg.initiator_fabric_id != self.creds.fabric_id {
             return Err(MatterError::Fabric(format!(
@@ -140,7 +142,9 @@ impl CaseSession {
     /// # Upstream: src/protocols/secure_channel/CASESession.cpp::CASESession::HandleSigma2
     pub fn handle_sigma2(&mut self, msg: &Sigma2) -> Result<Sigma3> {
         if self.role != Role::Initiator {
-            return Err(MatterError::IncorrectState("handle_sigma2 needs initiator".into()));
+            return Err(MatterError::IncorrectState(
+                "handle_sigma2 needs initiator".into(),
+            ));
         }
         self.responder_random = msg.responder_random;
         let signature = hmac_sign(
@@ -157,9 +161,15 @@ impl CaseSession {
     /// Responder handles Sigma3, derives session keys.
     ///
     /// # Upstream: src/protocols/secure_channel/CASESession.cpp::CASESession::HandleSigma3
-    pub fn handle_sigma3(&mut self, msg: &Sigma3, initiator_root_ca: &[u8; 32]) -> Result<&CaseSessionKeys> {
+    pub fn handle_sigma3(
+        &mut self,
+        msg: &Sigma3,
+        initiator_root_ca: &[u8; 32],
+    ) -> Result<&CaseSessionKeys> {
         if self.role != Role::Responder {
-            return Err(MatterError::IncorrectState("handle_sigma3 needs responder".into()));
+            return Err(MatterError::IncorrectState(
+                "handle_sigma3 needs responder".into(),
+            ));
         }
         if initiator_root_ca != &self.creds.root_ca_public_key {
             return Err(MatterError::Fabric(
@@ -184,7 +194,9 @@ impl CaseSession {
     /// Initiator-side finalisation (after sending Sigma3).
     pub fn finalize_initiator(&mut self) -> Result<&CaseSessionKeys> {
         if self.role != Role::Initiator {
-            return Err(MatterError::IncorrectState("finalize needs initiator".into()));
+            return Err(MatterError::IncorrectState(
+                "finalize needs initiator".into(),
+            ));
         }
         let keys = self.derive_secure_session()?;
         self.keys = Some(keys);
@@ -303,7 +315,10 @@ mod tests {
         let s2 = responder.handle_sigma1(&s1).expect("sigma2");
         let s3 = initiator.handle_sigma2(&s2).expect("sigma3");
         let initiator_root = initiator.creds.root_ca_public_key;
-        let r_keys = responder.handle_sigma3(&s3, &initiator_root).expect("rkeys").clone();
+        let r_keys = responder
+            .handle_sigma3(&s3, &initiator_root)
+            .expect("rkeys")
+            .clone();
         let i_keys = initiator.finalize_initiator().expect("ikeys").clone();
         assert_eq!(i_keys.i2r_key, r_keys.i2r_key);
         assert_eq!(i_keys.r2i_key, r_keys.r2i_key);
@@ -337,7 +352,9 @@ mod tests {
         let s2 = responder.handle_sigma1(&s1).expect("sigma2");
         let s3 = initiator.handle_sigma2(&s2).expect("sigma3");
         let initiator_root = initiator.creds.root_ca_public_key;
-        let err = responder.handle_sigma3(&s3, &initiator_root).expect_err("must reject");
+        let err = responder
+            .handle_sigma3(&s3, &initiator_root)
+            .expect_err("must reject");
         match err {
             MatterError::Fabric(_) => {}
             other => panic!("unexpected error {other:?}"),

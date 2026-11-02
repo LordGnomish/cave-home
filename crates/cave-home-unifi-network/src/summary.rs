@@ -22,7 +22,11 @@ pub struct ThroughputSample {
 impl ThroughputSample {
     #[must_use]
     pub const fn new(tick: u64, rx_bytes: u64, tx_bytes: u64) -> Self {
-        Self { tick, rx_bytes, tx_bytes }
+        Self {
+            tick,
+            rx_bytes,
+            tx_bytes,
+        }
     }
 
     /// Total bytes (received + transmitted) in this sample.
@@ -143,8 +147,7 @@ mod tests {
     use super::*;
 
     fn gateway_up() -> NetworkDevice {
-        NetworkDevice::new("gw", "Internet box", "00:gw", DeviceKind::Gateway)
-            .uplinked_to("isp")
+        NetworkDevice::new("gw", "Internet box", "00:gw", DeviceKind::Gateway).uplinked_to("isp")
     }
 
     #[test]
@@ -172,7 +175,9 @@ mod tests {
     fn counts_exclude_blocked_clients() {
         let clients = [
             NetworkClient::new("a", "Phone").wireless("Home", "ap-1"),
-            NetworkClient::new("b", "Tablet").wireless("Home", "ap-1").blocked(),
+            NetworkClient::new("b", "Tablet")
+                .wireless("Home", "ap-1")
+                .blocked(),
             NetworkClient::new("c", "Laptop").wireless("Home", "ap-2"),
         ];
         let s = summarize(&[gateway_up()], &clients, &[]);
@@ -199,7 +204,9 @@ mod tests {
     fn guest_clients_counted_separately() {
         let clients = [
             NetworkClient::new("a", "Phone").wireless("Home", "ap-1"),
-            NetworkClient::new("g", "Visitor").wireless("Guest", "ap-1").as_guest(),
+            NetworkClient::new("g", "Visitor")
+                .wireless("Guest", "ap-1")
+                .as_guest(),
         ];
         let s = summarize(&[gateway_up()], &clients, &[]);
         assert_eq!(s.connected_clients, 2);

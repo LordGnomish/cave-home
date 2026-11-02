@@ -163,11 +163,17 @@ mod tests {
         // today = 100, window = 3 days.
         assert_eq!(Freshness::classify(Some(110), 100, 3), Freshness::Fresh);
         // Exactly at the edge of the window is still "soon".
-        assert_eq!(Freshness::classify(Some(103), 100, 3), Freshness::ExpiringSoon);
+        assert_eq!(
+            Freshness::classify(Some(103), 100, 3),
+            Freshness::ExpiringSoon
+        );
         // Just outside is fresh.
         assert_eq!(Freshness::classify(Some(104), 100, 3), Freshness::Fresh);
         // Today itself is "soon", not expired.
-        assert_eq!(Freshness::classify(Some(100), 100, 3), Freshness::ExpiringSoon);
+        assert_eq!(
+            Freshness::classify(Some(100), 100, 3),
+            Freshness::ExpiringSoon
+        );
         // Yesterday is expired.
         assert_eq!(Freshness::classify(Some(99), 100, 3), Freshness::Expired);
     }
@@ -202,6 +208,9 @@ mod tests {
         let r = report(&[yogurt(Some(101))], 100, 3);
         assert_eq!(r.entries[0].line(Lang::En), "Yogurt expires tomorrow");
         let gone = report(&[yogurt(Some(50))], 100, 3);
-        assert_eq!(gone.entries[0].line(Lang::De), "Yogurt ist abgelaufen — wegwerfen");
+        assert_eq!(
+            gone.entries[0].line(Lang::De),
+            "Yogurt ist abgelaufen — wegwerfen"
+        );
     }
 }

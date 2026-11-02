@@ -27,7 +27,9 @@ use crate::clusters::network_commissioning::{
 use crate::error::{MatterError, Result};
 use crate::fabric::{FabricId, FabricIndex, FabricInfo, FabricTable, NodeId};
 use crate::pase::{PaseSession, PbkdfParameters};
-use crate::setup_payload::{parse_manual_pairing_code, parse_qr_payload, SetupPayload, QR_CODE_PREFIX};
+use crate::setup_payload::{
+    QR_CODE_PREFIX, SetupPayload, parse_manual_pairing_code, parse_qr_payload,
+};
 
 /// A device that has been successfully paired.
 ///

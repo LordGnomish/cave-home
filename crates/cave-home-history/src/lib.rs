@@ -64,12 +64,10 @@ pub mod sample;
 pub mod state_history;
 pub mod stats;
 
-pub use aggregate::{bucket_start, downsample, Aggregator};
+pub use aggregate::{Aggregator, bucket_start, downsample};
 pub use decimate::{lttb, min_max};
-pub use label::{average, humanize_duration, no_data, time_in_state, time_in_state_units, Lang};
+pub use label::{Lang, average, humanize_duration, no_data, time_in_state, time_in_state_units};
 pub use retention::{Disposition, Partitioned, RetentionPolicy, Tier};
 pub use sample::{Sample, SampleError, Series, SeriesKey, TimeUnit};
 pub use state_history::{StateSample, StateTimeline};
-pub use stats::{
-    find_gaps, integral, rate_of_change, summarize, time_weighted_mean, Gap, Summary,
-};
+pub use stats::{Gap, Summary, find_gaps, integral, rate_of_change, summarize, time_weighted_mean};

@@ -60,7 +60,10 @@ impl Site {
         if !longitude_deg.is_finite() || !(-180.0..=180.0).contains(&longitude_deg) {
             return Err(ForecastError::BadLongitude);
         }
-        Ok(Self { latitude_deg, longitude_deg })
+        Ok(Self {
+            latitude_deg,
+            longitude_deg,
+        })
     }
 
     #[must_use]
@@ -123,7 +126,11 @@ pub fn instant_at(
     let sun = sun_position::sun_position_at(site.latitude_deg, day, true_solar_time_h);
     let poa = array.plane_of_array_w_m2(sun, day, DEFAULT_CLEAR_SKY_TRANSMITTANCE);
     let power = array.ac_power_kw(poa, cloud);
-    Ok(Instant { sun, plane_of_array_w_m2: poa, power_kw: power })
+    Ok(Instant {
+        sun,
+        plane_of_array_w_m2: poa,
+        power_kw: power,
+    })
 }
 
 /// A whole-day forecast for a site and array.
@@ -288,7 +295,11 @@ mod tests {
         let cloudy = forecast_day(iphofen(), roof(), 172, 1.0, 0.1).unwrap();
         assert!(cloudy.energy_kwh < clear.energy_kwh);
         // Full overcast leaves the ~25% diffuse floor of the clear-day energy.
-        close(cloudy.energy_kwh, clear.energy_kwh * 0.25, clear.energy_kwh * 0.02);
+        close(
+            cloudy.energy_kwh,
+            clear.energy_kwh * 0.25,
+            clear.energy_kwh * 0.02,
+        );
     }
 
     #[test]
@@ -297,13 +308,21 @@ mod tests {
         // on the order of 30-45 kWh — the right order of magnitude for the
         // simple clear-sky model.
         let f = forecast_day(iphofen(), roof(), 172, 0.0, 0.05).unwrap();
-        assert!((25.0..=50.0).contains(&f.energy_kwh), "summer energy {}", f.energy_kwh);
+        assert!(
+            (25.0..=50.0).contains(&f.energy_kwh),
+            "summer energy {}",
+            f.energy_kwh
+        );
     }
 
     #[test]
     fn peak_power_occurs_around_solar_noon() {
         let f = forecast_day(iphofen(), roof(), 172, 0.0, 0.1).unwrap();
-        assert!((10.0..=14.0).contains(&f.peak_solar_time_h), "peak at {}", f.peak_solar_time_h);
+        assert!(
+            (10.0..=14.0).contains(&f.peak_solar_time_h),
+            "peak at {}",
+            f.peak_solar_time_h
+        );
         assert!(f.peak_power_kw > 0.0);
         // Peak never exceeds the rated power after derate.
         assert!(f.peak_power_kw <= roof().peak_power_kw());
@@ -313,17 +332,28 @@ mod tests {
     fn energy_scales_with_array_size() {
         let small = PvArray::new(3.0, 30.0, 180.0, 0.85).unwrap();
         let big = PvArray::new(6.0, 30.0, 180.0, 0.85).unwrap();
-        let es = forecast_day(iphofen(), small, 172, 0.0, 0.1).unwrap().energy_kwh;
-        let eb = forecast_day(iphofen(), big, 172, 0.0, 0.1).unwrap().energy_kwh;
+        let es = forecast_day(iphofen(), small, 172, 0.0, 0.1)
+            .unwrap()
+            .energy_kwh;
+        let eb = forecast_day(iphofen(), big, 172, 0.0, 0.1)
+            .unwrap()
+            .energy_kwh;
         close(eb, 2.0 * es, 1e-6);
     }
 
     #[test]
     fn finer_step_converges() {
         // Coarse and fine integration agree to a few percent.
-        let coarse = forecast_day(iphofen(), roof(), 172, 0.0, 0.5).unwrap().energy_kwh;
-        let fine = forecast_day(iphofen(), roof(), 172, 0.0, 0.02).unwrap().energy_kwh;
-        assert!((coarse - fine).abs() / fine < 0.05, "coarse {coarse} vs fine {fine}");
+        let coarse = forecast_day(iphofen(), roof(), 172, 0.0, 0.5)
+            .unwrap()
+            .energy_kwh;
+        let fine = forecast_day(iphofen(), roof(), 172, 0.0, 0.02)
+            .unwrap()
+            .energy_kwh;
+        assert!(
+            (coarse - fine).abs() / fine < 0.05,
+            "coarse {coarse} vs fine {fine}"
+        );
     }
 
     #[test]
@@ -343,6 +373,10 @@ mod tests {
     #[test]
     fn daylight_length_carried_into_forecast() {
         let f = forecast_day(iphofen(), roof(), 172, 0.0, 0.25).unwrap();
-        assert!(f.daylight_hours > 15.0, "summer daylight {}", f.daylight_hours);
+        assert!(
+            f.daylight_hours > 15.0,
+            "summer daylight {}",
+            f.daylight_hours
+        );
     }
 }

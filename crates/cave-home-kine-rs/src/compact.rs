@@ -54,11 +54,17 @@ pub fn compact(store: &mut Store, target: Revision) -> Result<CompactReport> {
     }
     let current = store.current_revision();
     if target > current {
-        return Err(KineError::CompactFutureRevision { requested: target, current });
+        return Err(KineError::CompactFutureRevision {
+            requested: target,
+            current,
+        });
     }
     let floor = store.compacted_revision();
     if target <= floor {
-        return Err(KineError::CompactionNotForward { requested: target, current: floor });
+        return Err(KineError::CompactionNotForward {
+            requested: target,
+            current: floor,
+        });
     }
 
     let before = store.rows().len();
@@ -93,14 +99,21 @@ pub fn compact(store: &mut Store, target: Revision) -> Result<CompactReport> {
     let removed = before - kept.len();
     let remaining = kept.len();
     store.install_compacted(kept, target);
-    Ok(CompactReport { compacted: target, removed, remaining })
+    Ok(CompactReport {
+        compacted: target,
+        removed,
+        remaining,
+    })
 }
 
 /// `(key, mod_revision)` of the latest row for each distinct key.
 fn latest_row_revision_per_key(rows: &[Row]) -> Vec<(Vec<u8>, Revision)> {
     let mut out: Vec<(Vec<u8>, Revision)> = Vec::new();
     for row in rows {
-        match out.iter_mut().find(|(k, _)| k.as_slice() == row.key.as_slice()) {
+        match out
+            .iter_mut()
+            .find(|(k, _)| k.as_slice() == row.key.as_slice())
+        {
             Some((_, rev)) if *rev < row.mod_revision => *rev = row.mod_revision,
             Some(_) => {}
             None => out.push((row.key.clone(), row.mod_revision)),
@@ -112,7 +125,7 @@ fn latest_row_revision_per_key(rows: &[Row]) -> Vec<(Vec<u8>, Revision)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::range::{execute, RangeRequest};
+    use crate::range::{RangeRequest, execute};
 
     #[test]
     fn compaction_drops_superseded_values_but_keeps_current() {
@@ -160,7 +173,13 @@ mod tests {
         s.update(b"k", b"v3", 0).unwrap(); // 3
         compact(&mut s, 2).unwrap();
         let err = execute(&s, &RangeRequest::key(b"k").at_revision(1)).unwrap_err();
-        assert_eq!(err, KineError::Compacted { requested: 1, compacted: 2 });
+        assert_eq!(
+            err,
+            KineError::Compacted {
+                requested: 1,
+                compacted: 2
+            }
+        );
     }
 
     #[test]
@@ -171,7 +190,10 @@ mod tests {
         s.update(b"k", b"v3", 0).unwrap();
         compact(&mut s, 2).unwrap();
         // current read fine
-        assert_eq!(execute(&s, &RangeRequest::key(b"k")).unwrap().kvs[0].value, b"v3");
+        assert_eq!(
+            execute(&s, &RangeRequest::key(b"k")).unwrap().kvs[0].value,
+            b"v3"
+        );
         // read at exactly the floor fine
         assert!(execute(&s, &RangeRequest::key(b"k").at_revision(2)).is_ok());
     }
@@ -183,7 +205,13 @@ mod tests {
         s.update(b"k", b"v2", 0).unwrap();
         compact(&mut s, 2).unwrap();
         let err = compact(&mut s, 2).unwrap_err();
-        assert_eq!(err, KineError::CompactionNotForward { requested: 2, current: 2 });
+        assert_eq!(
+            err,
+            KineError::CompactionNotForward {
+                requested: 2,
+                current: 2
+            }
+        );
     }
 
     #[test]
@@ -191,14 +219,23 @@ mod tests {
         let mut s = Store::new();
         s.create(b"k", b"v", 0).unwrap();
         let err = compact(&mut s, 50).unwrap_err();
-        assert_eq!(err, KineError::CompactFutureRevision { requested: 50, current: 1 });
+        assert_eq!(
+            err,
+            KineError::CompactFutureRevision {
+                requested: 50,
+                current: 1
+            }
+        );
     }
 
     #[test]
     fn compaction_rejects_negative_revision() {
         let mut s = Store::new();
         s.create(b"k", b"v", 0).unwrap();
-        assert_eq!(compact(&mut s, -1), Err(KineError::NegativeRevision { revision: -1 }));
+        assert_eq!(
+            compact(&mut s, -1),
+            Err(KineError::NegativeRevision { revision: -1 })
+        );
     }
 
     #[test]
@@ -217,7 +254,10 @@ mod tests {
         let resp = execute(&s, &RangeRequest::key(b"k")).unwrap();
         assert_eq!(resp.kvs.len(), 1);
         assert_eq!(resp.kvs[0].value, b"v2");
-        assert_eq!(resp.kvs[0].create_revision, 3, "the new generation's create rev");
+        assert_eq!(
+            resp.kvs[0].create_revision, 3,
+            "the new generation's create rev"
+        );
     }
 
     #[test]
@@ -244,11 +284,17 @@ mod tests {
         // A repeat at the same revision is rejected and removes nothing more.
         assert_eq!(
             compact(&mut s, 2),
-            Err(KineError::CompactionNotForward { requested: 2, current: 2 })
+            Err(KineError::CompactionNotForward {
+                requested: 2,
+                current: 2
+            })
         );
         // And the surviving state is untouched by the rejected second call.
         assert!(removed_first >= 1);
-        assert_eq!(execute(&s, &RangeRequest::key(b"k")).unwrap().kvs[0].value, b"v3");
+        assert_eq!(
+            execute(&s, &RangeRequest::key(b"k")).unwrap().kvs[0].value,
+            b"v3"
+        );
     }
 
     #[test]
@@ -265,7 +311,10 @@ mod tests {
         // A compact to rev 2, now below the floor of 3, is rejected (not forward).
         assert_eq!(
             compact(&mut s, 2),
-            Err(KineError::CompactionNotForward { requested: 2, current: 3 })
+            Err(KineError::CompactionNotForward {
+                requested: 2,
+                current: 3
+            })
         );
     }
 
@@ -276,6 +325,10 @@ mod tests {
         s.update(b"k", b"v2", 0).unwrap();
         s.update(b"k", b"v3", 0).unwrap();
         compact(&mut s, 2).unwrap();
-        assert_eq!(s.current_revision(), 3, "compaction never rewinds the clock");
+        assert_eq!(
+            s.current_revision(),
+            3,
+            "compaction never rewinds the clock"
+        );
     }
 }

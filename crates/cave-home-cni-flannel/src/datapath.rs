@@ -22,13 +22,14 @@ use std::net::IpAddr;
 use crate::backend::MacAddr;
 use crate::cidr::Cidr;
 use crate::netlink::{
-    self, ifaddrmsg, ifinfomsg, ip_octets, ndmsg, rtmsg, NlMsg, AF_BRIDGE, AF_INET, AF_INET6,
-    AF_UNSPEC, IFA_ADDRESS, IFA_LOCAL, IFF_UP, IFLA_ADDRESS, IFLA_IFNAME, IFLA_INFO_DATA,
-    IFLA_INFO_KIND, IFLA_LINKINFO, IFLA_MTU, IFLA_VXLAN_GBP, IFLA_VXLAN_ID, IFLA_VXLAN_LEARNING,
-    IFLA_VXLAN_LINK, IFLA_VXLAN_LOCAL, IFLA_VXLAN_LOCAL6, IFLA_VXLAN_PORT, NDA_DST, NDA_LLADDR,
-    NLM_F_CREATE, NLM_F_EXCL, NLM_F_REPLACE, NTF_SELF, NUD_PERMANENT, RTA_DST, RTA_GATEWAY, RTA_OIF,
+    self, AF_BRIDGE, AF_INET, AF_INET6, AF_UNSPEC, IFA_ADDRESS, IFA_LOCAL, IFF_UP, IFLA_ADDRESS,
+    IFLA_IFNAME, IFLA_INFO_DATA, IFLA_INFO_KIND, IFLA_LINKINFO, IFLA_MTU, IFLA_VXLAN_GBP,
+    IFLA_VXLAN_ID, IFLA_VXLAN_LEARNING, IFLA_VXLAN_LINK, IFLA_VXLAN_LOCAL, IFLA_VXLAN_LOCAL6,
+    IFLA_VXLAN_PORT, NDA_DST, NDA_LLADDR, NLM_F_CREATE, NLM_F_EXCL, NLM_F_REPLACE, NTF_SELF,
+    NUD_PERMANENT, NlMsg, RT_SCOPE_UNIVERSE, RT_TABLE_MAIN, RTA_DST, RTA_GATEWAY, RTA_OIF,
     RTM_DELLINK, RTM_DELNEIGH, RTM_DELROUTE, RTM_NEWADDR, RTM_NEWLINK, RTM_NEWNEIGH, RTM_NEWROUTE,
-    RTM_SETLINK, RTN_UNICAST, RTNH_F_ONLINK, RTPROT_BOOT, RT_SCOPE_UNIVERSE, RT_TABLE_MAIN,
+    RTM_SETLINK, RTN_UNICAST, RTNH_F_ONLINK, RTPROT_BOOT, ifaddrmsg, ifinfomsg, ip_octets, ndmsg,
+    rtmsg,
 };
 
 /// An error from programming the datapath.
@@ -212,7 +213,11 @@ impl Route {
     /// Encode an `RTM_NEWROUTE` / `RTM_DELROUTE` request.
     #[must_use]
     pub fn encode(&self, new: bool, extra_flags: u16, seq: u32) -> Vec<u8> {
-        let family = if self.dest.network().is_ipv6() { AF_INET6 } else { AF_INET };
+        let family = if self.dest.network().is_ipv6() {
+            AF_INET6
+        } else {
+            AF_INET
+        };
         let mtype = if new { RTM_NEWROUTE } else { RTM_DELROUTE };
         let mut m = NlMsg::request(mtype, extra_flags);
         m.seq = seq;
@@ -301,8 +306,13 @@ impl Neigh {
         let extra = if new { NLM_F_CREATE | NLM_F_REPLACE } else { 0 };
         let mut m = NlMsg::request(mtype, extra);
         m.seq = seq;
-        m.body
-            .extend_from_slice(&ndmsg(self.family, self.ifindex, self.state, self.flags, self.ntype));
+        m.body.extend_from_slice(&ndmsg(
+            self.family,
+            self.ifindex,
+            self.state,
+            self.flags,
+            self.ntype,
+        ));
         netlink::push_attr(&mut m.body, NDA_DST, &ip_octets(self.ip));
         netlink::push_attr(&mut m.body, NDA_LLADDR, &self.mac.octets());
         m.serialize()
@@ -316,7 +326,8 @@ impl Neigh {
 pub fn encode_link_set_up(index: i32, seq: u32) -> Vec<u8> {
     let mut m = NlMsg::request(RTM_SETLINK, 0);
     m.seq = seq;
-    m.body.extend_from_slice(&ifinfomsg(AF_UNSPEC, index, IFF_UP, IFF_UP));
+    m.body
+        .extend_from_slice(&ifinfomsg(AF_UNSPEC, index, IFF_UP, IFF_UP));
     m.serialize()
 }
 
@@ -494,7 +505,7 @@ impl Datapath for MockDatapath {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::netlink::{nlmsg_align, AF_INET as F_INET};
+    use crate::netlink::{AF_INET as F_INET, nlmsg_align};
     use std::net::Ipv4Addr;
     use std::str::FromStr;
 
@@ -510,7 +521,10 @@ mod tests {
         let r = Route::vxlan(cidr("10.42.1.0/24"), v4("10.42.1.0"), 7);
         let bytes = r.encode(true, NLM_F_REPLACE | NLM_F_CREATE, 3);
         // header
-        assert_eq!(u16::from_le_bytes(bytes[4..6].try_into().unwrap()), RTM_NEWROUTE);
+        assert_eq!(
+            u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
+            RTM_NEWROUTE
+        );
         // rtmsg starts at offset 16.
         assert_eq!(bytes[16], F_INET); // family
         assert_eq!(bytes[17], 24); // dst_len
@@ -537,7 +551,10 @@ mod tests {
         assert_eq!(n.flags, NTF_SELF);
         assert_eq!(n.state, NUD_PERMANENT);
         let bytes = n.encode(true, 1);
-        assert_eq!(u16::from_le_bytes(bytes[4..6].try_into().unwrap()), RTM_NEWNEIGH);
+        assert_eq!(
+            u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
+            RTM_NEWNEIGH
+        );
         // ndmsg at 16: family, then ifindex at +4.
         assert_eq!(bytes[16], AF_BRIDGE);
         assert_eq!(i32::from_le_bytes(bytes[20..24].try_into().unwrap()), 7);
@@ -569,7 +586,10 @@ mod tests {
             mtu: 1450,
         };
         let bytes = link.encode(5);
-        assert_eq!(u16::from_le_bytes(bytes[4..6].try_into().unwrap()), RTM_NEWLINK);
+        assert_eq!(
+            u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
+            RTM_NEWLINK
+        );
         let flags = u16::from_le_bytes(bytes[6..8].try_into().unwrap());
         assert_ne!(flags & NLM_F_CREATE, 0);
         assert_ne!(flags & NLM_F_EXCL, 0);
@@ -586,17 +606,29 @@ mod tests {
     #[test]
     fn link_set_up_sets_iff_up_in_flags_and_change() {
         let bytes = encode_link_set_up(7, 2);
-        assert_eq!(u16::from_le_bytes(bytes[4..6].try_into().unwrap()), RTM_SETLINK);
+        assert_eq!(
+            u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
+            RTM_SETLINK
+        );
         // ifinfomsg at 16: index at +4, flags at +8, change at +12.
         assert_eq!(i32::from_le_bytes(bytes[20..24].try_into().unwrap()), 7);
-        assert_eq!(u32::from_le_bytes(bytes[24..28].try_into().unwrap()), IFF_UP);
-        assert_eq!(u32::from_le_bytes(bytes[28..32].try_into().unwrap()), IFF_UP);
+        assert_eq!(
+            u32::from_le_bytes(bytes[24..28].try_into().unwrap()),
+            IFF_UP
+        );
+        assert_eq!(
+            u32::from_le_bytes(bytes[28..32].try_into().unwrap()),
+            IFF_UP
+        );
     }
 
     #[test]
     fn link_del_targets_index() {
         let bytes = encode_link_del(9, 4);
-        assert_eq!(u16::from_le_bytes(bytes[4..6].try_into().unwrap()), RTM_DELLINK);
+        assert_eq!(
+            u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
+            RTM_DELLINK
+        );
         assert_eq!(i32::from_le_bytes(bytes[20..24].try_into().unwrap()), 9);
     }
 

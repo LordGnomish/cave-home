@@ -27,13 +27,7 @@ pub enum Priority {
 
 impl Priority {
     /// All five levels, least → most urgent. Handy for exhaustive iteration.
-    pub const ALL: [Self; 5] = [
-        Self::Min,
-        Self::Low,
-        Self::Default,
-        Self::High,
-        Self::Max,
-    ];
+    pub const ALL: [Self; 5] = [Self::Min, Self::Low, Self::Default, Self::High, Self::Max];
 
     /// The 1..=5 numeric level, matching the ntfy-class convention.
     #[must_use]

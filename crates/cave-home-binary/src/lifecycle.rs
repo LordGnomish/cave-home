@@ -26,7 +26,7 @@
 //! pure and synchronous so it is unit-testable; only the CRI calls are async.
 
 use cave_home_apiserver_rs::gvk::GroupVersionResource;
-use cave_home_apiserver_rs::json::{obj, Value};
+use cave_home_apiserver_rs::json::{Value, obj};
 use cave_home_apiserver_rs::registry::{ListOptions, Registry};
 use cave_home_kubelet_rs::cri::types::{
     ContainerConfig, ContainerMetadata, ImageSpec, PodSandboxConfig, PodSandboxMetadata,
@@ -42,12 +42,16 @@ fn pods_gvr() -> GroupVersionResource {
 
 /// A pod's `spec.nodeName`, or `""` if unbound.
 fn node_name_of(pod: &Value) -> &str {
-    pod.pointer("spec.nodeName").and_then(Value::as_str).unwrap_or("")
+    pod.pointer("spec.nodeName")
+        .and_then(Value::as_str)
+        .unwrap_or("")
 }
 
 /// A pod's `status.phase`, or `""` if unset.
 fn phase_of(pod: &Value) -> &str {
-    pod.pointer("status.phase").and_then(Value::as_str).unwrap_or("")
+    pod.pointer("status.phase")
+        .and_then(Value::as_str)
+        .unwrap_or("")
 }
 
 /// The single-node scheduler bind: assign every unscheduled Pod to `node_name`.
@@ -68,7 +72,10 @@ pub fn bind_pending_pods(reg: &mut Registry, node_name: &str) -> usize {
     let mut bound = 0;
     for (namespace, name) in pending {
         let patch = obj([("spec", obj([("nodeName", Value::from(node_name))]))]);
-        if reg.patch_merge(&pods_gvr(), &namespace, &name, &patch).is_ok() {
+        if reg
+            .patch_merge(&pods_gvr(), &namespace, &name, &patch)
+            .is_ok()
+        {
             bound += 1;
         }
     }
@@ -85,7 +92,9 @@ fn namespace_of(pod: &Value) -> String {
 
 /// A pod's `metadata.name` (None if absent — an unnameable object is skipped).
 fn name_of(pod: &Value) -> Option<String> {
-    pod.pointer("metadata.name").and_then(Value::as_str).map(str::to_string)
+    pod.pointer("metadata.name")
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 /// One container the kubelet must run: its name and image.
@@ -116,7 +125,11 @@ fn runnable_pods(reg: &Registry, node_name: &str) -> Vec<PodPlan> {
             Some(PodPlan {
                 namespace: namespace_of(p),
                 name: name_of(p)?,
-                uid: p.pointer("metadata.uid").and_then(Value::as_str).unwrap_or("").to_string(),
+                uid: p
+                    .pointer("metadata.uid")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
                 containers: read_containers(p),
             })
         })
@@ -132,7 +145,11 @@ fn read_containers(pod: &Value) -> Vec<ContainerPlan> {
                 .filter_map(|c| {
                     Some(ContainerPlan {
                         name: c.get("name").and_then(Value::as_str)?.to_string(),
-                        image: c.get("image").and_then(Value::as_str).unwrap_or("").to_string(),
+                        image: c
+                            .get("image")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
                     })
                 })
                 .collect()
@@ -155,7 +172,9 @@ impl PodRuntime {
     /// A runtime backed by a fresh in-memory mock CRI.
     #[must_use]
     pub fn new() -> Self {
-        Self { cri: MockCriClient::new() }
+        Self {
+            cri: MockCriClient::new(),
+        }
     }
 
     /// One kubelet sync pass: run every not-yet-`Running` pod bound to
@@ -194,13 +213,25 @@ impl PodRuntime {
         };
         let sandbox_id = self.cri.run_pod_sandbox(sandbox_cfg.clone()).await?;
         for c in &plan.containers {
-            self.cri.pull_image(ImageSpec { image: c.image.clone() }).await?;
+            self.cri
+                .pull_image(ImageSpec {
+                    image: c.image.clone(),
+                })
+                .await?;
             let cfg = ContainerConfig {
-                metadata: ContainerMetadata { name: c.name.clone(), attempt: 0 },
-                image: ImageSpec { image: c.image.clone() },
+                metadata: ContainerMetadata {
+                    name: c.name.clone(),
+                    attempt: 0,
+                },
+                image: ImageSpec {
+                    image: c.image.clone(),
+                },
                 ..ContainerConfig::default()
             };
-            let cid = self.cri.create_container(&sandbox_id, cfg, sandbox_cfg.clone()).await?;
+            let cid = self
+                .cri
+                .create_container(&sandbox_id, cfg, sandbox_cfg.clone())
+                .await?;
             self.cri.start_container(&cid).await?;
         }
         Ok(())
@@ -222,7 +253,13 @@ fn mark_running(reg: &mut Registry, plan: &PodPlan) {
                 ("restartCount", Value::from(0_i64)),
                 // A real RFC3339 start time — kubectl parses this field (e.g. for
                 // `kubectl logs`), so a placeholder string makes it error.
-                ("state", obj([("running", obj([("startedAt", Value::from(crate::table::now_rfc3339()))]))])),
+                (
+                    "state",
+                    obj([(
+                        "running",
+                        obj([("startedAt", Value::from(crate::table::now_rfc3339()))]),
+                    )]),
+                ),
             ])
         })
         .collect();
@@ -266,7 +303,13 @@ mod tests {
         obj([
             ("apiVersion", Value::from("v1")),
             ("kind", Value::from("Pod")),
-            ("metadata", obj([("name", Value::from(name)), ("namespace", Value::from("default"))])),
+            (
+                "metadata",
+                obj([
+                    ("name", Value::from(name)),
+                    ("namespace", Value::from("default")),
+                ]),
+            ),
             ("spec", spec),
         ])
     }
@@ -304,11 +347,21 @@ mod tests {
         let runtime = PodRuntime::new();
         assert_eq!(runtime.reconcile(&shared, "hub-01").await, 1);
 
-        let got = shared.lock().await.get(&pods_gvr(), "default", "nginx").expect("get");
+        let got = shared
+            .lock()
+            .await
+            .get(&pods_gvr(), "default", "nginx")
+            .expect("get");
         assert_eq!(phase_of(&got), "Running");
-        let statuses = got.pointer("status.containerStatuses").and_then(Value::as_array).expect("statuses");
+        let statuses = got
+            .pointer("status.containerStatuses")
+            .and_then(Value::as_array)
+            .expect("statuses");
         assert_eq!(statuses.len(), 1);
-        assert_eq!(statuses[0].get("ready").and_then(Value::as_bool), Some(true));
+        assert_eq!(
+            statuses[0].get("ready").and_then(Value::as_bool),
+            Some(true)
+        );
 
         // A second pass is a no-op: the pod is already Running.
         assert_eq!(runtime.reconcile(&shared, "hub-01").await, 0);
@@ -321,7 +374,11 @@ mod tests {
         let shared: SharedRegistry = Arc::new(Mutex::new(reg));
         let runtime = PodRuntime::new();
         assert_eq!(runtime.reconcile(&shared, "hub-01").await, 0);
-        let got = shared.lock().await.get(&pods_gvr(), "default", "nginx").expect("get");
+        let got = shared
+            .lock()
+            .await
+            .get(&pods_gvr(), "default", "nginx")
+            .expect("get");
         assert_eq!(phase_of(&got), "");
     }
 
@@ -335,7 +392,11 @@ mod tests {
         let shared: SharedRegistry = Arc::new(Mutex::new(reg));
         let runtime = PodRuntime::new();
         assert_eq!(runtime.reconcile(&shared, "hub-01").await, 1);
-        let got = shared.lock().await.get(&pods_gvr(), "default", "nginx").expect("get");
+        let got = shared
+            .lock()
+            .await
+            .get(&pods_gvr(), "default", "nginx")
+            .expect("get");
         assert_eq!(phase_of(&got), "Running");
     }
 }

@@ -53,12 +53,7 @@ impl LightsController {
 
     /// `LightsController.set_state` — port. The upstream method takes
     /// keyword args; we accept a pre-built [`LightPut`] for type safety.
-    pub async fn set_state(
-        &self,
-        req: &dyn V2Request,
-        id: &str,
-        put: &LightPut,
-    ) -> HueResult<()> {
+    pub async fn set_state(&self, req: &dyn V2Request, id: &str, put: &LightPut) -> HueResult<()> {
         let body = serde_json::to_value(put).unwrap_or(json!({}));
         let _ = req.put(&format!("resource/light/{id}"), body).await?;
         Ok(())

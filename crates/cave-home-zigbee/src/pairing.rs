@@ -52,7 +52,10 @@ impl InstallCode {
     /// Returns [`ZigbeeError::Pairing`] if the input is not valid hex
     /// or has an unsupported length.
     pub fn from_hex(s: &str) -> Result<Self> {
-        let cleaned: String = s.chars().filter(|c| !c.is_whitespace() && *c != '-').collect();
+        let cleaned: String = s
+            .chars()
+            .filter(|c| !c.is_whitespace() && *c != '-')
+            .collect();
         if cleaned.len() % 2 != 0 {
             return Err(ZigbeeError::Pairing("install code: odd hex length".into()));
         }
@@ -296,7 +299,8 @@ mod tests {
         let mut bytes = data;
         bytes.extend_from_slice(&crc.to_le_bytes());
         let code = InstallCode::from_bytes(bytes).unwrap();
-        s.open_with_install_code(Duration::from_secs(60), code).unwrap();
+        s.open_with_install_code(Duration::from_secs(60), code)
+            .unwrap();
         assert!(s.install_code().is_some());
     }
 

@@ -77,20 +77,28 @@ pub fn dispatch(matches: &ArgMatches, verbose: bool) -> i32 {
             0
         }
         Some(("mode", m)) => {
-            let raw = m.get_one::<String>("mode").map(String::as_str).unwrap_or("");
+            let raw = m
+                .get_one::<String>("mode")
+                .map(String::as_str)
+                .unwrap_or("");
             match OpMode::from_cli(raw) {
                 Some(mode) => {
                     println!("Battery set to: {}.", friendly_mode(mode));
                     0
                 }
                 None => {
-                    eprintln!("I don't know the mode '{raw}'. Try self-consumption, backup or tbc.");
+                    eprintln!(
+                        "I don't know the mode '{raw}'. Try self-consumption, backup or tbc."
+                    );
                     1
                 }
             }
         }
         Some(("backup-reserve", m)) => {
-            let raw = m.get_one::<String>("percent").map(String::as_str).unwrap_or("");
+            let raw = m
+                .get_one::<String>("percent")
+                .map(String::as_str)
+                .unwrap_or("");
             match raw.parse::<u16>() {
                 Ok(p) if p <= 100 => {
                     println!("Keeping the battery at least {p}% full for outages.");
@@ -103,7 +111,10 @@ pub fn dispatch(matches: &ArgMatches, verbose: bool) -> i32 {
             }
         }
         Some(("history", m)) => {
-            let range = m.get_one::<String>("range").map(String::as_str).unwrap_or("24h");
+            let range = m
+                .get_one::<String>("range")
+                .map(String::as_str)
+                .unwrap_or("24h");
             print!("{}", render_history(&demo_history(range), verbose));
             0
         }
@@ -197,7 +208,10 @@ pub fn render_history(h: &EnergyHistory, verbose: bool) -> String {
     out.push_str("Energy history\n");
     out.push_str("==============\n");
     out.push_str(&format!("  Over the last  {}\n", h.range));
-    out.push_str(&format!("  Made           {:.1} kWh of sunshine\n", h.produced_kwh));
+    out.push_str(&format!(
+        "  Made           {:.1} kWh of sunshine\n",
+        h.produced_kwh
+    ));
     out.push_str(&format!("  Used           {:.1} kWh at home\n", h.used_kwh));
     if verbose {
         out.push_str(&format!(
@@ -219,9 +233,15 @@ mod tests {
 
     #[test]
     fn cmd_has_all_subcommands() {
-        let names: Vec<_> = cmd().get_subcommands().map(|s| s.get_name().to_string()).collect();
+        let names: Vec<_> = cmd()
+            .get_subcommands()
+            .map(|s| s.get_name().to_string())
+            .collect();
         for required in ["status", "mode", "backup-reserve", "history"] {
-            assert!(names.iter().any(|n| n == required), "missing energy sub: {required}");
+            assert!(
+                names.iter().any(|n| n == required),
+                "missing energy sub: {required}"
+            );
         }
     }
 
@@ -276,7 +296,13 @@ mod tests {
     #[test]
     fn render_status_default_hides_jargon() {
         let out = render_status(&demo_flow(), false);
-        for forbidden in ["OAuth", "Fleet", "instant_power", "self_consumption", "watts"] {
+        for forbidden in [
+            "OAuth",
+            "Fleet",
+            "instant_power",
+            "self_consumption",
+            "watts",
+        ] {
             assert!(!out.contains(forbidden), "leaked '{forbidden}': {out}");
         }
         assert!(out.contains("Solar"));

@@ -143,7 +143,11 @@ impl CallGroup {
         if members.is_empty() {
             return Err(ExtensionError::EmptyGroup);
         }
-        Ok(Self { name: name.into(), strategy, members })
+        Ok(Self {
+            name: name.into(),
+            strategy,
+            members,
+        })
     }
 
     #[must_use]
@@ -192,7 +196,10 @@ mod tests {
     use super::*;
 
     fn ext(n: &str) -> ExtensionNumber {
-        Extension::new(n, "x", DeviceId(0)).unwrap().number().clone()
+        Extension::new(n, "x", DeviceId(0))
+            .unwrap()
+            .number()
+            .clone()
     }
 
     #[test]
@@ -201,7 +208,10 @@ mod tests {
             Extension::new("10A", "Kitchen", DeviceId(1)),
             Err(ExtensionError::BadNumber)
         );
-        assert_eq!(Extension::new("", "Kitchen", DeviceId(1)), Err(ExtensionError::BadNumber));
+        assert_eq!(
+            Extension::new("", "Kitchen", DeviceId(1)),
+            Err(ExtensionError::BadNumber)
+        );
     }
 
     #[test]
@@ -265,8 +275,12 @@ mod tests {
 
     #[test]
     fn round_robin_offset_wraps_safely() {
-        let g = CallGroup::new("Pair", RingStrategy::RoundRobin, vec![ext("101"), ext("102")])
-            .unwrap();
+        let g = CallGroup::new(
+            "Pair",
+            RingStrategy::RoundRobin,
+            vec![ext("101"), ext("102")],
+        )
+        .unwrap();
         // offset 7 % 2 == 1 -> starts at second member.
         assert_eq!(g.ring_order(7), vec![ext("102"), ext("101")]);
     }

@@ -58,9 +58,7 @@ impl Template {
 
 impl std::fmt::Debug for Template {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Template")
-            .field("src", &self.src)
-            .finish()
+        f.debug_struct("Template").field("src", &self.src).finish()
     }
 }
 
@@ -85,23 +83,26 @@ impl Template {
     fn register_extensions(env: &mut Environment<'static>, sm: Arc<StateMachine>) {
         // states(entity_id) — fetch the bare state value, or all states if no arg.
         let sm_states = sm.clone();
-        env.add_function("states", move |args: &[JinjaValue]| -> Result<JinjaValue, JinjaError> {
-            if args.is_empty() {
-                let snapshot: Vec<JinjaValue> = sm_states
-                    .all(None)
-                    .iter()
-                    .map(state_to_jinja)
-                    .collect();
-                return Ok(JinjaValue::from(snapshot));
-            }
-            let key = args[0]
-                .as_str()
-                .ok_or_else(|| JinjaError::new(minijinja::ErrorKind::InvalidOperation, "states() expects an entity_id string"))?;
-            Ok(match lookup(&sm_states, key) {
-                Some(s) => JinjaValue::from(s.state),
-                None => JinjaValue::from("unknown"),
-            })
-        });
+        env.add_function(
+            "states",
+            move |args: &[JinjaValue]| -> Result<JinjaValue, JinjaError> {
+                if args.is_empty() {
+                    let snapshot: Vec<JinjaValue> =
+                        sm_states.all(None).iter().map(state_to_jinja).collect();
+                    return Ok(JinjaValue::from(snapshot));
+                }
+                let key = args[0].as_str().ok_or_else(|| {
+                    JinjaError::new(
+                        minijinja::ErrorKind::InvalidOperation,
+                        "states() expects an entity_id string",
+                    )
+                })?;
+                Ok(match lookup(&sm_states, key) {
+                    Some(s) => JinjaValue::from(s.state),
+                    None => JinjaValue::from("unknown"),
+                })
+            },
+        );
 
         // is_state(entity_id, state) -> bool
         let sm_is_state = sm.clone();
@@ -133,19 +134,27 @@ impl Template {
         });
 
         // today_at(time_str) -> ISO-8601 datetime at today's date + given HH:MM:SS.
-        env.add_function("today_at", |time_str: &str| -> Result<JinjaValue, JinjaError> {
-            let parts: Vec<&str> = time_str.split(':').collect();
-            let hh = parts.first().and_then(|s| s.parse::<u8>().ok()).unwrap_or(0);
-            let mm = parts.get(1).and_then(|s| s.parse::<u8>().ok()).unwrap_or(0);
-            let ss = parts.get(2).and_then(|s| s.parse::<u8>().ok()).unwrap_or(0);
-            let now = OffsetDateTime::now_utc();
-            let target = now
-                .replace_hour(hh)
-                .and_then(|d| d.replace_minute(mm))
-                .and_then(|d| d.replace_second(ss))
-                .map_err(|e| JinjaError::new(minijinja::ErrorKind::InvalidOperation, e.to_string()))?;
-            Ok(JinjaValue::from(iso(target)))
-        });
+        env.add_function(
+            "today_at",
+            |time_str: &str| -> Result<JinjaValue, JinjaError> {
+                let parts: Vec<&str> = time_str.split(':').collect();
+                let hh = parts
+                    .first()
+                    .and_then(|s| s.parse::<u8>().ok())
+                    .unwrap_or(0);
+                let mm = parts.get(1).and_then(|s| s.parse::<u8>().ok()).unwrap_or(0);
+                let ss = parts.get(2).and_then(|s| s.parse::<u8>().ok()).unwrap_or(0);
+                let now = OffsetDateTime::now_utc();
+                let target = now
+                    .replace_hour(hh)
+                    .and_then(|d| d.replace_minute(mm))
+                    .and_then(|d| d.replace_second(ss))
+                    .map_err(|e| {
+                        JinjaError::new(minijinja::ErrorKind::InvalidOperation, e.to_string())
+                    })?;
+                Ok(JinjaValue::from(iso(target)))
+            },
+        );
 
         // as_timestamp(value) -> f64 unix timestamp.
         env.add_filter(
@@ -170,17 +179,20 @@ impl Template {
         );
 
         // float | int | bool filters with HA semantics (default value on failure).
-        env.add_filter("float", |v: JinjaValue, default: Option<f64>| -> JinjaValue {
-            if let Some(s) = v.as_str() {
-                if let Ok(parsed) = s.parse::<f64>() {
-                    return JinjaValue::from(parsed);
+        env.add_filter(
+            "float",
+            |v: JinjaValue, default: Option<f64>| -> JinjaValue {
+                if let Some(s) = v.as_str() {
+                    if let Ok(parsed) = s.parse::<f64>() {
+                        return JinjaValue::from(parsed);
+                    }
                 }
-            }
-            if let Ok(n) = i64::try_from(v.clone()) {
-                return JinjaValue::from(n as f64);
-            }
-            JinjaValue::from(default.unwrap_or(0.0))
-        });
+                if let Ok(n) = i64::try_from(v.clone()) {
+                    return JinjaValue::from(n as f64);
+                }
+                JinjaValue::from(default.unwrap_or(0.0))
+            },
+        );
     }
 
     /// Render the template and return the result string.
@@ -224,11 +236,7 @@ mod tests {
     use crate::event_bus::InMemoryEventBus;
     use std::collections::BTreeMap;
 
-    fn machine_with(
-        entity_id: &str,
-        state: &str,
-        attrs: Vec<(&str, Value)>,
-    ) -> Arc<StateMachine> {
+    fn machine_with(entity_id: &str, state: &str, attrs: Vec<(&str, Value)>) -> Arc<StateMachine> {
         let bus = Arc::new(InMemoryEventBus::new());
         let sm = Arc::new(StateMachine::new(bus));
         let mut a: BTreeMap<String, Value> = BTreeMap::new();
