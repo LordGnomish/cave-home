@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Container restart decision + CrashLoopBackOff backoff curve.
+//! Container restart decision + `CrashLoopBackOff` backoff curve.
 //!
 //! Behavioural reimplementation of the documented kubelet restart logic
 //! (`pkg/kubelet/kuberuntime/kuberuntime_manager.go::computePodActions` restart
@@ -10,7 +10,7 @@
 //!
 //! 1. [`should_restart`] — given the [`RestartPolicy`] and the last exit code,
 //!    decide whether a terminated container should be restarted at all.
-//! 2. [`backoff_delay`] — the CrashLoopBackOff curve: the delay before the
+//! 2. [`backoff_delay`] — the `CrashLoopBackOff` curve: the delay before the
 //!    `n`-th restart attempt. Upstream doubles a base delay each consecutive
 //!    failure and caps it at a maximum (the documented values are an initial
 //!    10s doubling up to 300s = 5 min).
@@ -52,7 +52,7 @@ pub const fn should_restart(policy: RestartPolicy, last_exit_code: i32) -> bool 
     }
 }
 
-/// The CrashLoopBackOff delay (ms) before restart attempt number `attempt`.
+/// The `CrashLoopBackOff` delay (ms) before restart attempt number `attempt`.
 ///
 /// `attempt` is 1-based: the **first** restart (`attempt == 1`) incurs the base
 /// delay, and each subsequent consecutive failure doubles it, capped at
@@ -75,11 +75,11 @@ pub fn backoff_delay(attempt: u32) -> u64 {
     scaled.min(BACKOFF_MAX_MS)
 }
 
-/// Whether the container is currently held in CrashLoopBackOff: it wants to
+/// Whether the container is currently held in `CrashLoopBackOff`: it wants to
 /// restart but the back-off window since the last failure has not elapsed.
 ///
 /// `now_ms` and `last_failure_ms` are caller-supplied monotonic millis; the
-/// window is [`backoff_delay`]`(attempt)`. Returns `true` while still backing
+/// window is `backoff_delay(attempt)` (see [`backoff_delay`]). Returns `true` while still backing
 /// off (must wait), `false` once the container may be restarted.
 #[must_use]
 pub fn in_crash_loop_backoff(now_ms: u64, last_failure_ms: u64, attempt: u32) -> bool {

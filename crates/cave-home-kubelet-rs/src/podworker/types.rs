@@ -44,7 +44,8 @@ pub struct SyncOutcome {
 }
 
 impl SyncOutcome {
-    pub fn empty() -> Self {
+    #[must_use]
+    pub const fn empty() -> Self {
         Self {
             sandbox_id: None,
             created_containers: Vec::new(),

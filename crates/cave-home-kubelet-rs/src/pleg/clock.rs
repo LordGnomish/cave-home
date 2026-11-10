@@ -16,19 +16,19 @@ pub trait Clock: Send + Sync {
 pub struct SystemClock;
 
 impl SystemClock {
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self
     }
 }
 
 impl Clock for SystemClock {
     fn now_unix_millis(&self) -> i64 {
-        match SystemTime::now().duration_since(UNIX_EPOCH) {
-            // i64 cast is safe: now is well below 2^63 ms.
-            Ok(d) => d.as_millis() as i64,
-            // Pre-1970 system clock — rare but well-defined: return 0.
-            Err(_) => 0,
-        }
+        // Pre-1970 system clock — rare but well-defined: return 0. Saturate
+        // rather than truncate (now is well below 2^63 ms anyway).
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
     }
 }
 
@@ -44,7 +44,8 @@ impl Default for MockClock {
 }
 
 impl MockClock {
-    pub fn new(initial_millis: i64) -> Self {
+    #[must_use]
+    pub const fn new(initial_millis: i64) -> Self {
         Self {
             millis: AtomicI64::new(initial_millis),
         }

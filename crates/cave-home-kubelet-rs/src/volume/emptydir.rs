@@ -27,14 +27,16 @@ impl Default for EmptyDirPlugin {
 }
 
 impl EmptyDirPlugin {
+    #[must_use]
     pub fn new(pods_root: &Path) -> Self {
         Self {
             pods_root: pods_root.to_path_buf(),
         }
     }
 
-    /// Path on disk for the given (pod_uid, volume_name): mirrors
+    /// Path on disk for the given (`pod_uid`, `volume_name`): mirrors
     /// `kubelet.getPodVolumeDir(uid, "kubernetes.io~empty-dir", name)`.
+    #[must_use]
     pub fn host_path(&self, pod_uid: &PodUid, name: &str) -> PathBuf {
         self.pods_root
             .join(pod_uid.as_str())

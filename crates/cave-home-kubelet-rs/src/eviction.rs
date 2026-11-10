@@ -9,26 +9,26 @@
 //!
 //! The documented ranking, highest-priority-to-evict first:
 //!
-//! 1. **QoS class** — `BestEffort` evicted before `Burstable` before
+//! 1. **`QoS` class** — `BestEffort` evicted before `Burstable` before
 //!    `Guaranteed`. (Guaranteed pods are evicted last and only under node-level
 //!    pressure they themselves did not cause.)
-//! 2. Within a QoS class, the pod whose **usage exceeds its request by the most**
+//! 2. Within a `QoS` class, the pod whose **usage exceeds its request by the most**
 //!    (for the pressured resource) is evicted first. Usage at or below request
 //!    sorts after usage above request.
 //!
-//! The QoS class itself is derived per the documented rules
+//! The `QoS` class itself is derived per the documented rules
 //! (`pkg/apis/core/v1/helper/qos/qos.go::GetPodQOS`):
 //!
 //! * **Guaranteed** — every container has CPU & memory limits == requests
 //!   (all set, all equal).
-//! * **BestEffort** — no container sets any request or limit.
+//! * **`BestEffort`** — no container sets any request or limit.
 //! * **Burstable**  — everything else.
 //!
 //! Pure, `std`-only.
 
 use crate::resources::ResourceRequirements;
 
-/// QoS class (`v1.PodQOSClass`).
+/// `QoS` class (`v1.PodQOSClass`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum QosClass {
     /// No requests/limits set anywhere — evicted first.
@@ -103,7 +103,7 @@ pub enum PressuredResource {
 pub struct EvictionCandidate {
     /// Pod identifier (opaque; used only to report the order).
     pub pod_uid: String,
-    /// QoS class of the pod.
+    /// `QoS` class of the pod.
     pub qos: QosClass,
     /// Current usage of the pressured resource (bytes for memory/disk).
     pub usage: u64,
@@ -124,7 +124,7 @@ impl EvictionCandidate {
 /// Returns the pod UIDs in eviction order. The input is not mutated.
 ///
 /// Ordering key (descending priority-to-evict):
-/// 1. QoS eviction rank (BestEffort > Burstable > Guaranteed),
+/// 1. `QoS` eviction rank (`BestEffort` > Burstable > Guaranteed),
 /// 2. usage-over-request (more over its request -> evicted earlier),
 /// 3. raw usage (tie-break: bigger user evicted earlier),
 /// 4. pod UID (final stable tie-break).

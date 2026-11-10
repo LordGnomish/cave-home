@@ -15,10 +15,10 @@
 //!
 //! ## Decision core (pure, `std`-only — exhaustively tested)
 //! - [`phase`]      — pod-phase derivation from container states + restart policy.
-//! - [`restart`]    — restart decision + CrashLoopBackOff backoff curve.
+//! - [`restart`]    — restart decision + `CrashLoopBackOff` backoff curve.
 //! - [`probe`]      — liveness/readiness/startup threshold state machines + Ready gating.
 //! - [`sync`]       — desired-vs-observed action diff (start/kill).
-//! - [`eviction`]   — QoS classification + resource-pressure eviction ranking.
+//! - [`eviction`]   — `QoS` classification + resource-pressure eviction ranking.
 //! - [`admission`]  — node resource accounting + pod admission ("does it fit?").
 //! - [`resources`]  — minimal CPU(milli)/memory(byte) resource model.
 //!

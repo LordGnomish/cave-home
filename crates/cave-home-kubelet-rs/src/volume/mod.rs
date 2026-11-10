@@ -3,7 +3,7 @@
 //!
 //! Hand-port of `pkg/kubelet/volumemanager/` + `pkg/volume/{emptydir,hostpath}`.
 //!
-//! ConfigMap / Secret / Projected / CSI / PVC volumes are deferred to
+//! `ConfigMap` / Secret / Projected / CSI / PVC volumes are deferred to
 //! Phase 1b (recorded in `parity.manifest.toml`).
 
 pub mod actual;

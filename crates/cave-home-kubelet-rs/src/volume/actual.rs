@@ -10,7 +10,7 @@ use parking_lot::Mutex;
 
 use crate::api::PodUid;
 
-/// One entry per (pod_uid, volume_name) currently mounted.
+/// One entry per (`pod_uid`, `volume_name`) currently mounted.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MountedVolume {
     pub pod_uid: PodUid,
@@ -25,6 +25,7 @@ pub struct ActualStateOfWorld {
 }
 
 impl ActualStateOfWorld {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }

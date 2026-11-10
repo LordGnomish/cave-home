@@ -12,11 +12,12 @@ use crate::api::{PodUid, Volume};
 /// What the kubelet *wants* to be mounted.
 #[derive(Default)]
 pub struct DesiredStateOfWorld {
-    /// pod_uid -> [Volume]
+    /// `pod_uid` -> [Volume]
     inner: Mutex<HashMap<PodUid, Vec<Volume>>>,
 }
 
 impl DesiredStateOfWorld {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -31,16 +32,13 @@ impl DesiredStateOfWorld {
         self.inner.lock().remove(uid);
     }
 
-    /// Snapshot of (pod_uid, volume) pairs.
+    /// Snapshot of (`pod_uid`, volume) pairs.
     pub fn snapshot(&self) -> Vec<(PodUid, Volume)> {
-        let g = self.inner.lock();
-        let mut out = Vec::new();
-        for (uid, vols) in g.iter() {
-            for v in vols {
-                out.push((uid.clone(), v.clone()));
-            }
-        }
-        out
+        self.inner
+            .lock()
+            .iter()
+            .flat_map(|(uid, vols)| vols.iter().map(move |v| (uid.clone(), v.clone())))
+            .collect()
     }
 
     /// True iff this pod-uid is registered.

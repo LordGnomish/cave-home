@@ -50,18 +50,21 @@ impl PodStatusManager {
     }
 
     /// Update the cached status. Idempotent if the new status equals the
-    /// most-recent pending state.
-    pub async fn set_pod_status(
-        &self,
-        uid: &PodUid,
-        status: PodStatus,
-    ) -> Result<(), StatusManagerError> {
+    /// most-recent pending state. Infallible: it only touches the local
+    /// cache; the sink is contacted by [`Self::sync_batch`].
+    pub fn set_pod_status(&self, uid: &PodUid, status: PodStatus) {
         self.state.lock().pending.insert(uid.clone(), status);
-        Ok(())
     }
 
     /// Flush every pending update through the sink. Returns the number of
     /// successful writes. Transient failures stay queued for next call.
+    ///
+    /// # Errors
+    ///
+    /// Sink failures are handled internally (transient ones are re-queued,
+    /// permanent ones dropped), so this currently always returns `Ok`; the
+    /// [`StatusManagerError`] return type is kept for callers that propagate
+    /// future sink-level errors.
     pub async fn sync_batch(&self) -> Result<usize, StatusManagerError> {
         // Snapshot pairs to flush so we don't hold the lock across awaits.
         let to_flush: Vec<(PodUid, PodStatus)> = {

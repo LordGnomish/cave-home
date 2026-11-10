@@ -161,7 +161,7 @@ pub struct Pod {
 impl Pod {
     /// Convenience: pod UID.
     #[must_use]
-    pub fn uid(&self) -> &PodUid {
+    pub const fn uid(&self) -> &PodUid {
         &self.metadata.uid
     }
 

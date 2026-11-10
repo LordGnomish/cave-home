@@ -24,7 +24,8 @@ use crate::api::{HostPathType, PodUid, Volume, VolumeSource};
 pub struct HostPathPlugin;
 
 impl HostPathPlugin {
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self
     }
 }
@@ -37,10 +38,6 @@ fn check_type(path: &std::path::Path, t: HostPathType) -> VolumeResult<()> {
             std::fs::create_dir_all(path)?;
             Ok(())
         }
-        (HostPathType::DirectoryOrCreate, Err(e)) => Err(VolumeError::InvalidHostPath(format!(
-            "{}: {e}",
-            path.display()
-        ))),
         (HostPathType::DirectoryOrCreate, Ok(m)) if m.is_dir() => Ok(()),
         (HostPathType::DirectoryOrCreate, Ok(_)) => Err(VolumeError::InvalidHostPath(format!(
             "{} exists but is not a directory",
@@ -49,10 +46,6 @@ fn check_type(path: &std::path::Path, t: HostPathType) -> VolumeResult<()> {
         (HostPathType::Directory, Ok(m)) if m.is_dir() => Ok(()),
         (HostPathType::Directory, Ok(_)) => Err(VolumeError::InvalidHostPath(format!(
             "{} is not a directory",
-            path.display()
-        ))),
-        (HostPathType::Directory, Err(e)) => Err(VolumeError::InvalidHostPath(format!(
-            "{}: {e}",
             path.display()
         ))),
         (HostPathType::FileOrCreate, Err(e)) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -67,10 +60,6 @@ fn check_type(path: &std::path::Path, t: HostPathType) -> VolumeResult<()> {
                 .open(path)?;
             Ok(())
         }
-        (HostPathType::FileOrCreate, Err(e)) => Err(VolumeError::InvalidHostPath(format!(
-            "{}: {e}",
-            path.display()
-        ))),
         (HostPathType::FileOrCreate, Ok(m)) if m.is_file() => Ok(()),
         (HostPathType::FileOrCreate, Ok(_)) => Err(VolumeError::InvalidHostPath(format!(
             "{} exists but is not a regular file",
@@ -81,16 +70,21 @@ fn check_type(path: &std::path::Path, t: HostPathType) -> VolumeResult<()> {
             "{} is not a regular file",
             path.display()
         ))),
-        (HostPathType::File, Err(e)) => Err(VolumeError::InvalidHostPath(format!(
-            "{}: {e}",
-            path.display()
-        ))),
         (HostPathType::Socket, Ok(m)) if m.file_type().is_socket() => Ok(()),
         (HostPathType::Socket, Ok(_)) => Err(VolumeError::InvalidHostPath(format!(
             "{} is not a unix socket",
             path.display()
         ))),
-        (HostPathType::Socket, Err(e)) => Err(VolumeError::InvalidHostPath(format!(
+        // Any other stat error for a checked type is surfaced verbatim. This
+        // arm must stay after the `*OrCreate` NotFound arms above.
+        (
+            HostPathType::DirectoryOrCreate
+            | HostPathType::Directory
+            | HostPathType::FileOrCreate
+            | HostPathType::File
+            | HostPathType::Socket,
+            Err(e),
+        ) => Err(VolumeError::InvalidHostPath(format!(
             "{}: {e}",
             path.display()
         ))),

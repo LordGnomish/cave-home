@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `Reconciler` — drives DesiredStateOfWorld -> ActualStateOfWorld.
+//! `Reconciler` — drives `DesiredStateOfWorld` -> `ActualStateOfWorld`.
 //!
 //! Hand-port of `pkg/kubelet/volumemanager/reconciler/reconciler.go`
 //! (`reconcile()` loop body, v1.36.1).
 //!
 //! One pass:
-//! 1. For every (pod_uid, volume) in DSW that is not yet in ASW, locate a
+//! 1. For every (`pod_uid`, volume) in DSW that is not yet in ASW, locate a
 //!    plugin that supports it, call `set_up`, and mark mounted.
-//! 2. For every (pod_uid, volume) in ASW that is no longer in DSW, locate a
+//! 2. For every (`pod_uid`, volume) in ASW that is no longer in DSW, locate a
 //!    plugin that supports it, call `tear_down`, and unmark mounted.
 
 use std::collections::HashSet;
@@ -43,6 +43,11 @@ impl Reconciler {
     }
 
     /// One reconcile pass.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VolumeError`] if no plugin supports a desired volume, or if
+    /// a plugin fails to set up or tear down a volume.
     pub async fn reconcile_once(&self) -> VolumeResult<()> {
         let desired = self.desired.snapshot();
         let desired_keys: HashSet<(PodUid, String)> = desired
