@@ -308,14 +308,15 @@ mod tests {
     }
 
     #[test]
-    fn water_recommendation_defers_to_water_crate_no_runtime() {
+    fn water_recommendation_defers_to_water_crate_no_runtime() -> Result<(), &'static str> {
         // The recommendation is a flag + reason, never a runtime/valve/circuit.
         let tomato = Plant::of(PlantKind::Tomato, "Tomatoes");
         let mut c = happy_tomato_conditions();
         c.soil_moisture_percent = 30.0;
         let advice = advise(&tomato, &c);
-        let rec = advice.water.expect("dry plant recommends water");
+        let rec = advice.water.ok_or("dry plant recommends water")?;
         assert_eq!(rec.plant_name, "Tomatoes");
         assert!((rec.deficit_percent - 10.0).abs() < 1e-9); // 40 - 30
+        Ok(())
     }
 }

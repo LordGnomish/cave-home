@@ -238,10 +238,11 @@ mod tests {
     #[test]
     fn two_active_primaries_rejected() {
         let c = cluster_with(&[("hub-1", NodeRole::Primary), ("hub-2", NodeRole::Primary)]);
-        match c.validate() {
-            Err(TopologyError::TwoActivePrimaries { ids }) => assert_eq!(ids.len(), 2),
-            other => panic!("expected TwoActivePrimaries, got {other:?}"),
-        }
+        let result = c.validate();
+        assert!(
+            matches!(&result, Err(TopologyError::TwoActivePrimaries { ids }) if ids.len() == 2),
+            "expected TwoActivePrimaries with 2 ids, got {result:?}"
+        );
         // active_primary() must refuse to name one of two.
         assert_eq!(c.active_primary(), None);
     }
