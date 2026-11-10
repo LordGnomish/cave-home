@@ -155,10 +155,10 @@ mod tests {
             eng.render("{{ state_attr('light.kitchen', 'brightness') // 2 }}").expect("r"),
             "100"
         );
-        // missing attribute renders as the none token
+        // missing attribute renders as Jinja2's `None` (as in Home Assistant)
         assert_eq!(
             eng.render("{{ state_attr('light.kitchen', 'nope') }}").expect("r"),
-            "none"
+            "None"
         );
     }
 
@@ -167,11 +167,11 @@ mod tests {
         let eng = engine_with_kitchen();
         assert_eq!(
             eng.render("{{ is_state_attr('light.kitchen', 'brightness', 200) }}").expect("r"),
-            "true"
+            "True"
         );
         assert_eq!(
             eng.render("{{ is_state_attr('light.kitchen', 'brightness', 5) }}").expect("r"),
-            "false"
+            "False"
         );
     }
 
