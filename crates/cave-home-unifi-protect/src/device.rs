@@ -333,7 +333,7 @@ mod tests {
         assert!(!cam.is_doorbell);
         assert!(!cam.has_mic);
         assert!(!cam.has_speaker);
-        assert!(cam.features.is_empty());
+        assert_eq!(cam.features, [] as [SmartDetectType; 0]);
     }
 
     #[test]

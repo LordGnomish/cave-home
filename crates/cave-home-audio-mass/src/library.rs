@@ -212,14 +212,14 @@ mod tests {
         let lib = sample();
         // "morning" is a title and an album word, but artist_only should miss it.
         let hits = lib.search("morning", SearchFields::artist_only());
-        assert!(hits.is_empty());
+        assert_eq!(hits, [] as [&Track; 0]);
     }
 
     #[test]
     fn empty_query_matches_nothing() {
         let lib = sample();
-        assert!(lib.search("   ", SearchFields::all()).is_empty());
-        assert!(lib.search("", SearchFields::all()).is_empty());
+        assert_eq!(lib.search("   ", SearchFields::all()), [] as [&Track; 0]);
+        assert_eq!(lib.search("", SearchFields::all()), [] as [&Track; 0]);
     }
 
     #[test]
