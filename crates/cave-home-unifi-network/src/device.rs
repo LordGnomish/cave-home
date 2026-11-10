@@ -194,7 +194,7 @@ mod tests {
         let d = NetworkDevice::new("sw-1", "Living-room switch", "aa:00", DeviceKind::Switch);
         assert!(d.is_online());
         assert_eq!(d.state(), DeviceState::Online);
-        assert!(d.ports().is_empty());
+        assert_eq!(d.ports(), []);
         assert_eq!(d.uplink(), None);
         assert_eq!(d.kind(), DeviceKind::Switch);
     }

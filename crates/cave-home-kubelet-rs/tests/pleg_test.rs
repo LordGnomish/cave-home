@@ -2,14 +2,14 @@
 //! Integration tests for `cave_home_kubelet_rs::pleg::GenericPleg`.
 //!
 //! Hand-port targets — `pkg/kubelet/pleg/generic_test.go`:
-//! - upstream_test: TestRelisting
-//! - upstream_test: TestRelistingForRunningContainer
-//! - upstream_test: TestEventChannelFull
-//! - upstream_test: TestRelistWithReinspection
-//! - upstream_test: TestRecordContainerEvent
-//! - upstream_test: TestUpdateRunningPod
-//! - upstream_test: TestRelistWithCachedPodRecord
-//! - upstream_test: TestSetPodRecord
+//! - `upstream_test`: `TestRelisting`
+//! - `upstream_test`: `TestRelistingForRunningContainer`
+//! - `upstream_test`: `TestEventChannelFull`
+//! - `upstream_test`: `TestRelistWithReinspection`
+//! - `upstream_test`: `TestRecordContainerEvent`
+//! - `upstream_test`: `TestUpdateRunningPod`
+//! - `upstream_test`: `TestRelistWithCachedPodRecord`
+//! - `upstream_test`: `TestSetPodRecord`
 
 use std::sync::Arc;
 
@@ -20,6 +20,8 @@ use cave_home_kubelet_rs::cri::{CriClient, MockCriClient};
 use cave_home_kubelet_rs::pleg::{
     Clock, GenericPleg, MockClock, PodLifecycleEventType, SystemClock,
 };
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 fn sandbox(name: &str, uid: &str) -> PodSandboxConfig {
     PodSandboxConfig {
@@ -47,36 +49,35 @@ fn ctr(name: &str) -> ContainerConfig {
 }
 
 #[tokio::test]
-async fn first_relist_emits_started_for_each_running_container() {
+async fn first_relist_emits_started_for_each_running_container() -> TestResult {
     let cri = Arc::new(MockCriClient::new());
     let clock = Arc::new(MockClock::new(0));
-    let sb = cri.run_pod_sandbox(sandbox("p", "u")).await.unwrap();
+    let sb = cri.run_pod_sandbox(sandbox("p", "u")).await?;
     let cid = cri
         .create_container(&sb, ctr("c"), sandbox("p", "u"))
-        .await
-        .unwrap();
-    cri.start_container(&cid).await.unwrap();
+        .await?;
+    cri.start_container(&cid).await?;
 
     let pleg = GenericPleg::new(cri.clone(), clock.clone());
     let mut rx = pleg.subscribe();
     let n = pleg.relist().await;
     assert_eq!(n, 1, "one ContainerStarted expected on first relist");
-    let evt = rx.try_recv().expect("event delivered");
+    let evt = rx.try_recv()?;
     assert_eq!(evt.event_type, PodLifecycleEventType::ContainerStarted);
     assert_eq!(evt.container_id, cid);
     assert_eq!(evt.id.as_str(), "u");
+    Ok(())
 }
 
 #[tokio::test]
-async fn relist_no_changes_emits_zero_events() {
+async fn relist_no_changes_emits_zero_events() -> TestResult {
     let cri = Arc::new(MockCriClient::new());
     let clock = Arc::new(MockClock::new(0));
-    let sb = cri.run_pod_sandbox(sandbox("p", "u")).await.unwrap();
+    let sb = cri.run_pod_sandbox(sandbox("p", "u")).await?;
     let cid = cri
         .create_container(&sb, ctr("c"), sandbox("p", "u"))
-        .await
-        .unwrap();
-    cri.start_container(&cid).await.unwrap();
+        .await?;
+    cri.start_container(&cid).await?;
 
     let pleg = GenericPleg::new(cri.clone(), clock.clone());
     let _ = pleg.relist().await;
@@ -84,45 +85,45 @@ async fn relist_no_changes_emits_zero_events() {
     let n = pleg.relist().await;
     assert_eq!(n, 0, "second relist sees no change");
     assert!(rx.try_recv().is_err());
+    Ok(())
 }
 
 #[tokio::test]
-async fn relist_emits_died_when_container_exits() {
+async fn relist_emits_died_when_container_exits() -> TestResult {
     let cri = Arc::new(MockCriClient::new());
     let clock = Arc::new(MockClock::new(0));
-    let sb = cri.run_pod_sandbox(sandbox("p", "u")).await.unwrap();
+    let sb = cri.run_pod_sandbox(sandbox("p", "u")).await?;
     let cid = cri
         .create_container(&sb, ctr("c"), sandbox("p", "u"))
-        .await
-        .unwrap();
-    cri.start_container(&cid).await.unwrap();
+        .await?;
+    cri.start_container(&cid).await?;
     let pleg = GenericPleg::new(cri.clone(), clock.clone());
     let mut rx = pleg.subscribe();
     let _ = pleg.relist().await; // started
     let _ = rx.try_recv();
-    cri.stop_container(&cid, 0).await.unwrap();
+    cri.stop_container(&cid, 0).await?;
     let n = pleg.relist().await;
     assert_eq!(n, 1);
-    let evt = rx.try_recv().unwrap();
+    let evt = rx.try_recv()?;
     assert_eq!(evt.event_type, PodLifecycleEventType::ContainerDied);
+    Ok(())
 }
 
 #[tokio::test]
-async fn relist_emits_removed_when_container_disappears() {
+async fn relist_emits_removed_when_container_disappears() -> TestResult {
     let cri = Arc::new(MockCriClient::new());
     let clock = Arc::new(MockClock::new(0));
-    let sb = cri.run_pod_sandbox(sandbox("p", "u")).await.unwrap();
+    let sb = cri.run_pod_sandbox(sandbox("p", "u")).await?;
     let cid = cri
         .create_container(&sb, ctr("c"), sandbox("p", "u"))
-        .await
-        .unwrap();
-    cri.start_container(&cid).await.unwrap();
+        .await?;
+    cri.start_container(&cid).await?;
     let pleg = GenericPleg::new(cri.clone(), clock.clone());
     let mut rx = pleg.subscribe();
     let _ = pleg.relist().await;
     let _ = rx.try_recv();
-    cri.stop_container(&cid, 0).await.unwrap();
-    cri.remove_container(&cid).await.unwrap();
+    cri.stop_container(&cid, 0).await?;
+    cri.remove_container(&cid).await?;
     let _n = pleg.relist().await;
     // We expect ContainerRemoved for the missing container.
     let mut saw_removed = false;
@@ -132,37 +133,37 @@ async fn relist_emits_removed_when_container_disappears() {
         }
     }
     assert!(saw_removed, "expected ContainerRemoved");
+    Ok(())
 }
 
 #[tokio::test]
-async fn relist_handles_two_pods_independently() {
+async fn relist_handles_two_pods_independently() -> TestResult {
     let cri = Arc::new(MockCriClient::new());
     let clock = Arc::new(MockClock::new(0));
-    let s1 = cri.run_pod_sandbox(sandbox("p1", "u1")).await.unwrap();
-    let s2 = cri.run_pod_sandbox(sandbox("p2", "u2")).await.unwrap();
+    let s1 = cri.run_pod_sandbox(sandbox("p1", "u1")).await?;
+    let s2 = cri.run_pod_sandbox(sandbox("p2", "u2")).await?;
     let c1 = cri
         .create_container(&s1, ctr("c1"), sandbox("p1", "u1"))
-        .await
-        .unwrap();
+        .await?;
     let c2 = cri
         .create_container(&s2, ctr("c2"), sandbox("p2", "u2"))
-        .await
-        .unwrap();
-    cri.start_container(&c1).await.unwrap();
-    cri.start_container(&c2).await.unwrap();
+        .await?;
+    cri.start_container(&c1).await?;
+    cri.start_container(&c2).await?;
 
     let pleg = GenericPleg::new(cri.clone(), clock.clone());
     let n = pleg.relist().await;
     assert_eq!(n, 2);
+    Ok(())
 }
 
 #[tokio::test]
 async fn relist_records_clock_timestamp() {
     let cri = Arc::new(MockCriClient::new());
-    let clock = Arc::new(MockClock::new(424242));
+    let clock = Arc::new(MockClock::new(424_242));
     let pleg = GenericPleg::new(cri.clone(), clock.clone());
     let _ = pleg.relist().await;
-    assert_eq!(pleg.last_relist_ms(), 424242);
+    assert_eq!(pleg.last_relist_ms(), 424_242);
 }
 
 #[tokio::test]
@@ -175,13 +176,13 @@ async fn relist_handles_empty_runtime() {
 }
 
 #[tokio::test]
-async fn relist_emits_pod_sync_when_sandbox_appears() {
+async fn relist_emits_pod_sync_when_sandbox_appears() -> TestResult {
     let cri = Arc::new(MockCriClient::new());
     let clock = Arc::new(MockClock::new(0));
     let pleg = GenericPleg::new(cri.clone(), clock.clone());
     let mut rx = pleg.subscribe();
     let _ = pleg.relist().await;
-    let _ = cri.run_pod_sandbox(sandbox("p", "u")).await.unwrap();
+    let _ = cri.run_pod_sandbox(sandbox("p", "u")).await?;
     let _ = pleg.relist().await;
     let mut saw_sync = false;
     while let Ok(evt) = rx.try_recv() {
@@ -190,19 +191,20 @@ async fn relist_emits_pod_sync_when_sandbox_appears() {
         }
     }
     assert!(saw_sync, "expected PodSync for new sandbox");
+    Ok(())
 }
 
 #[tokio::test]
-async fn relist_emits_pod_sync_when_sandbox_disappears() {
+async fn relist_emits_pod_sync_when_sandbox_disappears() -> TestResult {
     let cri = Arc::new(MockCriClient::new());
     let clock = Arc::new(MockClock::new(0));
-    let sb = cri.run_pod_sandbox(sandbox("p", "u")).await.unwrap();
+    let sb = cri.run_pod_sandbox(sandbox("p", "u")).await?;
     let pleg = GenericPleg::new(cri.clone(), clock.clone());
     let mut rx = pleg.subscribe();
     let _ = pleg.relist().await;
     while rx.try_recv().is_ok() {}
-    cri.stop_pod_sandbox(&sb).await.unwrap();
-    cri.remove_pod_sandbox(&sb).await.unwrap();
+    cri.stop_pod_sandbox(&sb).await?;
+    cri.remove_pod_sandbox(&sb).await?;
     let _ = pleg.relist().await;
     let mut saw_sync = false;
     while let Ok(evt) = rx.try_recv() {
@@ -211,6 +213,7 @@ async fn relist_emits_pod_sync_when_sandbox_disappears() {
         }
     }
     assert!(saw_sync);
+    Ok(())
 }
 
 #[tokio::test]
@@ -230,19 +233,19 @@ async fn system_clock_returns_positive_value() {
 }
 
 #[tokio::test]
-async fn pleg_supports_multiple_subscribers() {
+async fn pleg_supports_multiple_subscribers() -> TestResult {
     let cri = Arc::new(MockCriClient::new());
     let clock = Arc::new(MockClock::new(0));
     let pleg = GenericPleg::new(cri.clone(), clock.clone());
     let mut rx1 = pleg.subscribe();
     let mut rx2 = pleg.subscribe();
-    let sb = cri.run_pod_sandbox(sandbox("p", "u")).await.unwrap();
+    let sb = cri.run_pod_sandbox(sandbox("p", "u")).await?;
     let cid = cri
         .create_container(&sb, ctr("c"), sandbox("p", "u"))
-        .await
-        .unwrap();
-    cri.start_container(&cid).await.unwrap();
+        .await?;
+    cri.start_container(&cid).await?;
     let _ = pleg.relist().await;
     assert!(rx1.try_recv().is_ok());
     assert!(rx2.try_recv().is_ok());
+    Ok(())
 }

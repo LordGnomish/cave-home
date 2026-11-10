@@ -130,15 +130,16 @@ mod tests {
     }
 
     #[test]
-    fn recommends_water_only_when_too_dry() {
+    fn recommends_water_only_when_too_dry() -> Result<(), &'static str> {
         let dry = recommend_water("Tomatoes", 25.0, &tomato());
         assert!(dry.is_some());
-        let rec = dry.expect("dry soil yields a recommendation");
+        let rec = dry.ok_or("dry soil yields a recommendation")?;
         assert_eq!(rec.plant_name, "Tomatoes");
         assert!((rec.deficit_percent - 15.0).abs() < 1e-9); // 40 - 25
 
         assert!(recommend_water("Tomatoes", 55.0, &tomato()).is_none()); // ideal
         assert!(recommend_water("Tomatoes", 85.0, &tomato()).is_none()); // too wet
+        Ok(())
     }
 
     #[test]

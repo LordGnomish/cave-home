@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `PodRecord` — last-seen snapshot kept by the GenericPLEG.
+//! `PodRecord` — last-seen snapshot kept by the `GenericPLEG`.
 //!
 //! Hand-port of `pkg/kubelet/pleg/generic.go::podRecord`.
 

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! In-memory `MockCriClient` — deterministic, single-process state machine
-//! used by every kubelet sub-system test. Hand-port of the in-memory fakes
+//! used by every kubelet sub-system test.
+//!
+//! Hand-port of the in-memory fakes
 //! living in `pkg/kubelet/kuberuntime/fake_kuberuntime_manager.go` and
 //! `pkg/kubelet/container/testing/runtime_mock.go`.
 //!
@@ -77,8 +79,8 @@ impl MockCriClient {
     }
 
     fn tick(&self) -> i64 {
-        // i64 cast is safe: we will not run 2^63 events in a test.
-        self.clock.fetch_add(1, Ordering::SeqCst) as i64
+        // Saturates rather than wraps: we will not run 2^63 events in a test.
+        i64::try_from(self.clock.fetch_add(1, Ordering::SeqCst)).unwrap_or(i64::MAX)
     }
 }
 
@@ -118,9 +120,10 @@ impl CriClient for MockCriClient {
                 && c.container.state == ContainerState::Running
             {
                 c.container.state = ContainerState::Exited;
-                c.finished_at = self.clock.fetch_add(1, Ordering::SeqCst) as i64;
+                c.finished_at = self.tick();
             }
         }
+        drop(s);
         Ok(())
     }
 
@@ -140,6 +143,7 @@ impl CriClient for MockCriClient {
         // Remove every container belonging to this sandbox too.
         s.containers
             .retain(|_, c| c.container.pod_sandbox_id != sandbox_id);
+        drop(s);
         Ok(())
     }
 
@@ -149,20 +153,27 @@ impl CriClient for MockCriClient {
             .sandboxes
             .get(sandbox_id)
             .ok_or_else(|| CriError::NotFound(format!("pod sandbox {sandbox_id}")))?;
-        Ok(PodSandboxStatus {
+        let status = PodSandboxStatus {
             id: rec.sandbox.id.clone(),
             metadata: rec.sandbox.metadata.clone(),
             state: rec.sandbox.state,
             created_at: rec.sandbox.created_at,
-        })
+        };
+        drop(s);
+        Ok(status)
     }
 
     async fn list_pod_sandbox(
         &self,
         filter: Option<PodSandboxFilter>,
     ) -> CriResult<Vec<PodSandbox>> {
-        let s = self.state.lock();
-        let mut out: Vec<PodSandbox> = s.sandboxes.values().map(|r| r.sandbox.clone()).collect();
+        let mut out: Vec<PodSandbox> = self
+            .state
+            .lock()
+            .sandboxes
+            .values()
+            .map(|r| r.sandbox.clone())
+            .collect();
         if let Some(f) = filter {
             if let Some(id) = f.id {
                 out.retain(|sb| sb.id == id);
@@ -197,7 +208,7 @@ impl CriClient for MockCriClient {
             image: cfg.image.clone(),
             state: ContainerState::Created,
             created_at: created,
-            labels: cfg.labels.clone(),
+            labels: cfg.labels,
         };
         self.state.lock().containers.insert(
             id.clone(),
@@ -225,6 +236,7 @@ impl CriClient for MockCriClient {
         }
         rec.container.state = ContainerState::Running;
         rec.started_at = started;
+        drop(s);
         Ok(())
     }
 
@@ -240,6 +252,7 @@ impl CriClient for MockCriClient {
         }
         rec.container.state = ContainerState::Exited;
         rec.finished_at = finished;
+        drop(s);
         Ok(())
     }
 
@@ -255,6 +268,7 @@ impl CriClient for MockCriClient {
             )));
         }
         s.containers.remove(container_id);
+        drop(s);
         Ok(())
     }
 
@@ -264,7 +278,7 @@ impl CriClient for MockCriClient {
             .containers
             .get(container_id)
             .ok_or_else(|| CriError::NotFound(format!("container {container_id}")))?;
-        Ok(ContainerStatus {
+        let status = ContainerStatus {
             id: rec.container.id.clone(),
             metadata: rec.container.metadata.clone(),
             state: rec.container.state,
@@ -275,12 +289,19 @@ impl CriClient for MockCriClient {
             image: rec.container.image.clone(),
             reason: String::new(),
             message: String::new(),
-        })
+        };
+        drop(s);
+        Ok(status)
     }
 
     async fn list_containers(&self, filter: Option<ContainerFilter>) -> CriResult<Vec<Container>> {
-        let s = self.state.lock();
-        let mut out: Vec<Container> = s.containers.values().map(|r| r.container.clone()).collect();
+        let mut out: Vec<Container> = self
+            .state
+            .lock()
+            .containers
+            .values()
+            .map(|r| r.container.clone())
+            .collect();
         if let Some(f) = filter {
             if let Some(id) = f.id {
                 out.retain(|c| c.id == id);

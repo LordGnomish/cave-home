@@ -6,7 +6,7 @@
 //!
 //! Reconciliation algorithm (per `SyncPod`):
 //!   1. Ensure a sandbox exists for the pod UID; if the cached sandbox is
-//!      stale (NotReady / removed), recreate it.
+//!      stale (`NotReady` / removed), recreate it.
 //!   2. For each desired container in the spec:
 //!      - if no live CRI container with that `metadata.name` exists, or the
 //!        existing one is `Exited` and the restart policy permits restart,
@@ -30,7 +30,7 @@ use crate::cri::types::{
 };
 use crate::cri::{CriClient, CriError};
 
-/// PodWorker error.
+/// `PodWorker` error.
 #[derive(Debug, Error)]
 pub enum PodWorkerError {
     /// CRI failed.
@@ -66,6 +66,11 @@ impl PodWorker {
     }
 
     /// Drive one sync iteration.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PodWorkerError`] if a CRI call made while reconciling the
+    /// sandbox or its containers fails.
     pub async fn sync(&self, pod: &Pod, work: WorkType) -> Result<SyncOutcome, PodWorkerError> {
         match work {
             WorkType::Sync => self.do_sync(pod).await,
@@ -139,9 +144,9 @@ impl PodWorker {
     async fn do_terminating(&self, _pod: &Pod) -> Result<SyncOutcome, PodWorkerError> {
         *self.state.lock() = PodWorkerState::Terminating;
         let mut out = SyncOutcome::empty();
-        let sandbox_id = match self.sandbox_id.lock().clone() {
-            Some(s) => s,
-            None => return Ok(out),
+        let cached = self.sandbox_id.lock().clone();
+        let Some(sandbox_id) = cached else {
+            return Ok(out);
         };
         let cri_containers = self
             .cri
@@ -162,12 +167,10 @@ impl PodWorker {
 
     async fn do_terminated(&self, _pod: &Pod) -> Result<SyncOutcome, PodWorkerError> {
         let mut out = SyncOutcome::empty();
-        let sandbox_id = match self.sandbox_id.lock().clone() {
-            Some(s) => s,
-            None => {
-                *self.state.lock() = PodWorkerState::Terminated;
-                return Ok(out);
-            }
+        let cached = self.sandbox_id.lock().clone();
+        let Some(sandbox_id) = cached else {
+            *self.state.lock() = PodWorkerState::Terminated;
+            return Ok(out);
         };
         // Remove containers (must be Exited; do_terminating already stopped them).
         let cri_containers = self

@@ -104,9 +104,9 @@ mod tests {
     #[test]
     fn words_present_in_all_languages() {
         for lang in [Lang::En, Lang::De, Lang::Tr] {
-            assert!(!muted_word(lang).is_empty());
-            assert!(!playing_word(lang).is_empty());
-            assert!(!every_room(lang).is_empty());
+            assert_ne!(muted_word(lang), "");
+            assert_ne!(playing_word(lang), "");
+            assert_ne!(every_room(lang), "");
         }
     }
 }

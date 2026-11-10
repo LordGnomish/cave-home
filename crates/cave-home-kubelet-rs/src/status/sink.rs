@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `StatusSink` trait — abstraction over the apiserver UpdatePodStatus call.
+//! `StatusSink` trait — abstraction over the apiserver `UpdatePodStatus` call.
 //!
 //! Hand-port of the `kubeClient` interface used by
 //! `pkg/kubelet/status/status_manager.go::syncPod`.
@@ -50,7 +50,7 @@ impl Default for MockStatusSink {
 
 impl MockStatusSink {
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             inner: Mutex::new(Vec::new()),
             fail_once: AtomicBool::new(false),

@@ -407,7 +407,7 @@ mod tests {
             CommandError::EmptyDuration,
         ] {
             for l in [Lang::En, Lang::De, Lang::Tr] {
-                assert!(!e.message(l).is_empty());
+                assert_ne!(e.message(l), "");
             }
         }
     }

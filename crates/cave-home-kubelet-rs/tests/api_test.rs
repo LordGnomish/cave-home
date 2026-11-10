@@ -2,8 +2,8 @@
 //! Integration tests for `cave_home_kubelet_rs::api`.
 //!
 //! Hand-port targets (`pkg/kubelet`):
-//! - upstream_test: `staging/src/k8s.io/api/core/v1/types_test.go::TestPodUID`
-//! - upstream_test: `staging/src/k8s.io/api/core/v1/types_test.go::TestVolumeSource`
+//! - `upstream_test`: `staging/src/k8s.io/api/core/v1/types_test.go::TestPodUID`
+//! - `upstream_test`: `staging/src/k8s.io/api/core/v1/types_test.go::TestVolumeSource`
 
 use cave_home_kubelet_rs::api::{
     Container, ContainerState, EmptyDirVolumeSource, HostPathType, HostPathVolumeSource,
@@ -79,8 +79,11 @@ fn volume_source_distinguishes_emptydir_from_hostpath() {
 #[test]
 fn pod_spec_defaults_to_empty_containers_and_volumes() {
     let spec = PodSpec::default();
-    assert!(spec.containers.is_empty());
-    assert!(spec.volumes.is_empty());
+    assert_eq!(
+        spec.containers,
+        [] as [cave_home_kubelet_rs::api::Container; 0]
+    );
+    assert_eq!(spec.volumes, [] as [cave_home_kubelet_rs::api::Volume; 0]);
 }
 
 #[test]

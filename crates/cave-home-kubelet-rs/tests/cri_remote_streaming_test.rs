@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Exec / Attach / PortForward URL negotiation over gRPC.
+//! Exec / Attach / `PortForward` URL negotiation over gRPC.
 //!
 //! Per the CRI design these RPCs do not stream bytes themselves: they return a
 //! URL that the kubelet's streaming client subsequently dials (SPDY/WebSocket).

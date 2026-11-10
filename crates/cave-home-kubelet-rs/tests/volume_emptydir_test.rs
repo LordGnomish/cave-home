@@ -2,14 +2,14 @@
 //! Integration tests for `cave_home_kubelet_rs::volume::emptydir::EmptyDirPlugin`.
 //!
 //! Hand-port targets — `pkg/volume/emptydir/empty_dir_test.go`:
-//! - upstream_test: TestPluginEmptyRootContext
-//! - upstream_test: TestPluginTmpfs
-//! - upstream_test: TestPluginHugetlbfs
-//! - upstream_test: TestMetrics
-//! - upstream_test: TestSetUp
-//! - upstream_test: TestTearDown
-//! - upstream_test: TestCanSupport
-//! - upstream_test: TestGetAccessModes
+//! - `upstream_test`: `TestPluginEmptyRootContext`
+//! - `upstream_test`: `TestPluginTmpfs`
+//! - `upstream_test`: `TestPluginHugetlbfs`
+//! - `upstream_test`: `TestMetrics`
+//! - `upstream_test`: `TestSetUp`
+//! - `upstream_test`: `TestTearDown`
+//! - `upstream_test`: `TestCanSupport`
+//! - `upstream_test`: `TestGetAccessModes`
 
 use std::path::PathBuf;
 
@@ -18,6 +18,8 @@ use cave_home_kubelet_rs::api::{
 };
 use cave_home_kubelet_rs::volume::emptydir::EmptyDirPlugin;
 use cave_home_kubelet_rs::volume::plugin::VolumePlugin;
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 fn empty_dir(name: &str) -> Volume {
     Volume {
@@ -57,73 +59,58 @@ async fn host_path_layout_matches_kubelet_default() {
 }
 
 #[tokio::test]
-async fn set_up_creates_directory() {
-    let tmp = tempfile::tempdir().unwrap();
+async fn set_up_creates_directory() -> TestResult {
+    let tmp = tempfile::tempdir()?;
     let p = EmptyDirPlugin::new(tmp.path());
-    let path = p
-        .set_up(&PodUid::new("uid-1"), &empty_dir("data"))
-        .await
-        .unwrap();
+    let path = p.set_up(&PodUid::new("uid-1"), &empty_dir("data")).await?;
     assert!(path.exists());
     assert!(path.is_dir());
     assert!(
         path.to_string_lossy()
             .contains("kubernetes.io~empty-dir/data")
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn set_up_is_idempotent() {
-    let tmp = tempfile::tempdir().unwrap();
+async fn set_up_is_idempotent() -> TestResult {
+    let tmp = tempfile::tempdir()?;
     let p = EmptyDirPlugin::new(tmp.path());
-    let p1 = p
-        .set_up(&PodUid::new("uid-1"), &empty_dir("data"))
-        .await
-        .unwrap();
-    let p2 = p
-        .set_up(&PodUid::new("uid-1"), &empty_dir("data"))
-        .await
-        .unwrap();
+    let p1 = p.set_up(&PodUid::new("uid-1"), &empty_dir("data")).await?;
+    let p2 = p.set_up(&PodUid::new("uid-1"), &empty_dir("data")).await?;
     assert_eq!(p1, p2);
+    Ok(())
 }
 
 #[tokio::test]
-async fn tear_down_removes_the_directory() {
-    let tmp = tempfile::tempdir().unwrap();
+async fn tear_down_removes_the_directory() -> TestResult {
+    let tmp = tempfile::tempdir()?;
     let p = EmptyDirPlugin::new(tmp.path());
-    let path = p
-        .set_up(&PodUid::new("uid-1"), &empty_dir("data"))
-        .await
-        .unwrap();
+    let path = p.set_up(&PodUid::new("uid-1"), &empty_dir("data")).await?;
     assert!(path.exists());
     p.tear_down(&PodUid::new("uid-1"), &empty_dir("data"))
-        .await
-        .unwrap();
+        .await?;
     assert!(!path.exists());
+    Ok(())
 }
 
 #[tokio::test]
-async fn tear_down_missing_directory_is_ok() {
-    let tmp = tempfile::tempdir().unwrap();
+async fn tear_down_missing_directory_is_ok() -> TestResult {
+    let tmp = tempfile::tempdir()?;
     let p = EmptyDirPlugin::new(tmp.path());
     p.tear_down(&PodUid::new("never-set-up"), &empty_dir("data"))
-        .await
-        .unwrap();
+        .await?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn each_pod_uid_gets_its_own_directory() {
-    let tmp = tempfile::tempdir().unwrap();
+async fn each_pod_uid_gets_its_own_directory() -> TestResult {
+    let tmp = tempfile::tempdir()?;
     let p = EmptyDirPlugin::new(tmp.path());
-    let a = p
-        .set_up(&PodUid::new("uid-a"), &empty_dir("data"))
-        .await
-        .unwrap();
-    let b = p
-        .set_up(&PodUid::new("uid-b"), &empty_dir("data"))
-        .await
-        .unwrap();
+    let a = p.set_up(&PodUid::new("uid-a"), &empty_dir("data")).await?;
+    let b = p.set_up(&PodUid::new("uid-b"), &empty_dir("data")).await?;
     assert_ne!(a, b);
     assert!(a.exists());
     assert!(b.exists());
+    Ok(())
 }

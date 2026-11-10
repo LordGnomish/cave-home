@@ -266,7 +266,7 @@ mod tests {
         assert_eq!(t.tracks().len(), 1);
         // Six ticks later with no detections: age 6 > max_age 5 -> retired.
         let ids = t.update(&[], 6);
-        assert!(ids.is_empty());
+        assert_eq!(ids, [] as [u64; 0]);
         assert!(t.tracks().is_empty());
     }
 

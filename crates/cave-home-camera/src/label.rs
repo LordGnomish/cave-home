@@ -155,7 +155,7 @@ mod tests {
     #[test]
     fn nothing_unusual_present_in_every_language() {
         for lang in LANGS {
-            assert!(!nothing_unusual(lang).is_empty());
+            assert_ne!(nothing_unusual(lang), "");
         }
     }
 

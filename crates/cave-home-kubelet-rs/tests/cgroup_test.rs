@@ -3,12 +3,12 @@
 //! resource-conversion + QoS-hierarchy decision logic.
 //!
 //! Behavioural reference targets (documented kubelet container-manager logic):
-//! - pkg/kubelet/cm/helpers_linux.go::MilliCPUToShares / MilliCPUToQuota
+//! - `pkg/kubelet/cm/helpers_linux.go::MilliCPUToShares` / `MilliCPUToQuota`
 //! - the libcontainer/systemd cgroup-v2 cpu.weight conversion
 //!   `1 + ((shares - 2) * 9999) / 262142` (shares -> [1,10000])
-//! - pkg/kubelet/cm/cgroup_manager_linux.go — the cpu.max / memory.max
+//! - `pkg/kubelet/cm/cgroup_manager_linux.go` — the cpu.max / memory.max
 //!   unified-hierarchy values
-//! - pkg/kubelet/cm/qos_container_manager_linux.go + pod_container_manager_linux.go
+//! - `pkg/kubelet/cm/qos_container_manager_linux.go` + `pod_container_manager_linux.go`
 //!   — the /kubepods{,/burstable,/besteffort}/pod<uid> cgroupfs hierarchy
 //!
 //! cgroup **v1** is intentionally NOT modelled (Charter §8 no-backcompat: the

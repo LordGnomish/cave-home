@@ -289,7 +289,7 @@ mod tests {
         assert!(s.on);
         assert_eq!(s.brightness, 128);
         assert_eq!(s.preset, None);
-        assert!(s.segments.is_empty());
+        assert_eq!(s.segments, [] as [Segment; 0]);
         assert!(!s.nightlight.on);
     }
 
@@ -321,7 +321,7 @@ mod tests {
         assert!(!s.on);
         assert_eq!(s.brightness, 10);
         assert_eq!(s.transition, 7); // default
-        assert!(s.segments.is_empty());
+        assert_eq!(s.segments, [] as [Segment; 0]);
     }
 
     #[test]

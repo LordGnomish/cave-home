@@ -153,7 +153,7 @@ mod tests {
             "Package detected"
         );
         for lang in LANGS {
-            assert!(!detected_headline(SmartDetectType::Package, lang).is_empty());
+            assert_ne!(detected_headline(SmartDetectType::Package, lang), "");
         }
     }
 
@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn all_quiet_present_in_every_language() {
         for lang in LANGS {
-            assert!(!all_quiet(lang).is_empty());
+            assert_ne!(all_quiet(lang), "");
         }
     }
 

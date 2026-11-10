@@ -10,10 +10,10 @@
 //! - `status::PodStatusManager` — dedup queue flushed via `StatusSink`.
 //!
 //! `sync_pod` is the line-by-line analogue of `Kubelet.syncPod`:
-//!   1. Register the pod's volumes in the DesiredStateOfWorld.
+//!   1. Register the pod's volumes in the `DesiredStateOfWorld`.
 //!   2. Reconcile volumes (mount missing ones).
-//!   3. Drive the PodWorker to reconcile sandbox + containers.
-//!   4. Compose a PodStatus from the CRI snapshot and push it into the
+//!   3. Drive the `PodWorker` to reconcile sandbox + containers.
+//!   4. Compose a `PodStatus` from the CRI snapshot and push it into the
 //!      status manager.
 //!   5. On `Terminated`, evict the pod from DSW and forget worker + status.
 
@@ -49,7 +49,7 @@ pub enum KubeletError {
     Volume(#[from] VolumeError),
 }
 
-/// Phase-1 kubelet — composes CRI + PodWorkers + VolumeManager + Status.
+/// Phase-1 kubelet — composes CRI + `PodWorkers` + `VolumeManager` + Status.
 pub struct Kubelet {
     cri: Arc<dyn CriClient>,
     workers: Mutex<HashMap<PodUid, Arc<PodWorker>>>,
@@ -103,6 +103,11 @@ impl Kubelet {
     }
 
     /// Drive one sync iteration.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KubeletError`] if volume reconciliation, the pod worker,
+    /// the CRI status query or the status manager fails.
     pub async fn sync_pod(&self, pod: &Pod, work: WorkType) -> Result<SyncOutcome, KubeletError> {
         let uid = pod.uid().clone();
 
@@ -119,7 +124,7 @@ impl Kubelet {
 
                 // 3. Compose status from CRI snapshot & enqueue.
                 let st = self.compose_status(pod, &outcome).await?;
-                self.status_mgr.set_pod_status(&uid, st).await?;
+                self.status_mgr.set_pod_status(&uid, st);
 
                 Ok(outcome)
             }
@@ -127,7 +132,7 @@ impl Kubelet {
                 let worker = self.worker_for(&uid);
                 let outcome = worker.sync(pod, WorkType::Terminating).await?;
                 let st = self.compose_status(pod, &outcome).await?;
-                self.status_mgr.set_pod_status(&uid, st).await?;
+                self.status_mgr.set_pod_status(&uid, st);
                 Ok(outcome)
             }
             WorkType::Terminated => {
@@ -150,6 +155,10 @@ impl Kubelet {
     }
 
     /// Flush pending status updates through the status sink.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KubeletError::Status`] if the status sink rejects an update.
     pub async fn flush_status(&self) -> Result<usize, KubeletError> {
         Ok(self.status_mgr.sync_batch().await?)
     }
@@ -160,7 +169,7 @@ impl Kubelet {
         self.actual_volumes.get_host_path(uid, name)
     }
 
-    /// Compose a PodStatus from the latest CRI snapshot, mirroring
+    /// Compose a `PodStatus` from the latest CRI snapshot, mirroring
     /// `pkg/kubelet/kubelet_pods.go::generateAPIPodStatus`.
     async fn compose_status(
         &self,
@@ -190,7 +199,7 @@ impl Kubelet {
                         CriState::Running => {
                             all_succeeded = false;
                             ApiContainerState::Running(ContainerStateRunning {
-                                started_at_ms: st.started_at.max(0) as u64,
+                                started_at_ms: u64::try_from(st.started_at).unwrap_or(0),
                             })
                         }
                         CriState::Exited => {
@@ -203,8 +212,8 @@ impl Kubelet {
                                 exit_code: st.exit_code,
                                 reason: st.reason.clone(),
                                 message: st.message.clone(),
-                                started_at_ms: st.started_at.max(0) as u64,
-                                finished_at_ms: st.finished_at.max(0) as u64,
+                                started_at_ms: u64::try_from(st.started_at).unwrap_or(0),
+                                finished_at_ms: u64::try_from(st.finished_at).unwrap_or(0),
                             })
                         }
                         _ => {

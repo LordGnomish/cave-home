@@ -276,7 +276,7 @@ mod tests {
 
         // Before expiry: still unlocked, nothing relocked.
         let relocked = c.tick(129);
-        assert!(relocked.is_empty());
+        assert_eq!(relocked, [] as [DoorId; 0]);
         assert_eq!(c.door(&id).expect("d").lock_state(), LockState::Unlocked);
     }
 
@@ -318,7 +318,7 @@ mod tests {
         c.lock(&id).expect("manual lock");
         assert_eq!(c.pending_relocks(), 0);
         // A later tick must not re-fire anything.
-        assert!(c.tick(200).is_empty());
+        assert_eq!(c.tick(200), [] as [DoorId; 0]);
     }
 
     #[test]
@@ -344,7 +344,7 @@ mod tests {
         c.temporary_unlock(&id, 0, 30).expect("temp");
         c.evacuate();
         // Even well past relock time, evacuation keeps it open.
-        assert!(c.tick(10_000).is_empty());
+        assert_eq!(c.tick(10_000), [] as [DoorId; 0]);
         assert_eq!(c.door(&id).expect("d").lock_state(), LockState::Unlocked);
     }
 

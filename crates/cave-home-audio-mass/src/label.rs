@@ -187,7 +187,7 @@ mod tests {
     fn every_state_has_three_languages() {
         for lang in [Lang::En, Lang::De, Lang::Tr] {
             for s in [PlayState::Playing, PlayState::Paused, PlayState::Idle] {
-                assert!(!s.label(lang).is_empty());
+                assert_ne!(s.label(lang), "");
             }
         }
     }

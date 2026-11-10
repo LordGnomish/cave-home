@@ -4,8 +4,8 @@
 //! Hand-port of the relevant slices of
 //! `k8s.io/cri-api/pkg/apis/runtime/v1/api.proto` (v1.36.1).
 //!
-//! Only the fields actually consumed by Phase 1 sub-systems (PodWorker,
-//! PLEG, VolumeManager, MockCriClient) are present. The rest is recorded as
+//! Only the fields actually consumed by Phase 1 sub-systems (`PodWorker`,
+//! PLEG, `VolumeManager`, `MockCriClient`) are present. The rest is recorded as
 //! `[[unmapped]]` Phase 1b.
 
 use std::collections::BTreeMap;

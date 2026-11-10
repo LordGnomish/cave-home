@@ -125,7 +125,7 @@ mod tests {
     fn every_status_has_three_language_headlines() {
         for s in STATUSES {
             for l in LANGS {
-                assert!(!s.headline(l).is_empty());
+                assert_ne!(s.headline(l), "");
             }
         }
     }
@@ -134,7 +134,7 @@ mod tests {
     fn every_failover_plan_has_three_language_headlines() {
         for p in all_plans() {
             for l in LANGS {
-                assert!(!p.headline(l).is_empty());
+                assert_ne!(p.headline(l), "");
             }
         }
     }
@@ -145,8 +145,8 @@ mod tests {
             updating_headline(Lang::En),
             "Updating — everything still works."
         );
-        assert!(!updating_headline(Lang::De).is_empty());
-        assert!(!updating_headline(Lang::Tr).is_empty());
+        assert_ne!(updating_headline(Lang::De), "");
+        assert_ne!(updating_headline(Lang::Tr), "");
     }
 
     #[test]
