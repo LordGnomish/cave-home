@@ -2,7 +2,7 @@
 //! gRPC `Status` -> `CriError` mapping.
 //!
 //! Mirrors how `pkg/kubelet/cri/remote` inspects the gRPC status code: a
-//! NOT_FOUND becomes the typed not-found error the pod workers already branch
+//! `NOT_FOUND` becomes the typed not-found error the pod workers already branch
 //! on, every other code is surfaced verbatim so callers can log/retry.
 #![cfg(feature = "remote-cri")]
 

@@ -3,17 +3,17 @@
 //! container garbage-collection *selection* decision.
 //!
 //! Behavioural reference target (documented kubelet runtime GC):
-//! - pkg/kubelet/kuberuntime/kuberuntime_gc.go::{evictableContainers,
-//!   enforceMaxContainersPerEvictUnit, evictContainers}
-//! - the GCPolicy {MinAge, MaxPerPodContainer, MaxContainers} contract.
+//! - `pkg/kubelet/kuberuntime/kuberuntime_gc.go::{evictableContainers,
+//!   enforceMaxContainersPerEvictUnit, evictContainers}`
+//! - the `GCPolicy` {`MinAge`, `MaxPerPodContainer`, `MaxContainers`} contract.
 //!
 //! The rules under test:
-//! - only **dead** (non-running) containers older than MinAge are candidates;
+//! - only **dead** (non-running) containers older than `MinAge` are candidates;
 //! - removal only happens to satisfy a cap — with both caps unlimited (-1)
 //!   nothing is removed however many dead containers exist;
-//! - MaxPerPodContainer keeps the newest N dead containers per (pod, name)
+//! - `MaxPerPodContainer` keeps the newest N dead containers per (pod, name)
 //!   evict-unit and removes the rest;
-//! - MaxContainers, when exceeded, re-caps every unit to MaxContainers/units
+//! - `MaxContainers`, when exceeded, re-caps every unit to `MaxContainers / units`
 //!   (>=1) and, if still over, removes the globally-oldest until it fits.
 
 use cave_home_kubelet_rs::container_gc::{ContainerRecord, GcPolicy, select_containers_to_remove};
@@ -50,7 +50,10 @@ fn nothing_removed_when_both_caps_unlimited() {
         max_containers: -1,
     };
     let cs = vec![dead("c1", "a", "x", 100), dead("c2", "a", "x", 200)];
-    assert!(select_containers_to_remove(&policy, &cs, NOW).is_empty());
+    assert_eq!(
+        select_containers_to_remove(&policy, &cs, NOW),
+        [] as [std::string::String; 0]
+    );
 }
 
 #[test]
@@ -61,7 +64,10 @@ fn running_containers_are_never_removed() {
         max_containers: -1,
     };
     let cs = vec![running("c1", "a", "x", 100), running("c2", "a", "x", 200)];
-    assert!(select_containers_to_remove(&policy, &cs, NOW).is_empty());
+    assert_eq!(
+        select_containers_to_remove(&policy, &cs, NOW),
+        [] as [std::string::String; 0]
+    );
 }
 
 #[test]
@@ -73,7 +79,10 @@ fn too_young_dead_containers_are_kept() {
         max_containers: -1,
     };
     let cs = vec![dead("c1", "a", "x", 950)];
-    assert!(select_containers_to_remove(&policy, &cs, NOW).is_empty());
+    assert_eq!(
+        select_containers_to_remove(&policy, &cs, NOW),
+        [] as [std::string::String; 0]
+    );
 }
 
 #[test]
@@ -204,5 +213,8 @@ fn empty_input_removes_nothing() {
         max_per_pod_container: 0,
         max_containers: 0,
     };
-    assert!(select_containers_to_remove(&policy, &[], NOW).is_empty());
+    assert_eq!(
+        select_containers_to_remove(&policy, &[], NOW),
+        [] as [std::string::String; 0]
+    );
 }
