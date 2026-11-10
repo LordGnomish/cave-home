@@ -143,9 +143,15 @@ pub fn float32(regs: &[u16], offset: usize) -> Result<Option<f32>, DecodeError> 
 pub fn string(regs: &[u16], offset: usize, len_regs: usize) -> Result<String, DecodeError> {
     let end = offset
         .checked_add(len_regs)
-        .ok_or(DecodeError::OutOfBounds { offset, len: regs.len() })?;
+        .ok_or(DecodeError::OutOfBounds {
+            offset,
+            len: regs.len(),
+        })?;
     if end > regs.len() {
-        return Err(DecodeError::OutOfBounds { offset: end, len: regs.len() });
+        return Err(DecodeError::OutOfBounds {
+            offset: end,
+            len: regs.len(),
+        });
     }
     let mut bytes = Vec::with_capacity(len_regs * 2);
     for &word in &regs[offset..end] {
@@ -161,9 +167,10 @@ pub fn string(regs: &[u16], offset: usize, len_regs: usize) -> Result<String, De
 
 /// Fetch one register word, bounds-checked.
 fn word_at(regs: &[u16], offset: usize) -> Result<u16, DecodeError> {
-    regs.get(offset)
-        .copied()
-        .ok_or(DecodeError::OutOfBounds { offset, len: regs.len() })
+    regs.get(offset).copied().ok_or(DecodeError::OutOfBounds {
+        offset,
+        len: regs.len(),
+    })
 }
 
 /// Combine two consecutive registers into a big-endian `u32`.
@@ -276,9 +283,18 @@ mod tests {
     #[test]
     fn out_of_bounds_is_error_not_panic() {
         let regs = [1u16];
-        assert!(matches!(int16(&regs, 5), Err(DecodeError::OutOfBounds { .. })));
-        assert!(matches!(uint32(&regs, 0), Err(DecodeError::OutOfBounds { .. })));
-        assert!(matches!(string(&regs, 0, 4), Err(DecodeError::OutOfBounds { .. })));
+        assert!(matches!(
+            int16(&regs, 5),
+            Err(DecodeError::OutOfBounds { .. })
+        ));
+        assert!(matches!(
+            uint32(&regs, 0),
+            Err(DecodeError::OutOfBounds { .. })
+        ));
+        assert!(matches!(
+            string(&regs, 0, 4),
+            Err(DecodeError::OutOfBounds { .. })
+        ));
     }
 
     #[test]

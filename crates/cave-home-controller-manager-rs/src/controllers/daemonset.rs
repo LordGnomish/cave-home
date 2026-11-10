@@ -21,7 +21,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::apis::{selector_matches, Cluster, DaemonSet, Node, Pod};
+use crate::apis::{Cluster, DaemonSet, Node, Pod, selector_matches};
 use crate::reconcile::Outcome;
 use crate::types::{Object, ObjectMeta, OwnerReference};
 
@@ -94,10 +94,13 @@ fn node_eligible(node: &Node, node_selector: &BTreeMap<String, String>) -> bool 
 fn create_pod(ds: &DaemonSet, node: &str, cluster: &mut Cluster) {
     let mut meta = ObjectMeta::new(&format!("{}-{node}", ds.meta.name), &ds.meta.namespace, "");
     meta.labels = ds.spec.template.labels.clone();
-    meta.labels.insert(DS_NODE_LABEL.to_owned(), node.to_owned());
-    meta.owner_references = vec![OwnerReference::to("DaemonSet", &ds.meta.name, &ds.meta.uid)
-        .controller()
-        .blocking()];
+    meta.labels
+        .insert(DS_NODE_LABEL.to_owned(), node.to_owned());
+    meta.owner_references = vec![
+        OwnerReference::to("DaemonSet", &ds.meta.name, &ds.meta.uid)
+            .controller()
+            .blocking(),
+    ];
     cluster.pods.create(Pod::new(meta));
 }
 
@@ -107,13 +110,21 @@ fn write_status(ds: &DaemonSet, eligible: &[String], cluster: &mut Cluster) {
     let pods = cluster.pods.list_owned_by(&ds.meta.uid);
     let current = pods
         .iter()
-        .filter(|p| p.meta.labels.get(DS_NODE_LABEL).is_some_and(|n| eligible.contains(n)))
+        .filter(|p| {
+            p.meta
+                .labels
+                .get(DS_NODE_LABEL)
+                .is_some_and(|n| eligible.contains(n))
+        })
         .count();
     let ready = pods
         .iter()
         .filter(|p| {
             p.status.ready
-                && p.meta.labels.get(DS_NODE_LABEL).is_some_and(|n| eligible.contains(n))
+                && p.meta
+                    .labels
+                    .get(DS_NODE_LABEL)
+                    .is_some_and(|n| eligible.contains(n))
         })
         .count();
     // A pod on a node that is no longer eligible is misscheduled (it is deleted
@@ -121,7 +132,12 @@ fn write_status(ds: &DaemonSet, eligible: &[String], cluster: &mut Cluster) {
     // non-zero only transiently within a pass).
     let misscheduled = pods
         .iter()
-        .filter(|p| p.meta.labels.get(DS_NODE_LABEL).is_some_and(|n| !eligible.contains(n)))
+        .filter(|p| {
+            p.meta
+                .labels
+                .get(DS_NODE_LABEL)
+                .is_some_and(|n| !eligible.contains(n))
+        })
         .count();
 
     if let Some(mut updated) = cluster.daemonsets.get(&ds.key()) {

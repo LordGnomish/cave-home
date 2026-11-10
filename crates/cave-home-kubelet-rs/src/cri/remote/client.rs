@@ -449,7 +449,12 @@ impl CriClient for RemoteCriClient {
             .list_images(req)
             .await
             .map_err(|s| status_to_cri_error(&s))?;
-        Ok(resp.into_inner().images.into_iter().map(Into::into).collect())
+        Ok(resp
+            .into_inner()
+            .images
+            .into_iter()
+            .map(Into::into)
+            .collect())
     }
 
     async fn remove_image(&self, image: t::ImageSpec) -> CriResult<()> {

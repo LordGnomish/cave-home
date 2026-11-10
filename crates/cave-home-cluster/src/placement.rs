@@ -80,14 +80,18 @@ pub fn place(cluster: &Cluster, workload: Workload) -> Result<String, PlacementE
         }
         Workload::CameraInference => {
             // Prefer a hostable GPU node; fall back to the active primary.
-            if let Some(gpu) = cluster.nodes().iter().find(|n| {
-                n.role() == NodeRole::MlGpu && n.capabilities().has_gpu && hostable(n)
-            }) {
+            if let Some(gpu) = cluster
+                .nodes()
+                .iter()
+                .find(|n| n.role() == NodeRole::MlGpu && n.capabilities().has_gpu && hostable(n))
+            {
                 return Ok(gpu.id().to_owned());
             }
             // Fallback: any hostable node with a GPU, then the active primary.
-            if let Some(any_gpu) =
-                cluster.nodes().iter().find(|n| n.capabilities().has_gpu && hostable(n))
+            if let Some(any_gpu) = cluster
+                .nodes()
+                .iter()
+                .find(|n| n.capabilities().has_gpu && hostable(n))
             {
                 return Ok(any_gpu.id().to_owned());
             }
@@ -95,9 +99,7 @@ pub fn place(cluster: &Cluster, workload: Workload) -> Result<String, PlacementE
         }
         // The behavioural core and its co-located services live on the active
         // primary.
-        Workload::AutomationEngine | Workload::Broker | Workload::Portal => {
-            primary_host(cluster)
-        }
+        Workload::AutomationEngine | Workload::Broker | Workload::Portal => primary_host(cluster),
     }
 }
 
@@ -142,7 +144,10 @@ mod tests {
     #[test]
     fn automation_engine_goes_to_active_primary() {
         let c = full_cluster();
-        assert_eq!(place(&c, Workload::AutomationEngine), Ok("hub-1".to_owned()));
+        assert_eq!(
+            place(&c, Workload::AutomationEngine),
+            Ok("hub-1".to_owned())
+        );
         assert_eq!(place(&c, Workload::Broker), Ok("hub-1".to_owned()));
         assert_eq!(place(&c, Workload::Portal), Ok("hub-1".to_owned()));
     }
@@ -163,7 +168,10 @@ mod tests {
         c.add(Node::new("hub-1", "Main hub", NodeRole::Primary)); // no radios
         c.set_heartbeat("hub-1", 1000);
         c.refresh_all(1000);
-        assert_eq!(place(&c, Workload::Radios), Err(PlacementError::NoEligibleNode));
+        assert_eq!(
+            place(&c, Workload::Radios),
+            Err(PlacementError::NoEligibleNode)
+        );
     }
 
     #[test]

@@ -28,10 +28,7 @@ fn l2_normalise(v: &[f32]) -> Vec<f32> {
 /// Squared Euclidean distance between two equal-length vectors.
 #[must_use]
 fn sq_euclidean(a: &[f32], b: &[f32]) -> f32 {
-    a.iter()
-        .zip(b.iter())
-        .map(|(x, y)| (x - y) * (x - y))
-        .sum()
+    a.iter().zip(b.iter()).map(|(x, y)| (x - y) * (x - y)).sum()
 }
 
 /// Length-normalised dynamic-time-warping distance between two feature

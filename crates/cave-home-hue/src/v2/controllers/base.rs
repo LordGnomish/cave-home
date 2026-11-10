@@ -136,7 +136,16 @@ use crate::v2::models::{
     button::Button, device::Device, grouped_light::GroupedLight, light::Light, motion::Motion,
     room::Room, scene::Scene, zone::Zone,
 };
-impl_resource_id_access!(Light, Scene, Motion, Button, Device, Room, Zone, GroupedLight);
+impl_resource_id_access!(
+    Light,
+    Scene,
+    Motion,
+    Button,
+    Device,
+    Room,
+    Zone,
+    GroupedLight
+);
 
 #[cfg(test)]
 mod tests {
@@ -199,9 +208,7 @@ mod tests {
         let mut ctrl = ResourcesController::<Light>::new("light");
         ctrl.update(&req).await.unwrap();
         assert_eq!(ctrl.len(), 1);
-        let light = ctrl
-            .get("11111111-1111-1111-1111-111111111111")
-            .unwrap();
+        let light = ctrl.get("11111111-1111-1111-1111-111111111111").unwrap();
         assert!(light.is_on());
     }
 

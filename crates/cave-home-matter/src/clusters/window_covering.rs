@@ -99,11 +99,7 @@ impl WindowCoveringClient {
     /// # Errors
     /// [`MatterError::InvalidArgument`] if `percent100ths` exceeds
     /// [`PERCENT100THS_MAX`].
-    pub fn go_to_lift_percentage(
-        &self,
-        node: NodeId,
-        percent100ths: u16,
-    ) -> Result<CoveringState> {
+    pub fn go_to_lift_percentage(&self, node: NodeId, percent100ths: u16) -> Result<CoveringState> {
         Self::validate_percent(percent100ths)?;
         let mut map = self.state.lock();
         let entry = map.entry(node).or_default();
@@ -119,11 +115,7 @@ impl WindowCoveringClient {
     /// # Errors
     /// [`MatterError::InvalidArgument`] if `percent100ths` exceeds
     /// [`PERCENT100THS_MAX`].
-    pub fn go_to_tilt_percentage(
-        &self,
-        node: NodeId,
-        percent100ths: u16,
-    ) -> Result<CoveringState> {
+    pub fn go_to_tilt_percentage(&self, node: NodeId, percent100ths: u16) -> Result<CoveringState> {
         Self::validate_percent(percent100ths)?;
         let mut map = self.state.lock();
         let entry = map.entry(node).or_default();

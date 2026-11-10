@@ -18,9 +18,9 @@
 
 use clap::{Arg, ArgMatches, Command};
 
-use cave_home_jarvis::tools::{builtin_tools, intent_to_tool_call};
 use cave_home_jarvis::JarvisConfig;
-use cave_home_voice::{understand, Lang, Understanding};
+use cave_home_jarvis::tools::{builtin_tools, intent_to_tool_call};
+use cave_home_voice::{Lang, Understanding, understand};
 
 /// Build the `jarvis` clap subtree.
 #[must_use]
@@ -31,7 +31,12 @@ pub fn cmd() -> Command {
         .subcommand(
             Command::new("ask")
                 .about("Try a spoken command as text (no microphone needed)")
-                .arg(Arg::new("text").long("text").required(true).help("what you'd say")),
+                .arg(
+                    Arg::new("text")
+                        .long("text")
+                        .required(true)
+                        .help("what you'd say"),
+                ),
         )
         .subcommand(Command::new("tools").about("What the assistant can control"))
         .subcommand(Command::new("wake").about("Show the wake words it listens for"))
@@ -54,7 +59,10 @@ pub fn run() -> i32 {
 pub fn dispatch(matches: &ArgMatches, verbose: bool) -> i32 {
     match matches.subcommand() {
         Some(("ask", m)) => {
-            let text = m.get_one::<String>("text").map(String::as_str).unwrap_or("");
+            let text = m
+                .get_one::<String>("text")
+                .map(String::as_str)
+                .unwrap_or("");
             print!("{}", render_ask(text, verbose));
             0
         }
@@ -143,7 +151,10 @@ mod tests {
 
     #[test]
     fn cmd_has_subcommands() {
-        let names: Vec<_> = cmd().get_subcommands().map(|s| s.get_name().to_string()).collect();
+        let names: Vec<_> = cmd()
+            .get_subcommands()
+            .map(|s| s.get_name().to_string())
+            .collect();
         for n in ["ask", "tools", "wake"] {
             assert!(names.iter().any(|x| x == n), "missing sub {n}");
         }

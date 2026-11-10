@@ -40,13 +40,19 @@ impl CurrentLimits {
     #[must_use]
     pub const fn typical_16a() -> Self {
         // Bounds are constant and valid by construction.
-        Self { min_a: 6.0, max_a: 16.0 }
+        Self {
+            min_a: 6.0,
+            max_a: 16.0,
+        }
     }
 
     /// A larger wallbox: 6 A minimum, 32 A maximum.
     #[must_use]
     pub const fn typical_32a() -> Self {
-        Self { min_a: 6.0, max_a: 32.0 }
+        Self {
+            min_a: 6.0,
+            max_a: 32.0,
+        }
     }
 
     #[must_use]
@@ -137,12 +143,18 @@ pub fn decide_current(
 
     match mode {
         ChargeMode::Off => Ok(ChargeSetpoint::Paused),
-        ChargeMode::Now => Ok(ChargeSetpoint::Charge { amps: limits.max_a, phases }),
+        ChargeMode::Now => Ok(ChargeSetpoint::Charge {
+            amps: limits.max_a,
+            phases,
+        }),
         ChargeMode::PvOnly => {
             if raw < limits.min_a {
                 Ok(ChargeSetpoint::Paused)
             } else {
-                Ok(ChargeSetpoint::Charge { amps: raw.min(limits.max_a), phases })
+                Ok(ChargeSetpoint::Charge {
+                    amps: raw.min(limits.max_a),
+                    phases,
+                })
             }
         }
         ChargeMode::MinPlusPv => {
@@ -170,7 +182,10 @@ mod tests {
 
     #[test]
     fn limits_reject_negative_and_non_finite() {
-        assert_eq!(CurrentLimits::new(-1.0, 16.0), Err(EvccError::NegativeCurrent));
+        assert_eq!(
+            CurrentLimits::new(-1.0, 16.0),
+            Err(EvccError::NegativeCurrent)
+        );
         assert_eq!(CurrentLimits::new(6.0, f64::NAN), Err(EvccError::NotFinite));
     }
 
@@ -190,23 +205,41 @@ mod tests {
 
     #[test]
     fn current_for_surplus_rejects_bad_phases_and_voltage() {
-        assert_eq!(current_for_surplus(1000.0, V, 2), Err(EvccError::UnsupportedPhases));
-        assert_eq!(current_for_surplus(1000.0, 0.0, 1), Err(EvccError::NonPositiveVoltage));
+        assert_eq!(
+            current_for_surplus(1000.0, V, 2),
+            Err(EvccError::UnsupportedPhases)
+        );
+        assert_eq!(
+            current_for_surplus(1000.0, 0.0, 1),
+            Err(EvccError::NonPositiveVoltage)
+        );
     }
 
     #[test]
     fn pv_only_pauses_below_single_phase_minimum() {
         // 1000 W single-phase -> ~4.35 A, below the 6 A floor -> pause.
-        let s = decide_current(1000.0, CurrentLimits::typical_16a(), V, 1, ChargeMode::PvOnly)
-            .unwrap();
+        let s = decide_current(
+            1000.0,
+            CurrentLimits::typical_16a(),
+            V,
+            1,
+            ChargeMode::PvOnly,
+        )
+        .unwrap();
         assert_eq!(s, ChargeSetpoint::Paused);
     }
 
     #[test]
     fn pv_only_charges_at_exactly_the_minimum_boundary() {
         // 6 A * 230 V = 1380 W -> exactly the minimum, should charge at 6 A.
-        let s = decide_current(1380.0, CurrentLimits::typical_16a(), V, 1, ChargeMode::PvOnly)
-            .unwrap();
+        let s = decide_current(
+            1380.0,
+            CurrentLimits::typical_16a(),
+            V,
+            1,
+            ChargeMode::PvOnly,
+        )
+        .unwrap();
         match s {
             ChargeSetpoint::Charge { amps, phases } => {
                 assert!((amps - 6.0).abs() < 1e-9);
@@ -219,16 +252,28 @@ mod tests {
     #[test]
     fn pv_only_clamps_to_max() {
         // 10 kW single-phase would be ~43 A; clamp to 16 A.
-        let s = decide_current(10_000.0, CurrentLimits::typical_16a(), V, 1, ChargeMode::PvOnly)
-            .unwrap();
+        let s = decide_current(
+            10_000.0,
+            CurrentLimits::typical_16a(),
+            V,
+            1,
+            ChargeMode::PvOnly,
+        )
+        .unwrap();
         assert_eq!(s.amps(), 16.0);
     }
 
     #[test]
     fn min_plus_pv_draws_minimum_from_grid_when_sun_is_short() {
         // Almost no sun: still charge at the 6 A minimum (grid tops up).
-        let s = decide_current(200.0, CurrentLimits::typical_16a(), V, 1, ChargeMode::MinPlusPv)
-            .unwrap();
+        let s = decide_current(
+            200.0,
+            CurrentLimits::typical_16a(),
+            V,
+            1,
+            ChargeMode::MinPlusPv,
+        )
+        .unwrap();
         assert!(s.is_charging());
         assert!((s.amps() - 6.0).abs() < 1e-9);
     }
@@ -236,8 +281,14 @@ mod tests {
     #[test]
     fn min_plus_pv_rides_surplus_above_minimum() {
         // ~2300 W -> 10 A, above the minimum, below max -> charge at 10 A.
-        let s = decide_current(2300.0, CurrentLimits::typical_16a(), V, 1, ChargeMode::MinPlusPv)
-            .unwrap();
+        let s = decide_current(
+            2300.0,
+            CurrentLimits::typical_16a(),
+            V,
+            1,
+            ChargeMode::MinPlusPv,
+        )
+        .unwrap();
         assert!((s.amps() - 10.0).abs() < 1e-9);
     }
 
@@ -249,8 +300,8 @@ mod tests {
 
     #[test]
     fn off_always_pauses() {
-        let s = decide_current(9999.0, CurrentLimits::typical_16a(), V, 3, ChargeMode::Off)
-            .unwrap();
+        let s =
+            decide_current(9999.0, CurrentLimits::typical_16a(), V, 3, ChargeMode::Off).unwrap();
         assert_eq!(s, ChargeSetpoint::Paused);
     }
 

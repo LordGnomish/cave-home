@@ -29,7 +29,10 @@ pub async fn read_packet<R: AsyncRead + Unpin>(r: &mut R) -> io::Result<Option<P
         }
         multiplier *= 128;
         if multiplier > 128 * 128 * 128 {
-            return Err(io::Error::new(ErrorKind::InvalidData, "malformed Remaining Length"));
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                "malformed Remaining Length",
+            ));
         }
     }
 
@@ -43,11 +46,9 @@ pub async fn read_packet<R: AsyncRead + Unpin>(r: &mut R) -> io::Result<Option<P
 }
 
 /// Encode and write one MQTT control packet, flushing the stream.
-pub async fn write_packet<W: AsyncWrite + Unpin>(
-    w: &mut W,
-    packet: &PacketV5,
-) -> io::Result<()> {
-    let buf = encode_v5(packet).map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))?;
+pub async fn write_packet<W: AsyncWrite + Unpin>(w: &mut W, packet: &PacketV5) -> io::Result<()> {
+    let buf =
+        encode_v5(packet).map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))?;
     w.write_all(&buf).await?;
     w.flush().await
 }

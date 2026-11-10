@@ -67,8 +67,7 @@ const COLUMNS: &str = "kv.id AS theid, kv.name, kv.created, kv.deleted, \
 const REV_SQL: &str = "SELECT MAX(rkv.id) AS id FROM kine AS rkv";
 
 /// The compacted floor, read from the sentinel row (`compactRevSQL`).
-const COMPACT_REV_SQL: &str =
-    "SELECT MAX(crkv.prev_revision) AS prev_revision FROM kine AS crkv \
+const COMPACT_REV_SQL: &str = "SELECT MAX(crkv.prev_revision) AS prev_revision FROM kine AS crkv \
      WHERE crkv.name = 'compact_rev_key'";
 
 /// A driver dialect: turns the shared MVCC query templates into the exact SQL a
@@ -165,7 +164,11 @@ impl Dialect {
     #[must_use]
     pub fn index_sqls(self) -> Vec<String> {
         // MySQL has no `CREATE INDEX IF NOT EXISTS`; the others do.
-        let guard = if self.driver == Driver::Mysql { "" } else { "IF NOT EXISTS " };
+        let guard = if self.driver == Driver::Mysql {
+            ""
+        } else {
+            "IF NOT EXISTS "
+        };
         vec![
             format!("CREATE INDEX {guard}kine_name_index ON kine (name)"),
             format!(
@@ -227,7 +230,11 @@ impl Dialect {
     /// Bind order: `name_like`, [`read_revision` if `at_revision`],
     /// `include_deleted`.
     fn list_sql(self, at_revision: bool) -> String {
-        let revision_bound = if at_revision { "AND mkv.id <= ?\n\t\t" } else { "" };
+        let revision_bound = if at_revision {
+            "AND mkv.id <= ?\n\t\t"
+        } else {
+            ""
+        };
         let raw = format!(
             "SELECT ({REV_SQL}) AS crev, ({COMPACT_REV_SQL}) AS compact, {COLUMNS}\n\
              FROM kine AS kv\n\
@@ -598,8 +605,15 @@ mod tests {
     #[test]
     fn portable_statements_rebind_for_postgres() {
         let d = Dialect::new(Driver::Postgres);
-        for sql in [d.latest_row_sql(), d.keys_with_lease_sql(), d.compact_delete_sql()] {
-            assert!(!sql.contains('?'), "postgres statement still has a bare ?: {sql}");
+        for sql in [
+            d.latest_row_sql(),
+            d.keys_with_lease_sql(),
+            d.compact_delete_sql(),
+        ] {
+            assert!(
+                !sql.contains('?'),
+                "postgres statement still has a bare ?: {sql}"
+            );
             assert!(sql.contains("$1"));
         }
     }
@@ -683,7 +697,10 @@ mod tests {
         let pg_base = pg.list_revision_sql(); // $1..$3
         let pg_limited = pg.with_limit(&pg_base);
         // The limit param must be exactly $4 — one past the three list params.
-        assert!(pg_limited.trim_end().ends_with("LIMIT $4"), "got: {pg_limited}");
+        assert!(
+            pg_limited.trim_end().ends_with("LIMIT $4"),
+            "got: {pg_limited}"
+        );
         assert!(!pg_limited.contains('?'));
         // No duplicated or skipped numbers: $1..$4 each appear.
         for n in 1..=4 {
@@ -715,7 +732,10 @@ mod tests {
         ];
         for sql in &queries {
             assert!(!sql.contains('?'), "postgres query left a bare ?: {sql}");
-            assert!(sql.contains("$1"), "postgres query did not number from $1: {sql}");
+            assert!(
+                sql.contains("$1"),
+                "postgres query did not number from $1: {sql}"
+            );
         }
     }
 
@@ -724,7 +744,12 @@ mod tests {
         // For every Postgres query, the $N set is exactly {1..=max} — contiguous,
         // which is what the driver's positional bind relies on.
         let d = Dialect::new(Driver::Postgres);
-        for sql in [d.insert_sql(), d.fill_sql(), d.list_revision_sql(), d.compact_delete_sql()] {
+        for sql in [
+            d.insert_sql(),
+            d.fill_sql(),
+            d.list_revision_sql(),
+            d.compact_delete_sql(),
+        ] {
             let mut nums: Vec<u32> = sql
                 .split('$')
                 .skip(1)
@@ -736,7 +761,11 @@ mod tests {
             nums.sort_unstable();
             nums.dedup();
             let max = *nums.last().unwrap();
-            assert_eq!(nums, (1..=max).collect::<Vec<_>>(), "non-contiguous $N in: {sql}");
+            assert_eq!(
+                nums,
+                (1..=max).collect::<Vec<_>>(),
+                "non-contiguous $N in: {sql}"
+            );
         }
     }
 
@@ -745,7 +774,10 @@ mod tests {
         // MySQL has no `CREATE INDEX IF NOT EXISTS`; the generated DDL must not
         // contain that clause, while SQLite/Postgres must.
         let mysql = Dialect::new(Driver::Mysql).index_sqls();
-        assert!(mysql.iter().all(|s| !s.contains("IF NOT EXISTS")), "MySQL omits IF NOT EXISTS");
+        assert!(
+            mysql.iter().all(|s| !s.contains("IF NOT EXISTS")),
+            "MySQL omits IF NOT EXISTS"
+        );
         for d in [Dialect::new(Driver::Sqlite), Dialect::new(Driver::Postgres)] {
             assert!(d.index_sqls().iter().all(|s| s.contains("IF NOT EXISTS")));
         }
@@ -759,7 +791,10 @@ mod tests {
             let ix = Dialect::new(d).index_sqls();
             assert_eq!(ix.len(), 3, "{d:?} must create three indexes");
             assert!(ix.iter().any(|s| s.contains("kine_name_index")));
-            assert!(ix.iter().any(|s| s.contains("kine_name_prev_revision_uindex")));
+            assert!(
+                ix.iter()
+                    .any(|s| s.contains("kine_name_prev_revision_uindex"))
+            );
             assert!(ix.iter().any(|s| s.contains("kine_id_deleted_index")));
             assert!(
                 ix.iter().any(|s| s.to_uppercase().contains("UNIQUE")),
@@ -773,9 +808,15 @@ mod tests {
         // MySQL needs a bounded, ASCII-collated name column (for the index key
         // length) and MEDIUMBLOB value columns.
         let ddl = Dialect::new(Driver::Mysql).create_table_sql();
-        assert!(ddl.contains("MEDIUMBLOB"), "MySQL stores values as MEDIUMBLOB");
+        assert!(
+            ddl.contains("MEDIUMBLOB"),
+            "MySQL stores values as MEDIUMBLOB"
+        );
         assert!(ddl.to_uppercase().contains("CHARACTER SET ASCII"));
-        assert!(ddl.contains("VARCHAR(630)"), "bounded name for the index key length");
+        assert!(
+            ddl.contains("VARCHAR(630)"),
+            "bounded name for the index key length"
+        );
     }
 
     #[test]

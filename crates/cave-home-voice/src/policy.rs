@@ -175,25 +175,40 @@ mod tests {
 
     #[test]
     fn admin_may_do_everything_outright() {
-        assert_eq!(authorize(&climate(), PermissionLevel::Admin), Decision::Allow);
+        assert_eq!(
+            authorize(&climate(), PermissionLevel::Admin),
+            Decision::Allow
+        );
         assert_eq!(authorize(&cover(), PermissionLevel::Admin), Decision::Allow);
     }
 
     #[test]
     fn members_change_climate_but_confirm_covers() {
-        assert_eq!(authorize(&climate(), PermissionLevel::Member), Decision::Allow);
-        assert_eq!(authorize(&cover(), PermissionLevel::Member), Decision::Confirm);
+        assert_eq!(
+            authorize(&climate(), PermissionLevel::Member),
+            Decision::Allow
+        );
+        assert_eq!(
+            authorize(&cover(), PermissionLevel::Member),
+            Decision::Confirm
+        );
     }
 
     #[test]
     fn children_confirm_climate_and_may_not_open_covers() {
-        assert_eq!(authorize(&climate(), PermissionLevel::Child), Decision::Confirm);
+        assert_eq!(
+            authorize(&climate(), PermissionLevel::Child),
+            Decision::Confirm
+        );
         assert_eq!(authorize(&cover(), PermissionLevel::Child), Decision::Deny);
     }
 
     #[test]
     fn guests_may_not_touch_climate_or_covers() {
-        assert_eq!(authorize(&climate(), PermissionLevel::Guest), Decision::Deny);
+        assert_eq!(
+            authorize(&climate(), PermissionLevel::Guest),
+            Decision::Deny
+        );
         assert_eq!(authorize(&cover(), PermissionLevel::Guest), Decision::Deny);
     }
 

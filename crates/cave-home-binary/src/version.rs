@@ -33,11 +33,7 @@ impl BuildInfo {
     #[must_use]
     pub fn current() -> Self {
         let raw_sha = option_env!("CAVE_HOME_GIT_SHA");
-        Self::new(
-            env!("CARGO_PKG_VERSION"),
-            raw_sha,
-            cfg!(debug_assertions),
-        )
+        Self::new(env!("CARGO_PKG_VERSION"), raw_sha, cfg!(debug_assertions))
     }
 
     /// Construct build info from explicit inputs. Factored out so the

@@ -42,13 +42,11 @@ pub type ServiceFuture = BoxFuture<'static, HassResult<ServiceResponse>>;
 
 /// Service handler — closure taking a [`ServiceCall`] and returning a
 /// future of `Option<Value>`.
-pub type ServiceHandler =
-    Arc<dyn Fn(ServiceCall) -> ServiceFuture + Send + Sync + 'static>;
+pub type ServiceHandler = Arc<dyn Fn(ServiceCall) -> ServiceFuture + Send + Sync + 'static>;
 
 /// Optional service-call data schema. Called to coerce/validate the
 /// payload before the handler runs.
-pub type ServiceSchema =
-    Arc<dyn Fn(&Value) -> HassResult<Value> + Send + Sync + 'static>;
+pub type ServiceSchema = Arc<dyn Fn(&Value) -> HassResult<Value> + Send + Sync + 'static>;
 
 /// Representation of a callable service.
 ///
@@ -297,8 +295,12 @@ mod tests {
         });
         reg.register("light", "turn_on", handler, None, SupportsResponse::None);
         assert!(reg.has_service("light", "turn_on"));
-        reg.call("light", "turn_on", None, None, false).await.unwrap();
-        reg.call("LIGHT", "TURN_ON", None, None, false).await.unwrap();
+        reg.call("light", "turn_on", None, None, false)
+            .await
+            .unwrap();
+        reg.call("LIGHT", "TURN_ON", None, None, false)
+            .await
+            .unwrap();
         assert_eq!(counter.load(Ordering::SeqCst), 2);
     }
 
@@ -322,10 +324,7 @@ mod tests {
             Ok(Some(Value::from(42)))
         });
         reg.register("test", "echo", handler, None, SupportsResponse::Only);
-        let response = reg
-            .call("test", "echo", None, None, true)
-            .await
-            .unwrap();
+        let response = reg.call("test", "echo", None, None, true).await.unwrap();
         assert_eq!(response, Some(Value::from(42)));
     }
 
@@ -341,7 +340,9 @@ mod tests {
             Ok(data.clone())
         });
         let handler = service_handler(|call| async move {
-            Ok(Some(call.data.get("brightness").cloned().unwrap_or(Value::Null)))
+            Ok(Some(
+                call.data.get("brightness").cloned().unwrap_or(Value::Null),
+            ))
         });
         reg.register(
             "light",
@@ -351,7 +352,13 @@ mod tests {
             SupportsResponse::Optional,
         );
         let r = reg
-            .call("light", "turn_on", Some(serde_json::json!({"brightness": 100})), None, true)
+            .call(
+                "light",
+                "turn_on",
+                Some(serde_json::json!({"brightness": 100})),
+                None,
+                true,
+            )
             .await
             .unwrap();
         assert_eq!(r, Some(Value::from(100)));
@@ -367,10 +374,7 @@ mod tests {
         let reg = make();
         let handler = service_handler(|_call| async move { Ok(Some(Value::from(1))) });
         reg.register("test", "ro", handler, None, SupportsResponse::Only);
-        let err = reg
-            .call("test", "ro", None, None, false)
-            .await
-            .unwrap_err();
+        let err = reg.call("test", "ro", None, None, false).await.unwrap_err();
         assert!(matches!(err, HassError::ServiceValidationError(_)));
     }
 

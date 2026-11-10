@@ -121,11 +121,19 @@ fn most_recent_schedule(schedule: &CronSchedule, base: i64, now: i64) -> Option<
 
 /// Create the `Job` for this scheduled run, owned by the `CronJob`.
 fn start_job(cj: &CronJob, scheduled: i64, cluster: &mut Cluster) {
-    let mut meta = ObjectMeta::new(&format!("{}-{scheduled}", cj.meta.name), &cj.meta.namespace, "");
-    meta.owner_references = vec![OwnerReference::to("CronJob", &cj.meta.name, &cj.meta.uid)
-        .controller()
-        .blocking()];
-    cluster.jobs.create(Job::new(meta, cj.spec.job_template.clone()));
+    let mut meta = ObjectMeta::new(
+        &format!("{}-{scheduled}", cj.meta.name),
+        &cj.meta.namespace,
+        "",
+    );
+    meta.owner_references = vec![
+        OwnerReference::to("CronJob", &cj.meta.name, &cj.meta.uid)
+            .controller()
+            .blocking(),
+    ];
+    cluster
+        .jobs
+        .create(Job::new(meta, cj.spec.job_template.clone()));
 }
 
 /// Record the scheduled time as the `CronJob`'s last run.

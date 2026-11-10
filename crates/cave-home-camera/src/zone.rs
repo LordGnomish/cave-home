@@ -193,10 +193,10 @@ mod tests {
     fn anchor_choice_changes_membership() {
         // A box whose centre is inside but whose bottom edge falls below the
         // zone: anchor choice flips membership.
-        let z_center = Zone::new("driveway", driveway(), vec![], 0.0)
-            .with_anchor(ZoneAnchor::Center);
-        let z_bottom = Zone::new("driveway", driveway(), vec![], 0.0)
-            .with_anchor(ZoneAnchor::BottomCenter);
+        let z_center =
+            Zone::new("driveway", driveway(), vec![], 0.0).with_anchor(ZoneAnchor::Center);
+        let z_bottom =
+            Zone::new("driveway", driveway(), vec![], 0.0).with_anchor(ZoneAnchor::BottomCenter);
         // centre (50,90) inside; bottom-centre (50,120) outside.
         let d = det(ObjectLabel::Person, 0.9, BBox::new(40.0, 60.0, 20.0, 60.0));
         assert!(z_center.contains(&d));

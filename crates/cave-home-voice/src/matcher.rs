@@ -9,7 +9,7 @@
 //! are reported as ambiguous so the assistant can ask rather than guess.
 
 use crate::label::Lang;
-use crate::slot::{resolve as resolve_slot, SlotKind, SlotValue};
+use crate::slot::{SlotKind, SlotValue, resolve as resolve_slot};
 use crate::template::{Element, Template};
 use std::collections::BTreeMap;
 
@@ -149,9 +149,14 @@ pub fn match_intent(utterance: &str, intents: &[CompiledIntent]) -> MatchOutcome
 fn try_match(intent: &CompiledIntent, tokens: &[String]) -> Option<IntentMatch> {
     let mut slots: BTreeMap<String, SlotValue> = BTreeMap::new();
     // Walk the template; require it to consume *all* tokens.
-    if !walk(intent, intent.template.elements(), tokens, 0, &mut slots, &mut |pos| {
-        pos == tokens.len()
-    }) {
+    if !walk(
+        intent,
+        intent.template.elements(),
+        tokens,
+        0,
+        &mut slots,
+        &mut |pos| pos == tokens.len(),
+    ) {
         return None;
     }
 
@@ -314,8 +319,13 @@ mod tests {
 
     #[test]
     fn matches_literal_intent() {
-        let i = CompiledIntent::new("lights.all_off", Lang::En, "turn everything off", BTreeMap::new())
-            .expect("template");
+        let i = CompiledIntent::new(
+            "lights.all_off",
+            Lang::En,
+            "turn everything off",
+            BTreeMap::new(),
+        )
+        .expect("template");
         match match_intent("Turn everything off.", &[i]) {
             MatchOutcome::Matched(m) => {
                 assert_eq!(m.intent, "lights.all_off");
@@ -369,7 +379,10 @@ mod tests {
             "light.brightness",
             Lang::En,
             "set [the] {name} to {level} percent",
-            slots(&[("name", rooms()), ("level", SlotKind::Number { min: 0, max: 100 })]),
+            slots(&[
+                ("name", rooms()),
+                ("level", SlotKind::Number { min: 0, max: 100 }),
+            ]),
         )
         .expect("template");
         match match_intent("set the kitchen to fifty percent", &[i]) {
@@ -390,7 +403,10 @@ mod tests {
             slots(&[("name", rooms())]),
         )
         .expect("template");
-        assert_eq!(match_intent("turn the garage on", &[i]), MatchOutcome::NoMatch);
+        assert_eq!(
+            match_intent("turn the garage on", &[i]),
+            MatchOutcome::NoMatch
+        );
     }
 
     #[test]
@@ -413,8 +429,14 @@ mod tests {
             )
             .expect("t")
         };
-        for utt in ["what is the kitchen temperature", "whats the kitchen temperature"] {
-            assert!(matches!(match_intent(utt, &[mk()]), MatchOutcome::Matched(_)));
+        for utt in [
+            "what is the kitchen temperature",
+            "whats the kitchen temperature",
+        ] {
+            assert!(matches!(
+                match_intent(utt, &[mk()]),
+                MatchOutcome::Matched(_)
+            ));
         }
     }
 
@@ -428,13 +450,9 @@ mod tests {
             slots(&[("name", SlotKind::Open)]),
         )
         .expect("t");
-        let specific = CompiledIntent::new(
-            "lights.all_off",
-            Lang::En,
-            "lights off",
-            BTreeMap::new(),
-        )
-        .expect("t");
+        let specific =
+            CompiledIntent::new("lights.all_off", Lang::En, "lights off", BTreeMap::new())
+                .expect("t");
         match match_intent("lights off", &[generic, specific]) {
             MatchOutcome::Matched(m) => assert_eq!(m.intent, "lights.all_off"),
             other => panic!("{other:?}"),
@@ -445,8 +463,13 @@ mod tests {
     fn ties_between_different_intents_are_ambiguous() {
         let a = CompiledIntent::new("a", Lang::En, "{name}", slots(&[("name", SlotKind::Open)]))
             .expect("t");
-        let b = CompiledIntent::new("b", Lang::En, "{thing}", slots(&[("thing", SlotKind::Open)]))
-            .expect("t");
+        let b = CompiledIntent::new(
+            "b",
+            Lang::En,
+            "{thing}",
+            slots(&[("thing", SlotKind::Open)]),
+        )
+        .expect("t");
         match match_intent("hello", &[a, b]) {
             MatchOutcome::Ambiguous(ids) => {
                 assert_eq!(ids.len(), 2);
@@ -458,7 +481,8 @@ mod tests {
 
     #[test]
     fn same_intent_two_variants_is_not_ambiguous() {
-        let v1 = CompiledIntent::new("light.on", Lang::En, "lights on", BTreeMap::new()).expect("t");
+        let v1 =
+            CompiledIntent::new("light.on", Lang::En, "lights on", BTreeMap::new()).expect("t");
         let v2 = CompiledIntent::new("light.on", Lang::En, "turn lights on", BTreeMap::new())
             .expect("t");
         // "lights on" only matches v1, but make both id-equal to show same-id

@@ -129,8 +129,6 @@ mod tests {
     #[test]
     fn move_to_hue_sat_rejects_oversaturated() {
         let c = ColorControlClient::new();
-        assert!(c
-            .move_to_hue_and_saturation(NodeId(1), 0, 255, 0)
-            .is_err());
+        assert!(c.move_to_hue_and_saturation(NodeId(1), 0, 255, 0).is_err());
     }
 }

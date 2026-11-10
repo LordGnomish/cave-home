@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 use crate::api::WatchEvent;
 use crate::cache::endpointslice_cache::EndpointSliceCache;
@@ -16,7 +16,7 @@ use crate::cache::service_cache::ServiceCache;
 use crate::cache::source::EventSource;
 use crate::iptables::errors::ProxierError;
 use crate::iptables::executor::IptablesExecutor;
-use crate::iptables::rules_builder::{build_proxy_rules, BuildInput};
+use crate::iptables::rules_builder::{BuildInput, build_proxy_rules};
 use crate::iptables::types::Table;
 use crate::proxier::reconciler::BoundedFrequencyConfig;
 
@@ -152,7 +152,9 @@ impl Proxier {
                 .resync_period
                 .saturating_sub(last_sync.elapsed());
             let until_deadline = deadline.saturating_sub(started.elapsed());
-            let tick = next_resync_in.min(until_deadline).min(Duration::from_millis(20));
+            let tick = next_resync_in
+                .min(until_deadline)
+                .min(Duration::from_millis(20));
 
             let recv = async {
                 let mut rx = self.inner.rx.lock().await;

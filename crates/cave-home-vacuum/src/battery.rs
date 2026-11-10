@@ -67,7 +67,11 @@ impl Battery {
         if percent > 100 || return_threshold > 100 {
             return Err(BatteryError::OutOfRange);
         }
-        Ok(Self { percent, direction, return_threshold })
+        Ok(Self {
+            percent,
+            direction,
+            return_threshold,
+        })
     }
 
     #[must_use]
@@ -140,8 +144,8 @@ mod tests {
 
     #[test]
     fn at_threshold_is_low() {
-        let b = Battery::new(DEFAULT_RETURN_THRESHOLD, ChargeDirection::Discharging)
-            .expect("valid");
+        let b =
+            Battery::new(DEFAULT_RETURN_THRESHOLD, ChargeDirection::Discharging).expect("valid");
         assert!(b.is_low(), "at the threshold counts as low");
     }
 

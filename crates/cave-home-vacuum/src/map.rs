@@ -23,7 +23,10 @@ impl Segment {
     /// Build a segment from its map id and household name.
     #[must_use]
     pub fn new(id: u16, name: impl Into<String>) -> Self {
-        Self { id, name: name.into() }
+        Self {
+            id,
+            name: name.into(),
+        }
     }
 
     #[must_use]
@@ -133,7 +136,9 @@ impl VacuumMap {
     /// An empty map — a vacuum that has not learned its home yet.
     #[must_use]
     pub const fn empty() -> Self {
-        Self { segments: Vec::new() }
+        Self {
+            segments: Vec::new(),
+        }
     }
 
     /// Build a map from a set of known rooms.
@@ -168,17 +173,19 @@ impl VacuumMap {
     /// - [`SegmentRequestError::Empty`] if `requested` is empty.
     /// - [`SegmentRequestError::UnknownSegments`] if any requested id is not on
     ///   the map; the error lists every unknown id.
-    pub fn validate_segments(
-        &self,
-        requested: &[u16],
-    ) -> Result<Vec<u16>, SegmentRequestError> {
+    pub fn validate_segments(&self, requested: &[u16]) -> Result<Vec<u16>, SegmentRequestError> {
         if requested.is_empty() {
             return Err(SegmentRequestError::Empty);
         }
-        let unknown: BTreeSet<u16> =
-            requested.iter().copied().filter(|id| !self.contains(*id)).collect();
+        let unknown: BTreeSet<u16> = requested
+            .iter()
+            .copied()
+            .filter(|id| !self.contains(*id))
+            .collect();
         if !unknown.is_empty() {
-            return Err(SegmentRequestError::UnknownSegments(unknown.into_iter().collect()));
+            return Err(SegmentRequestError::UnknownSegments(
+                unknown.into_iter().collect(),
+            ));
         }
         let known: BTreeSet<u16> = requested.iter().copied().collect();
         Ok(known.into_iter().collect())

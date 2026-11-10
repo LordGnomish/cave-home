@@ -4,8 +4,8 @@
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
 //!         pkg/scheduler/framework/plugins/nodeports/node_ports.go
 
-use crate::cache::node_info::HostPortUse;
 use crate::cache::NodeInfo;
+use crate::cache::node_info::HostPortUse;
 use crate::framework::{CycleState, FilterPlugin, Status};
 use crate::types::Pod;
 

@@ -24,9 +24,13 @@ use crate::request::{RequestDescriptor, ResponseDescriptor};
 #[must_use]
 pub fn host_without_port(authority: &str) -> &str {
     if authority.starts_with('[') {
-        return authority.find(']').map_or(authority, |idx| &authority[..=idx]);
+        return authority
+            .find(']')
+            .map_or(authority, |idx| &authority[..=idx]);
     }
-    authority.find(':').map_or(authority, |idx| &authority[..idx])
+    authority
+        .find(':')
+        .map_or(authority, |idx| &authority[..idx])
 }
 
 /// Build a [`RequestDescriptor`] from request parts and the scheme the request
@@ -107,9 +111,10 @@ pub fn short_circuit_parts(resp: &ResponseDescriptor) -> (StatusCode, HeaderMap)
 /// back with the proxied response).
 pub fn apply_response_headers(dst: &mut HeaderMap, resp: &ResponseDescriptor) {
     for (k, v) in &resp.headers {
-        if let (Ok(name), Ok(val)) =
-            (HeaderName::from_bytes(k.as_bytes()), HeaderValue::from_str(v))
-        {
+        if let (Ok(name), Ok(val)) = (
+            HeaderName::from_bytes(k.as_bytes()),
+            HeaderValue::from_str(v),
+        ) {
             dst.insert(name, val);
         }
     }
@@ -170,7 +175,10 @@ mod tests {
     #[test]
     fn cookie_value_finds_named_cookie() {
         let mut h = HeaderMap::new();
-        h.insert(http::header::COOKIE, hv("sid=abc; srv=http://b:80; theme=dark"));
+        h.insert(
+            http::header::COOKIE,
+            hv("sid=abc; srv=http://b:80; theme=dark"),
+        );
         assert_eq!(cookie_value(&h, "srv").as_deref(), Some("http://b:80"));
         assert_eq!(cookie_value(&h, "missing"), None);
     }
@@ -179,7 +187,8 @@ mod tests {
     fn short_circuit_parts_carries_status_and_location() {
         let mut resp = ResponseDescriptor::default();
         resp.status = Some(302);
-        resp.headers.insert("location".to_string(), "https://x/y".to_string());
+        resp.headers
+            .insert("location".to_string(), "https://x/y".to_string());
         let (status, headers) = short_circuit_parts(&resp);
         assert_eq!(status, StatusCode::FOUND);
         assert_eq!(headers.get("location").unwrap(), "https://x/y");
@@ -190,7 +199,8 @@ mod tests {
         let mut dst = HeaderMap::new();
         dst.insert(HeaderName::from_static("x-keep"), hv("1"));
         let mut resp = ResponseDescriptor::default();
-        resp.headers.insert("x-frame-options".to_string(), "DENY".to_string());
+        resp.headers
+            .insert("x-frame-options".to_string(), "DENY".to_string());
         apply_response_headers(&mut dst, &resp);
         assert_eq!(dst.get("x-keep").unwrap(), "1");
         assert_eq!(dst.get("x-frame-options").unwrap(), "DENY");

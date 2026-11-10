@@ -79,7 +79,10 @@ fn reconcile_ordered(sts: &StatefulSet, cluster: &mut Cluster) {
         }
         let predecessors_ready = (0..target).all(|o| {
             let pname = format!("{}-{o}", sts.meta.name);
-            owned.iter().find(|p| p.meta.name == pname).is_some_and(|p| p.status.ready)
+            owned
+                .iter()
+                .find(|p| p.meta.name == pname)
+                .is_some_and(|p| p.status.ready)
         });
         if predecessors_ready {
             ensure_pvcs(sts, target, cluster);
@@ -129,8 +132,8 @@ fn ensure_pvcs(sts: &StatefulSet, ordinal: i32, cluster: &mut Cluster) {
             continue;
         }
         let mut meta = ObjectMeta::new(&name, &sts.meta.namespace, "");
-        meta.owner_references = vec![OwnerReference::to("StatefulSet", &sts.meta.name, &sts.meta.uid)
-            .controller()];
+        meta.owner_references =
+            vec![OwnerReference::to("StatefulSet", &sts.meta.name, &sts.meta.uid).controller()];
         cluster.pvcs.create(PersistentVolumeClaim::new(meta));
     }
 }
@@ -149,9 +152,11 @@ fn create_pod(sts: &StatefulSet, ordinal: i32, cluster: &mut Cluster) {
     let name = format!("{}-{ordinal}", sts.meta.name);
     let mut meta = ObjectMeta::new(&name, &sts.meta.namespace, "");
     meta.labels = sts.spec.template.labels.clone();
-    meta.owner_references = vec![OwnerReference::to("StatefulSet", &sts.meta.name, &sts.meta.uid)
-        .controller()
-        .blocking()];
+    meta.owner_references = vec![
+        OwnerReference::to("StatefulSet", &sts.meta.name, &sts.meta.uid)
+            .controller()
+            .blocking(),
+    ];
     cluster.pods.create(Pod::new(meta));
 }
 

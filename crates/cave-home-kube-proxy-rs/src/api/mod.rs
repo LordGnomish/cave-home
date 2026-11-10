@@ -18,7 +18,10 @@ pub struct NamespacedName {
 impl NamespacedName {
     #[must_use]
     pub fn new(namespace: impl Into<String>, name: impl Into<String>) -> Self {
-        Self { namespace: namespace.into(), name: name.into() }
+        Self {
+            namespace: namespace.into(),
+            name: name.into(),
+        }
     }
 }
 

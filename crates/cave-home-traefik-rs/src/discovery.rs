@@ -85,7 +85,10 @@ pub fn endpoints_to_servers(slices: &[EndpointSlice], port: &PortRef, scheme: &s
                 continue;
             }
             for addr in &ep.addresses {
-                servers.push(Server::new(&format!("{scheme}://{}", authority(addr, port))));
+                servers.push(Server::new(&format!(
+                    "{scheme}://{}",
+                    authority(addr, port)
+                )));
             }
         }
     }
@@ -95,7 +98,10 @@ pub fn endpoints_to_servers(slices: &[EndpointSlice], port: &PortRef, scheme: &s
 /// Build a single-server pool targeting a service's `ClusterIP`.
 #[must_use]
 pub fn cluster_ip_servers(cluster_ip: &str, port: u16, scheme: &str) -> Vec<Server> {
-    vec![Server::new(&format!("{scheme}://{}", authority(cluster_ip, port)))]
+    vec![Server::new(&format!(
+        "{scheme}://{}",
+        authority(cluster_ip, port)
+    ))]
 }
 
 #[cfg(test)]
@@ -104,11 +110,23 @@ mod tests {
 
     fn slice() -> EndpointSlice {
         EndpointSlice {
-            ports: vec![EndpointPort { name: Some("web".to_string()), port: 8080 }],
+            ports: vec![EndpointPort {
+                name: Some("web".to_string()),
+                port: 8080,
+            }],
             endpoints: vec![
-                Endpoint { addresses: vec!["10.0.0.1".to_string()], ready: true },
-                Endpoint { addresses: vec!["10.0.0.2".to_string()], ready: true },
-                Endpoint { addresses: vec!["10.0.0.3".to_string()], ready: false },
+                Endpoint {
+                    addresses: vec!["10.0.0.1".to_string()],
+                    ready: true,
+                },
+                Endpoint {
+                    addresses: vec!["10.0.0.2".to_string()],
+                    ready: true,
+                },
+                Endpoint {
+                    addresses: vec!["10.0.0.3".to_string()],
+                    ready: false,
+                },
             ],
         }
     }
@@ -120,8 +138,14 @@ mod tests {
 
     #[test]
     fn named_port_is_resolved() {
-        assert_eq!(resolve_port(&[slice()], &PortRef::Name("web".to_string())), Some(8080));
-        assert_eq!(resolve_port(&[slice()], &PortRef::Name("missing".to_string())), None);
+        assert_eq!(
+            resolve_port(&[slice()], &PortRef::Name("web".to_string())),
+            Some(8080)
+        );
+        assert_eq!(
+            resolve_port(&[slice()], &PortRef::Name("missing".to_string())),
+            None
+        );
     }
 
     #[test]
@@ -134,8 +158,14 @@ mod tests {
     #[test]
     fn ipv6_addresses_are_bracketed() {
         let s = EndpointSlice {
-            ports: vec![EndpointPort { name: None, port: 443 }],
-            endpoints: vec![Endpoint { addresses: vec!["fd00::1".to_string()], ready: true }],
+            ports: vec![EndpointPort {
+                name: None,
+                port: 443,
+            }],
+            endpoints: vec![Endpoint {
+                addresses: vec!["fd00::1".to_string()],
+                ready: true,
+            }],
         };
         let servers = endpoints_to_servers(&[s], &PortRef::Number(443), "https");
         assert_eq!(servers[0].url, "https://[fd00::1]:443");

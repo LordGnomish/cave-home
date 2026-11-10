@@ -17,6 +17,7 @@ use std::time::Duration;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use cave_home_unifi::Credentials;
 use cave_home_unifi::access::{AccessClient, AccessConfig};
 use cave_home_unifi::client::ConsoleClient;
 use cave_home_unifi::console::Console;
@@ -25,7 +26,6 @@ use cave_home_unifi::network::NetworkApi;
 use cave_home_unifi::protect::ProtectApi;
 use cave_home_unifi::transport::ReqwestTransport;
 use cave_home_unifi::ws::{EventPump, MockWsConnection, WsMessage};
-use cave_home_unifi::Credentials;
 
 /// Build a `Console` and a real transport pointed at a wiremock server.
 fn console_for(server: &MockServer) -> Console {
@@ -128,7 +128,10 @@ async fn e2e_camera_live_url_from_bootstrap() {
     assert!(bootstrap.cameras[0].is_doorbell);
 
     let host = client.console().host().to_string();
-    let url = protect.camera_live_url("cam-front").await.expect("live url");
+    let url = protect
+        .camera_live_url("cam-front")
+        .await
+        .expect("live url");
     assert_eq!(url, format!("rtsps://{host}:7441/liveAliasXYZ?enableSrtp"));
 }
 
@@ -152,11 +155,16 @@ async fn e2e_intercom_answer_over_rest() {
         .with_tls(false);
     let access = AccessClient::new(cfg, transport());
 
-    access.answer_intercom("front").await.expect("intercom unlock");
-    assert!(access
-        .metrics()
-        .render_prometheus()
-        .contains("unifi_requests_total{endpoint=\"access/intercom_unlock\"} 1"));
+    access
+        .answer_intercom("front")
+        .await
+        .expect("intercom unlock");
+    assert!(
+        access
+            .metrics()
+            .render_prometheus()
+            .contains("unifi_requests_total{endpoint=\"access/intercom_unlock\"} 1")
+    );
 }
 
 #[tokio::test]
@@ -166,9 +174,9 @@ async fn e2e_intercom_event_via_ws_engine() {
     let metrics = Arc::new(Metrics::new());
     let frame = r#"{"event":"access.remote_view",
                     "data":{"door":{"name":"Front door"},"actor":{"name":"Visitor"}}}"#;
-    let conn = Box::new(MockWsConnection::new(vec![
-        WsMessage::Text(frame.to_string()),
-    ]));
+    let conn = Box::new(MockWsConnection::new(vec![WsMessage::Text(
+        frame.to_string(),
+    )]));
     let (tx, mut rx) = tokio::sync::mpsc::channel(8);
     let pump = EventPump::new(Arc::clone(&metrics));
 
@@ -182,9 +190,11 @@ async fn e2e_intercom_event_via_ws_engine() {
     assert!(note.is_intercom_call(), "expected an intercom call");
     assert_eq!(note.door_name.as_deref(), Some("Front door"));
     assert_eq!(note.actor.as_deref(), Some("Visitor"));
-    assert!(metrics
-        .render_prometheus()
-        .contains("unifi_ws_events_total{pillar=\"access\"} 1"));
+    assert!(
+        metrics
+            .render_prometheus()
+            .contains("unifi_ws_events_total{pillar=\"access\"} 1")
+    );
 }
 
 #[tokio::test]
@@ -221,9 +231,10 @@ async fn e2e_unauthorized_then_reauth_and_retry() {
     // 1st GET -> 401
     Mock::given(method("GET"))
         .and(path("/proxy/network/api/s/default/stat/sta"))
-        .respond_with(ResponseTemplate::new(401).set_body_string(
-            r#"{"meta":{"rc":"error","msg":"api.err.LoginRequired"}}"#,
-        ))
+        .respond_with(
+            ResponseTemplate::new(401)
+                .set_body_string(r#"{"meta":{"rc":"error","msg":"api.err.LoginRequired"}}"#),
+        )
         .up_to_n_times(1)
         .expect(1)
         .mount(&server)

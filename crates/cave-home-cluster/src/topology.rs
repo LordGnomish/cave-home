@@ -29,9 +29,7 @@ impl core::fmt::Display for TopologyError {
             Self::TwoActivePrimaries { ids } => {
                 write!(f, "two active primary hubs: {}", ids.join(", "))
             }
-            Self::NoPrimaryCapableNode => {
-                f.write_str("no node can act as the primary hub")
-            }
+            Self::NoPrimaryCapableNode => f.write_str("no node can act as the primary hub"),
             Self::DuplicateNodeId { id } => write!(f, "duplicate node id: {id}"),
         }
     }
@@ -96,10 +94,13 @@ impl Cluster {
 
     /// Record a heartbeat for a node. Returns `false` if the id is unknown.
     pub fn set_heartbeat(&mut self, id: &str, tick: u64) -> bool {
-        self.nodes.iter_mut().find(|n| n.id() == id).is_some_and(|n| {
-            n.set_heartbeat(tick);
-            true
-        })
+        self.nodes
+            .iter_mut()
+            .find(|n| n.id() == id)
+            .is_some_and(|n| {
+                n.set_heartbeat(tick);
+                true
+            })
     }
 
     /// Recompute every node's health against `now` and the cluster thresholds.
@@ -144,7 +145,9 @@ impl Cluster {
         // Duplicate ids.
         for (i, n) in self.nodes.iter().enumerate() {
             if self.nodes[..i].iter().any(|m| m.id() == n.id()) {
-                return Err(TopologyError::DuplicateNodeId { id: n.id().to_owned() });
+                return Err(TopologyError::DuplicateNodeId {
+                    id: n.id().to_owned(),
+                });
             }
         }
         // Exactly-one-active-primary: reject two+.
@@ -234,10 +237,7 @@ mod tests {
 
     #[test]
     fn two_active_primaries_rejected() {
-        let c = cluster_with(&[
-            ("hub-1", NodeRole::Primary),
-            ("hub-2", NodeRole::Primary),
-        ]);
+        let c = cluster_with(&[("hub-1", NodeRole::Primary), ("hub-2", NodeRole::Primary)]);
         match c.validate() {
             Err(TopologyError::TwoActivePrimaries { ids }) => assert_eq!(ids.len(), 2),
             other => panic!("expected TwoActivePrimaries, got {other:?}"),
@@ -289,10 +289,7 @@ mod tests {
 
     #[test]
     fn unhealthy_backup_is_not_a_candidate() {
-        let mut c = cluster_with(&[
-            ("hub-1", NodeRole::Primary),
-            ("hub-2", NodeRole::BackupHub),
-        ]);
+        let mut c = cluster_with(&[("hub-1", NodeRole::Primary), ("hub-2", NodeRole::BackupHub)]);
         c.set_heartbeat("hub-2", 100); // stale
         c.refresh_all(1000);
         assert_eq!(c.healthy_backup(), None);
@@ -300,10 +297,7 @@ mod tests {
 
     #[test]
     fn apply_failover_makes_backup_the_sole_primary() {
-        let mut c = cluster_with(&[
-            ("hub-1", NodeRole::Primary),
-            ("hub-2", NodeRole::BackupHub),
-        ]);
+        let mut c = cluster_with(&[("hub-1", NodeRole::Primary), ("hub-2", NodeRole::BackupHub)]);
         let plan = FailoverPlan::Promote {
             node: "hub-2".to_owned(),
             demote: Some("hub-1".to_owned()),
@@ -316,7 +310,10 @@ mod tests {
     #[test]
     fn apply_failover_rejects_unknown_node() {
         let mut c = cluster_with(&[("hub-1", NodeRole::Primary)]);
-        let plan = FailoverPlan::Promote { node: "ghost".to_owned(), demote: None };
+        let plan = FailoverPlan::Promote {
+            node: "ghost".to_owned(),
+            demote: None,
+        };
         assert!(!c.apply_failover(&plan));
     }
 

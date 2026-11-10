@@ -61,7 +61,10 @@ impl DeviceSerial {
         if s.len() < 6 || s.len() > 16 {
             return Err(IdError::BadSerial);
         }
-        if !s.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit()) {
+        if !s
+            .bytes()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+        {
             return Err(IdError::BadSerial);
         }
         Ok(Self(s.to_string()))

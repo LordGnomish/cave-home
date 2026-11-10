@@ -152,7 +152,10 @@ mod tests {
     #[tokio::test]
     async fn route_matches_by_substring() {
         let t = MockTransport::new().route("/api/chat", 200, "ok");
-        let r = t.send(post("http://localhost:11434/api/chat", "{}")).await.unwrap();
+        let r = t
+            .send(post("http://localhost:11434/api/chat", "{}"))
+            .await
+            .unwrap();
         assert_eq!(r.status, 200);
         assert_eq!(r.body, "ok");
         assert_eq!(t.request_count(), 1);
@@ -163,8 +166,14 @@ mod tests {
     async fn queue_consumed_before_routes() {
         let t = MockTransport::new().route("/api/chat", 200, "route");
         t.push_response(200, "queued");
-        assert_eq!(t.send(post("x/api/chat", "{}")).await.unwrap().body, "queued");
-        assert_eq!(t.send(post("x/api/chat", "{}")).await.unwrap().body, "route");
+        assert_eq!(
+            t.send(post("x/api/chat", "{}")).await.unwrap().body,
+            "queued"
+        );
+        assert_eq!(
+            t.send(post("x/api/chat", "{}")).await.unwrap().body,
+            "route"
+        );
     }
 
     #[tokio::test]

@@ -153,7 +153,11 @@ impl LocalPathMetrics {
 
         for (name, kind, value) in [
             ("localpath_pvs_total", "gauge", self.pvs_total),
-            ("localpath_provisions_total", "counter", self.provisions_total),
+            (
+                "localpath_provisions_total",
+                "counter",
+                self.provisions_total,
+            ),
             (
                 "localpath_provision_failures_total",
                 "counter",
@@ -169,9 +173,7 @@ impl LocalPathMetrics {
             let _ = writeln!(out, "# TYPE {name} {kind}\n{name} {value}");
         }
 
-        out.push_str(
-            "# HELP localpath_provision_latency_seconds Provisioning latency summary.\n",
-        );
+        out.push_str("# HELP localpath_provision_latency_seconds Provisioning latency summary.\n");
         out.push_str("# TYPE localpath_provision_latency_seconds summary\n");
         let _ = writeln!(
             out,

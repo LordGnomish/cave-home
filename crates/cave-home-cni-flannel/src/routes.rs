@@ -99,7 +99,13 @@ pub fn compute_route_plan(
             continue; // never route to our own subnet
         }
         match (backend, &peer.data) {
-            (BackendConfig::Vxlan(cfg), NodeBackendData::Vxlan { public_ip, vtep_mac }) => {
+            (
+                BackendConfig::Vxlan(cfg),
+                NodeBackendData::Vxlan {
+                    public_ip,
+                    vtep_mac,
+                },
+            ) => {
                 let same_underlay = local_underlay.is_some_and(|u| u.contains(*public_ip));
                 if cfg.direct_routing && same_underlay {
                     routes.push(RouteEntry {
@@ -343,7 +349,11 @@ mod tests {
         let dests: Vec<_> = plan.routes.iter().map(|r| r.dest).collect();
         assert_eq!(
             dests,
-            vec![cidr("10.42.2.0/24"), cidr("10.42.5.0/24"), cidr("10.42.9.0/24")]
+            vec![
+                cidr("10.42.2.0/24"),
+                cidr("10.42.5.0/24"),
+                cidr("10.42.9.0/24")
+            ]
         );
     }
 

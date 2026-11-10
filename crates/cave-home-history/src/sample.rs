@@ -134,7 +134,9 @@ impl Series {
     /// An empty series.
     #[must_use]
     pub const fn empty() -> Self {
-        Self { samples: Vec::new() }
+        Self {
+            samples: Vec::new(),
+        }
     }
 
     /// Build a series from samples that are **already** ascending by timestamp.
@@ -206,7 +208,10 @@ mod tests {
     fn rejects_non_finite_value() {
         assert_eq!(Sample::new(0, f64::NAN), Err(SampleError::NotFinite));
         assert_eq!(Sample::new(0, f64::INFINITY), Err(SampleError::NotFinite));
-        assert_eq!(Sample::new(0, f64::NEG_INFINITY), Err(SampleError::NotFinite));
+        assert_eq!(
+            Sample::new(0, f64::NEG_INFINITY),
+            Err(SampleError::NotFinite)
+        );
     }
 
     #[test]

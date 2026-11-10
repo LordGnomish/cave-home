@@ -312,7 +312,10 @@ mod tests {
         assert_eq!(a.raw(), 0xFFFF);
         assert_eq!(a.to_bytes(), [0xFF, 0xFF]);
         assert_eq!(IndividualAddress::from_bytes(a.to_bytes()), a);
-        assert_eq!(IndividualAddress::from_raw(a.raw()).to_string(), "15.15.255");
+        assert_eq!(
+            IndividualAddress::from_raw(a.raw()).to_string(),
+            "15.15.255"
+        );
     }
 
     #[test]

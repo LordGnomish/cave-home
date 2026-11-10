@@ -36,7 +36,6 @@ pub mod v5;
 
 pub use codec::{CodecError, decode_packet, encode_packet};
 pub use packet::{
-    ConnAck, ConnAckReturnCode, Connect, Packet, PacketType, PubAck, PubComp,
-    PubRec, PubRel, Publish, QoS, SubAck, SubAckReturnCode, Subscribe,
-    Subscription, UnsubAck, Unsubscribe,
+    ConnAck, ConnAckReturnCode, Connect, Packet, PacketType, PubAck, PubComp, PubRec, PubRel,
+    Publish, QoS, SubAck, SubAckReturnCode, Subscribe, Subscription, UnsubAck, Unsubscribe,
 };

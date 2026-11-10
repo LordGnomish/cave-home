@@ -61,11 +61,7 @@ impl Schedule {
     /// Whether `now` falls inside the schedule window.
     #[must_use]
     pub fn contains(&self, now: TimeOfDay) -> bool {
-        let (s, e, n) = (
-            self.start.minutes(),
-            self.end.minutes(),
-            now.minutes(),
-        );
+        let (s, e, n) = (self.start.minutes(), self.end.minutes(), now.minutes());
         if s <= e {
             // Same-day window, inclusive on both ends.
             n >= s && n <= e

@@ -2,16 +2,18 @@
 //! ServiceCache tests — upstream `pkg/proxy/serviceconfig.go` +
 //! `pkg/proxy/servicechangetracker.go` event-driven semantics.
 
-use cave_home_kube_proxy_rs::api::{
-    NamespacedName, Protocol, Service, ServicePort, ServiceType,
-};
+use cave_home_kube_proxy_rs::api::{NamespacedName, Protocol, Service, ServicePort, ServiceType};
 use cave_home_kube_proxy_rs::cache::service_cache::ServiceCache;
 
 fn make_svc(ns: &str, name: &str, ip: &str) -> Service {
     Service {
         metadata: NamespacedName::new(ns, name),
         cluster_ip: ip.into(),
-        ports: vec![ServicePort { name: "p80".into(), port: 80, protocol: Protocol::Tcp }],
+        ports: vec![ServicePort {
+            name: "p80".into(),
+            port: 80,
+            protocol: Protocol::Tcp,
+        }],
         type_: ServiceType::ClusterIP,
     }
 }
@@ -75,8 +77,16 @@ fn snapshot_explodes_multiport_services_to_one_per_port() {
         metadata: NamespacedName::new("ns1", "multi"),
         cluster_ip: "10.0.0.1".into(),
         ports: vec![
-            ServicePort { name: "p80".into(), port: 80, protocol: Protocol::Tcp },
-            ServicePort { name: "p443".into(), port: 443, protocol: Protocol::Tcp },
+            ServicePort {
+                name: "p80".into(),
+                port: 80,
+                protocol: Protocol::Tcp,
+            },
+            ServicePort {
+                name: "p443".into(),
+                port: 443,
+                protocol: Protocol::Tcp,
+            },
         ],
         type_: ServiceType::ClusterIP,
     };

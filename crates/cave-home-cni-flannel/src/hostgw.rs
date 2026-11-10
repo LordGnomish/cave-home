@@ -134,7 +134,8 @@ mod tests {
                 public_ip: v4("192.168.1.6"),
             },
         };
-        nw.handle_event(&mut dp, &LeaseEvent::Added(peer)).expect("add");
+        nw.handle_event(&mut dp, &LeaseEvent::Added(peer))
+            .expect("add");
         match &dp.ops[0] {
             Op::RouteAdd(r) => assert_eq!(r.oif, 4), // the ext iface index
             other => panic!("expected RouteAdd, got {other:?}"),

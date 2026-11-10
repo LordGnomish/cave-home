@@ -21,7 +21,12 @@ pub struct Wlan {
 impl Wlan {
     #[must_use]
     pub fn new(name: impl Into<String>, ssid: impl Into<String>) -> Self {
-        Self { name: name.into(), ssid: ssid.into(), enabled: true, is_guest: false }
+        Self {
+            name: name.into(),
+            ssid: ssid.into(),
+            enabled: true,
+            is_guest: false,
+        }
     }
 
     #[must_use]
@@ -127,13 +132,19 @@ impl BandwidthProfile {
     /// An unlimited profile (no caps either way).
     #[must_use]
     pub const fn unlimited() -> Self {
-        Self { download_kbps: None, upload_kbps: None }
+        Self {
+            download_kbps: None,
+            upload_kbps: None,
+        }
     }
 
     /// A symmetric cap applied to both directions.
     #[must_use]
     pub const fn capped(kbps: u32) -> Self {
-        Self { download_kbps: Some(kbps), upload_kbps: Some(kbps) }
+        Self {
+            download_kbps: Some(kbps),
+            upload_kbps: Some(kbps),
+        }
     }
 
     #[must_use]
@@ -154,7 +165,10 @@ impl GuestNetwork {
     #[must_use]
     pub fn new(ssid: impl Into<String>, bandwidth: BandwidthProfile) -> Self {
         let s = ssid.into();
-        Self { wlan: Wlan::new(s.clone(), s).guest(), bandwidth }
+        Self {
+            wlan: Wlan::new(s.clone(), s).guest(),
+            bandwidth,
+        }
     }
 
     #[must_use]
@@ -240,7 +254,13 @@ impl Vlan {
         if prefix_len > max {
             return Err(VlanError::InvalidPrefix);
         }
-        Ok(Self { id, name: name.into(), subnet, prefix_len, purpose })
+        Ok(Self {
+            id,
+            name: name.into(),
+            subnet,
+            prefix_len,
+            purpose,
+        })
     }
 
     #[must_use]

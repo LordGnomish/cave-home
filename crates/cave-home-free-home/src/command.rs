@@ -148,8 +148,7 @@ mod tests {
 
     #[test]
     fn switch_on_builds() {
-        let cmd = SetDatapoint::boolean(SERIAL, ch(), Pairing::SwitchOnOff, true)
-            .expect("valid");
+        let cmd = SetDatapoint::boolean(SERIAL, ch(), Pairing::SwitchOnOff, true).expect("valid");
         assert_eq!(cmd.wire_value(), "1");
         assert_eq!(cmd.pairing(), Pairing::SwitchOnOff);
         assert_eq!(cmd.channel().index(), 3);
@@ -158,8 +157,7 @@ mod tests {
 
     #[test]
     fn dimmer_percent_builds() {
-        let cmd =
-            SetDatapoint::percent(SERIAL, ch(), Pairing::SetBrightness, 50).expect("valid");
+        let cmd = SetDatapoint::percent(SERIAL, ch(), Pairing::SetBrightness, 50).expect("valid");
         assert_eq!(cmd.wire_value(), "50");
     }
 

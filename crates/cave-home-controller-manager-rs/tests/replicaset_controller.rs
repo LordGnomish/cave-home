@@ -40,11 +40,17 @@ fn scale_up_from_zero_creates_pods_owned_by_the_rs() {
     for p in &pods {
         assert_eq!(p.meta().labels.get("app").map(String::as_str), Some("web"));
         let owner = &p.meta().owner_references[0];
-        assert!(owner.controller && owner.block_owner_deletion, "controller+blocking owner ref");
+        assert!(
+            owner.controller && owner.block_owner_deletion,
+            "controller+blocking owner ref"
+        );
         assert_eq!(owner.uid, rs.meta().uid);
     }
     // Status is written back.
-    assert_eq!(c.replicasets.get("prod/web").map(|r| r.status.replicas), Some(3));
+    assert_eq!(
+        c.replicasets.get("prod/web").map(|r| r.status.replicas),
+        Some(3)
+    );
 }
 
 #[test]
@@ -72,15 +78,21 @@ fn scale_down_deletes_least_ready_pods_first() {
         .blocking();
     // A ready running pod (should survive) and two weaker pods (should die).
     let mut running = Pod::new(
-        ObjectMeta::new("running", "prod", "p-run").with_label("app", "web").with_owner(owner.clone()),
+        ObjectMeta::new("running", "prod", "p-run")
+            .with_label("app", "web")
+            .with_owner(owner.clone()),
     );
     running.status.phase = PodPhase::Running;
     running.status.ready = true;
     let pending = Pod::new(
-        ObjectMeta::new("pending", "prod", "p-pend").with_label("app", "web").with_owner(owner.clone()),
+        ObjectMeta::new("pending", "prod", "p-pend")
+            .with_label("app", "web")
+            .with_owner(owner.clone()),
     );
     let mut not_ready = Pod::new(
-        ObjectMeta::new("notready", "prod", "p-nr").with_label("app", "web").with_owner(owner),
+        ObjectMeta::new("notready", "prod", "p-nr")
+            .with_label("app", "web")
+            .with_owner(owner),
     );
     not_ready.status.phase = PodPhase::Running;
     not_ready.status.ready = false;
@@ -91,8 +103,17 @@ fn scale_down_deletes_least_ready_pods_first() {
     let out = ctrl.reconcile("prod/web", &mut c, 0);
     assert_eq!(out, Outcome::Done);
 
-    let survivors: Vec<_> = c.pods.list().iter().map(|p| p.meta().name.clone()).collect();
-    assert_eq!(survivors, vec!["running"], "the ready running pod is kept; weaker pods deleted first");
+    let survivors: Vec<_> = c
+        .pods
+        .list()
+        .iter()
+        .map(|p| p.meta().name.clone())
+        .collect();
+    assert_eq!(
+        survivors,
+        vec!["running"],
+        "the ready running pod is kept; weaker pods deleted first"
+    );
 }
 
 #[test]
@@ -101,7 +122,9 @@ fn adopts_a_matching_orphan_pod() {
     let rs = c.replicasets.create(rs("web", 1));
     let mut ctrl = ReplicaSetController::new();
     // An orphan pod that matches the selector but has no controller.
-    c.pods.create(Pod::new(ObjectMeta::new("legacy", "prod", "").with_label("app", "web")));
+    c.pods.create(Pod::new(
+        ObjectMeta::new("legacy", "prod", "").with_label("app", "web"),
+    ));
 
     ctrl.reconcile("prod/web", &mut c, 0);
 
@@ -114,7 +137,11 @@ fn adopts_a_matching_orphan_pod() {
         .expect("adopted: now has a controller owner");
     assert_eq!(owner.uid, rs.meta().uid);
     // It satisfied desired replicas, so no extra pod was created.
-    assert_eq!(c.pods.list().len(), 1, "adoption avoids creating a redundant pod");
+    assert_eq!(
+        c.pods.list().len(),
+        1,
+        "adoption avoids creating a redundant pod"
+    );
 }
 
 #[test]
@@ -126,15 +153,21 @@ fn releases_an_owned_pod_that_no_longer_matches() {
         .controller()
         .blocking();
     // Owned but label no longer matches the selector (app=db).
-    c.pods.create(
-        Pod::new(ObjectMeta::new("drifted", "prod", "").with_label("app", "db").with_owner(owner)),
-    );
+    c.pods.create(Pod::new(
+        ObjectMeta::new("drifted", "prod", "")
+            .with_label("app", "db")
+            .with_owner(owner),
+    ));
 
     ctrl.reconcile("prod/web", &mut c, 0);
 
     let released = c.pods.get("prod/drifted").expect("pod still present");
     assert!(
-        !released.meta().owner_references.iter().any(|r| r.controller && r.uid == rs.meta().uid),
+        !released
+            .meta()
+            .owner_references
+            .iter()
+            .any(|r| r.controller && r.uid == rs.meta().uid),
         "the drifted pod was released (controller owner ref removed)"
     );
 }

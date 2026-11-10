@@ -165,7 +165,10 @@ impl InverterReading {
         .ok_or(DecodeError::UnsupportedModel { model_id })?;
 
         if payload.len() < Self::INT_MIN_LEN {
-            return Err(DecodeError::OutOfBounds { offset: Self::INT_MIN_LEN, len: payload.len() });
+            return Err(DecodeError::OutOfBounds {
+                offset: Self::INT_MIN_LEN,
+                len: payload.len(),
+            });
         }
 
         let sf = |off| -> ScaleFactor {
@@ -219,7 +222,10 @@ impl InverterReading {
         .ok_or(DecodeError::UnsupportedModel { model_id })?;
 
         if payload.len() < Self::FLOAT_MIN_LEN {
-            return Err(DecodeError::OutOfBounds { offset: Self::FLOAT_MIN_LEN, len: payload.len() });
+            return Err(DecodeError::OutOfBounds {
+                offset: Self::FLOAT_MIN_LEN,
+                len: payload.len(),
+            });
         }
 
         let f = |off| -> Result<Option<f64>, DecodeError> {

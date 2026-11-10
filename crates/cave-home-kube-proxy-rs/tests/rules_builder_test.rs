@@ -10,9 +10,7 @@
 //! comparison would fail on Phase 1b lines we deliberately don't emit yet.
 
 use cave_home_kube_proxy_rs::api::{NamespacedName, Protocol, ServicePortName};
-use cave_home_kube_proxy_rs::iptables::rules_builder::{
-    build_proxy_rules, BuildInput,
-};
+use cave_home_kube_proxy_rs::iptables::rules_builder::{BuildInput, build_proxy_rules};
 use cave_home_kube_proxy_rs::iptables::types::{EndpointInfo, ServicePortInfo, Table};
 
 fn spn(ns: &str, name: &str, port: &str) -> ServicePortName {
@@ -87,7 +85,10 @@ fn fixture_one_svc_one_endpoint() -> BuildInput {
     let mut eps = std::collections::BTreeMap::new();
     eps.insert(
         svc_name.clone(),
-        vec![EndpointInfo { ip: "10.180.0.1".into(), port: 80 }],
+        vec![EndpointInfo {
+            ip: "10.180.0.1".into(),
+            port: 80,
+        }],
     );
     BuildInput {
         services: vec![ServicePortInfo {
@@ -103,66 +104,102 @@ fn fixture_one_svc_one_endpoint() -> BuildInput {
 
 #[test]
 fn emits_kube_svc_chain_declaration_for_each_service() {
-    let nat = render(&build_proxy_rules(&fixture_one_svc_one_endpoint()), Table::Nat);
+    let nat = render(
+        &build_proxy_rules(&fixture_one_svc_one_endpoint()),
+        Table::Nat,
+    );
     assert!(nat.contains(":KUBE-SVC-XPGD46QRK7WJZT7O - [0:0]"));
 }
 
 #[test]
 fn emits_kube_sep_chain_declaration_for_each_endpoint() {
-    let nat = render(&build_proxy_rules(&fixture_one_svc_one_endpoint()), Table::Nat);
+    let nat = render(
+        &build_proxy_rules(&fixture_one_svc_one_endpoint()),
+        Table::Nat,
+    );
     assert!(nat.contains(":KUBE-SEP-SXIVWICOYRO3J4NJ - [0:0]"));
 }
 
 #[test]
 fn emits_clusterip_dispatch_rule_in_kube_services() {
     // Upstream line 209.
-    let nat = render(&build_proxy_rules(&fixture_one_svc_one_endpoint()), Table::Nat);
-    assert!(nat.contains(
-        "-A KUBE-SERVICES -m comment --comment \"ns1/svc1:p80 cluster IP\" \
+    let nat = render(
+        &build_proxy_rules(&fixture_one_svc_one_endpoint()),
+        Table::Nat,
+    );
+    assert!(
+        nat.contains(
+            "-A KUBE-SERVICES -m comment --comment \"ns1/svc1:p80 cluster IP\" \
          -m tcp -p tcp -d 10.20.30.41 --dport 80 -j KUBE-SVC-XPGD46QRK7WJZT7O"
-    ), "got:\n{nat}");
+        ),
+        "got:\n{nat}"
+    );
 }
 
 #[test]
 fn emits_cluster_egress_masquerade_mark_when_cluster_cidr_set() {
     // Upstream line 210: when cluster_cidr is set, traffic NOT from the
     // cluster CIDR going to the ClusterIP is marked for masquerade.
-    let nat = render(&build_proxy_rules(&fixture_one_svc_one_endpoint()), Table::Nat);
-    assert!(nat.contains(
-        "-A KUBE-SVC-XPGD46QRK7WJZT7O -m comment --comment \"ns1/svc1:p80 cluster IP\" \
+    let nat = render(
+        &build_proxy_rules(&fixture_one_svc_one_endpoint()),
+        Table::Nat,
+    );
+    assert!(
+        nat.contains(
+            "-A KUBE-SVC-XPGD46QRK7WJZT7O -m comment --comment \"ns1/svc1:p80 cluster IP\" \
          -m tcp -p tcp -d 10.20.30.41 --dport 80 ! -s 10.0.0.0/24 -j KUBE-MARK-MASQ"
-    ), "got:\n{nat}");
+        ),
+        "got:\n{nat}"
+    );
 }
 
 #[test]
 fn emits_dispatch_to_sep_chain_in_svc_chain() {
     // Upstream line 211.
-    let nat = render(&build_proxy_rules(&fixture_one_svc_one_endpoint()), Table::Nat);
-    assert!(nat.contains(
-        "-A KUBE-SVC-XPGD46QRK7WJZT7O -m comment --comment ns1/svc1:p80 \
+    let nat = render(
+        &build_proxy_rules(&fixture_one_svc_one_endpoint()),
+        Table::Nat,
+    );
+    assert!(
+        nat.contains(
+            "-A KUBE-SVC-XPGD46QRK7WJZT7O -m comment --comment ns1/svc1:p80 \
          -j KUBE-SEP-SXIVWICOYRO3J4NJ"
-    ), "got:\n{nat}");
+        ),
+        "got:\n{nat}"
+    );
 }
 
 #[test]
 fn emits_endpoint_self_masquerade_rule() {
     // Upstream line 212: hairpin/loopback masquerade when source IP is the
     // endpoint itself.
-    let nat = render(&build_proxy_rules(&fixture_one_svc_one_endpoint()), Table::Nat);
-    assert!(nat.contains(
-        "-A KUBE-SEP-SXIVWICOYRO3J4NJ -m comment --comment ns1/svc1:p80 \
+    let nat = render(
+        &build_proxy_rules(&fixture_one_svc_one_endpoint()),
+        Table::Nat,
+    );
+    assert!(
+        nat.contains(
+            "-A KUBE-SEP-SXIVWICOYRO3J4NJ -m comment --comment ns1/svc1:p80 \
          -s 10.180.0.1 -j KUBE-MARK-MASQ"
-    ), "got:\n{nat}");
+        ),
+        "got:\n{nat}"
+    );
 }
 
 #[test]
 fn emits_dnat_rule_to_endpoint() {
     // Upstream line 213.
-    let nat = render(&build_proxy_rules(&fixture_one_svc_one_endpoint()), Table::Nat);
-    assert!(nat.contains(
-        "-A KUBE-SEP-SXIVWICOYRO3J4NJ -m comment --comment ns1/svc1:p80 \
+    let nat = render(
+        &build_proxy_rules(&fixture_one_svc_one_endpoint()),
+        Table::Nat,
+    );
+    assert!(
+        nat.contains(
+            "-A KUBE-SEP-SXIVWICOYRO3J4NJ -m comment --comment ns1/svc1:p80 \
          -m tcp -p tcp -j DNAT --to-destination 10.180.0.1:80"
-    ), "got:\n{nat}");
+        ),
+        "got:\n{nat}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -178,9 +215,18 @@ fn three_endpoints_emit_two_probability_rules_then_unconditional() {
     eps.insert(
         svc_name.clone(),
         vec![
-            EndpointInfo { ip: "10.180.0.1".into(), port: 80 },
-            EndpointInfo { ip: "10.180.0.2".into(), port: 80 },
-            EndpointInfo { ip: "10.180.0.3".into(), port: 80 },
+            EndpointInfo {
+                ip: "10.180.0.1".into(),
+                port: 80,
+            },
+            EndpointInfo {
+                ip: "10.180.0.2".into(),
+                port: 80,
+            },
+            EndpointInfo {
+                ip: "10.180.0.3".into(),
+                port: 80,
+            },
         ],
     );
     let input = BuildInput {
@@ -196,17 +242,24 @@ fn three_endpoints_emit_two_probability_rules_then_unconditional() {
     let nat = render(&build_proxy_rules(&input), Table::Nat);
 
     // First (1/3) and second (1/2) get -m statistic; third unconditional.
-    assert!(nat.contains("-m statistic --mode random --probability 0.3333333333"),
-        "expected 1/3 prob in:\n{nat}");
-    assert!(nat.contains("-m statistic --mode random --probability 0.5000000000"),
-        "expected 1/2 prob in:\n{nat}");
+    assert!(
+        nat.contains("-m statistic --mode random --probability 0.3333333333"),
+        "expected 1/3 prob in:\n{nat}"
+    );
+    assert!(
+        nat.contains("-m statistic --mode random --probability 0.5000000000"),
+        "expected 1/2 prob in:\n{nat}"
+    );
     // The last endpoint dispatch line MUST NOT carry --probability.
-    let last_line = nat.lines()
+    let last_line = nat
+        .lines()
         .filter(|l| l.contains("-A KUBE-SVC-") && l.contains("-j KUBE-SEP-"))
         .last()
         .unwrap_or("");
-    assert!(!last_line.contains("--probability"),
-        "last endpoint line must be unconditional, got: {last_line}");
+    assert!(
+        !last_line.contains("--probability"),
+        "last endpoint line must be unconditional, got: {last_line}"
+    );
 }
 
 #[test]
@@ -218,9 +271,18 @@ fn endpoints_emitted_in_sorted_order_for_determinism() {
     eps.insert(
         svc_name.clone(),
         vec![
-            EndpointInfo { ip: "10.180.0.3".into(), port: 80 },
-            EndpointInfo { ip: "10.180.0.1".into(), port: 80 },
-            EndpointInfo { ip: "10.180.0.2".into(), port: 80 },
+            EndpointInfo {
+                ip: "10.180.0.3".into(),
+                port: 80,
+            },
+            EndpointInfo {
+                ip: "10.180.0.1".into(),
+                port: 80,
+            },
+            EndpointInfo {
+                ip: "10.180.0.2".into(),
+                port: 80,
+            },
         ],
     );
     let input = BuildInput {
@@ -235,29 +297,49 @@ fn endpoints_emitted_in_sorted_order_for_determinism() {
     };
     let nat = render(&build_proxy_rules(&input), Table::Nat);
 
-    let ip_order: Vec<&str> = nat.lines()
+    let ip_order: Vec<&str> = nat
+        .lines()
         .filter(|l| l.contains("--to-destination"))
         .filter_map(|l| l.split("--to-destination ").nth(1))
         .collect();
-    assert_eq!(ip_order, vec!["10.180.0.1:80", "10.180.0.2:80", "10.180.0.3:80"]);
+    assert_eq!(
+        ip_order,
+        vec!["10.180.0.1:80", "10.180.0.2:80", "10.180.0.3:80"]
+    );
 }
 
 #[test]
 fn services_emitted_in_sorted_order_for_determinism() {
     let mut eps = std::collections::BTreeMap::new();
-    eps.insert(spn("ns1", "svc1", "p80"), vec![EndpointInfo { ip: "10.180.0.1".into(), port: 80 }]);
-    eps.insert(spn("ns2", "svc2", "p80"), vec![EndpointInfo { ip: "10.180.2.1".into(), port: 80 }]);
+    eps.insert(
+        spn("ns1", "svc1", "p80"),
+        vec![EndpointInfo {
+            ip: "10.180.0.1".into(),
+            port: 80,
+        }],
+    );
+    eps.insert(
+        spn("ns2", "svc2", "p80"),
+        vec![EndpointInfo {
+            ip: "10.180.2.1".into(),
+            port: 80,
+        }],
+    );
 
     let input = BuildInput {
         services: vec![
             // Pass services in reverse order — builder must sort them.
             ServicePortInfo {
                 name: spn("ns2", "svc2", "p80"),
-                cluster_ip: "10.20.30.42".into(), port: 80, protocol: Protocol::Tcp,
+                cluster_ip: "10.20.30.42".into(),
+                port: 80,
+                protocol: Protocol::Tcp,
             },
             ServicePortInfo {
                 name: spn("ns1", "svc1", "p80"),
-                cluster_ip: "10.20.30.41".into(), port: 80, protocol: Protocol::Tcp,
+                cluster_ip: "10.20.30.41".into(),
+                port: 80,
+                protocol: Protocol::Tcp,
             },
         ],
         endpoints_by_service: eps,
@@ -271,8 +353,14 @@ fn services_emitted_in_sorted_order_for_determinism() {
 
 #[test]
 fn build_is_deterministic_across_runs() {
-    let a = render(&build_proxy_rules(&fixture_one_svc_one_endpoint()), Table::Nat);
-    let b = render(&build_proxy_rules(&fixture_one_svc_one_endpoint()), Table::Nat);
+    let a = render(
+        &build_proxy_rules(&fixture_one_svc_one_endpoint()),
+        Table::Nat,
+    );
+    let b = render(
+        &build_proxy_rules(&fixture_one_svc_one_endpoint()),
+        Table::Nat,
+    );
     assert_eq!(a, b);
 }
 
@@ -301,23 +389,35 @@ fn endpoints_with_no_endpoints_emit_reject_or_no_dispatch() {
     eps.insert(svc_name.clone(), Vec::new());
     let input = BuildInput {
         services: vec![ServicePortInfo {
-            name: svc_name, cluster_ip: "10.20.30.41".into(), port: 80, protocol: Protocol::Tcp,
+            name: svc_name,
+            cluster_ip: "10.20.30.41".into(),
+            port: 80,
+            protocol: Protocol::Tcp,
         }],
         endpoints_by_service: eps,
         cluster_cidr: None,
     };
     let nat = render(&build_proxy_rules(&input), Table::Nat);
     assert!(nat.contains(":KUBE-SVC-XPGD46QRK7WJZT7O - [0:0]"));
-    assert!(!nat.contains("-A KUBE-SVC-XPGD46QRK7WJZT7O -m comment --comment ns1/svc1:p80 -j KUBE-SEP-"),
-        "no SEP chains expected when there are no endpoints:\n{nat}");
+    assert!(
+        !nat.contains(
+            "-A KUBE-SVC-XPGD46QRK7WJZT7O -m comment --comment ns1/svc1:p80 -j KUBE-SEP-"
+        ),
+        "no SEP chains expected when there are no endpoints:\n{nat}"
+    );
 }
 
 // --- helper -----------------------------------------------------------------
 
-fn render(rules: &[cave_home_kube_proxy_rs::iptables::types::IptablesRule], table: Table) -> String {
-    rules.iter()
+fn render(
+    rules: &[cave_home_kube_proxy_rs::iptables::types::IptablesRule],
+    table: Table,
+) -> String {
+    rules
+        .iter()
         .filter(|r| r.table == table)
         .map(|r| r.text.as_str())
         .collect::<Vec<_>>()
-        .join("\n") + "\n"
+        .join("\n")
+        + "\n"
 }

@@ -55,11 +55,12 @@ impl OwnerGraph {
             if meta.uid.is_empty() {
                 continue;
             }
-            let owners: Vec<Uid> = meta.owner_references.iter().map(|o| o.uid.clone()).collect();
-            let has_blocking_owner = meta
+            let owners: Vec<Uid> = meta
                 .owner_references
                 .iter()
-                .any(|o| o.block_owner_deletion);
+                .map(|o| o.uid.clone())
+                .collect();
+            let has_blocking_owner = meta.owner_references.iter().any(|o| o.block_owner_deletion);
             for owner in &owners {
                 dependents
                     .entry(owner.clone())
@@ -124,9 +125,9 @@ impl OwnerGraph {
                 .filter(|n| !n.owners.is_empty())
                 .filter(|n| {
                     // collected iff every owner is missing from live or already deleted
-                    n.owners.iter().all(|o| {
-                        !self.nodes.contains_key(o) || deleted.contains(o)
-                    })
+                    n.owners
+                        .iter()
+                        .all(|o| !self.nodes.contains_key(o) || deleted.contains(o))
                 })
                 .map(|n| n.uid.clone())
                 .collect();
@@ -153,11 +154,7 @@ impl OwnerGraph {
     pub fn foreground_blockers(&self, uid: &str) -> Vec<Uid> {
         self.dependents_of(uid)
             .into_iter()
-            .filter(|dep| {
-                self.nodes
-                    .get(dep)
-                    .is_some_and(|n| n.has_blocking_owner)
-            })
+            .filter(|dep| self.nodes.get(dep).is_some_and(|n| n.has_blocking_owner))
             .collect()
     }
 }
@@ -172,7 +169,8 @@ mod tests {
     }
 
     fn owned_by(uid: &str, owner_uid: &str) -> ObjectMeta {
-        ObjectMeta::new(uid, "ns", uid).with_owner(OwnerReference::to("Owner", owner_uid, owner_uid))
+        ObjectMeta::new(uid, "ns", uid)
+            .with_owner(OwnerReference::to("Owner", owner_uid, owner_uid))
     }
 
     #[test]
@@ -241,7 +239,10 @@ mod tests {
             owned_by("c1", "owner"),
             owned_by("c2", "owner"),
         ]);
-        assert_eq!(g.dependents_of("owner"), vec!["c1".to_owned(), "c2".to_owned()]);
+        assert_eq!(
+            g.dependents_of("owner"),
+            vec!["c1".to_owned(), "c2".to_owned()]
+        );
     }
 
     #[test]

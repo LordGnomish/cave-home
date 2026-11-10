@@ -106,7 +106,14 @@ mod tests {
     use crate::player::Player;
 
     fn track() -> Track {
-        Track::new("t1", "Reverie", "Debussy", "Solo Piano", 280, ProviderId::Local)
+        Track::new(
+            "t1",
+            "Reverie",
+            "Debussy",
+            "Solo Piano",
+            280,
+            ProviderId::Local,
+        )
     }
 
     #[test]
@@ -116,9 +123,18 @@ mod tests {
         p.play();
         let t = track();
         let resolve = |id: &TrackId| if id.as_str() == "t1" { Some(&t) } else { None };
-        assert_eq!(p.status_sentence(Lang::En, resolve), "Playing Reverie by Debussy");
-        assert_eq!(p.status_sentence(Lang::De, resolve), "Spielt Reverie von Debussy");
-        assert_eq!(p.status_sentence(Lang::Tr, resolve), "Debussy - Reverie çalıyor");
+        assert_eq!(
+            p.status_sentence(Lang::En, resolve),
+            "Playing Reverie by Debussy"
+        );
+        assert_eq!(
+            p.status_sentence(Lang::De, resolve),
+            "Spielt Reverie von Debussy"
+        );
+        assert_eq!(
+            p.status_sentence(Lang::Tr, resolve),
+            "Debussy - Reverie çalıyor"
+        );
     }
 
     #[test]
@@ -137,14 +153,26 @@ mod tests {
         p.pause();
         let t = track();
         let resolve = |id: &TrackId| if id.as_str() == "t1" { Some(&t) } else { None };
-        assert_eq!(p.status_sentence(Lang::En, resolve), "Music paused — Reverie by Debussy");
+        assert_eq!(
+            p.status_sentence(Lang::En, resolve),
+            "Music paused — Reverie by Debussy"
+        );
     }
 
     #[test]
     fn playing_playlist_phrase() {
-        assert_eq!(Lang::En.playing_playlist("Morning"), "Playing your Morning playlist");
-        assert_eq!(Lang::De.playing_playlist("Morning"), "Deine Playlist Morning läuft");
-        assert_eq!(Lang::Tr.playing_playlist("Morning"), "Morning listeniz çalıyor");
+        assert_eq!(
+            Lang::En.playing_playlist("Morning"),
+            "Playing your Morning playlist"
+        );
+        assert_eq!(
+            Lang::De.playing_playlist("Morning"),
+            "Deine Playlist Morning läuft"
+        );
+        assert_eq!(
+            Lang::Tr.playing_playlist("Morning"),
+            "Morning listeniz çalıyor"
+        );
     }
 
     #[test]
@@ -170,9 +198,19 @@ mod tests {
         // implementation terms — only household words.
         const BANNED: &[&str] = &[
             // jargon tokens the UI must never leak:
-            "Snapcast", "Mopidy", "provider URI", "media_player", "MQTT",
-            "player UUID", "URI", "entity_id", "TCP", "pod", "kubelet", // jargon
-            "Queue", "PlayState",
+            "Snapcast",
+            "Mopidy",
+            "provider URI",
+            "media_player",
+            "MQTT",
+            "player UUID",
+            "URI",
+            "entity_id",
+            "TCP",
+            "pod",
+            "kubelet", // jargon
+            "Queue",
+            "PlayState",
         ];
         let t = track();
         let mut texts: Vec<String> = Vec::new();

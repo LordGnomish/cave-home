@@ -148,8 +148,20 @@ impl PaseSession {
         let i_proof = pake_proof(b"i->r", &i_commitment, &r_commitment, self.passcode);
 
         // Both sides verify the peer's proof.
-        verify_pake_proof(b"r->i", &i_commitment, &r_commitment, self.passcode, &r_proof)?;
-        verify_pake_proof(b"i->r", &i_commitment, &r_commitment, peer.passcode, &i_proof)?;
+        verify_pake_proof(
+            b"r->i",
+            &i_commitment,
+            &r_commitment,
+            self.passcode,
+            &r_proof,
+        )?;
+        verify_pake_proof(
+            b"i->r",
+            &i_commitment,
+            &r_commitment,
+            peer.passcode,
+            &i_proof,
+        )?;
 
         // 5. DeriveSecureSession.
         let shared_secret = pake_shared_secret(&i_commitment, &r_commitment, self.passcode);
@@ -210,7 +222,11 @@ type HmacSha256 = Hmac<Sha256>;
 /// Build a Pake1/Pake2 commitment value.
 ///
 /// # Upstream: src/crypto/CHIPCryptoPAL.cpp::Spake2p::ComputeW0W1
-pub fn pake_commitment(domain_separator: &[u8], passcode: u32, params: &PbkdfParameters) -> [u8; 32] {
+pub fn pake_commitment(
+    domain_separator: &[u8],
+    passcode: u32,
+    params: &PbkdfParameters,
+) -> [u8; 32] {
     let mut mac = HmacSha256::new_from_slice(domain_separator).expect("hmac key");
     mac.update(&passcode.to_le_bytes());
     mac.update(&params.iterations.to_le_bytes());
@@ -276,7 +292,8 @@ fn derive_secure_session(shared_secret: &[u8], salt: &[u8]) -> Result<SessionKey
         attestation_challenge: [0; SESSION_KEY_BYTES],
     };
     s.i2r_key.copy_from_slice(&okm[0..SESSION_KEY_BYTES]);
-    s.r2i_key.copy_from_slice(&okm[SESSION_KEY_BYTES..2 * SESSION_KEY_BYTES]);
+    s.r2i_key
+        .copy_from_slice(&okm[SESSION_KEY_BYTES..2 * SESSION_KEY_BYTES]);
     s.attestation_challenge
         .copy_from_slice(&okm[2 * SESSION_KEY_BYTES..3 * SESSION_KEY_BYTES]);
     Ok(s)

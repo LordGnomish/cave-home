@@ -42,7 +42,10 @@ pub struct BuildInput {
 #[must_use]
 pub fn build_proxy_rules(input: &BuildInput) -> Vec<IptablesRule> {
     let mut out = Vec::with_capacity(64);
-    let nat = |text: String| IptablesRule { table: Table::Nat, text };
+    let nat = |text: String| IptablesRule {
+        table: Table::Nat,
+        text,
+    };
 
     // -- *nat header ----------------------------------------------------------
     out.push(nat("*nat".into()));
@@ -61,10 +64,8 @@ pub fn build_proxy_rules(input: &BuildInput) -> Vec<IptablesRule> {
     // -- per-service chain declarations (KUBE-SVC- + KUBE-SEP-) ---------------
     // Upstream emits these BEFORE the rule body (lines 204-205 in fixture).
     for svc in &services_sorted {
-        let svc_chain = service_port_policy_cluster_chain(
-            &svc.name.to_string(),
-            svc.protocol.lowercase(),
-        );
+        let svc_chain =
+            service_port_policy_cluster_chain(&svc.name.to_string(), svc.protocol.lowercase());
         out.push(nat(format!(":{svc_chain} - [0:0]")));
 
         let mut endpoints = input
@@ -120,7 +121,10 @@ pub fn build_proxy_rules(input: &BuildInput) -> Vec<IptablesRule> {
 /// Constructor for the local `nat` rule helper — kept as a separate fn so
 /// `emit_service_rules` can borrow it without re-capturing closures.
 const fn nat_factory(text: String) -> IptablesRule {
-    IptablesRule { table: Table::Nat, text }
+    IptablesRule {
+        table: Table::Nat,
+        text,
+    }
 }
 
 fn emit_service_rules(

@@ -46,9 +46,7 @@ pub mod prelude {
     pub use crate::automation::{Action, Automation, AutomationEngine, Condition, Trigger};
     pub use crate::context::Context;
     pub use crate::error::HassError;
-    pub use crate::event_bus::{
-        Event, EventBus, EventOrigin, InMemoryEventBus, ListenerHandle,
-    };
+    pub use crate::event_bus::{Event, EventBus, EventOrigin, InMemoryEventBus, ListenerHandle};
     pub use crate::scene::Scene;
     pub use crate::script::Script;
     pub use crate::service::{Service, ServiceCall, ServiceRegistry, SupportsResponse};

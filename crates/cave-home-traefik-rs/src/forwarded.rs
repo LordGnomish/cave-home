@@ -36,7 +36,10 @@ pub fn xff_chain(existing: Option<&str>, client_ip: &str) -> String {
     existing
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .map_or_else(|| client_ip.to_string(), |prev| format!("{prev}, {client_ip}"))
+        .map_or_else(
+            || client_ip.to_string(),
+            |prev| format!("{prev}, {client_ip}"),
+        )
 }
 
 /// Remove every hop-by-hop header from `headers`, including the per-connection
@@ -137,7 +140,10 @@ mod tests {
         strip_hop_by_hop(&mut h);
         assert!(!h.contains_key(http::header::CONNECTION));
         assert!(!h.contains_key(http::header::UPGRADE));
-        assert_eq!(h.get(http::header::CONTENT_TYPE).unwrap(), "application/json");
+        assert_eq!(
+            h.get(http::header::CONTENT_TYPE).unwrap(),
+            "application/json"
+        );
     }
 
     #[test]

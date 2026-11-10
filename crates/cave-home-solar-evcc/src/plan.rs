@@ -136,7 +136,12 @@ pub fn plan(inputs: PlanInputs) -> Result<ChargePlan, EvccError> {
         PlanOutcome::Unreachable
     };
 
-    Ok(ChargePlan { outcome, energy_needed_kwh, solar_available_kwh, grid_topup_kwh })
+    Ok(ChargePlan {
+        outcome,
+        energy_needed_kwh,
+        solar_available_kwh,
+        grid_topup_kwh,
+    })
 }
 
 #[cfg(test)]

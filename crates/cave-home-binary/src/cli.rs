@@ -17,7 +17,10 @@ pub enum Command {
     Run { flags: Box<ConfigLayer> },
     /// Boot the cluster runtime in a K3s-style role (`cmd/k3s server|agent|etcd`).
     /// Carries the same CLI-flag config layer as [`Run`](Self::Run).
-    Serve { role: ServeRole, flags: Box<ConfigLayer> },
+    Serve {
+        role: ServeRole,
+        flags: Box<ConfigLayer>,
+    },
     /// Show a short summary of how the home is doing.
     Status,
     /// Check that the configuration is valid without starting anything.
@@ -90,7 +93,10 @@ impl fmt::Display for ParseError {
                 "please tell cave-home what to do — try `cave-home help` to see the options"
             ),
             Self::UnknownCommand(c) => {
-                write!(f, "`{c}` is not something cave-home knows — try `cave-home help`")
+                write!(
+                    f,
+                    "`{c}` is not something cave-home knows — try `cave-home help`"
+                )
             }
             Self::MissingValue(flag) => write!(f, "`{flag}` needs a value after it"),
             Self::MissingArgument(what) => write!(f, "this command needs you to say which {what}"),
@@ -166,14 +172,19 @@ fn command_topic(cmd: &Command) -> Option<String> {
 fn parse_run(rest: &[String]) -> Result<Command, ParseError> {
     match parse_flags(rest, "run")? {
         FlagParse::Help(topic) => Ok(Command::Help { topic: Some(topic) }),
-        FlagParse::Flags(flags) => Ok(Command::Run { flags: Box::new(flags) }),
+        FlagParse::Flags(flags) => Ok(Command::Run {
+            flags: Box::new(flags),
+        }),
     }
 }
 
 fn parse_serve(role: ServeRole, rest: &[String]) -> Result<Command, ParseError> {
     match parse_flags(rest, role.as_str())? {
         FlagParse::Help(topic) => Ok(Command::Help { topic: Some(topic) }),
-        FlagParse::Flags(flags) => Ok(Command::Serve { role, flags: Box::new(flags) }),
+        FlagParse::Flags(flags) => Ok(Command::Serve {
+            role,
+            flags: Box::new(flags),
+        }),
     }
 }
 
@@ -408,7 +419,10 @@ mod tests {
     fn server_boots_the_control_plane_role() {
         assert!(matches!(
             parse(&argv(&["server"])).unwrap(),
-            Command::Serve { role: ServeRole::Server, .. }
+            Command::Serve {
+                role: ServeRole::Server,
+                ..
+            }
         ));
     }
 
@@ -416,7 +430,10 @@ mod tests {
     fn serve_is_an_alias_for_server() {
         assert!(matches!(
             parse(&argv(&["serve"])).unwrap(),
-            Command::Serve { role: ServeRole::Server, .. }
+            Command::Serve {
+                role: ServeRole::Server,
+                ..
+            }
         ));
     }
 
@@ -424,11 +441,17 @@ mod tests {
     fn agent_and_etcd_roles_parse() {
         assert!(matches!(
             parse(&argv(&["agent"])).unwrap(),
-            Command::Serve { role: ServeRole::Agent, .. }
+            Command::Serve {
+                role: ServeRole::Agent,
+                ..
+            }
         ));
         assert!(matches!(
             parse(&argv(&["etcd"])).unwrap(),
-            Command::Serve { role: ServeRole::Etcd, .. }
+            Command::Serve {
+                role: ServeRole::Etcd,
+                ..
+            }
         ));
     }
 
@@ -574,7 +597,10 @@ mod tests {
 
     #[test]
     fn backup_with_and_without_dest() {
-        assert_eq!(parse(&argv(&["backup"])).unwrap(), Command::Backup { dest: None });
+        assert_eq!(
+            parse(&argv(&["backup"])).unwrap(),
+            Command::Backup { dest: None }
+        );
         assert_eq!(
             parse(&argv(&["backup", "/tmp/b"])).unwrap(),
             Command::Backup {
@@ -609,7 +635,10 @@ mod tests {
             parse(&argv(&["--help"])).unwrap(),
             Command::Help { topic: None }
         );
-        assert_eq!(parse(&argv(&["-h"])).unwrap(), Command::Help { topic: None });
+        assert_eq!(
+            parse(&argv(&["-h"])).unwrap(),
+            Command::Help { topic: None }
+        );
         assert_eq!(parse(&argv(&["--version"])).unwrap(), Command::Version);
         assert_eq!(parse(&argv(&["-V"])).unwrap(), Command::Version);
     }
@@ -622,7 +651,10 @@ mod tests {
                 topic: Some("run".to_string())
             }
         );
-        assert_eq!(parse(&argv(&["help"])).unwrap(), Command::Help { topic: None });
+        assert_eq!(
+            parse(&argv(&["help"])).unwrap(),
+            Command::Help { topic: None }
+        );
     }
 
     #[test]
@@ -639,8 +671,16 @@ mod tests {
     fn help_text_is_grandma_friendly() {
         // Top-level and every topic must avoid implementation jargon (§6.3).
         let banned = [
-            "pod", "kubelet", "etcd", "namespace", "rbac", "mqtt", "k3s",
-            "container", "manifest", "yaml",
+            "pod",
+            "kubelet",
+            "etcd",
+            "namespace",
+            "rbac",
+            "mqtt",
+            "k3s",
+            "container",
+            "manifest",
+            "yaml",
         ];
         let topics = [
             None,

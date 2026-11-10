@@ -13,9 +13,7 @@
 
 use serde::Deserialize;
 
-use cave_home_unifi_network::{
-    DeviceKind, NetworkClient, NetworkDevice, SwitchPort,
-};
+use cave_home_unifi_network::{DeviceKind, NetworkClient, NetworkDevice, SwitchPort};
 
 use crate::error::UnifiError;
 
@@ -231,7 +229,11 @@ impl WireDevice {
         if self.state != 1 {
             d = d.offline();
         }
-        if let Some(up) = self.uplink.and_then(|u| u.uplink_mac).filter(|s| !s.is_empty()) {
+        if let Some(up) = self
+            .uplink
+            .and_then(|u| u.uplink_mac)
+            .filter(|s| !s.is_empty())
+        {
             d = d.uplinked_to(up);
         }
         if !self.port_table.is_empty() {
@@ -277,7 +279,10 @@ pub struct NetworkEvent {
 
 impl From<WireEvent> for NetworkEvent {
     fn from(w: WireEvent) -> Self {
-        let message = w.msg.filter(|s| !s.is_empty()).unwrap_or_else(|| w.key.clone());
+        let message = w
+            .msg
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| w.key.clone());
         Self {
             key: w.key,
             message,
@@ -346,16 +351,18 @@ mod tests {
         assert!(c.is_wireless());
         assert_eq!(c.connection().ssid(), Some("Home"));
         assert!(c.is_blocked());
-        assert_eq!(c.ip().map(|i| i.to_string()), Some("192.168.1.50".to_string()));
+        assert_eq!(
+            c.ip().map(|i| i.to_string()),
+            Some("192.168.1.50".to_string())
+        );
         assert_eq!(c.last_seen(), 1_717_000_000);
     }
 
     #[test]
     fn wire_client_wired_uses_switch_uplink() {
-        let w: WireClient = serde_json::from_str(
-            r#"{"mac":"aa:bb:cc:00:00:01","is_wired":true,"sw_mac":"sw-1"}"#,
-        )
-        .unwrap();
+        let w: WireClient =
+            serde_json::from_str(r#"{"mac":"aa:bb:cc:00:00:01","is_wired":true,"sw_mac":"sw-1"}"#)
+                .unwrap();
         let c = w.into_domain();
         assert!(!c.is_wireless());
         assert_eq!(c.connection(), &ConnectionKind::Wired);

@@ -71,7 +71,11 @@ mod tests {
 
     #[test]
     fn service_codes_round_trip() {
-        for s in [GroupService::Read, GroupService::Response, GroupService::Write] {
+        for s in [
+            GroupService::Read,
+            GroupService::Response,
+            GroupService::Write,
+        ] {
             assert_eq!(GroupService::from_apci_code(s.apci_code()).unwrap(), s);
         }
     }

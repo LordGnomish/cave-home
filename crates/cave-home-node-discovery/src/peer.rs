@@ -222,7 +222,10 @@ impl DiscoveredPeer {
     /// by the registry when it re-observes an unchanged peer.
     #[must_use]
     pub fn refreshed_at(&self, now: u64) -> Self {
-        Self { last_seen: now, ..self.clone() }
+        Self {
+            last_seen: now,
+            ..self.clone()
+        }
     }
 
     /// The grandma-friendly "we found a hub" message for a notification
@@ -251,7 +254,11 @@ mod tests {
     }
 
     fn ver() -> Version {
-        Version { major: 1, minor: 4, patch: 0 }
+        Version {
+            major: 1,
+            minor: 4,
+            patch: 0,
+        }
     }
 
     fn peer() -> DiscoveredPeer {
@@ -293,20 +300,36 @@ mod tests {
 
     #[test]
     fn rejects_no_addresses() {
-        let e = DiscoveredPeer::new(
-            "n", "h", vec![], 8123, NodeRole::Primary, ver(), 0, 60,
-        );
+        let e = DiscoveredPeer::new("n", "h", vec![], 8123, NodeRole::Primary, ver(), 0, 60);
         assert_eq!(e, Err(PeerError::NoAddresses));
     }
 
     #[test]
     fn rejects_zero_port_and_ttl() {
         assert_eq!(
-            DiscoveredPeer::new("n", "h", vec![ip(1, 1, 1, 1)], 0, NodeRole::Primary, ver(), 0, 60),
+            DiscoveredPeer::new(
+                "n",
+                "h",
+                vec![ip(1, 1, 1, 1)],
+                0,
+                NodeRole::Primary,
+                ver(),
+                0,
+                60
+            ),
             Err(PeerError::ZeroPort)
         );
         assert_eq!(
-            DiscoveredPeer::new("n", "h", vec![ip(1, 1, 1, 1)], 1, NodeRole::Primary, ver(), 0, 0),
+            DiscoveredPeer::new(
+                "n",
+                "h",
+                vec![ip(1, 1, 1, 1)],
+                1,
+                NodeRole::Primary,
+                ver(),
+                0,
+                0
+            ),
             Err(PeerError::ZeroTtl)
         );
     }
@@ -363,7 +386,14 @@ mod tests {
         let primary = peer();
         assert_eq!(primary.found_message(Lang::En), "Found another hub.");
         let backup = DiscoveredPeer::new(
-            "n", "h", vec![ip(1, 1, 1, 1)], 8123, NodeRole::Secondary, ver(), 0, 60,
+            "n",
+            "h",
+            vec![ip(1, 1, 1, 1)],
+            8123,
+            NodeRole::Secondary,
+            ver(),
+            0,
+            60,
         )
         .expect("valid");
         assert_eq!(backup.found_message(Lang::De), "Reserve-Hub verbunden.");
@@ -373,10 +403,8 @@ mod tests {
     #[test]
     fn every_role_has_three_language_names_and_message() {
         for role in [NodeRole::Primary, NodeRole::Secondary, NodeRole::MlNode] {
-            let p = DiscoveredPeer::new(
-                "n", "h", vec![ip(1, 1, 1, 1)], 8123, role, ver(), 0, 60,
-            )
-            .expect("valid");
+            let p = DiscoveredPeer::new("n", "h", vec![ip(1, 1, 1, 1)], 8123, role, ver(), 0, 60)
+                .expect("valid");
             for lang in [Lang::En, Lang::De, Lang::Tr] {
                 assert!(!role.friendly_name(lang).is_empty());
                 assert!(!p.found_message(lang).is_empty());
@@ -388,15 +416,28 @@ mod tests {
     fn ui_strings_carry_no_implementation_jargon() {
         // Charter §6.3: the UI must never surface protocol / cluster terms.
         const BANNED: &[&str] = &[
-            "mDNS", "SRV", "PTR", "TXT", "DNS-SD", "_cavehome", "_tcp",
-            "224.0.0.251", "5353", "multicast", "node", "TTL", "Bonjour",
-            "primary", "secondary", "ml-node", "K3s", "cluster",
+            "mDNS",
+            "SRV",
+            "PTR",
+            "TXT",
+            "DNS-SD",
+            "_cavehome",
+            "_tcp",
+            "224.0.0.251",
+            "5353",
+            "multicast",
+            "node",
+            "TTL",
+            "Bonjour",
+            "primary",
+            "secondary",
+            "ml-node",
+            "K3s",
+            "cluster",
         ];
         for role in [NodeRole::Primary, NodeRole::Secondary, NodeRole::MlNode] {
-            let p = DiscoveredPeer::new(
-                "n", "h", vec![ip(1, 1, 1, 1)], 8123, role, ver(), 0, 60,
-            )
-            .expect("valid");
+            let p = DiscoveredPeer::new("n", "h", vec![ip(1, 1, 1, 1)], 8123, role, ver(), 0, 60)
+                .expect("valid");
             for lang in [Lang::En, Lang::De, Lang::Tr] {
                 let text = format!("{} {}", role.friendly_name(lang), p.found_message(lang));
                 for banned in BANNED {

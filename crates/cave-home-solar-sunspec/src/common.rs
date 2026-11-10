@@ -88,7 +88,10 @@ impl CommonModel {
     /// string fields, and [`DecodeError::InvalidString`] on non-UTF-8 text.
     pub fn decode(payload: &[u16]) -> Result<Self, DecodeError> {
         if payload.len() < Self::MIN_LENGTH {
-            return Err(DecodeError::OutOfBounds { offset: Self::MIN_LENGTH, len: payload.len() });
+            return Err(DecodeError::OutOfBounds {
+                offset: Self::MIN_LENGTH,
+                len: payload.len(),
+            });
         }
         let manufacturer = point::string(payload, 0, 16)?;
         let model = point::string(payload, 16, 16)?;
@@ -118,7 +121,10 @@ mod tests {
     fn ascii_to_regs(s: &str, len_regs: usize) -> Vec<u16> {
         let mut bytes: Vec<u8> = s.bytes().collect();
         bytes.resize(len_regs * 2, 0);
-        bytes.chunks(2).map(|c| (u16::from(c[0]) << 8) | u16::from(c[1])).collect()
+        bytes
+            .chunks(2)
+            .map(|c| (u16::from(c[0]) << 8) | u16::from(c[1]))
+            .collect()
     }
 
     fn build_common(mfr: &str, model: &str, ver: &str, sn: &str, addr: u16) -> Vec<u16> {
@@ -164,7 +170,11 @@ mod tests {
             ("KOSTAL Solar Electric GmbH", InverterFamily::Kostal),
             ("Acme Inverter Co.", InverterFamily::Generic),
         ] {
-            assert_eq!(InverterFamily::from_manufacturer(mfr), expected, "mfr={mfr}");
+            assert_eq!(
+                InverterFamily::from_manufacturer(mfr),
+                expected,
+                "mfr={mfr}"
+            );
         }
     }
 

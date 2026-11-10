@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use thiserror::Error;
 
 use super::types::{
-    Container, ContainerConfig, ContainerFilter, ContainerStatus, FilesystemUsage, Image, ImageSpec,
-    PodSandbox, PodSandboxConfig, PodSandboxFilter, PodSandboxStatus,
+    Container, ContainerConfig, ContainerFilter, ContainerStatus, FilesystemUsage, Image,
+    ImageSpec, PodSandbox, PodSandboxConfig, PodSandboxFilter, PodSandboxStatus,
 };
 
 /// Error returned by every `CriClient` method.

@@ -79,10 +79,10 @@ pub mod sync;
 pub mod topology;
 
 pub use client::{Client, Volume, VolumeError};
-pub use control::{headline, ControlError};
+pub use control::{ControlError, headline};
 pub use group::Group;
 pub use json::Json;
 pub use label::Lang;
 pub use rpc::{Notification, Request};
-pub use sync::{client_delay_ms, LatencyMs};
+pub use sync::{LatencyMs, client_delay_ms};
 pub use topology::{Stream, StreamStatus, Topology, TopologyError};

@@ -60,13 +60,23 @@ impl Palette {
 
 macro_rules! effect {
     ($id:expr, $en:expr, $de:expr, $tr:expr) => {
-        Effect { id: $id, en: $en, de: $de, tr: $tr }
+        Effect {
+            id: $id,
+            en: $en,
+            de: $de,
+            tr: $tr,
+        }
     };
 }
 
 macro_rules! palette {
     ($id:expr, $en:expr, $de:expr, $tr:expr) => {
-        Palette { id: $id, en: $en, de: $de, tr: $tr }
+        Palette {
+            id: $id,
+            en: $en,
+            de: $de,
+            tr: $tr,
+        }
     };
 }
 
@@ -92,7 +102,12 @@ pub const EFFECTS: &[Effect] = &[
     effect!(67, "Sunrise", "Sonnenaufgang", "Gün doğumu"),
     effect!(73, "Party", "Party", "Parti"),
     effect!(74, "Festive colours", "Festtagsfarben", "Bayram renkleri"),
-    effect!(80, "Twinkling stars", "Funkelnde Sterne", "Yıldız parıltısı"),
+    effect!(
+        80,
+        "Twinkling stars",
+        "Funkelnde Sterne",
+        "Yıldız parıltısı"
+    ),
     effect!(87, "Glitter", "Glitzerregen", "Sim yağmuru"),
     effect!(88, "Candle", "Kerze", "Mum ışığı"),
     effect!(89, "Fireworks", "Feuerwerk", "Havai fişek"),
@@ -104,16 +119,31 @@ pub const EFFECTS: &[Effect] = &[
 /// A curated subset of the documented built-in WLED palettes, ids matching the
 /// public palette index. Friendly names replace the raw developer names.
 pub const PALETTES: &[Palette] = &[
-    palette!(0, "Match the light colour", "Lichtfarbe übernehmen", "Işık rengini kullan"),
+    palette!(
+        0,
+        "Match the light colour",
+        "Lichtfarbe übernehmen",
+        "Işık rengini kullan"
+    ),
     palette!(1, "Random colours", "Zufällige Farben", "Rastgele renkler"),
     palette!(2, "Primary colour", "Hauptfarbe", "Ana renk"),
-    palette!(3, "Three chosen colours", "Drei Wunschfarben", "Seçili üç renk"),
+    palette!(
+        3,
+        "Three chosen colours",
+        "Drei Wunschfarben",
+        "Seçili üç renk"
+    ),
     palette!(6, "Rainbow", "Regenbogen", "Gökkuşağı"),
     palette!(8, "Party", "Party", "Parti"),
     palette!(9, "Ocean", "Ozean", "Okyanus"),
     palette!(10, "Forest", "Wald", "Orman"),
     palette!(11, "Rainbow ring", "Regenbogenkreis", "Gökkuşağı halkası"),
-    palette!(35, "Warm sunset", "Warmer Sonnenuntergang", "Sıcak gün batımı"),
+    palette!(
+        35,
+        "Warm sunset",
+        "Warmer Sonnenuntergang",
+        "Sıcak gün batımı"
+    ),
     palette!(38, "Cosy fire", "Gemütliches Feuer", "Sıcacık ateş"),
     palette!(43, "Beach", "Strand", "Sahil"),
     palette!(47, "Springtime", "Frühling", "İlkbahar"),
@@ -172,7 +202,10 @@ mod tests {
     #[test]
     fn registries_are_non_trivial_and_id_sorted() {
         assert!(EFFECTS.len() >= 20, "curated effect list should be useful");
-        assert!(PALETTES.len() >= 10, "curated palette list should be useful");
+        assert!(
+            PALETTES.len() >= 10,
+            "curated palette list should be useful"
+        );
         // ids are unique and ascending so lookup stays predictable.
         for w in EFFECTS.windows(2) {
             assert!(w[0].id < w[1].id, "effect ids must ascend: {:?}", w);

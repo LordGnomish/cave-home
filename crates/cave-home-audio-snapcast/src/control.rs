@@ -10,7 +10,7 @@
 
 use crate::client::Volume;
 use crate::group::{self, Group};
-use crate::label::{every_room, join_names, muted_word, playing_word, Lang};
+use crate::label::{Lang, every_room, join_names, muted_word, playing_word};
 use crate::sync::LatencyMs;
 use crate::topology::{StreamStatus, Topology, TopologyError};
 
@@ -57,7 +57,9 @@ pub fn set_client_volume(
     client_id: &str,
     volume: Volume,
 ) -> Result<(), ControlError> {
-    let c = topo.client_mut(client_id).ok_or(ControlError::UnknownClient)?;
+    let c = topo
+        .client_mut(client_id)
+        .ok_or(ControlError::UnknownClient)?;
     c.set_volume(volume);
     Ok(())
 }
@@ -71,7 +73,9 @@ pub fn set_client_mute(
     client_id: &str,
     muted: bool,
 ) -> Result<(), ControlError> {
-    let c = topo.client_mut(client_id).ok_or(ControlError::UnknownClient)?;
+    let c = topo
+        .client_mut(client_id)
+        .ok_or(ControlError::UnknownClient)?;
     c.set_muted(muted);
     Ok(())
 }
@@ -85,7 +89,9 @@ pub fn set_client_latency(
     client_id: &str,
     latency: LatencyMs,
 ) -> Result<(), ControlError> {
-    let c = topo.client_mut(client_id).ok_or(ControlError::UnknownClient)?;
+    let c = topo
+        .client_mut(client_id)
+        .ok_or(ControlError::UnknownClient)?;
     c.set_latency(latency);
     Ok(())
 }
@@ -99,7 +105,9 @@ pub fn set_client_name(
     client_id: &str,
     name: &str,
 ) -> Result<(), ControlError> {
-    let c = topo.client_mut(client_id).ok_or(ControlError::UnknownClient)?;
+    let c = topo
+        .client_mut(client_id)
+        .ok_or(ControlError::UnknownClient)?;
     c.set_name(name);
     Ok(())
 }
@@ -376,8 +384,18 @@ mod tests {
 
     fn two_group_house() -> Topology {
         let mut t = Topology::new();
-        t.add_stream(Stream::new("spotify", StreamStatus::Playing, "flac", "48000:16:2"));
-        t.add_stream(Stream::new("radio", StreamStatus::Idle, "flac", "48000:16:2"));
+        t.add_stream(Stream::new(
+            "spotify",
+            StreamStatus::Playing,
+            "flac",
+            "48000:16:2",
+        ));
+        t.add_stream(Stream::new(
+            "radio",
+            StreamStatus::Idle,
+            "flac",
+            "48000:16:2",
+        ));
         t.add_group(
             Group::new("g1", "Kitchen", "spotify", vec!["c1".into()]),
             vec![Client::new("c1", "Kitchen", vol(50))],
@@ -430,7 +448,12 @@ mod tests {
     #[test]
     fn group_volume_spreads_to_members() {
         let mut t = Topology::new();
-        t.add_stream(Stream::new("s", StreamStatus::Playing, "flac", "48000:16:2"));
+        t.add_stream(Stream::new(
+            "s",
+            StreamStatus::Playing,
+            "flac",
+            "48000:16:2",
+        ));
         t.add_group(
             Group::new("g1", "Downstairs", "s", vec!["c1".into(), "c2".into()]),
             vec![
@@ -563,9 +586,20 @@ mod tests {
         // Charter §6.3 / ADR-020: the household UI must never surface protocol
         // or control-plane terms.
         const BANNED: &[&str] = &[
-            "JSON-RPC", "Snapcast", "PCM", "codec", "stream_id", "client_id",
-            "group_id", "latency", "buffer", "MQTT", "entity_id", "Group.SetStream",
-            "Client.SetVolume", "TCP",
+            "JSON-RPC",
+            "Snapcast",
+            "PCM",
+            "codec",
+            "stream_id",
+            "client_id",
+            "group_id",
+            "latency",
+            "buffer",
+            "MQTT",
+            "entity_id",
+            "Group.SetStream",
+            "Client.SetVolume",
+            "TCP",
         ];
         let mut t = two_group_house();
         set_group_stream(&mut t, "g2", "spotify").expect("ok");

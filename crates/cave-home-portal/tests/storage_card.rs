@@ -15,5 +15,10 @@ fn storage_card_is_developer_only() {
 #[test]
 fn storage_card_is_not_a_resident_card() {
     // Sanity: a resident card is still not developer-only.
-    assert!(!Card::Entity { entity_id: "x".into() }.is_developer_only());
+    assert!(
+        !Card::Entity {
+            entity_id: "x".into()
+        }
+        .is_developer_only()
+    );
 }

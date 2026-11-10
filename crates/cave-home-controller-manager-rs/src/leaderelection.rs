@@ -92,7 +92,9 @@ pub fn try_acquire_or_renew(
     // a still-valid lease held by another locks us out.
     if !lease.holder_identity.is_empty() && lease.is_valid(now) {
         // Someone else holds a valid lease.
-        return ElectionResult::Lost { current_holder: lease.holder_identity.clone() };
+        return ElectionResult::Lost {
+            current_holder: lease.holder_identity.clone(),
+        };
     }
 
     // Expired, or cleanly released, and held by another: take over, counting the
@@ -118,7 +120,10 @@ impl LeaderElector {
     /// A participant with the given identity and lease duration (seconds).
     #[must_use]
     pub fn new(identity: &str, lease_duration: i64) -> Self {
-        Self { identity: identity.to_owned(), lease_duration }
+        Self {
+            identity: identity.to_owned(),
+            lease_duration,
+        }
     }
 
     /// This participant's identity.
@@ -156,7 +161,9 @@ impl LeaderElector {
     /// than waiting out the full lease duration. Returns `true` if a release
     /// happened, `false` if this participant did not hold the lease.
     pub fn release(&self, lease: &mut Option<Lease>, now: i64) -> bool {
-        let Some(l) = lease.as_mut() else { return false };
+        let Some(l) = lease.as_mut() else {
+            return false;
+        };
         if l.holder_identity != self.identity {
             return false;
         }
@@ -171,7 +178,10 @@ impl LeaderElector {
     /// of the holder's own clock.
     #[must_use]
     pub fn observe(&self, lease: Option<&Lease>, now: i64) -> ObservedRecord {
-        ObservedRecord { record: lease.cloned(), observed_at: now }
+        ObservedRecord {
+            record: lease.cloned(),
+            observed_at: now,
+        }
     }
 
     /// Fold a fresh sighting into a prior [`ObservedRecord`]: if the lease record
@@ -187,7 +197,10 @@ impl LeaderElector {
         if prior.record.as_ref() == lease {
             prior
         } else {
-            ObservedRecord { record: lease.cloned(), observed_at: now }
+            ObservedRecord {
+                record: lease.cloned(),
+                observed_at: now,
+            }
         }
     }
 }
@@ -238,7 +251,11 @@ impl LeaderElectionConfig {
         if renew_deadline <= retry_period {
             return Err("renew_deadline must be greater than retry_period");
         }
-        Ok(Self { lease_duration, renew_deadline, retry_period })
+        Ok(Self {
+            lease_duration,
+            renew_deadline,
+            retry_period,
+        })
     }
 
     /// `true` if a holder whose last **successful** renewal was at
@@ -273,7 +290,9 @@ mod tests {
         };
         assert_eq!(
             try_acquire_or_renew(Some(&l), "me", 5, 10),
-            ElectionResult::Lost { current_holder: "other".into() }
+            ElectionResult::Lost {
+                current_holder: "other".into()
+            }
         );
     }
 

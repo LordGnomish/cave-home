@@ -27,18 +27,18 @@ use std::os::fd::{AsRawFd, OwnedFd};
 
 #[cfg(target_os = "linux")]
 use nix::sys::socket::{
-    bind, recv, send, socket, AddressFamily, MsgFlags, NetlinkAddr, SockFlag, SockProtocol,
-    SockType,
+    AddressFamily, MsgFlags, NetlinkAddr, SockFlag, SockProtocol, SockType, bind, recv, send,
+    socket,
 };
 
 #[cfg(target_os = "linux")]
 use crate::datapath::{
-    encode_link_del, encode_link_set_up, Datapath, LinkAddr, Neigh, Route, VxlanLink,
+    Datapath, LinkAddr, Neigh, Route, VxlanLink, encode_link_del, encode_link_set_up,
 };
 #[cfg(target_os = "linux")]
 use crate::netlink::{
-    ifinfomsg, push_attr, NlMsg, AF_UNSPEC, IFLA_IFNAME, NLM_F_CREATE, NLM_F_EXCL, NLM_F_REPLACE,
-    RTM_GETLINK,
+    AF_UNSPEC, IFLA_IFNAME, NLM_F_CREATE, NLM_F_EXCL, NLM_F_REPLACE, NlMsg, RTM_GETLINK, ifinfomsg,
+    push_attr,
 };
 
 /// A live `NETLINK_ROUTE` socket.
@@ -103,7 +103,10 @@ impl NetlinkSocket {
 
         let resp = self.transact(&m.serialize(), "getlink")?;
         if resp.len() < 24 {
-            return Err(NetError::Io(format!("getlink: short reply ({} bytes)", resp.len())));
+            return Err(NetError::Io(format!(
+                "getlink: short reply ({} bytes)",
+                resp.len()
+            )));
         }
         let mtype = u16::from_le_bytes([resp[4], resp[5]]);
         if mtype == NLMSG_ERROR {
@@ -129,7 +132,10 @@ impl NetlinkSocket {
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn parse_ack(resp: &[u8], op: &str) -> Result<(), NetError> {
     if resp.len() < 20 {
-        return Err(NetError::Io(format!("{op}: short ack ({} bytes)", resp.len())));
+        return Err(NetError::Io(format!(
+            "{op}: short ack ({} bytes)",
+            resp.len()
+        )));
     }
     let mtype = u16::from_le_bytes([resp[4], resp[5]]);
     if mtype == NLMSG_ERROR {

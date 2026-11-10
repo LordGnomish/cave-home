@@ -197,7 +197,8 @@ impl ZclFrame {
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         // Header is 3 bytes (or 5 with mfr code), then payload follows.
-        let mut out = Vec::with_capacity(3 + usize::from(self.control.mfr_specific) * 2 + self.payload.len());
+        let mut out =
+            Vec::with_capacity(3 + usize::from(self.control.mfr_specific) * 2 + self.payload.len());
         out.push(self.control.to_byte());
         if let Some(code) = self.mfr_code {
             out.push((code & 0xff) as u8);

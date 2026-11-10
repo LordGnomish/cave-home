@@ -185,9 +185,9 @@ impl NodeSelector {
         if self.node_selector_terms.is_empty() {
             return false;
         }
-        self.node_selector_terms.iter().any(|t| {
-            t.match_expressions.iter().all(|r| r.matches(labels))
-        })
+        self.node_selector_terms
+            .iter()
+            .any(|t| t.match_expressions.iter().all(|r| r.matches(labels)))
     }
 }
 
@@ -367,7 +367,11 @@ pub struct Node {
 impl Node {
     #[must_use]
     pub fn allocatable(&self, name: ResourceName) -> Quantity {
-        self.status.allocatable.get(&name).copied().unwrap_or_default()
+        self.status
+            .allocatable
+            .get(&name)
+            .copied()
+            .unwrap_or_default()
     }
 
     #[must_use]

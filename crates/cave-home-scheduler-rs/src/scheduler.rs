@@ -13,7 +13,7 @@ use crate::cache::SchedulerCache;
 use crate::config::SchedulerConfig;
 use crate::framework::{ActionType, ClusterEvent, Code, CycleState, Gvk, PluginRegistry};
 use crate::queue::{PriorityQueue, QueuedPodInfo, SchedulingQueue};
-use crate::schedule_one::{schedule_one_limited, ScheduleResult};
+use crate::schedule_one::{ScheduleResult, schedule_one_limited};
 use crate::source_sink::{NodeEvent, PodEvent, Result, SchedulerSink, SchedulerSource};
 
 /// Upstream: `pkg/scheduler/scheduler.go::Scheduler`.
@@ -31,7 +31,8 @@ pub struct Scheduler {
     /// pod uid. Upstream: `framework.waitingPodsMap`. An external caller (e.g. a
     /// sibling plugin reacting to a cluster event) resolves a waiting pod via
     /// [`get_waiting_pod`](Self::get_waiting_pod).
-    waiting_pods: Arc<parking_lot::Mutex<std::collections::HashMap<String, crate::framework::WaitingPod>>>,
+    waiting_pods:
+        Arc<parking_lot::Mutex<std::collections::HashMap<String, crate::framework::WaitingPod>>>,
 }
 
 /// Outcome of a single `run_once` cycle (the pod that was processed +
@@ -44,10 +45,7 @@ pub struct CycleOutcome {
 
 impl Scheduler {
     /// Construct a scheduler with the default profile.
-    pub fn new(
-        source: Arc<dyn SchedulerSource>,
-        sink: Arc<dyn SchedulerSink>,
-    ) -> Self {
+    pub fn new(source: Arc<dyn SchedulerSource>, sink: Arc<dyn SchedulerSink>) -> Self {
         let config = SchedulerConfig::default();
         Self {
             source,
@@ -125,7 +123,8 @@ impl Scheduler {
             if !status.is_success() {
                 let info = QueuedPodInfo::new(pod);
                 let cycle = self.queue.scheduling_cycle();
-                self.queue.add_unschedulable_if_not_present(info, cycle, now_ms);
+                self.queue
+                    .add_unschedulable_if_not_present(info, cycle, now_ms);
                 return;
             }
         }
@@ -140,7 +139,9 @@ impl Scheduler {
         };
         let pod = info.pod.clone();
         let full = pod.full_name();
-        let limit = self.config.num_feasible_nodes_to_find(self.cache.node_count());
+        let limit = self
+            .config
+            .num_feasible_nodes_to_find(self.cache.node_count());
         let result = schedule_one_limited(&pod, &self.cache, &self.registry, limit);
 
         if let Some(host) = result.suggested_host.clone() {
@@ -267,7 +268,8 @@ impl Scheduler {
                     let _ = self.cache.remove_pod(&p);
                     // Freed capacity may unblock waiters.
                     let ev = ClusterEvent::new(Gvk::Pod, ActionType::DELETE);
-                    self.queue.move_all_to_active_or_backoff_queue(&ev, now_ms());
+                    self.queue
+                        .move_all_to_active_or_backoff_queue(&ev, now_ms());
                 }
             }
         }
@@ -284,7 +286,8 @@ impl Scheduler {
                 NodeEvent::Add(n) => {
                     self.cache.add_node(n);
                     let ev = ClusterEvent::new(Gvk::Node, ActionType::ADD);
-                    self.queue.move_all_to_active_or_backoff_queue(&ev, now_ms());
+                    self.queue
+                        .move_all_to_active_or_backoff_queue(&ev, now_ms());
                 }
                 NodeEvent::Update { new, .. } => {
                     self.cache.update_node(new);
@@ -294,7 +297,8 @@ impl Scheduler {
                             | ActionType::UPDATE_NODE_TAINT
                             | ActionType::UPDATE_NODE_LABEL,
                     );
-                    self.queue.move_all_to_active_or_backoff_queue(&ev, now_ms());
+                    self.queue
+                        .move_all_to_active_or_backoff_queue(&ev, now_ms());
                 }
                 NodeEvent::Delete(n) => {
                     self.cache.remove_node(&n.metadata.name);
@@ -324,7 +328,9 @@ impl Scheduler {
         let pod_cycle = self.queue.scheduling_cycle();
         let pod = info.pod.clone();
         let full = pod.full_name();
-        let limit = self.config.num_feasible_nodes_to_find(self.cache.node_count());
+        let limit = self
+            .config
+            .num_feasible_nodes_to_find(self.cache.node_count());
         let result = schedule_one_limited(&pod, &self.cache, &self.registry, limit);
 
         if let Some(host) = result.suggested_host.clone() {
@@ -469,7 +475,11 @@ impl Scheduler {
             }
             if !status.is_success() {
                 self.unwind(&mut state, pod, host, reserved);
-                return Err(format!("bind {} failed: {}", plugin.name(), status.message()));
+                return Err(format!(
+                    "bind {} failed: {}",
+                    plugin.name(),
+                    status.message()
+                ));
             }
             bound = true;
             break;
@@ -599,10 +609,11 @@ mod tests {
         sched.sync().await.unwrap();
         let _ = sched.run_once().await.unwrap();
         assert!(sink.binds().is_empty());
-        assert!(sink
-            .events()
-            .iter()
-            .any(|(_, r, _)| r == "FailedScheduling"));
+        assert!(
+            sink.events()
+                .iter()
+                .any(|(_, r, _)| r == "FailedScheduling")
+        );
         // Queue length includes the backoff slot.
         assert_eq!(sched.queue.len(), 1);
     }

@@ -135,11 +135,7 @@ impl Client {
     /// The volume actually heard: zero when muted, the set volume otherwise.
     #[must_use]
     pub const fn audible_volume(&self) -> u8 {
-        if self.muted {
-            0
-        } else {
-            self.volume.percent()
-        }
+        if self.muted { 0 } else { self.volume.percent() }
     }
 
     // --- pure mutators: these return-by-&mut for use inside control ops; the

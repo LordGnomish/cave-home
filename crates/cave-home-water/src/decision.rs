@@ -52,16 +52,16 @@ impl SkipReason {
             (Self::SoilMoistSufficient, Lang::De) => {
                 "Bewässerung übersprungen — der Boden ist noch feucht."
             }
-            (Self::SoilMoistSufficient, Lang::Tr) => {
-                "Sulama atlandı — toprak hâlâ nemli."
-            }
+            (Self::SoilMoistSufficient, Lang::Tr) => "Sulama atlandı — toprak hâlâ nemli.",
             (Self::RainDelay, Lang::En) => "Skipped watering — rain is on the way.",
             (Self::RainDelay, Lang::De) => "Bewässerung übersprungen — es regnet bald.",
             (Self::RainDelay, Lang::Tr) => "Sulama atlandı — yağmur geliyor.",
             (Self::ZoneDisabled, Lang::En) => "Watering is turned off here.",
             (Self::ZoneDisabled, Lang::De) => "Die Bewässerung ist hier ausgeschaltet.",
             (Self::ZoneDisabled, Lang::Tr) => "Burada sulama kapalı.",
-            (Self::OutsideWindow, Lang::En) => "Not watering now — it is outside the watering time.",
+            (Self::OutsideWindow, Lang::En) => {
+                "Not watering now — it is outside the watering time."
+            }
             (Self::OutsideWindow, Lang::De) => {
                 "Jetzt keine Bewässerung — außerhalb der Bewässerungszeit."
             }
@@ -89,13 +89,21 @@ impl WaterDecision {
     /// A decision to water for `runtime_seconds`.
     #[must_use]
     const fn water_for(runtime_seconds: u32) -> Self {
-        Self { water: true, runtime_seconds, reason: None }
+        Self {
+            water: true,
+            runtime_seconds,
+            reason: None,
+        }
     }
 
     /// A decision to skip, carrying the reason.
     #[must_use]
     const fn skip(reason: SkipReason) -> Self {
-        Self { water: false, runtime_seconds: 0, reason: Some(reason) }
+        Self {
+            water: false,
+            runtime_seconds: 0,
+            reason: Some(reason),
+        }
     }
 
     /// A plain-language line for the UI describing this decision.

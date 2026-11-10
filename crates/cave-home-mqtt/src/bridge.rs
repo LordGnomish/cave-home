@@ -67,7 +67,13 @@ impl TopicRule {
         };
         let local_prefix = it.next().unwrap_or("").to_owned();
         let remote_prefix = it.next().unwrap_or("").to_owned();
-        Some(Self { pattern, direction, qos, local_prefix, remote_prefix })
+        Some(Self {
+            pattern,
+            direction,
+            qos,
+            local_prefix,
+            remote_prefix,
+        })
     }
 
     fn local_filter(&self) -> String {
@@ -189,14 +195,20 @@ mod tests {
         // Outbound rules require a *local* subscription on local_prefix+pattern.
         let mut subs = cfg().local_subscriptions();
         subs.sort();
-        assert_eq!(subs, vec!["home/sensors/#".to_string(), "status/+".to_string()]);
+        assert_eq!(
+            subs,
+            vec!["home/sensors/#".to_string(), "status/+".to_string()]
+        );
     }
 
     #[test]
     fn remote_subscriptions_cover_in_and_both_rules() {
         let mut subs = cfg().remote_subscriptions();
         subs.sort();
-        assert_eq!(subs, vec!["cloud/commands/#".to_string(), "status/+".to_string()]);
+        assert_eq!(
+            subs,
+            vec!["cloud/commands/#".to_string(), "status/+".to_string()]
+        );
     }
 
     #[test]
@@ -208,7 +220,10 @@ mod tests {
             Some("cloud/sensors/loft/temp".to_string())
         );
         // status/+ (both, no prefixes) maps unchanged.
-        assert_eq!(c.map_local_to_remote("status/online"), Some("status/online".to_string()));
+        assert_eq!(
+            c.map_local_to_remote("status/online"),
+            Some("status/online".to_string())
+        );
         // A purely inbound topic does not go out.
         assert_eq!(c.map_local_to_remote("home/commands/x"), None);
     }
@@ -221,7 +236,10 @@ mod tests {
             c.map_remote_to_local("cloud/commands/reboot"),
             Some("home/commands/reboot".to_string())
         );
-        assert_eq!(c.map_remote_to_local("status/online"), Some("status/online".to_string()));
+        assert_eq!(
+            c.map_remote_to_local("status/online"),
+            Some("status/online".to_string())
+        );
         // A purely outbound topic does not come in.
         assert_eq!(c.map_remote_to_local("cloud/sensors/x"), None);
     }

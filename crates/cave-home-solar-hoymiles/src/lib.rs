@@ -66,6 +66,6 @@ pub mod telemetry;
 
 pub use family::Family;
 pub use frame::{Command, InverterSerial, SerialError};
-pub use label::{headline, AlarmState, Lang, SolarStatus};
+pub use label::{AlarmState, Lang, SolarStatus, headline};
 pub use reassembly::{Fragment, Reassembler, ReassemblyError};
-pub use telemetry::{decode, DecodeError, PanelReading, Telemetry};
+pub use telemetry::{DecodeError, PanelReading, Telemetry, decode};

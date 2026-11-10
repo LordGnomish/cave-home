@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::net::IpAddr;
 
-use crate::node::{select_nodes, Node};
+use crate::node::{Node, select_nodes};
 use crate::service::{ExternalTrafficPolicy, LoadBalancerService};
 
 /// Compute the `status.loadBalancer.ingress` IP set for a Service.
@@ -132,9 +132,11 @@ mod tests {
     #[test]
     fn external_ip_preferred_over_internal() {
         let s = svc(ExternalTrafficPolicy::Cluster, vec![]);
-        let nodes = vec![Node::new("n1")
-            .with_internal_ip(ip("10.0.0.1"))
-            .with_external_ip(ip("1.2.3.4"))];
+        let nodes = vec![
+            Node::new("n1")
+                .with_internal_ip(ip("10.0.0.1"))
+                .with_external_ip(ip("1.2.3.4")),
+        ];
         let got = compute_ingress_ips(&s, &nodes, &BTreeSet::new());
         assert_eq!(got, vec![ip("1.2.3.4")]);
     }
@@ -188,7 +190,10 @@ mod tests {
     #[test]
     fn node_without_any_ip_is_skipped() {
         let s = svc(ExternalTrafficPolicy::Cluster, vec![]);
-        let nodes = vec![Node::new("n1"), Node::new("n2").with_internal_ip(ip("10.0.0.2"))];
+        let nodes = vec![
+            Node::new("n1"),
+            Node::new("n2").with_internal_ip(ip("10.0.0.2")),
+        ];
         let got = compute_ingress_ips(&s, &nodes, &BTreeSet::new());
         assert_eq!(got, vec![ip("10.0.0.2")]);
     }
@@ -196,8 +201,10 @@ mod tests {
     #[test]
     fn node_selector_narrows_published_nodes() {
         let mut s = svc(ExternalTrafficPolicy::Cluster, vec![]);
-        s.node_selector
-            .insert("svccontroller.k3s.cattle.io/lbpool".to_owned(), "pool-a".to_owned());
+        s.node_selector.insert(
+            "svccontroller.k3s.cattle.io/lbpool".to_owned(),
+            "pool-a".to_owned(),
+        );
         let nodes = vec![
             Node::new("n1")
                 .with_internal_ip(ip("10.0.0.1"))

@@ -221,7 +221,11 @@ mod tests {
             {"energy_site_id":1234567890,"site_name":"Home","resource_type":"battery"}
         ],"count":2}"#;
         let env: Envelope<Vec<Product>> = serde_json::from_str(json).unwrap();
-        let sites: Vec<_> = env.response.iter().filter_map(Product::energy_site_id).collect();
+        let sites: Vec<_> = env
+            .response
+            .iter()
+            .filter_map(Product::energy_site_id)
+            .collect();
         assert_eq!(sites, vec![1_234_567_890]);
     }
 }

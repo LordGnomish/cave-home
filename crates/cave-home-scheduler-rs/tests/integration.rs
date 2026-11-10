@@ -172,7 +172,10 @@ async fn end_to_end_tolerated_taint_allows_bind() {
     let sched = Scheduler::new(src.clone(), sink.clone());
     sched.sync().await.unwrap();
     sched.run_once().await.unwrap();
-    assert_eq!(sink.binds(), vec![("default/workload".into(), "gpu".into())]);
+    assert_eq!(
+        sink.binds(),
+        vec![("default/workload".into(), "gpu".into())]
+    );
 }
 
 #[tokio::test]
@@ -245,7 +248,10 @@ async fn end_to_end_backoff_flush_requeues_unschedulable_pod() {
     // Flush backoff well past the 1s initial window -> pod returns to active.
     sched.queue.flush_backoff(60_000);
     let outcome = sched.run_once().await.unwrap();
-    assert!(outcome.is_some(), "flushed pod should be popped and retried");
+    assert!(
+        outcome.is_some(),
+        "flushed pod should be popped and retried"
+    );
     assert_eq!(outcome.unwrap().pod_full_name, "default/huge");
 }
 
@@ -378,11 +384,7 @@ async fn end_to_end_three_pods_drain_in_priority_order() {
     let sched = Scheduler::new(src.clone(), sink.clone());
     sched.sync().await.unwrap();
     let outcomes = sched.drain_active().await.unwrap();
-    let bound_names: Vec<String> = sink
-        .binds()
-        .into_iter()
-        .map(|(name, _)| name)
-        .collect();
+    let bound_names: Vec<String> = sink.binds().into_iter().map(|(name, _)| name).collect();
     assert_eq!(bound_names.len(), 3);
     assert_eq!(bound_names[0], "default/p2"); // prio 50
     assert_eq!(bound_names[1], "default/p1"); // prio 10

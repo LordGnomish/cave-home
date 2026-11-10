@@ -299,12 +299,7 @@ impl DateTime {
     /// Returns [`DateError::TimeOutOfRange`] if any time component is out of
     /// range (`hour > 23`, `minute > 59`, `second > 60` — 60 allows a leap
     /// second per RFC 5545).
-    pub const fn new(
-        date: Date,
-        hour: u8,
-        minute: u8,
-        second: u8,
-    ) -> Result<Self, DateError> {
+    pub const fn new(date: Date, hour: u8, minute: u8, second: u8) -> Result<Self, DateError> {
         if hour > 23 || minute > 59 || second > 60 {
             return Err(DateError::TimeOutOfRange);
         }

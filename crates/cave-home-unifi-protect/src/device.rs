@@ -389,7 +389,10 @@ mod tests {
 
     #[test]
     fn chime_volume_is_clamped() {
-        assert_eq!(ProtectChime::new(ChimeId::new("h1"), "Hall", 250).volume, 100);
+        assert_eq!(
+            ProtectChime::new(ChimeId::new("h1"), "Hall", 250).volume,
+            100
+        );
         assert_eq!(ProtectChime::new(ChimeId::new("h1"), "Hall", 40).volume, 40);
     }
 

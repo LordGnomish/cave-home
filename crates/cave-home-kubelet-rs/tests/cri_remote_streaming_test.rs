@@ -11,13 +11,15 @@ mod common;
 
 use std::io::Cursor;
 
-use cave_home_kubelet_rs::cri::remote::streaming::{AttachRequest, ExecRequest, PortForwardRequest};
-use cave_home_kubelet_rs::cri::remote::ws::conn::{WsConnection, V5_CHANNEL_PROTOCOL};
+use cave_home_kubelet_rs::cri::CriClient;
+use cave_home_kubelet_rs::cri::remote::RemoteCriClient;
+use cave_home_kubelet_rs::cri::remote::streaming::{
+    AttachRequest, ExecRequest, PortForwardRequest,
+};
+use cave_home_kubelet_rs::cri::remote::ws::conn::{V5_CHANNEL_PROTOCOL, WsConnection};
 use cave_home_kubelet_rs::cri::remote::ws::frame::Frame;
 use cave_home_kubelet_rs::cri::remote::ws::proxy::{channel, channel_frame};
-use cave_home_kubelet_rs::cri::remote::RemoteCriClient;
 use cave_home_kubelet_rs::cri::types as t;
-use cave_home_kubelet_rs::cri::CriClient;
 use tokio::net::{TcpListener, TcpStream};
 
 use common::start_mock_cri_server;
@@ -49,7 +51,9 @@ async fn running_container(client: &RemoteCriClient) -> (String, String) {
 #[tokio::test]
 async fn exec_returns_streaming_url() {
     let server = start_mock_cri_server().await;
-    let client = RemoteCriClient::connect_uds(&server.socket_path).await.unwrap();
+    let client = RemoteCriClient::connect_uds(&server.socket_path)
+        .await
+        .unwrap();
     let (_sb, cid) = running_container(&client).await;
 
     let url = client
@@ -71,7 +75,9 @@ async fn exec_returns_streaming_url() {
 #[tokio::test]
 async fn attach_returns_streaming_url() {
     let server = start_mock_cri_server().await;
-    let client = RemoteCriClient::connect_uds(&server.socket_path).await.unwrap();
+    let client = RemoteCriClient::connect_uds(&server.socket_path)
+        .await
+        .unwrap();
     let (_sb, cid) = running_container(&client).await;
 
     let url = client
@@ -95,12 +101,17 @@ async fn spawn_ws_echo_upper() -> String {
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        let mut conn: WsConnection<TcpStream> =
-            WsConnection::accept(sock, V5_CHANNEL_PROTOCOL).await.unwrap();
+        let mut conn: WsConnection<TcpStream> = WsConnection::accept(sock, V5_CHANNEL_PROTOCOL)
+            .await
+            .unwrap();
         let msg = conn.recv().await.unwrap().expect("stdin");
         let upper = msg.payload[1..].to_ascii_uppercase();
-        conn.send(&channel_frame(channel::STDOUT, &upper)).await.unwrap();
-        conn.send(&channel_frame(channel::ERROR, b"")).await.unwrap();
+        conn.send(&channel_frame(channel::STDOUT, &upper))
+            .await
+            .unwrap();
+        conn.send(&channel_frame(channel::ERROR, b""))
+            .await
+            .unwrap();
         conn.send(&Frame::close()).await.unwrap();
         // Polite close: keep the socket open until the client finishes reading
         // (drain its remaining frames to EOF) so it never sees a TCP reset.
@@ -115,7 +126,9 @@ async fn spawn_ws_echo_upper() -> String {
 async fn exec_streamed_negotiates_then_bridges_stdio() {
     let server = start_mock_cri_server().await;
     server.runtime.set_stream_url(spawn_ws_echo_upper().await);
-    let client = RemoteCriClient::connect_uds(&server.socket_path).await.unwrap();
+    let client = RemoteCriClient::connect_uds(&server.socket_path)
+        .await
+        .unwrap();
     let (_sb, cid) = running_container(&client).await;
 
     let mut stdout = Vec::new();
@@ -144,7 +157,9 @@ async fn exec_streamed_negotiates_then_bridges_stdio() {
 #[tokio::test]
 async fn port_forward_returns_streaming_url() {
     let server = start_mock_cri_server().await;
-    let client = RemoteCriClient::connect_uds(&server.socket_path).await.unwrap();
+    let client = RemoteCriClient::connect_uds(&server.socket_path)
+        .await
+        .unwrap();
     let (sandbox_id, _cid) = running_container(&client).await;
 
     let url = client

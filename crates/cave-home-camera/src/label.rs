@@ -164,10 +164,31 @@ mod tests {
         // Charter §6.3 / ADR-007: a camera notification must never surface a
         // codec, transport, model or device-model term.
         const BANNED: &[&str] = &[
-            "RTSP", "ONVIF", "H.264", "H264", "NAL", "tensor", "inference",
-            "YOLO", "ONNX", "Coral", "TensorRT", "GPU", "MQTT", "entity_id",
-            "entity id", "bounding box", "bbox", "IoU", "Frigate", "Protect",
-            "ffmpeg", "codec", "pod", "namespace", "webhook",
+            "RTSP",
+            "ONVIF",
+            "H.264",
+            "H264",
+            "NAL",
+            "tensor",
+            "inference",
+            "YOLO",
+            "ONNX",
+            "Coral",
+            "TensorRT",
+            "GPU",
+            "MQTT",
+            "entity_id",
+            "entity id",
+            "bounding box",
+            "bbox",
+            "IoU",
+            "Frigate",
+            "Protect",
+            "ffmpeg",
+            "codec",
+            "pod",
+            "namespace",
+            "webhook",
         ];
         let mut texts: Vec<String> = Vec::new();
         for lang in LANGS {

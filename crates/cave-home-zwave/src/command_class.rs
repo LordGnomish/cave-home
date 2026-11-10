@@ -358,8 +358,10 @@ impl Command {
         let cc_id = payload[0];
         let cmd = payload[1];
         let body = &payload[2..];
-        let cc = CommandClass::from_u8(cc_id)
-            .ok_or(ZwaveError::UnknownCommand { command_class: cc_id, command: cmd })?;
+        let cc = CommandClass::from_u8(cc_id).ok_or(ZwaveError::UnknownCommand {
+            command_class: cc_id,
+            command: cmd,
+        })?;
         match cc {
             CommandClass::Basic => Self::decode_basic(cmd, body),
             CommandClass::BinarySwitch => Self::decode_binary_switch(cmd, body),
@@ -411,7 +413,10 @@ impl Command {
 
             // Multilevel Sensor CC.
             Self::MultilevelSensorGet => vec![0x31, cmd::GET],
-            Self::MultilevelSensorReport { sensor_type, reading } => {
+            Self::MultilevelSensorReport {
+                sensor_type,
+                reading,
+            } => {
                 let mut out = vec![0x31, cmd::REPORT, *sensor_type];
                 push_fixed(&mut out, reading);
                 out
@@ -419,7 +424,10 @@ impl Command {
 
             // Meter CC.
             Self::MeterGet => vec![0x32, cmd::GET],
-            Self::MeterReport { meter_type, reading } => {
+            Self::MeterReport {
+                meter_type,
+                reading,
+            } => {
                 let mut out = vec![0x32, cmd::REPORT, *meter_type];
                 push_fixed(&mut out, reading);
                 out
@@ -435,7 +443,10 @@ impl Command {
             }
 
             // Thermostat Setpoint CC.
-            Self::ThermostatSetpointSet { setpoint_type, value } => {
+            Self::ThermostatSetpointSet {
+                setpoint_type,
+                value,
+            } => {
                 let mut out = vec![0x43, cmd::SET, *setpoint_type];
                 push_fixed(&mut out, value);
                 out
@@ -443,7 +454,10 @@ impl Command {
             Self::ThermostatSetpointGet { setpoint_type } => {
                 vec![0x43, cmd::GET, *setpoint_type]
             }
-            Self::ThermostatSetpointReport { setpoint_type, value } => {
+            Self::ThermostatSetpointReport {
+                setpoint_type,
+                value,
+            } => {
                 let mut out = vec![0x43, cmd::REPORT, *setpoint_type];
                 push_fixed(&mut out, value);
                 out
@@ -455,20 +469,31 @@ impl Command {
             Self::ThermostatModeReport(mode) => vec![0x40, cmd::REPORT, mode.to_u8()],
 
             // Configuration CC.
-            Self::ConfigurationSet { parameter, size, value } => {
+            Self::ConfigurationSet {
+                parameter,
+                size,
+                value,
+            } => {
                 let mut out = vec![0x70, cmd::SET, *parameter, *size];
                 push_signed(&mut out, *value, *size);
                 out
             }
             Self::ConfigurationGet { parameter } => vec![0x70, cmd::GET, *parameter],
-            Self::ConfigurationReport { parameter, size, value } => {
+            Self::ConfigurationReport {
+                parameter,
+                size,
+                value,
+            } => {
                 let mut out = vec![0x70, cmd::REPORT, *parameter, *size];
                 push_signed(&mut out, *value, *size);
                 out
             }
 
             // Notification CC.
-            Self::NotificationReport { notification_type, event } => {
+            Self::NotificationReport {
+                notification_type,
+                event,
+            } => {
                 // v2+ report: reserved(0), reserved(0), type, status(0xFF), event…
                 vec![
                     0x71,
@@ -493,20 +518,27 @@ impl Command {
     #[must_use]
     pub fn to_value(&self) -> Option<Value> {
         match self {
-            Self::BasicSet(v) | Self::BasicReport(v) | Self::MultilevelSwitchSet(v)
+            Self::BasicSet(v)
+            | Self::BasicReport(v)
+            | Self::MultilevelSwitchSet(v)
             | Self::MultilevelSwitchReport(v) => Some(level_value(*v)),
 
             Self::BinarySwitchSet(b)
             | Self::BinarySwitchReport(b)
             | Self::BinarySensorReport(b) => Some(Value::Bool(*b)),
 
-            Self::MultilevelSensorReport { sensor_type, reading } => {
-                Some(sensor_value(*sensor_type, reading))
-            }
+            Self::MultilevelSensorReport {
+                sensor_type,
+                reading,
+            } => Some(sensor_value(*sensor_type, reading)),
 
             Self::MeterReport { reading, .. } => Some(Value::Measurement {
                 value: reading.value,
-                quantity: if reading.scale == 0 { Quantity::Energy } else { Quantity::Power },
+                quantity: if reading.scale == 0 {
+                    Quantity::Energy
+                } else {
+                    Quantity::Power
+                },
             }),
 
             Self::ThermostatSetpointSet { value, .. }
@@ -518,13 +550,20 @@ impl Command {
                 intensity: *value,
             }),
 
-            Self::NotificationReport { notification_type, event } => Some(Value::Notification {
+            Self::NotificationReport {
+                notification_type,
+                event,
+            } => Some(Value::Notification {
                 notification_type: *notification_type,
                 event: *event,
             }),
 
-            Self::ConfigurationSet { parameter, value, .. }
-            | Self::ConfigurationReport { parameter, value, .. } => Some(Value::ConfigParam {
+            Self::ConfigurationSet {
+                parameter, value, ..
+            }
+            | Self::ConfigurationReport {
+                parameter, value, ..
+            } => Some(Value::ConfigParam {
                 parameter: u16::from(*parameter),
                 value: *value,
             }),
@@ -552,18 +591,26 @@ impl Command {
 
     fn decode_binary_switch(cmd: u8, body: &[u8]) -> ZwaveResult<Self> {
         match cmd {
-            cmd::SET => Ok(Self::BinarySwitchSet(switch_to_bool(byte0(body, "switch")?))),
+            cmd::SET => Ok(Self::BinarySwitchSet(switch_to_bool(byte0(
+                body, "switch",
+            )?))),
             cmd::GET => Ok(Self::BinarySwitchGet),
-            cmd::REPORT => Ok(Self::BinarySwitchReport(switch_to_bool(byte0(body, "switch")?))),
+            cmd::REPORT => Ok(Self::BinarySwitchReport(switch_to_bool(byte0(
+                body, "switch",
+            )?))),
             _ => Err(unknown(0x25, cmd)),
         }
     }
 
     fn decode_multilevel_switch(cmd: u8, body: &[u8]) -> ZwaveResult<Self> {
         match cmd {
-            cmd::SET => Ok(Self::MultilevelSwitchSet(level_or_on(byte0(body, "level")?)?)),
+            cmd::SET => Ok(Self::MultilevelSwitchSet(level_or_on(byte0(
+                body, "level",
+            )?)?)),
             cmd::GET => Ok(Self::MultilevelSwitchGet),
-            cmd::REPORT => Ok(Self::MultilevelSwitchReport(level_or_on(byte0(body, "level")?)?)),
+            cmd::REPORT => Ok(Self::MultilevelSwitchReport(level_or_on(byte0(
+                body, "level",
+            )?)?)),
             cmd::START_LEVEL_CHANGE => {
                 let control = byte0(body, "control")?;
                 let dir = if control & 0x40 == 0 {
@@ -581,7 +628,9 @@ impl Command {
     fn decode_binary_sensor(cmd: u8, body: &[u8]) -> ZwaveResult<Self> {
         match cmd {
             cmd::GET => Ok(Self::BinarySensorGet),
-            cmd::REPORT => Ok(Self::BinarySensorReport(switch_to_bool(byte0(body, "sensor")?))),
+            cmd::REPORT => Ok(Self::BinarySensorReport(switch_to_bool(byte0(
+                body, "sensor",
+            )?))),
             _ => Err(unknown(0x30, cmd)),
         }
     }
@@ -592,7 +641,10 @@ impl Command {
             cmd::REPORT => {
                 let sensor_type = byte0(body, "sensor_type")?;
                 let reading = sensor_decode::decode(&body[1..])?;
-                Ok(Self::MultilevelSensorReport { sensor_type, reading })
+                Ok(Self::MultilevelSensorReport {
+                    sensor_type,
+                    reading,
+                })
             }
             _ => Err(unknown(0x31, cmd)),
         }
@@ -604,7 +656,10 @@ impl Command {
             cmd::REPORT => {
                 let meter_type = byte0(body, "meter_type")?;
                 let reading = sensor_decode::decode(&body[1..])?;
-                Ok(Self::MeterReport { meter_type, reading })
+                Ok(Self::MeterReport {
+                    meter_type,
+                    reading,
+                })
             }
             _ => Err(unknown(0x32, cmd)),
         }
@@ -614,12 +669,20 @@ impl Command {
         match cmd {
             cmd::SET => {
                 need(body, 2)?;
-                Ok(Self::ColorSwitchSet { component: body[0], value: body[1] })
+                Ok(Self::ColorSwitchSet {
+                    component: body[0],
+                    value: body[1],
+                })
             }
-            cmd::GET => Ok(Self::ColorSwitchGet { component: byte0(body, "component")? }),
+            cmd::GET => Ok(Self::ColorSwitchGet {
+                component: byte0(body, "component")?,
+            }),
             cmd::REPORT => {
                 need(body, 2)?;
-                Ok(Self::ColorSwitchReport { component: body[0], value: body[1] })
+                Ok(Self::ColorSwitchReport {
+                    component: body[0],
+                    value: body[1],
+                })
             }
             _ => Err(unknown(0x33, cmd)),
         }
@@ -627,11 +690,15 @@ impl Command {
 
     fn decode_thermostat_mode(cmd: u8, body: &[u8]) -> ZwaveResult<Self> {
         match cmd {
-            cmd::SET => Ok(Self::ThermostatModeSet(mode_from_byte(byte0(body, "thermostat_mode")?)?)),
+            cmd::SET => Ok(Self::ThermostatModeSet(mode_from_byte(byte0(
+                body,
+                "thermostat_mode",
+            )?)?)),
             cmd::GET => Ok(Self::ThermostatModeGet),
-            cmd::REPORT => {
-                Ok(Self::ThermostatModeReport(mode_from_byte(byte0(body, "thermostat_mode")?)?))
-            }
+            cmd::REPORT => Ok(Self::ThermostatModeReport(mode_from_byte(byte0(
+                body,
+                "thermostat_mode",
+            )?)?)),
             _ => Err(unknown(0x40, cmd)),
         }
     }
@@ -641,13 +708,21 @@ impl Command {
             cmd::SET => {
                 let setpoint_type = byte0(body, "setpoint_type")?;
                 let value = sensor_decode::decode(&body[1..])?;
-                Ok(Self::ThermostatSetpointSet { setpoint_type, value })
+                Ok(Self::ThermostatSetpointSet {
+                    setpoint_type,
+                    value,
+                })
             }
-            cmd::GET => Ok(Self::ThermostatSetpointGet { setpoint_type: byte0(body, "setpoint_type")? }),
+            cmd::GET => Ok(Self::ThermostatSetpointGet {
+                setpoint_type: byte0(body, "setpoint_type")?,
+            }),
             cmd::REPORT => {
                 let setpoint_type = byte0(body, "setpoint_type")?;
                 let value = sensor_decode::decode(&body[1..])?;
-                Ok(Self::ThermostatSetpointReport { setpoint_type, value })
+                Ok(Self::ThermostatSetpointReport {
+                    setpoint_type,
+                    value,
+                })
             }
             _ => Err(unknown(0x43, cmd)),
         }
@@ -660,15 +735,25 @@ impl Command {
                 let parameter = body[0];
                 let size = body[1] & 0x07;
                 let value = read_signed(&body[2..], size)?;
-                Ok(Self::ConfigurationSet { parameter, size, value })
+                Ok(Self::ConfigurationSet {
+                    parameter,
+                    size,
+                    value,
+                })
             }
-            cmd::GET => Ok(Self::ConfigurationGet { parameter: byte0(body, "parameter")? }),
+            cmd::GET => Ok(Self::ConfigurationGet {
+                parameter: byte0(body, "parameter")?,
+            }),
             cmd::REPORT => {
                 need(body, 2)?;
                 let parameter = body[0];
                 let size = body[1] & 0x07;
                 let value = read_signed(&body[2..], size)?;
-                Ok(Self::ConfigurationReport { parameter, size, value })
+                Ok(Self::ConfigurationReport {
+                    parameter,
+                    size,
+                    value,
+                })
             }
             _ => Err(unknown(0x70, cmd)),
         }
@@ -711,13 +796,19 @@ impl Command {
 // ---- shared helpers --------------------------------------------------------
 
 const fn unknown(command_class: u8, command: u8) -> ZwaveError {
-    ZwaveError::UnknownCommand { command_class, command }
+    ZwaveError::UnknownCommand {
+        command_class,
+        command,
+    }
 }
 
 const fn need(body: &[u8], n: usize) -> ZwaveResult<()> {
     if body.len() < n {
         // +2 accounts for the cc/cmd header already consumed.
-        Err(ZwaveError::Truncated { need: n + 2, got: body.len() + 2 })
+        Err(ZwaveError::Truncated {
+            need: n + 2,
+            got: body.len() + 2,
+        })
     } else {
         Ok(())
     }
@@ -732,8 +823,10 @@ fn byte0(body: &[u8], _field: &'static str) -> ZwaveResult<u8> {
 /// Map a Thermostat Mode byte to a modelled [`ThermostatMode`], rejecting
 /// unassigned values with `OutOfRange` per the crate's discrete-value convention.
 fn mode_from_byte(b: u8) -> ZwaveResult<ThermostatMode> {
-    ThermostatMode::from_u8(b)
-        .ok_or_else(|| ZwaveError::OutOfRange { field: "thermostat_mode", value: u32::from(b) })
+    ThermostatMode::from_u8(b).ok_or_else(|| ZwaveError::OutOfRange {
+        field: "thermostat_mode",
+        value: u32::from(b),
+    })
 }
 
 const fn bool_to_switch(on: bool) -> u8 {
@@ -750,7 +843,10 @@ fn level_or_on(v: u8) -> ZwaveResult<u8> {
     if v <= 99 || v == SWITCH_ON {
         Ok(v)
     } else {
-        Err(ZwaveError::OutOfRange { field: "level", value: u32::from(v) })
+        Err(ZwaveError::OutOfRange {
+            field: "level",
+            value: u32::from(v),
+        })
     }
 }
 
@@ -773,10 +869,19 @@ const fn sensor_value(sensor_type: u8, fp: &FixedPoint) -> Value {
         // 0x05 = Relative humidity.
         0x05 => Value::Humidity(fp.value),
         // 0x03 = Luminance.
-        0x03 => Value::Measurement { value: fp.value, quantity: Quantity::Luminance },
+        0x03 => Value::Measurement {
+            value: fp.value,
+            quantity: Quantity::Luminance,
+        },
         // 0x04 = Power.
-        0x04 => Value::Measurement { value: fp.value, quantity: Quantity::Power },
-        _ => Value::Measurement { value: fp.value, quantity: Quantity::Generic },
+        0x04 => Value::Measurement {
+            value: fp.value,
+            quantity: Quantity::Power,
+        },
+        _ => Value::Measurement {
+            value: fp.value,
+            quantity: Quantity::Generic,
+        },
     }
 }
 
@@ -786,7 +891,10 @@ const fn temperature_value(fp: &FixedPoint) -> Value {
     } else {
         TemperatureUnit::Celsius
     };
-    Value::Temperature { value: fp.value, unit }
+    Value::Temperature {
+        value: fp.value,
+        unit,
+    }
 }
 
 fn push_fixed(out: &mut Vec<u8>, fp: &FixedPoint) {
@@ -816,7 +924,10 @@ fn read_signed(bytes: &[u8], size: u8) -> ZwaveResult<i32> {
     }
     let size_us = size as usize;
     if bytes.len() < size_us {
-        return Err(ZwaveError::Truncated { need: size_us + 4, got: bytes.len() + 4 });
+        return Err(ZwaveError::Truncated {
+            need: size_us + 4,
+            got: bytes.len() + 4,
+        });
     }
     Ok(match size {
         1 => i32::from(bytes[0] as i8),
@@ -832,7 +943,10 @@ mod tests {
     fn roundtrip(cmd: Command) {
         let bytes = cmd.encode();
         let back = Command::decode(&bytes).expect("re-decodes");
-        assert_eq!(back, cmd, "round-trip mismatch for {cmd:?} via {bytes:02x?}");
+        assert_eq!(
+            back, cmd,
+            "round-trip mismatch for {cmd:?} via {bytes:02x?}"
+        );
     }
 
     #[test]
@@ -880,8 +994,14 @@ mod tests {
         roundtrip(Command::BinarySwitchGet);
         roundtrip(Command::BinarySwitchReport(true));
         // On is 0xFF, off is 0x00 per spec.
-        assert_eq!(Command::BinarySwitchSet(true).encode(), vec![0x25, 0x01, 0xFF]);
-        assert_eq!(Command::BinarySwitchSet(false).encode(), vec![0x25, 0x01, 0x00]);
+        assert_eq!(
+            Command::BinarySwitchSet(true).encode(),
+            vec![0x25, 0x01, 0xFF]
+        );
+        assert_eq!(
+            Command::BinarySwitchSet(false).encode(),
+            vec![0x25, 0x01, 0x00]
+        );
         // Any non-zero decodes as "on".
         assert_eq!(
             Command::decode(&[0x25, 0x03, 0x01]).expect("ok"),
@@ -932,7 +1052,10 @@ mod tests {
         let bytes = [0x31, 0x03, 0x01, 0x22, 0x00, 0xF4];
         let cmd = Command::decode(&bytes).expect("valid sensor report");
         match cmd {
-            Command::MultilevelSensorReport { sensor_type, reading } => {
+            Command::MultilevelSensorReport {
+                sensor_type,
+                reading,
+            } => {
                 assert_eq!(sensor_type, 0x01);
                 assert!((reading.value - 24.4).abs() < 1e-9);
             }
@@ -941,7 +1064,10 @@ mod tests {
         // value model: a temperature in Celsius.
         assert_eq!(
             cmd.to_value(),
-            Some(Value::Temperature { value: 24.4, unit: TemperatureUnit::Celsius })
+            Some(Value::Temperature {
+                value: 24.4,
+                unit: TemperatureUnit::Celsius
+            })
         );
         roundtrip(cmd);
     }
@@ -964,7 +1090,10 @@ mod tests {
         let bytes = [0x32, 0x03, 0x01, 0x64, 0x00, 0x00, 0x27, 0x10];
         let cmd = Command::decode(&bytes).expect("valid meter report");
         match cmd {
-            Command::MeterReport { meter_type, reading } => {
+            Command::MeterReport {
+                meter_type,
+                reading,
+            } => {
                 assert_eq!(meter_type, 0x01);
                 // 0x2710 = 10000, precision 3 => 10.0 kWh.
                 assert!((reading.value - 10.0).abs() < 1e-9);
@@ -976,12 +1105,25 @@ mod tests {
 
     #[test]
     fn color_switch_roundtrips() {
-        roundtrip(Command::ColorSwitchSet { component: 2, value: 200 });
+        roundtrip(Command::ColorSwitchSet {
+            component: 2,
+            value: 200,
+        });
         roundtrip(Command::ColorSwitchGet { component: 2 });
-        roundtrip(Command::ColorSwitchReport { component: 4, value: 0 });
+        roundtrip(Command::ColorSwitchReport {
+            component: 4,
+            value: 0,
+        });
         assert_eq!(
-            Command::ColorSwitchSet { component: 2, value: 200 }.to_value(),
-            Some(Value::ColorComponent { component: 2, intensity: 200 })
+            Command::ColorSwitchSet {
+                component: 2,
+                value: 200
+            }
+            .to_value(),
+            Some(Value::ColorComponent {
+                component: 2,
+                intensity: 200
+            })
         );
     }
 
@@ -990,7 +1132,10 @@ mod tests {
         let bytes = [0x43, 0x03, 0x01, 0x22, 0x00, 0xD2];
         let cmd = Command::decode(&bytes).expect("valid setpoint report");
         match cmd {
-            Command::ThermostatSetpointReport { setpoint_type, value } => {
+            Command::ThermostatSetpointReport {
+                setpoint_type,
+                value,
+            } => {
                 assert_eq!(setpoint_type, 0x01);
                 // 0x00D2 = 210, precision 1 => 21.0 °C.
                 assert!((value.value - 21.0).abs() < 1e-9);
@@ -1003,28 +1148,57 @@ mod tests {
 
     #[test]
     fn configuration_roundtrips_all_sizes() {
-        roundtrip(Command::ConfigurationSet { parameter: 3, size: 1, value: -5 });
-        roundtrip(Command::ConfigurationSet { parameter: 7, size: 2, value: 1000 });
-        roundtrip(Command::ConfigurationSet { parameter: 9, size: 4, value: -100_000 });
+        roundtrip(Command::ConfigurationSet {
+            parameter: 3,
+            size: 1,
+            value: -5,
+        });
+        roundtrip(Command::ConfigurationSet {
+            parameter: 7,
+            size: 2,
+            value: 1000,
+        });
+        roundtrip(Command::ConfigurationSet {
+            parameter: 9,
+            size: 4,
+            value: -100_000,
+        });
         roundtrip(Command::ConfigurationGet { parameter: 3 });
-        roundtrip(Command::ConfigurationReport { parameter: 3, size: 2, value: -1 });
+        roundtrip(Command::ConfigurationReport {
+            parameter: 3,
+            size: 2,
+            value: -1,
+        });
     }
 
     #[test]
     fn configuration_signed_byte_decode() {
         // parameter 3, size 1, value 0xFB = -5.
         let cmd = Command::decode(&[0x70, 0x03, 0x03, 0x01, 0xFB]).expect("ok");
-        assert_eq!(cmd, Command::ConfigurationReport { parameter: 3, size: 1, value: -5 });
+        assert_eq!(
+            cmd,
+            Command::ConfigurationReport {
+                parameter: 3,
+                size: 1,
+                value: -5
+            }
+        );
     }
 
     #[test]
     fn notification_report_roundtrips() {
         // smoke alarm (type 0x01), event "smoke detected" 0x02.
-        let cmd = Command::NotificationReport { notification_type: 0x01, event: 0x02 };
+        let cmd = Command::NotificationReport {
+            notification_type: 0x01,
+            event: 0x02,
+        };
         roundtrip(cmd);
         assert_eq!(
             cmd.to_value(),
-            Some(Value::Notification { notification_type: 0x01, event: 0x02 })
+            Some(Value::Notification {
+                notification_type: 0x01,
+                event: 0x02
+            })
         );
     }
 
@@ -1034,7 +1208,10 @@ mod tests {
             .expect("valid notification");
         assert_eq!(
             cmd,
-            Command::NotificationReport { notification_type: 0x07, event: 0x08 }
+            Command::NotificationReport {
+                notification_type: 0x07,
+                event: 0x08
+            }
         );
     }
 
@@ -1045,8 +1222,14 @@ mod tests {
         roundtrip(Command::BatteryReport(0));
         roundtrip(Command::BatteryReport(0xFF));
         // 0xFF maps to the BatteryLow value, not a percentage.
-        assert_eq!(Command::BatteryReport(0xFF).to_value(), Some(Value::BatteryLow));
-        assert_eq!(Command::BatteryReport(80).to_value(), Some(Value::BatteryPercent(80)));
+        assert_eq!(
+            Command::BatteryReport(0xFF).to_value(),
+            Some(Value::BatteryLow)
+        );
+        assert_eq!(
+            Command::BatteryReport(80).to_value(),
+            Some(Value::BatteryPercent(80))
+        );
     }
 
     #[test]
@@ -1061,11 +1244,20 @@ mod tests {
     #[test]
     fn truncated_payloads_are_rejected_not_panicked() {
         // Empty.
-        assert!(matches!(Command::decode(&[]), Err(ZwaveError::Truncated { .. })));
+        assert!(matches!(
+            Command::decode(&[]),
+            Err(ZwaveError::Truncated { .. })
+        ));
         // CC byte only.
-        assert!(matches!(Command::decode(&[0x20]), Err(ZwaveError::Truncated { .. })));
+        assert!(matches!(
+            Command::decode(&[0x20]),
+            Err(ZwaveError::Truncated { .. })
+        ));
         // Basic Set with no value byte.
-        assert!(matches!(Command::decode(&[0x20, 0x01]), Err(ZwaveError::Truncated { .. })));
+        assert!(matches!(
+            Command::decode(&[0x20, 0x01]),
+            Err(ZwaveError::Truncated { .. })
+        ));
         // Sensor report claiming size 4 with no value bytes.
         assert!(matches!(
             Command::decode(&[0x31, 0x03, 0x01, 0x0C]),

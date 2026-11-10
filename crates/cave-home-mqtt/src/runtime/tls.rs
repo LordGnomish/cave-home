@@ -2,9 +2,9 @@
 
 use std::io::{self, BufReader, ErrorKind};
 use std::sync::Arc;
-use tokio_rustls::rustls::pki_types::CertificateDer;
-use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
+use tokio_rustls::rustls::ServerConfig;
+use tokio_rustls::rustls::pki_types::CertificateDer;
 
 /// Build a [`TlsAcceptor`] from a PEM certificate chain and private key.
 ///
@@ -16,7 +16,10 @@ pub fn acceptor_from_pem(cert_pem: &str, key_pem: &str) -> io::Result<TlsAccepto
         rustls_pemfile::certs(&mut BufReader::new(cert_pem.as_bytes()))
             .collect::<Result<_, _>>()?;
     if certs.is_empty() {
-        return Err(io::Error::new(ErrorKind::InvalidInput, "no certificates in PEM"));
+        return Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            "no certificates in PEM",
+        ));
     }
     let key = rustls_pemfile::private_key(&mut BufReader::new(key_pem.as_bytes()))?
         .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "no private key in PEM"))?;

@@ -8,7 +8,7 @@ use cave_home_kube_proxy_rs::core::model::{
     Endpoint, EndpointConditions, EndpointPort, EndpointSlice, ExternalTrafficPolicy, Protocol,
     Service, ServicePort, ServiceType, SessionAffinity,
 };
-use cave_home_kube_proxy_rs::core::validate::{validate_service, validate_slice, ValidationError};
+use cave_home_kube_proxy_rs::core::validate::{ValidationError, validate_service, validate_slice};
 
 fn ip(s: &str) -> IpAddr {
     s.parse().expect("test ip literal parses")
@@ -38,7 +38,11 @@ fn base_slice() -> EndpointSlice {
         namespace: "ns1".into(),
         service_name: "web".into(),
         slice_name: "web-aaa".into(),
-        ports: vec![EndpointPort { name: "http".into(), protocol: Protocol::Tcp, port: 8080 }],
+        ports: vec![EndpointPort {
+            name: "http".into(),
+            protocol: Protocol::Tcp,
+            port: 8080,
+        }],
         endpoints: vec![Endpoint {
             addresses: vec![ip("10.1.0.1")],
             conditions: EndpointConditions::default(),
@@ -58,35 +62,50 @@ fn valid_clusterip_service_passes() {
 fn empty_namespace_rejected() {
     let mut s = base_service();
     s.namespace = String::new();
-    assert_eq!(validate_service(&s), Err(ValidationError::EmptyServiceIdentity));
+    assert_eq!(
+        validate_service(&s),
+        Err(ValidationError::EmptyServiceIdentity)
+    );
 }
 
 #[test]
 fn empty_name_rejected() {
     let mut s = base_service();
     s.name = String::new();
-    assert_eq!(validate_service(&s), Err(ValidationError::EmptyServiceIdentity));
+    assert_eq!(
+        validate_service(&s),
+        Err(ValidationError::EmptyServiceIdentity)
+    );
 }
 
 #[test]
 fn clusterip_with_no_ports_rejected() {
     let mut s = base_service();
     s.ports.clear();
-    assert!(matches!(validate_service(&s), Err(ValidationError::NoPorts { .. })));
+    assert!(matches!(
+        validate_service(&s),
+        Err(ValidationError::NoPorts { .. })
+    ));
 }
 
 #[test]
 fn zero_service_port_rejected() {
     let mut s = base_service();
     s.ports[0].port = 0;
-    assert!(matches!(validate_service(&s), Err(ValidationError::InvalidServicePort { .. })));
+    assert!(matches!(
+        validate_service(&s),
+        Err(ValidationError::InvalidServicePort { .. })
+    ));
 }
 
 #[test]
 fn zero_target_port_rejected() {
     let mut s = base_service();
     s.ports[0].target_port = 0;
-    assert!(matches!(validate_service(&s), Err(ValidationError::InvalidTargetPort { .. })));
+    assert!(matches!(
+        validate_service(&s),
+        Err(ValidationError::InvalidTargetPort { .. })
+    ));
 }
 
 #[test]
@@ -94,7 +113,10 @@ fn nodeport_service_without_nodeport_rejected() {
     let mut s = base_service();
     s.service_type = ServiceType::NodePort;
     s.ports[0].node_port = None;
-    assert!(matches!(validate_service(&s), Err(ValidationError::MissingNodePort { .. })));
+    assert!(matches!(
+        validate_service(&s),
+        Err(ValidationError::MissingNodePort { .. })
+    ));
 }
 
 #[test]
@@ -115,7 +137,10 @@ fn duplicate_port_names_rejected() {
         target_port: 8081,
         node_port: None,
     });
-    assert!(matches!(validate_service(&s), Err(ValidationError::DuplicatePortName { .. })));
+    assert!(matches!(
+        validate_service(&s),
+        Err(ValidationError::DuplicatePortName { .. })
+    ));
 }
 
 #[test]
@@ -144,21 +169,30 @@ fn externalname_service_skips_port_checks() {
 fn slice_with_empty_service_name_rejected() {
     let mut sl = base_slice();
     sl.service_name = String::new();
-    assert!(matches!(validate_slice(&sl), Err(ValidationError::SliceMissingService { .. })));
+    assert!(matches!(
+        validate_slice(&sl),
+        Err(ValidationError::SliceMissingService { .. })
+    ));
 }
 
 #[test]
 fn slice_endpoint_without_address_rejected() {
     let mut sl = base_slice();
     sl.endpoints[0].addresses.clear();
-    assert!(matches!(validate_slice(&sl), Err(ValidationError::EndpointWithoutAddress { .. })));
+    assert!(matches!(
+        validate_slice(&sl),
+        Err(ValidationError::EndpointWithoutAddress { .. })
+    ));
 }
 
 #[test]
 fn slice_zero_port_rejected() {
     let mut sl = base_slice();
     sl.ports[0].port = 0;
-    assert!(matches!(validate_slice(&sl), Err(ValidationError::InvalidEndpointPort { .. })));
+    assert!(matches!(
+        validate_slice(&sl),
+        Err(ValidationError::InvalidEndpointPort { .. })
+    ));
 }
 
 #[test]

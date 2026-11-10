@@ -31,7 +31,11 @@ impl Volume {
     /// A volume, clamped into 0..=100 so it can never be invalid.
     #[must_use]
     pub const fn new(level: u8) -> Self {
-        Self(if level > MAX_VOLUME { MAX_VOLUME } else { level })
+        Self(if level > MAX_VOLUME {
+            MAX_VOLUME
+        } else {
+            level
+        })
     }
 
     /// The 0..=100 level.
@@ -410,7 +414,11 @@ mod tests {
         assert_eq!(p.state(), PlayState::Paused);
         p.end_announcement();
         assert!(!p.announcement_active());
-        assert_eq!(p.state(), PlayState::Playing, "music that was playing resumes");
+        assert_eq!(
+            p.state(),
+            PlayState::Playing,
+            "music that was playing resumes"
+        );
         assert_eq!(p.elapsed_secs(), 45, "resumes at the same position");
     }
 
@@ -442,7 +450,11 @@ mod tests {
     #[test]
     fn transition_prefs_round_trip() {
         let mut p = Player::new("Office");
-        let prefs = TransitionPrefs { crossfade: true, crossfade_secs: 5, gapless: false };
+        let prefs = TransitionPrefs {
+            crossfade: true,
+            crossfade_secs: 5,
+            gapless: false,
+        };
         p.set_transition(prefs);
         assert_eq!(p.transition(), prefs);
     }
@@ -473,7 +485,11 @@ mod tests {
         let plan = group.fan_out(&leader_queue);
         assert_eq!(plan.len(), 2);
         for (_room, q) in &plan {
-            assert_eq!(*q, ids(&["a", "b"]), "every room gets the same shared queue");
+            assert_eq!(
+                *q,
+                ids(&["a", "b"]),
+                "every room gets the same shared queue"
+            );
         }
     }
 

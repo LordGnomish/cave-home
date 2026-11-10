@@ -17,11 +17,11 @@ use crate::admission::{AdmissionChain, AdmissionRequest, Operation};
 use crate::audit::{AuditEvent, AuditSink};
 use crate::authn::{AnonymousAuthenticator, AuthenticatorChain};
 use crate::discovery::{self, ApiGroup, ApiResource, GroupVersionEntry};
-use crate::metrics::Metrics;
 use crate::gvk::{self, GroupVersionResource};
 use crate::http::{Method, Request, Response};
-use crate::json::{self, obj, Value};
+use crate::json::{self, Value, obj};
 use crate::meta;
+use crate::metrics::Metrics;
 use crate::path::{self, ResourcePath};
 use crate::rbac::{Attributes, Decision, RbacAuthorizer, UserInfo};
 use crate::registry::{ListOptions, ListResult, Registry, WatchEvent, WatchEventKind};
@@ -158,8 +158,10 @@ impl ApiServer {
         // 0b. Metrics scrape endpoint (served before auth for node-local scraping).
         if req.path() == "/metrics" {
             event.verb = "get".to_string();
-            return Ok(Response::new(200)
-                .with_body("text/plain; version=0.0.4", self.metrics.to_prometheus().into_bytes()));
+            return Ok(Response::new(200).with_body(
+                "text/plain; version=0.0.4",
+                self.metrics.to_prometheus().into_bytes(),
+            ));
         }
 
         // 1. Authentication.
@@ -261,7 +263,8 @@ impl ApiServer {
             }
             "create" => {
                 let body = decode_body(req, gvr, rp)?;
-                let admitted = self.admit(Operation::Create, gvr, &rp.namespace, Some(body), None)?;
+                let admitted =
+                    self.admit(Operation::Create, gvr, &rp.namespace, Some(body), None)?;
                 let object = admitted
                     .object
                     .ok_or_else(|| Status::invalid("admission removed the object"))?;
@@ -275,7 +278,8 @@ impl ApiServer {
                     return Ok(object_response(200, &updated));
                 }
                 let old = self.registry.get(gvr, &rp.namespace, &rp.name).ok();
-                let admitted = self.admit(Operation::Update, gvr, &rp.namespace, Some(body), old)?;
+                let admitted =
+                    self.admit(Operation::Update, gvr, &rp.namespace, Some(body), old)?;
                 let object = admitted
                     .object
                     .ok_or_else(|| Status::invalid("admission removed the object"))?;
@@ -296,8 +300,13 @@ impl ApiServer {
                     // approximated by merge) and the default.
                     crate::patch::apply_merge_patch(&existing, &body)
                 };
-                let admitted =
-                    self.admit(Operation::Update, gvr, &rp.namespace, Some(patched), Some(existing))?;
+                let admitted = self.admit(
+                    Operation::Update,
+                    gvr,
+                    &rp.namespace,
+                    Some(patched),
+                    Some(existing),
+                )?;
                 let object = admitted
                     .object
                     .ok_or_else(|| Status::invalid("admission removed the object"))?;
@@ -334,7 +343,7 @@ fn resolve_verb(method: &Method, rp: &ResourcePath, watch: bool) -> Result<&'sta
             return Err(Status::new(
                 crate::status::StatusReason::MethodNotAllowed,
                 format!("{} not allowed on this resource path", method.as_str()),
-            ))
+            ));
         }
     };
     Ok(verb)
@@ -404,7 +413,7 @@ fn decode_body(req: &Request, gvr: &GroupVersionResource, rp: &ResourcePath) -> 
                     return Err(Status::bad_request(format!(
                         "the kind of the provided object ({kind}) does not match the kind of the resource ({})",
                         gvk.kind
-                    )))
+                    )));
                 }
                 None => {}
             }
@@ -570,14 +579,22 @@ fn api_versions_object() -> Value {
         ("kind", Value::from("APIVersions")),
         (
             "versions",
-            Value::Array(discovery::api_versions().into_iter().map(Value::from).collect()),
+            Value::Array(
+                discovery::api_versions()
+                    .into_iter()
+                    .map(Value::from)
+                    .collect(),
+            ),
         ),
     ])
 }
 
 /// `APIGroupList` served at `/apis`.
 fn api_group_list_object() -> Value {
-    let groups = discovery::api_groups().iter().map(api_group_object).collect();
+    let groups = discovery::api_groups()
+        .iter()
+        .map(api_group_object)
+        .collect();
     obj([
         ("kind", Value::from("APIGroupList")),
         ("apiVersion", Value::from("v1")),
@@ -597,7 +614,10 @@ fn api_group_object(g: &ApiGroup) -> Value {
     obj([
         ("name", Value::from(g.name.clone())),
         ("versions", Value::Array(versions)),
-        ("preferredVersion", group_version_entry_object(&g.preferred_version)),
+        (
+            "preferredVersion",
+            group_version_entry_object(&g.preferred_version),
+        ),
     ])
 }
 
@@ -660,10 +680,16 @@ fn openapi_v2_object() -> Value {
                 format!("{base}/namespaces/{{namespace}}/{}/{{name}}", k.resource),
             )
         } else {
-            (format!("{base}/{}", k.resource), format!("{base}/{}/{{name}}", k.resource))
+            (
+                format!("{base}/{}", k.resource),
+                format!("{base}/{}/{{name}}", k.resource),
+            )
         };
         paths.insert(collection, openapi_path_item(&["get", "post"], k.kind));
-        paths.insert(item, openapi_path_item(&["get", "put", "patch", "delete"], k.kind));
+        paths.insert(
+            item,
+            openapi_path_item(&["get", "put", "patch", "delete"], k.kind),
+        );
     }
 
     obj([
@@ -710,7 +736,7 @@ fn version_object() -> Value {
 mod tests {
     use super::*;
     use crate::gvk::GroupVersionResource;
-    use crate::json::{obj, Value};
+    use crate::json::{Value, obj};
     use crate::registry::ListResult;
     use crate::status::Status;
 
@@ -723,7 +749,10 @@ mod tests {
         assert_eq!(v.pointer("status"), Some(&Value::from("Failure")));
         assert_eq!(v.pointer("reason"), Some(&Value::from("NotFound")));
         assert_eq!(v.pointer("code"), Some(&Value::from(404_i64)));
-        assert_eq!(v.pointer("message"), Some(&Value::from("pods \"x\" not found")));
+        assert_eq!(
+            v.pointer("message"),
+            Some(&Value::from("pods \"x\" not found"))
+        );
     }
 
     #[test]
@@ -748,8 +777,14 @@ mod tests {
         let v = list_object(&pods, &result);
         assert_eq!(v.pointer("kind"), Some(&Value::from("PodList")));
         assert_eq!(v.pointer("apiVersion"), Some(&Value::from("v1")));
-        assert_eq!(v.pointer("metadata.resourceVersion"), Some(&Value::from("7")));
-        assert_eq!(v.pointer("items").and_then(Value::as_array).map(<[_]>::len), Some(2));
+        assert_eq!(
+            v.pointer("metadata.resourceVersion"),
+            Some(&Value::from("7"))
+        );
+        assert_eq!(
+            v.pointer("items").and_then(Value::as_array).map(<[_]>::len),
+            Some(2)
+        );
     }
 
     #[test]
@@ -802,24 +837,44 @@ mod tests {
     }
 
     fn pod_json(ns: &str, name: &str) -> String {
-        format!(r#"{{"apiVersion":"v1","kind":"Pod","metadata":{{"name":"{name}","namespace":"{ns}"}}}}"#)
+        format!(
+            r#"{{"apiVersion":"v1","kind":"Pod","metadata":{{"name":"{name}","namespace":"{ns}"}}}}"#
+        )
     }
 
     #[test]
     fn create_returns_201_with_resource_version() {
         let mut s = ApiServer::new();
-        let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        let resp = s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "nginx"),
+        ));
         assert_eq!(resp.status, 201);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
-        assert_eq!(v.pointer("metadata.resourceVersion"), Some(&Value::from("1")));
+        assert_eq!(
+            v.pointer("metadata.resourceVersion"),
+            Some(&Value::from("1"))
+        );
         assert_eq!(v.pointer("metadata.name"), Some(&Value::from("nginx")));
     }
 
     #[test]
     fn get_existing_returns_200() {
         let mut s = ApiServer::new();
-        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
-        let resp = s.handle(&req("GET", "/api/v1/namespaces/default/pods/nginx", "application/json", ""));
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "nginx"),
+        ));
+        let resp = s.handle(&req(
+            "GET",
+            "/api/v1/namespaces/default/pods/nginx",
+            "application/json",
+            "",
+        ));
         assert_eq!(resp.status, 200);
         assert!(body_str(&resp).contains("\"name\":\"nginx\""));
     }
@@ -827,7 +882,12 @@ mod tests {
     #[test]
     fn get_missing_returns_404_status() {
         let mut s = ApiServer::new();
-        let resp = s.handle(&req("GET", "/api/v1/namespaces/default/pods/ghost", "application/json", ""));
+        let resp = s.handle(&req(
+            "GET",
+            "/api/v1/namespaces/default/pods/ghost",
+            "application/json",
+            "",
+        ));
         assert_eq!(resp.status, 404);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
         assert_eq!(v.pointer("kind"), Some(&Value::from("Status")));
@@ -837,44 +897,103 @@ mod tests {
     #[test]
     fn list_returns_podlist_with_items() {
         let mut s = ApiServer::new();
-        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "a")));
-        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "b")));
-        let resp = s.handle(&req("GET", "/api/v1/namespaces/default/pods", "application/json", ""));
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "a"),
+        ));
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "b"),
+        ));
+        let resp = s.handle(&req(
+            "GET",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            "",
+        ));
         assert_eq!(resp.status, 200);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
         assert_eq!(v.pointer("kind"), Some(&Value::from("PodList")));
-        assert_eq!(v.pointer("items").and_then(Value::as_array).map(<[_]>::len), Some(2));
+        assert_eq!(
+            v.pointer("items").and_then(Value::as_array).map(<[_]>::len),
+            Some(2)
+        );
     }
 
     #[test]
     fn list_honours_label_selector() {
         let mut s = ApiServer::new();
         let labeled = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"web","namespace":"default","labels":{"app":"web"}}}"#;
-        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", labeled));
-        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "db")));
-        let resp = s.handle(&req("GET", "/api/v1/namespaces/default/pods?labelSelector=app%3Dweb", "application/json", ""));
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            labeled,
+        ));
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "db"),
+        ));
+        let resp = s.handle(&req(
+            "GET",
+            "/api/v1/namespaces/default/pods?labelSelector=app%3Dweb",
+            "application/json",
+            "",
+        ));
         let v = crate::json::parse(&body_str(&resp)).expect("json");
-        assert_eq!(v.pointer("items").and_then(Value::as_array).map(<[_]>::len), Some(1));
+        assert_eq!(
+            v.pointer("items").and_then(Value::as_array).map(<[_]>::len),
+            Some(1)
+        );
     }
 
     #[test]
     fn update_bumps_resource_version() {
         let mut s = ApiServer::new();
-        let created = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        let created = s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "nginx"),
+        ));
         let body = body_str(&created);
-        let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx", "application/json", &body));
+        let resp = s.handle(&req(
+            "PUT",
+            "/api/v1/namespaces/default/pods/nginx",
+            "application/json",
+            &body,
+        ));
         assert_eq!(resp.status, 200);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
-        assert_eq!(v.pointer("metadata.resourceVersion"), Some(&Value::from("2")));
+        assert_eq!(
+            v.pointer("metadata.resourceVersion"),
+            Some(&Value::from("2"))
+        );
     }
 
     #[test]
     fn update_with_stale_rv_returns_409() {
         let mut s = ApiServer::new();
-        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "nginx"),
+        ));
         // Stale rv on the PUT body.
         let stale = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default","resourceVersion":"999"}}"#;
-        let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx", "application/json", stale));
+        let resp = s.handle(&req(
+            "PUT",
+            "/api/v1/namespaces/default/pods/nginx",
+            "application/json",
+            stale,
+        ));
         assert_eq!(resp.status, 409);
     }
 
@@ -882,7 +1001,12 @@ mod tests {
     fn merge_patch_updates_field() {
         let mut s = ApiServer::new();
         let with_spec = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default"},"spec":{"replicas":1}}"#;
-        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", with_spec));
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            with_spec,
+        ));
         let resp = s.handle(&req(
             "PATCH",
             "/api/v1/namespaces/default/pods/nginx",
@@ -898,7 +1022,12 @@ mod tests {
     fn json_patch_replaces_field() {
         let mut s = ApiServer::new();
         let with_spec = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default"},"spec":{"replicas":1}}"#;
-        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", with_spec));
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            with_spec,
+        ));
         let resp = s.handle(&req(
             "PATCH",
             "/api/v1/namespaces/default/pods/nginx",
@@ -913,24 +1042,49 @@ mod tests {
     #[test]
     fn delete_returns_200_and_removes() {
         let mut s = ApiServer::new();
-        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
-        let del = s.handle(&req("DELETE", "/api/v1/namespaces/default/pods/nginx", "application/json", ""));
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "nginx"),
+        ));
+        let del = s.handle(&req(
+            "DELETE",
+            "/api/v1/namespaces/default/pods/nginx",
+            "application/json",
+            "",
+        ));
         assert_eq!(del.status, 200);
-        let get = s.handle(&req("GET", "/api/v1/namespaces/default/pods/nginx", "application/json", ""));
+        let get = s.handle(&req(
+            "GET",
+            "/api/v1/namespaces/default/pods/nginx",
+            "application/json",
+            "",
+        ));
         assert_eq!(get.status, 404);
     }
 
     #[test]
     fn unknown_resource_returns_404() {
         let mut s = ApiServer::new();
-        let resp = s.handle(&req("GET", "/apis/example.com/v1/widgets", "application/json", ""));
+        let resp = s.handle(&req(
+            "GET",
+            "/apis/example.com/v1/widgets",
+            "application/json",
+            "",
+        ));
         assert_eq!(resp.status, 404);
     }
 
     #[test]
     fn put_on_collection_is_405() {
         let mut s = ApiServer::new();
-        let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods", "application/json", "{}"));
+        let resp = s.handle(&req(
+            "PUT",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            "{}",
+        ));
         assert_eq!(resp.status, 405);
     }
 
@@ -943,8 +1097,14 @@ mod tests {
     fn create_rejects_kind_mismatch_400() {
         let mut s = ApiServer::new();
         // POST a Service body to the pods endpoint.
-        let svc = r#"{"apiVersion":"v1","kind":"Service","metadata":{"name":"x","namespace":"default"}}"#;
-        let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", svc));
+        let svc =
+            r#"{"apiVersion":"v1","kind":"Service","metadata":{"name":"x","namespace":"default"}}"#;
+        let resp = s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            svc,
+        ));
         assert_eq!(resp.status, 400);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
         assert_eq!(v.pointer("reason"), Some(&Value::from("BadRequest")));
@@ -955,7 +1115,12 @@ mod tests {
         let mut s = ApiServer::new();
         // Right kind, wrong apiVersion (apps/v1 on a core/v1 pods endpoint).
         let body = r#"{"apiVersion":"apps/v1","kind":"Pod","metadata":{"name":"x","namespace":"default"}}"#;
-        let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", body));
+        let resp = s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            body,
+        ));
         assert_eq!(resp.status, 400);
     }
 
@@ -965,7 +1130,12 @@ mod tests {
         // endpoint supplies the GVK); only an explicit *wrong* value is rejected.
         let mut s = ApiServer::new();
         let body = r#"{"metadata":{"name":"x","namespace":"default"}}"#;
-        let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", body));
+        let resp = s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            body,
+        ));
         assert_eq!(resp.status, 201);
     }
 
@@ -973,12 +1143,21 @@ mod tests {
     fn create_rejects_namespace_conflict_400() {
         let mut s = ApiServer::new();
         // URL namespace is "default" but the body says "other".
-        let body = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"x","namespace":"other"}}"#;
-        let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", body));
+        let body =
+            r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"x","namespace":"other"}}"#;
+        let resp = s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            body,
+        ));
         assert_eq!(resp.status, 400);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
         assert!(
-            v.pointer("message").and_then(Value::as_str).unwrap_or("").contains("namespace"),
+            v.pointer("message")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .contains("namespace"),
             "msg: {:?}",
             v.pointer("message")
         );
@@ -989,23 +1168,45 @@ mod tests {
         // A body with no namespace inherits the URL namespace (no conflict).
         let mut s = ApiServer::new();
         let body = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"x"}}"#;
-        let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", body));
+        let resp = s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            body,
+        ));
         assert_eq!(resp.status, 201);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
-        assert_eq!(v.pointer("metadata.namespace"), Some(&Value::from("default")));
+        assert_eq!(
+            v.pointer("metadata.namespace"),
+            Some(&Value::from("default"))
+        );
     }
 
     #[test]
     fn update_rejects_name_mismatch_400() {
         let mut s = ApiServer::new();
-        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "nginx"),
+        ));
         // PUT to /pods/nginx with a body naming a different object.
-        let body = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"other","namespace":"default"}}"#;
-        let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx", "application/json", body));
+        let body =
+            r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"other","namespace":"default"}}"#;
+        let resp = s.handle(&req(
+            "PUT",
+            "/api/v1/namespaces/default/pods/nginx",
+            "application/json",
+            body,
+        ));
         assert_eq!(resp.status, 400);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
         assert!(
-            v.pointer("message").and_then(Value::as_str).unwrap_or("").contains("name"),
+            v.pointer("message")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .contains("name"),
             "msg: {:?}",
             v.pointer("message")
         );
@@ -1014,18 +1215,38 @@ mod tests {
     #[test]
     fn update_allows_matching_name() {
         let mut s = ApiServer::new();
-        let created = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        let created = s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "nginx"),
+        ));
         let body = body_str(&created);
-        let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx", "application/json", &body));
+        let resp = s.handle(&req(
+            "PUT",
+            "/api/v1/namespaces/default/pods/nginx",
+            "application/json",
+            &body,
+        ));
         assert_eq!(resp.status, 200);
     }
 
     #[test]
     fn update_rejects_kind_mismatch_400() {
         let mut s = ApiServer::new();
-        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "nginx"),
+        ));
         let body = r#"{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"nginx","namespace":"default"}}"#;
-        let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx", "application/json", body));
+        let resp = s.handle(&req(
+            "PUT",
+            "/api/v1/namespaces/default/pods/nginx",
+            "application/json",
+            body,
+        ));
         assert_eq!(resp.status, 400);
     }
 
@@ -1033,7 +1254,12 @@ mod tests {
     fn create_rejects_non_object_body_400() {
         // A create body must be a JSON object, not an array/scalar.
         let mut s = ApiServer::new();
-        let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", "[1,2,3]"));
+        let resp = s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            "[1,2,3]",
+        ));
         assert_eq!(resp.status, 400);
     }
 
@@ -1041,9 +1267,19 @@ mod tests {
     fn status_subresource_update_rejects_name_mismatch_400() {
         let mut s = ApiServer::new();
         let with_spec = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default"},"spec":{"replicas":1}}"#;
-        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", with_spec));
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            with_spec,
+        ));
         let body = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"other","namespace":"default"},"status":{"phase":"Running"}}"#;
-        let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx/status", "application/json", body));
+        let resp = s.handle(&req(
+            "PUT",
+            "/api/v1/namespaces/default/pods/nginx/status",
+            "application/json",
+            body,
+        ));
         assert_eq!(resp.status, 400);
     }
 
@@ -1065,7 +1301,11 @@ mod tests {
     fn rbac_server() -> ApiServer {
         let reader = ClusterRole {
             name: "pod-reader".to_string(),
-            rules: vec![PolicyRule::resource_rule(&[""], &["pods"], &["get", "list"])],
+            rules: vec![PolicyRule::resource_rule(
+                &[""],
+                &["pods"],
+                &["get", "list"],
+            )],
         };
         let binding = ClusterRoleBinding {
             name: "alice-reader".to_string(),
@@ -1095,7 +1335,12 @@ mod tests {
                 crate::json::parse(&pod_json("default", "nginx")).expect("json"),
             )
             .expect("seed");
-        let resp = s.handle(&req_auth("GET", "/api/v1/namespaces/default/pods/nginx", "alice-token", ""));
+        let resp = s.handle(&req_auth(
+            "GET",
+            "/api/v1/namespaces/default/pods/nginx",
+            "alice-token",
+            "",
+        ));
         assert_eq!(resp.status, 200);
     }
 
@@ -1117,14 +1362,24 @@ mod tests {
     #[test]
     fn missing_credentials_is_401_when_anonymous_disabled() {
         let mut s = rbac_server();
-        let resp = s.handle(&req("GET", "/api/v1/namespaces/default/pods", "application/json", ""));
+        let resp = s.handle(&req(
+            "GET",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            "",
+        ));
         assert_eq!(resp.status, 401);
     }
 
     #[test]
     fn invalid_token_is_401() {
         let mut s = rbac_server();
-        let resp = s.handle(&req_auth("GET", "/api/v1/namespaces/default/pods", "bogus", ""));
+        let resp = s.handle(&req_auth(
+            "GET",
+            "/api/v1/namespaces/default/pods",
+            "bogus",
+            "",
+        ));
         assert_eq!(resp.status, 401);
     }
 
@@ -1142,7 +1397,11 @@ mod tests {
         // because the authn chain stamps that group onto every logged-in identity.
         let reader = ClusterRole {
             name: "pod-reader".to_string(),
-            rules: vec![PolicyRule::resource_rule(&[""], &["pods"], &["get", "list"])],
+            rules: vec![PolicyRule::resource_rule(
+                &[""],
+                &["pods"],
+                &["get", "list"],
+            )],
         };
         let binding = ClusterRoleBinding {
             name: "authenticated-readers".to_string(),
@@ -1160,7 +1419,12 @@ mod tests {
         let mut s = ApiServer::new()
             .with_authn(authn)
             .with_authz(Authorization::Rbac(authz));
-        let resp = s.handle(&req_auth("GET", "/api/v1/namespaces/default/pods", "bob-token", ""));
+        let resp = s.handle(&req_auth(
+            "GET",
+            "/api/v1/namespaces/default/pods",
+            "bob-token",
+            "",
+        ));
         assert_eq!(resp.status, 200);
     }
 
@@ -1169,14 +1433,33 @@ mod tests {
     #[test]
     fn metrics_endpoint_exposes_prometheus_text() {
         let mut s = ApiServer::new();
-        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
-        s.handle(&req("GET", "/api/v1/namespaces/default/pods/ghost", "application/json", ""));
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "nginx"),
+        ));
+        s.handle(&req(
+            "GET",
+            "/api/v1/namespaces/default/pods/ghost",
+            "application/json",
+            "",
+        ));
         let resp = s.handle(&req("GET", "/metrics", "text/plain", ""));
         assert_eq!(resp.status, 200);
-        assert_eq!(resp.headers.get("content-type"), Some("text/plain; version=0.0.4"));
+        assert_eq!(
+            resp.headers.get("content-type"),
+            Some("text/plain; version=0.0.4")
+        );
         let body = body_str(&resp);
-        assert!(body.contains("apiserver_request_total{verb=\"create\",code=\"201\"} 1"), "body: {body}");
-        assert!(body.contains("apiserver_request_total{verb=\"get\",code=\"404\"} 1"), "body: {body}");
+        assert!(
+            body.contains("apiserver_request_total{verb=\"create\",code=\"201\"} 1"),
+            "body: {body}"
+        );
+        assert!(
+            body.contains("apiserver_request_total{verb=\"get\",code=\"404\"} 1"),
+            "body: {body}"
+        );
     }
 
     #[test]
@@ -1195,7 +1478,12 @@ mod tests {
     fn audit_records_successful_request() {
         let sink = Arc::new(MemoryAuditSink::new());
         let mut s = ApiServer::new().with_audit(sink.clone());
-        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "nginx"),
+        ));
         assert_eq!(sink.len(), 1);
         let ev = &sink.events()[0];
         assert_eq!(ev.verb, "create");
@@ -1209,7 +1497,12 @@ mod tests {
     fn audit_records_errors() {
         let sink = Arc::new(MemoryAuditSink::new());
         let mut s = ApiServer::new().with_audit(sink.clone());
-        s.handle(&req("GET", "/api/v1/namespaces/default/pods/ghost", "application/json", ""));
+        s.handle(&req(
+            "GET",
+            "/api/v1/namespaces/default/pods/ghost",
+            "application/json",
+            "",
+        ));
         assert_eq!(sink.len(), 1);
         assert_eq!(sink.events()[0].response_code, 404);
         assert_eq!(sink.events()[0].verb, "get");
@@ -1220,8 +1513,18 @@ mod tests {
     #[test]
     fn watch_streams_added_events_as_chunked() {
         let mut s = ApiServer::new();
-        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "a")));
-        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "b")));
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "a"),
+        ));
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "b"),
+        ));
         let resp = s.handle(&req(
             "GET",
             "/api/v1/namespaces/default/pods?watch=true&resourceVersion=0",
@@ -1240,8 +1543,18 @@ mod tests {
     #[test]
     fn watch_since_resource_version_returns_only_newer() {
         let mut s = ApiServer::new();
-        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "a"))); // rv1
-        s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "b"))); // rv2
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "a"),
+        )); // rv1
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "b"),
+        )); // rv2
         let resp = s.handle(&req(
             "GET",
             "/api/v1/namespaces/default/pods?watch=1&resourceVersion=1",
@@ -1257,10 +1570,25 @@ mod tests {
     #[test]
     fn watch_reports_modified_and_deleted() {
         let mut s = ApiServer::new();
-        let created = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "a")));
+        let created = s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "a"),
+        ));
         let body = body_str(&created);
-        s.handle(&req("PUT", "/api/v1/namespaces/default/pods/a", "application/json", &body));
-        s.handle(&req("DELETE", "/api/v1/namespaces/default/pods/a", "application/json", ""));
+        s.handle(&req(
+            "PUT",
+            "/api/v1/namespaces/default/pods/a",
+            "application/json",
+            &body,
+        ));
+        s.handle(&req(
+            "DELETE",
+            "/api/v1/namespaces/default/pods/a",
+            "application/json",
+            "",
+        ));
         let resp = s.handle(&req(
             "GET",
             "/api/v1/namespaces/default/pods?watch=true&resourceVersion=0",
@@ -1276,8 +1604,18 @@ mod tests {
     #[test]
     fn watch_is_namespace_scoped() {
         let mut s = ApiServer::new();
-        s.handle(&req("POST", "/api/v1/namespaces/ns1/pods", "application/json", &pod_json("ns1", "a")));
-        s.handle(&req("POST", "/api/v1/namespaces/ns2/pods", "application/json", &pod_json("ns2", "b")));
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/ns1/pods",
+            "application/json",
+            &pod_json("ns1", "a"),
+        ));
+        s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/ns2/pods",
+            "application/json",
+            &pod_json("ns2", "b"),
+        ));
         let resp = s.handle(&req(
             "GET",
             "/api/v1/namespaces/ns1/pods?watch=true&resourceVersion=0",
@@ -1292,7 +1630,9 @@ mod tests {
 
     // --- admission integration ---------------------------------------------
 
-    use crate::admission::{AdmissionChain, AdmissionRequest, MutatingPlugin, Operation, RequireName};
+    use crate::admission::{
+        AdmissionChain, AdmissionRequest, MutatingPlugin, Operation, RequireName,
+    };
 
     struct AnnotateOwner;
     impl MutatingPlugin for AnnotateOwner {
@@ -1302,9 +1642,13 @@ mod tests {
         fn admit(&self, request: &mut AdmissionRequest) -> crate::status::Result<()> {
             if let Some(object) = request.object.as_mut() {
                 let m = object.as_object_mut().expect("object");
-                let metadata = m.entry("metadata".to_string()).or_insert_with(Value::object);
+                let metadata = m
+                    .entry("metadata".to_string())
+                    .or_insert_with(Value::object);
                 let mm = metadata.as_object_mut().expect("metadata obj");
-                let ann = mm.entry("annotations".to_string()).or_insert_with(Value::object);
+                let ann = mm
+                    .entry("annotations".to_string())
+                    .or_insert_with(Value::object);
                 ann.insert("owner", Value::from("cave"));
             }
             Ok(())
@@ -1329,7 +1673,12 @@ mod tests {
         let chain = AdmissionChain::new().with_validating(Box::new(RequireName));
         let mut s = ApiServer::new().with_admission(chain);
         let nameless = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"namespace":"default"}}"#;
-        let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", nameless));
+        let resp = s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            nameless,
+        ));
         assert_eq!(resp.status, 422);
     }
 
@@ -1337,10 +1686,18 @@ mod tests {
     fn mutating_plugin_applies_before_storage() {
         let chain = AdmissionChain::new().with_mutating(Box::new(AnnotateOwner));
         let mut s = ApiServer::new().with_admission(chain);
-        let resp = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", &pod_json("default", "nginx")));
+        let resp = s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            &pod_json("default", "nginx"),
+        ));
         assert_eq!(resp.status, 201);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
-        assert_eq!(v.pointer("metadata.annotations.owner"), Some(&Value::from("cave")));
+        assert_eq!(
+            v.pointer("metadata.annotations.owner"),
+            Some(&Value::from("cave"))
+        );
     }
 
     #[test]
@@ -1355,7 +1712,12 @@ mod tests {
             )
             .expect("seed");
         let body = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default","resourceVersion":"1"}}"#;
-        let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx", "application/json", body));
+        let resp = s.handle(&req(
+            "PUT",
+            "/api/v1/namespaces/default/pods/nginx",
+            "application/json",
+            body,
+        ));
         assert_eq!(resp.status, 422);
     }
 
@@ -1375,7 +1737,9 @@ mod tests {
     fn health_probes_need_no_auth() {
         // Even with anonymous disabled, health is reachable (probes are unauthenticated).
         let authn = AuthenticatorChain::new()
-            .with(Box::new(TokenAuthenticator::new().with_token("t", UserInfo::new("u"))))
+            .with(Box::new(
+                TokenAuthenticator::new().with_token("t", UserInfo::new("u")),
+            ))
             .allow_anonymous(false);
         let mut s = ApiServer::new().with_authn(authn);
         let resp = s.handle(&req("GET", "/healthz", "text/plain", ""));
@@ -1389,7 +1753,10 @@ mod tests {
         assert_eq!(resp.status, 200);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
         assert_eq!(v.pointer("kind"), Some(&Value::from("APIVersions")));
-        let versions = v.pointer("versions").and_then(Value::as_array).expect("versions");
+        let versions = v
+            .pointer("versions")
+            .and_then(Value::as_array)
+            .expect("versions");
         assert!(versions.contains(&Value::from("v1")));
     }
 
@@ -1400,8 +1767,14 @@ mod tests {
         assert_eq!(resp.status, 200);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
         assert_eq!(v.pointer("kind"), Some(&Value::from("APIGroupList")));
-        let groups = v.pointer("groups").and_then(Value::as_array).expect("groups");
-        let names: Vec<&str> = groups.iter().filter_map(|g| g.pointer("name").and_then(Value::as_str)).collect();
+        let groups = v
+            .pointer("groups")
+            .and_then(Value::as_array)
+            .expect("groups");
+        let names: Vec<&str> = groups
+            .iter()
+            .filter_map(|g| g.pointer("name").and_then(Value::as_str))
+            .collect();
         assert!(names.contains(&"apps"));
         assert!(names.contains(&"batch"));
     }
@@ -1414,8 +1787,14 @@ mod tests {
         let v = crate::json::parse(&body_str(&resp)).expect("json");
         assert_eq!(v.pointer("kind"), Some(&Value::from("APIResourceList")));
         assert_eq!(v.pointer("groupVersion"), Some(&Value::from("v1")));
-        let resources = v.pointer("resources").and_then(Value::as_array).expect("resources");
-        let names: Vec<&str> = resources.iter().filter_map(|r| r.pointer("name").and_then(Value::as_str)).collect();
+        let resources = v
+            .pointer("resources")
+            .and_then(Value::as_array)
+            .expect("resources");
+        let names: Vec<&str> = resources
+            .iter()
+            .filter_map(|r| r.pointer("name").and_then(Value::as_str))
+            .collect();
         assert!(names.contains(&"pods"));
     }
 
@@ -1426,15 +1805,26 @@ mod tests {
         assert_eq!(resp.status, 200);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
         assert_eq!(v.pointer("groupVersion"), Some(&Value::from("apps/v1")));
-        let resources = v.pointer("resources").and_then(Value::as_array).expect("resources");
-        let names: Vec<&str> = resources.iter().filter_map(|r| r.pointer("name").and_then(Value::as_str)).collect();
+        let resources = v
+            .pointer("resources")
+            .and_then(Value::as_array)
+            .expect("resources");
+        let names: Vec<&str> = resources
+            .iter()
+            .filter_map(|r| r.pointer("name").and_then(Value::as_str))
+            .collect();
         assert!(names.contains(&"deployments"));
     }
 
     #[test]
     fn unknown_group_version_discovery_is_404() {
         let mut s = ApiServer::new();
-        let resp = s.handle(&req("GET", "/apis/nope.example.com/v9", "application/json", ""));
+        let resp = s.handle(&req(
+            "GET",
+            "/apis/nope.example.com/v9",
+            "application/json",
+            "",
+        ));
         assert_eq!(resp.status, 404);
     }
 
@@ -1446,8 +1836,15 @@ mod tests {
         let v = crate::json::parse(&body_str(&resp)).expect("json");
         assert_eq!(v.pointer("swagger"), Some(&Value::from("2.0")));
         assert!(v.pointer("info.title").and_then(Value::as_str).is_some());
-        let paths = v.pointer("paths").and_then(Value::as_object).expect("paths");
-        assert!(paths.contains_key("/api/v1/namespaces/{namespace}/pods"), "paths: {:?}", paths.keys().collect::<Vec<_>>());
+        let paths = v
+            .pointer("paths")
+            .and_then(Value::as_object)
+            .expect("paths");
+        assert!(
+            paths.contains_key("/api/v1/namespaces/{namespace}/pods"),
+            "paths: {:?}",
+            paths.keys().collect::<Vec<_>>()
+        );
         assert!(paths.contains_key("/apis/apps/v1/namespaces/{namespace}/deployments/{name}"));
         // A cluster-scoped resource has no namespace segment.
         assert!(paths.contains_key("/api/v1/nodes/{name}"));
@@ -1468,14 +1865,27 @@ mod tests {
     fn update_status_subresource_persists_only_status() {
         let mut s = ApiServer::new();
         let with_spec = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx","namespace":"default"},"spec":{"replicas":1}}"#;
-        let created = s.handle(&req("POST", "/api/v1/namespaces/default/pods", "application/json", with_spec));
+        let created = s.handle(&req(
+            "POST",
+            "/api/v1/namespaces/default/pods",
+            "application/json",
+            with_spec,
+        ));
         let cv = crate::json::parse(&body_str(&created)).expect("json");
-        let rv = cv.pointer("metadata.resourceVersion").and_then(Value::as_str).expect("rv");
+        let rv = cv
+            .pointer("metadata.resourceVersion")
+            .and_then(Value::as_str)
+            .expect("rv");
         // Status write also tries to change spec; spec must be ignored.
         let submit = format!(
             r#"{{"apiVersion":"v1","kind":"Pod","metadata":{{"name":"nginx","namespace":"default","resourceVersion":"{rv}"}},"spec":{{"replicas":99}},"status":{{"phase":"Running"}}}}"#
         );
-        let resp = s.handle(&req("PUT", "/api/v1/namespaces/default/pods/nginx/status", "application/json", &submit));
+        let resp = s.handle(&req(
+            "PUT",
+            "/api/v1/namespaces/default/pods/nginx/status",
+            "application/json",
+            &submit,
+        ));
         assert_eq!(resp.status, 200);
         let v = crate::json::parse(&body_str(&resp)).expect("json");
         assert_eq!(v.pointer("spec.replicas"), Some(&Value::from(1_i64)));

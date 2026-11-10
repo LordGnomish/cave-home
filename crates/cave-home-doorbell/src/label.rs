@@ -185,7 +185,10 @@ mod tests {
             CallState::Missed,
         ] {
             for lang in LANGS {
-                assert!(!for_state(state, lang).is_empty(), "{state:?}/{lang:?} empty");
+                assert!(
+                    !for_state(state, lang).is_empty(),
+                    "{state:?}/{lang:?} empty"
+                );
             }
         }
     }
@@ -213,9 +216,25 @@ mod tests {
         // Charter §6.3 / ADR-018: the front-door UI must never surface
         // protocol, transport or device-model terms.
         const BANNED: &[&str] = &[
-            "RTSP", "SIP", "INVITE", "WebRTC", "MQTT", "entity_id", "entity id",
-            "Reolink", "DoorBird", "Doorbird", "Amcrest", "UniFi", "Ring",
-            "Aqara", "webhook", "PIR", "pod", "kubelet", "namespace",
+            "RTSP",
+            "SIP",
+            "INVITE",
+            "WebRTC",
+            "MQTT",
+            "entity_id",
+            "entity id",
+            "Reolink",
+            "DoorBird",
+            "Doorbird",
+            "Amcrest",
+            "UniFi",
+            "Ring",
+            "Aqara",
+            "webhook",
+            "PIR",
+            "pod",
+            "kubelet",
+            "namespace",
         ];
         let t = TimeOfDay::new(14, 30).unwrap();
         let mut texts: Vec<String> = Vec::new();

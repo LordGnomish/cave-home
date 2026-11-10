@@ -58,7 +58,7 @@ pub mod position;
 pub mod state;
 
 pub use device_class::{DeviceClass, Features};
-pub use label::{status_sentence, Lang};
+pub use label::{Lang, status_sentence};
 pub use machine::{CommandError, Cover, CoverCommand};
 pub use position::{Position, PositionError};
 pub use state::CoverState;

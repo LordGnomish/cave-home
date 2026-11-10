@@ -105,7 +105,10 @@ mod tests {
             now_playing("Yesterday", Some("The Beatles"), Lang::En),
             "Playing Yesterday by The Beatles"
         );
-        assert_eq!(now_playing("Yesterday", None, Lang::En), "Playing Yesterday");
+        assert_eq!(
+            now_playing("Yesterday", None, Lang::En),
+            "Playing Yesterday"
+        );
         assert_eq!(
             now_playing("Yesterday", Some("The Beatles"), Lang::Tr),
             "The Beatles sanatçısından Yesterday çalınıyor"
@@ -124,8 +127,19 @@ mod tests {
     fn ui_strings_carry_no_implementation_jargon() {
         // Charter §6.3: the UI must never surface protocol/cluster terms.
         const BANNED: &[&str] = &[
-            "MPD", "ACK", "songid", "Pos:", "playlistinfo", "MQTT", "songpos",
-            "tracklist", "Mopidy", "entity_id", "pod", "kubelet", "TCP",
+            "MPD",
+            "ACK",
+            "songid",
+            "Pos:",
+            "playlistinfo",
+            "MQTT",
+            "songpos",
+            "tracklist",
+            "Mopidy",
+            "entity_id",
+            "pod",
+            "kubelet",
+            "TCP",
         ];
         let mut texts: Vec<String> = Vec::new();
         for lang in [Lang::En, Lang::De, Lang::Tr] {

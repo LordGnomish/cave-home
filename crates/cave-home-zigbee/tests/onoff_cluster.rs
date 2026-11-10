@@ -8,7 +8,7 @@
 //! the ZCL §3.8 command tables.
 
 use cave_home_zigbee::onoff::{
-    attribute_id, command_id, OnOffCommand, OnOffState, StartUpOnOff, ON_OFF_CLUSTER_ID,
+    ON_OFF_CLUSTER_ID, OnOffCommand, OnOffState, StartUpOnOff, attribute_id, command_id,
 };
 
 #[test]
@@ -71,8 +71,11 @@ fn parse_off_with_effect() {
 fn parse_on_with_timed_off() {
     // §3.8.2.3.6: on_off_control (u8) + on_time (u16 LE) + off_wait_time (u16 LE).
     // on_time = 0x012c = 300 (30 s), off_wait_time = 0x0064 = 100 (10 s).
-    let cmd =
-        OnOffCommand::parse(command_id::ON_WITH_TIMED_OFF, &[0x00, 0x2c, 0x01, 0x64, 0x00]).unwrap();
+    let cmd = OnOffCommand::parse(
+        command_id::ON_WITH_TIMED_OFF,
+        &[0x00, 0x2c, 0x01, 0x64, 0x00],
+    )
+    .unwrap();
     assert_eq!(
         cmd,
         OnOffCommand::OnWithTimedOff {
@@ -173,7 +176,10 @@ fn timed_off_accept_only_when_on_is_ignored_while_off() {
         on_time: 300,
         off_wait_time: 100,
     });
-    assert!(!s.on, "command must be ignored when off and accept_only_when_on set");
+    assert!(
+        !s.on,
+        "command must be ignored when off and accept_only_when_on set"
+    );
 }
 
 #[test]

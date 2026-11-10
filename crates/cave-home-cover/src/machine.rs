@@ -75,7 +75,11 @@ impl Cover {
     /// there is no tilt axis at all.
     #[must_use]
     pub const fn new(class: DeviceClass, features: Features) -> Self {
-        let tilt = if features.tilt { Some(Position::CLOSED) } else { None };
+        let tilt = if features.tilt {
+            Some(Position::CLOSED)
+        } else {
+            None
+        };
         Self {
             class,
             features,

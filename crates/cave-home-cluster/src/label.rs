@@ -70,9 +70,7 @@ impl FailoverPlan {
             (Self::NoHealthyBackup, Lang::De) => {
                 "Ihr Haupt-Hub ist offline und kein Reserve-Hub ist bereit."
             }
-            (Self::NoHealthyBackup, Lang::Tr) => {
-                "Ana hub çevrimdışı ve hazır bir yedek hub yok."
-            }
+            (Self::NoHealthyBackup, Lang::Tr) => "Ana hub çevrimdışı ve hazır bir yedek hub yok.",
             (Self::Failback { .. }, Lang::En) => "Your main hub is back — everything still works.",
             (Self::Failback { .. }, Lang::De) => {
                 "Ihr Haupt-Hub ist zurück — alles funktioniert weiter."
@@ -108,10 +106,18 @@ mod tests {
     fn all_plans() -> Vec<FailoverPlan> {
         vec![
             FailoverPlan::NoAction,
-            FailoverPlan::Promote { node: "hub-2".to_owned(), demote: Some("hub-1".to_owned()) },
-            FailoverPlan::BlockedOnFencing { candidate: "hub-2".to_owned() },
+            FailoverPlan::Promote {
+                node: "hub-2".to_owned(),
+                demote: Some("hub-1".to_owned()),
+            },
+            FailoverPlan::BlockedOnFencing {
+                candidate: "hub-2".to_owned(),
+            },
             FailoverPlan::NoHealthyBackup,
-            FailoverPlan::Failback { to: "hub-1".to_owned(), demote: Some("hub-2".to_owned()) },
+            FailoverPlan::Failback {
+                to: "hub-1".to_owned(),
+                demote: Some("hub-2".to_owned()),
+            },
         ]
     }
 
@@ -135,7 +141,10 @@ mod tests {
 
     #[test]
     fn updating_headline_localised() {
-        assert_eq!(updating_headline(Lang::En), "Updating — everything still works.");
+        assert_eq!(
+            updating_headline(Lang::En),
+            "Updating — everything still works."
+        );
         assert!(!updating_headline(Lang::De).is_empty());
         assert!(!updating_headline(Lang::Tr).is_empty());
     }
@@ -144,7 +153,11 @@ mod tests {
     fn promotion_uses_grandma_words() {
         // The headline a homeowner reads when the backup takes over.
         assert_eq!(
-            FailoverPlan::Promote { node: "x".to_owned(), demote: None }.headline(Lang::En),
+            FailoverPlan::Promote {
+                node: "x".to_owned(),
+                demote: None
+            }
+            .headline(Lang::En),
             "Backup hub took over — everything still works."
         );
     }
@@ -154,11 +167,33 @@ mod tests {
         // Charter §6.3 / ADR-004 / ADR-005: the UI must never surface cluster /
         // orchestration internals. No homeowner should ever read these words.
         const BANNED: &[&str] = &[
-            "etcd", "kubelet", "kube", "pod", "namespace", "RBAC", "quorum",
-            "fencing", "fence", "STONITH", "split-brain", "lease", "Raft",
-            "promote", "promotion", "demote", "heartbeat", "gossip", "node",
-            "kine", "K3s", "apiserver", "cordon", "drain", "PAN-ID",
-            "MQTT topic", "Helm chart",
+            "etcd",
+            "kubelet",
+            "kube",
+            "pod",
+            "namespace",
+            "RBAC",
+            "quorum",
+            "fencing",
+            "fence",
+            "STONITH",
+            "split-brain",
+            "lease",
+            "Raft",
+            "promote",
+            "promotion",
+            "demote",
+            "heartbeat",
+            "gossip",
+            "node",
+            "kine",
+            "K3s",
+            "apiserver",
+            "cordon",
+            "drain",
+            "PAN-ID",
+            "MQTT topic",
+            "Helm chart",
         ];
         // Gather every user-facing string this module can emit.
         let mut texts: Vec<String> = Vec::new();

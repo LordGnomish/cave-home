@@ -12,9 +12,9 @@
 //! `WKST`. Other parts (`BYSETPOS`, `BYYEARDAY`, `BYWEEKNO`, `BYHOUR`/...) are
 //! deferred — see the parity manifest.
 
-use crate::date::{days_in_month, Date, Weekday};
-use crate::ical::parse::parse_date_value;
+use crate::date::{Date, Weekday, days_in_month};
 use crate::ical::IcalError;
+use crate::ical::parse::parse_date_value;
 
 /// How often an appointment repeats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -452,7 +452,10 @@ mod tests {
         let r = RRule::parse("FREQ=DAILY;INTERVAL=2").unwrap();
         let start = d(2026, 5, 1);
         let occ = r.occurrences(start, d(2026, 5, 1), d(2026, 5, 7));
-        assert_eq!(occ, vec![d(2026, 5, 1), d(2026, 5, 3), d(2026, 5, 5), d(2026, 5, 7)]);
+        assert_eq!(
+            occ,
+            vec![d(2026, 5, 1), d(2026, 5, 3), d(2026, 5, 5), d(2026, 5, 7)]
+        );
     }
 
     #[test]
@@ -493,7 +496,16 @@ mod tests {
         let r = RRule::parse("FREQ=WEEKLY").unwrap();
         let start = d(2026, 6, 2); // Tuesday
         let occ = r.occurrences(start, d(2026, 6, 1), d(2026, 6, 30));
-        assert_eq!(occ, vec![d(2026, 6, 2), d(2026, 6, 9), d(2026, 6, 16), d(2026, 6, 23), d(2026, 6, 30)]);
+        assert_eq!(
+            occ,
+            vec![
+                d(2026, 6, 2),
+                d(2026, 6, 9),
+                d(2026, 6, 16),
+                d(2026, 6, 23),
+                d(2026, 6, 30)
+            ]
+        );
     }
 
     #[test]
@@ -539,7 +551,15 @@ mod tests {
         let r = RRule::parse("FREQ=MONTHLY").unwrap();
         let start = d(2026, 1, 31);
         let occ = r.occurrences(start, d(2026, 1, 1), d(2026, 4, 30));
-        assert_eq!(occ, vec![d(2026, 1, 31), d(2026, 2, 28), d(2026, 3, 31), d(2026, 4, 30)]);
+        assert_eq!(
+            occ,
+            vec![
+                d(2026, 1, 31),
+                d(2026, 2, 28),
+                d(2026, 3, 31),
+                d(2026, 4, 30)
+            ]
+        );
     }
 
     #[test]
@@ -584,6 +604,16 @@ mod tests {
         let start = d(2026, 1, 1);
         let occ = r.occurrences(start, d(2026, 1, 5), d(2026, 1, 31));
         // Members 5..=10 of Jan are in window (Jan 5..10).
-        assert_eq!(occ, vec![d(2026, 1, 5), d(2026, 1, 6), d(2026, 1, 7), d(2026, 1, 8), d(2026, 1, 9), d(2026, 1, 10)]);
+        assert_eq!(
+            occ,
+            vec![
+                d(2026, 1, 5),
+                d(2026, 1, 6),
+                d(2026, 1, 7),
+                d(2026, 1, 8),
+                d(2026, 1, 9),
+                d(2026, 1, 10)
+            ]
+        );
     }
 }

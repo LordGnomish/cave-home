@@ -24,13 +24,21 @@ impl SearchFields {
     /// Search every field — the default a person expects from one search box.
     #[must_use]
     pub const fn all() -> Self {
-        Self { title: true, artist: true, album: true }
+        Self {
+            title: true,
+            artist: true,
+            album: true,
+        }
     }
 
     /// Search only by artist (for "everything by …").
     #[must_use]
     pub const fn artist_only() -> Self {
-        Self { title: false, artist: true, album: false }
+        Self {
+            title: false,
+            artist: true,
+            album: false,
+        }
     }
 }
 
@@ -85,7 +93,10 @@ impl Library {
     /// Every track, in catalog (insertion) order.
     #[must_use]
     pub fn tracks(&self) -> Vec<&Track> {
-        self.order.iter().filter_map(|id| self.by_id.get(id)).collect()
+        self.order
+            .iter()
+            .filter_map(|id| self.by_id.get(id))
+            .collect()
     }
 
     /// Case-insensitive substring search across the chosen fields.
@@ -117,9 +128,30 @@ mod tests {
 
     fn sample() -> Library {
         let mut lib = Library::new();
-        lib.add(Track::new("t1", "Clair de Lune", "Debussy", "Suite Bergamasque", 300, ProviderId::Local));
-        lib.add(Track::new("t2", "Morning Light", "Ludovico", "Mornings", 240, ProviderId::Streaming));
-        lib.add(Track::new("t3", "Reverie", "Debussy", "Solo Piano", 280, ProviderId::Local));
+        lib.add(Track::new(
+            "t1",
+            "Clair de Lune",
+            "Debussy",
+            "Suite Bergamasque",
+            300,
+            ProviderId::Local,
+        ));
+        lib.add(Track::new(
+            "t2",
+            "Morning Light",
+            "Ludovico",
+            "Mornings",
+            240,
+            ProviderId::Streaming,
+        ));
+        lib.add(Track::new(
+            "t3",
+            "Reverie",
+            "Debussy",
+            "Solo Piano",
+            280,
+            ProviderId::Local,
+        ));
         lib
     }
 
@@ -133,9 +165,19 @@ mod tests {
     #[test]
     fn re_adding_same_id_replaces_keeps_position() {
         let mut lib = sample();
-        lib.add(Track::new("t1", "Clair de Lune (Remaster)", "Debussy", "Suite Bergamasque", 305, ProviderId::Local));
+        lib.add(Track::new(
+            "t1",
+            "Clair de Lune (Remaster)",
+            "Debussy",
+            "Suite Bergamasque",
+            305,
+            ProviderId::Local,
+        ));
         assert_eq!(lib.len(), 3);
-        assert_eq!(lib.get(&TrackId::new("t1")).map(|t| t.title.as_str()), Some("Clair de Lune (Remaster)"));
+        assert_eq!(
+            lib.get(&TrackId::new("t1")).map(|t| t.title.as_str()),
+            Some("Clair de Lune (Remaster)")
+        );
         // Still first in catalog order.
         assert_eq!(lib.tracks()[0].id, TrackId::new("t1"));
     }
@@ -183,7 +225,10 @@ mod tests {
     #[test]
     fn lookup_by_id() {
         let lib = sample();
-        assert_eq!(lib.get(&TrackId::new("t2")).map(|t| t.artist.as_str()), Some("Ludovico"));
+        assert_eq!(
+            lib.get(&TrackId::new("t2")).map(|t| t.artist.as_str()),
+            Some("Ludovico")
+        );
         assert!(lib.get(&TrackId::new("missing")).is_none());
     }
 }

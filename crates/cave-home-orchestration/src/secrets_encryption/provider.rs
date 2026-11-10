@@ -132,7 +132,12 @@ impl LocalKmsProvider {
     ) -> Result<EncryptedObject, ProviderError> {
         let write = self.keyring.write_key();
         let key_id = write.id().clone();
-        let blob = envelope::seal(plaintext, &write.kek().public(), key_id.as_str().as_bytes(), r)?;
+        let blob = envelope::seal(
+            plaintext,
+            &write.kek().public(),
+            key_id.as_str().as_bytes(),
+            r,
+        )?;
         Ok(EncryptedObject { key_id, blob })
     }
 }
@@ -143,7 +148,10 @@ impl KmsProvider for LocalKmsProvider {
     }
 
     fn decrypt(&self, obj: &EncryptedObject) -> Result<Vec<u8>, ProviderError> {
-        let key = self.keyring.find(&obj.key_id).ok_or(ProviderError::UnknownKey)?;
+        let key = self
+            .keyring
+            .find(&obj.key_id)
+            .ok_or(ProviderError::UnknownKey)?;
         let plaintext = envelope::open(&obj.blob, key.kek(), obj.key_id.as_str().as_bytes())?;
         Ok(plaintext)
     }

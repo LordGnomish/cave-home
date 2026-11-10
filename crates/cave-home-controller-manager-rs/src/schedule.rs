@@ -212,11 +212,7 @@ fn parse_part(part: &str, lo: u32, hi: u32, dow: bool) -> Option<u64> {
 
 /// Fold a day-of-week `7` (Sunday) down to `0` when parsing the dow field.
 const fn fold_dow(v: u32, dow: bool) -> u32 {
-    if dow && v == 7 {
-        0
-    } else {
-        v
-    }
+    if dow && v == 7 { 0 } else { v }
 }
 
 #[cfg(test)]

@@ -65,7 +65,9 @@ impl Entry {
     /// # Upstream: src/access/AccessControl.cpp::Entry::Validate
     pub fn validate(&self) -> Result<()> {
         match self.auth_mode {
-            AuthMode::Case if self.subjects.is_empty() && self.privilege != Privilege::Administer => {
+            AuthMode::Case
+                if self.subjects.is_empty() && self.privilege != Privilege::Administer =>
+            {
                 Err(MatterError::Fabric(
                     "non-administer CASE entry requires at least one subject".into(),
                 ))
@@ -180,7 +182,9 @@ impl AccessControl {
             }
             // Target match — empty list means wildcard.
             let target_ok = e.targets.is_empty()
-                || e.targets.iter().any(|t| t.matches(path.cluster, path.endpoint));
+                || e.targets
+                    .iter()
+                    .any(|t| t.matches(path.cluster, path.endpoint));
             if !target_ok {
                 continue;
             }

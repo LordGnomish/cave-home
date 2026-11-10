@@ -252,8 +252,10 @@ impl<T: Object> DeltaFifo<T> {
         if let Some(last) = q.last_mut() {
             let mergeable = matches!(
                 (last.delta_type, delta.delta_type),
-                (DeltaType::Added | DeltaType::Updated | DeltaType::Sync,
-                 DeltaType::Added | DeltaType::Updated | DeltaType::Sync)
+                (
+                    DeltaType::Added | DeltaType::Updated | DeltaType::Sync,
+                    DeltaType::Added | DeltaType::Updated | DeltaType::Sync
+                )
             );
             if mergeable {
                 last.object = delta.object;
@@ -272,7 +274,13 @@ impl<T: Object> DeltaFifo<T> {
         let key = obj.key();
         self.known.insert(key.clone());
         self.last_known.insert(key.clone(), obj.clone());
-        self.enqueue(&key, Delta { delta_type: DeltaType::Added, object: obj });
+        self.enqueue(
+            &key,
+            Delta {
+                delta_type: DeltaType::Added,
+                object: obj,
+            },
+        );
     }
 
     /// Record an observed update.
@@ -280,7 +288,13 @@ impl<T: Object> DeltaFifo<T> {
         let key = obj.key();
         self.known.insert(key.clone());
         self.last_known.insert(key.clone(), obj.clone());
-        self.enqueue(&key, Delta { delta_type: DeltaType::Updated, object: obj });
+        self.enqueue(
+            &key,
+            Delta {
+                delta_type: DeltaType::Updated,
+                object: obj,
+            },
+        );
     }
 
     /// Record an observed delete (carries the last-known object).
@@ -288,7 +302,13 @@ impl<T: Object> DeltaFifo<T> {
         let key = obj.key();
         self.known.remove(&key);
         self.last_known.remove(&key);
-        self.enqueue(&key, Delta { delta_type: DeltaType::Deleted, object: obj });
+        self.enqueue(
+            &key,
+            Delta {
+                delta_type: DeltaType::Deleted,
+                object: obj,
+            },
+        );
     }
 
     /// Replace the entire known set during a relist: every supplied object is
@@ -306,13 +326,25 @@ impl<T: Object> DeltaFifo<T> {
             .collect();
         for key in vanished {
             if let Some(obj) = self.last_known.remove(&key) {
-                self.enqueue(&key, Delta { delta_type: DeltaType::Deleted, object: obj });
+                self.enqueue(
+                    &key,
+                    Delta {
+                        delta_type: DeltaType::Deleted,
+                        object: obj,
+                    },
+                );
             }
         }
         for obj in objects {
             let key = obj.key();
             self.last_known.insert(key.clone(), obj.clone());
-            self.enqueue(&key, Delta { delta_type: DeltaType::Sync, object: obj });
+            self.enqueue(
+                &key,
+                Delta {
+                    delta_type: DeltaType::Sync,
+                    object: obj,
+                },
+            );
         }
         self.known = new_keys;
     }
@@ -387,7 +419,11 @@ mod tests {
         s.upsert(obj("a", "ns1"));
         s.upsert(obj("b", "ns1"));
         s.upsert(obj("c", "ns2"));
-        let ns1: Vec<_> = s.list_by_namespace("ns1").into_iter().map(|o| o.name).collect();
+        let ns1: Vec<_> = s
+            .list_by_namespace("ns1")
+            .into_iter()
+            .map(|o| o.name)
+            .collect();
         assert_eq!(ns1, vec!["a", "b"]);
         assert_eq!(s.list_by_namespace("ns2").len(), 1);
         assert_eq!(s.list_by_namespace("none").len(), 0);
@@ -399,7 +435,11 @@ mod tests {
         s.upsert(obj("a", "ns").with_label("app", "web"));
         s.upsert(obj("b", "ns").with_label("app", "web"));
         s.upsert(obj("c", "ns").with_label("app", "db"));
-        let web: Vec<_> = s.list_by_label("app", "web").into_iter().map(|o| o.name).collect();
+        let web: Vec<_> = s
+            .list_by_label("app", "web")
+            .into_iter()
+            .map(|o| o.name)
+            .collect();
         assert_eq!(web, vec!["a", "b"]);
         assert_eq!(s.list_by_label("app", "db").len(), 1);
     }
@@ -418,14 +458,26 @@ mod tests {
     #[test]
     fn store_list_matching_is_and_semantics() {
         let mut s: Store<ObjectMeta> = Store::new();
-        s.upsert(obj("a", "ns").with_label("app", "web").with_label("tier", "fe"));
-        s.upsert(obj("b", "ns").with_label("app", "web").with_label("tier", "be"));
+        s.upsert(
+            obj("a", "ns")
+                .with_label("app", "web")
+                .with_label("tier", "fe"),
+        );
+        s.upsert(
+            obj("b", "ns")
+                .with_label("app", "web")
+                .with_label("tier", "be"),
+        );
         let mut sel = BTreeMap::new();
         sel.insert("app".to_owned(), "web".to_owned());
         sel.insert("tier".to_owned(), "fe".to_owned());
         let m: Vec<_> = s.list_matching(&sel).into_iter().map(|o| o.name).collect();
         assert_eq!(m, vec!["a"]);
-        assert_eq!(s.list_matching(&BTreeMap::new()).len(), 2, "empty selector matches all");
+        assert_eq!(
+            s.list_matching(&BTreeMap::new()).len(),
+            2,
+            "empty selector matches all"
+        );
     }
 
     #[test]
@@ -448,7 +500,10 @@ mod tests {
         let (_key, deltas) = f.pop().expect("pending");
         assert_eq!(deltas.len(), 1, "Added+Updated+Updated coalesce to one");
         assert_eq!(deltas[0].delta_type, DeltaType::Updated);
-        assert_eq!(deltas[0].object.labels.get("v").map(String::as_str), Some("3"));
+        assert_eq!(
+            deltas[0].object.labels.get("v").map(String::as_str),
+            Some("3")
+        );
     }
 
     #[test]
@@ -476,17 +531,38 @@ mod tests {
                 got.push((k.clone(), d.delta_type));
             }
         }
-        assert!(got.contains(&("ns/b".to_owned(), DeltaType::Deleted)), "vanished b deleted");
-        assert!(got.contains(&("ns/a".to_owned(), DeltaType::Sync)), "present a synced");
-        assert!(got.contains(&("ns/c".to_owned(), DeltaType::Sync)), "new c synced");
+        assert!(
+            got.contains(&("ns/b".to_owned(), DeltaType::Deleted)),
+            "vanished b deleted"
+        );
+        assert!(
+            got.contains(&("ns/a".to_owned(), DeltaType::Sync)),
+            "present a synced"
+        );
+        assert!(
+            got.contains(&("ns/c".to_owned(), DeltaType::Sync)),
+            "new c synced"
+        );
     }
 
     #[test]
     fn apply_delta_keeps_store_in_sync() {
         let mut s: Store<ObjectMeta> = Store::new();
-        apply_delta(&mut s, &Delta { delta_type: DeltaType::Added, object: obj("a", "ns") });
+        apply_delta(
+            &mut s,
+            &Delta {
+                delta_type: DeltaType::Added,
+                object: obj("a", "ns"),
+            },
+        );
         assert_eq!(s.len(), 1);
-        apply_delta(&mut s, &Delta { delta_type: DeltaType::Deleted, object: obj("a", "ns") });
+        apply_delta(
+            &mut s,
+            &Delta {
+                delta_type: DeltaType::Deleted,
+                object: obj("a", "ns"),
+            },
+        );
         assert!(s.is_empty());
     }
 }

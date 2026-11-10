@@ -172,11 +172,7 @@ impl Session {
     /// cookie has been captured).
     #[must_use]
     pub fn is_authenticated(&self) -> bool {
-        self.api_key.is_some()
-            || self
-                .cookies
-                .keys()
-                .any(|k| k == "TOKEN" || k == "unifises")
+        self.api_key.is_some() || self.cookies.keys().any(|k| k == "TOKEN" || k == "unifises")
     }
 
     /// Ingest the auth-bearing headers of a response: every `set-cookie`, the
@@ -253,8 +249,7 @@ mod tests {
         assert_eq!(req.method, HttpMethod::Post);
         assert_eq!(req.url, "https://10.0.0.1:443/api/auth/login");
         assert_eq!(req.header_value("content-type"), Some("application/json"));
-        let body: serde_json::Value =
-            serde_json::from_slice(req.body.as_ref().unwrap()).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(req.body.as_ref().unwrap()).unwrap();
         assert_eq!(body["username"], "admin");
         assert_eq!(body["password"], "s3cret");
         assert_eq!(body["remember"], true);
@@ -290,13 +285,16 @@ mod tests {
 
     #[test]
     fn session_ingests_unifi_os_login_headers() {
-        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(br#"{"csrfToken":"jwt-csrf"}"#);
+        let payload =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"csrfToken":"jwt-csrf"}"#);
         let token = format!("h.{payload}.s");
         let mut s = Session::new();
         assert!(!s.is_authenticated());
         s.ingest_response_headers([
-            ("Set-Cookie", format!("TOKEN={token}; Path=/; HttpOnly").as_str()),
+            (
+                "Set-Cookie",
+                format!("TOKEN={token}; Path=/; HttpOnly").as_str(),
+            ),
             ("x-csrf-token", "header-csrf"),
         ]);
         assert!(s.is_authenticated());
@@ -307,14 +305,11 @@ mod tests {
 
     #[test]
     fn session_csrf_from_jwt_when_no_header() {
-        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(br#"{"csrfToken":"jwt-only"}"#);
+        let payload =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"csrfToken":"jwt-only"}"#);
         let token = format!("h.{payload}.s");
         let mut s = Session::new();
-        s.ingest_response_headers([(
-            "set-cookie",
-            format!("TOKEN={token}; Path=/").as_str(),
-        )]);
+        s.ingest_response_headers([("set-cookie", format!("TOKEN={token}; Path=/").as_str())]);
         assert_eq!(s.csrf(), Some("jwt-only"));
     }
 

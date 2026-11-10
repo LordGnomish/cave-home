@@ -142,19 +142,13 @@ impl AttributeValue {
         Ok(match dt {
             ZclDataType::Boolean => (Self::Boolean(bytes[0] != 0), 1),
             ZclDataType::Uint8 => (Self::Uint8(bytes[0]), 1),
-            ZclDataType::Uint16 => (
-                Self::Uint16(u16::from_le_bytes([bytes[0], bytes[1]])),
-                2,
-            ),
+            ZclDataType::Uint16 => (Self::Uint16(u16::from_le_bytes([bytes[0], bytes[1]])), 2),
             ZclDataType::Uint32 => (
                 Self::Uint32(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])),
                 4,
             ),
             ZclDataType::Int8 => (Self::Int8(bytes[0] as i8), 1),
-            ZclDataType::Int16 => (
-                Self::Int16(i16::from_le_bytes([bytes[0], bytes[1]])),
-                2,
-            ),
+            ZclDataType::Int16 => (Self::Int16(i16::from_le_bytes([bytes[0], bytes[1]])), 2),
             ZclDataType::Enum8 => (Self::Enum8(bytes[0]), 1),
             ZclDataType::CharString => {
                 if bytes.is_empty() {

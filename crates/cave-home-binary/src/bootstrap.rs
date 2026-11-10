@@ -18,8 +18,8 @@
 //! per-component OS process; [`Plan::is_single_binary`] makes that invariant
 //! checkable.
 
-use crate::config::Config;
 use crate::Component;
+use crate::config::Config;
 use std::fmt;
 
 /// The bring-up order, lowest rank first. Two components with the same role get
@@ -58,7 +58,10 @@ impl fmt::Display for PlanError {
         match self {
             Self::Empty => write!(f, "there are no home features to start"),
             Self::MissingOrchestration => {
-                write!(f, "the home foundation must start before the other features")
+                write!(
+                    f,
+                    "the home foundation must start before the other features"
+                )
             }
         }
     }
@@ -125,8 +128,7 @@ impl Plan {
             return false;
         }
         // Portal, if present, must be the very last step.
-        if self.steps.contains(&Component::Portal)
-            && self.steps.last() != Some(&Component::Portal)
+        if self.steps.contains(&Component::Portal) && self.steps.last() != Some(&Component::Portal)
         {
             return false;
         }

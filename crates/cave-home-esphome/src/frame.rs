@@ -53,7 +53,10 @@ impl ApiFrame {
     /// Build a frame from a message type and payload.
     #[must_use]
     pub const fn new(message_type: u32, payload: Vec<u8>) -> Self {
-        Self { message_type, payload }
+        Self {
+            message_type,
+            payload,
+        }
     }
 
     /// Serialise the frame to a fresh byte vector.
@@ -113,7 +116,10 @@ impl ApiFrame {
         let payload = after_type[..payload_len].to_vec();
         let consumed = 1 + len_n + type_n + payload_len;
         Ok(FrameDecode::Frame {
-            frame: Self { message_type, payload },
+            frame: Self {
+                message_type,
+                payload,
+            },
             consumed,
         })
     }

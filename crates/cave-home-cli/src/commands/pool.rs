@@ -13,19 +13,16 @@ use clap::{Arg, Command};
 pub fn cmd() -> Command {
     Command::new("pool")
         .about("Pool and spa controls")
-        .subcommand(
-            Command::new("status")
-                .about("Show pool temperature + chemistry")
-        )
+        .subcommand(Command::new("status").about("Show pool temperature + chemistry"))
         .subcommand(
             Command::new("pump")
                 .about("Pump on / off")
-                .arg(Arg::new("value").long("value").required(true))
+                .arg(Arg::new("value").long("value").required(true)),
         )
         .subcommand(
             Command::new("heater")
                 .about("Heater on / off")
-                .arg(Arg::new("value").long("value").required(true))
+                .arg(Arg::new("value").long("value").required(true)),
         )
 }
 
@@ -41,7 +38,10 @@ mod tests {
     #[test]
     fn cmd_lists_every_subcommand() {
         let c = cmd();
-        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name().to_string()).collect();
+        let names: Vec<_> = c
+            .get_subcommands()
+            .map(|s| s.get_name().to_string())
+            .collect();
         for sub in ["status", "pump", "heater"] {
             assert!(
                 names.iter().any(|n| n == sub),

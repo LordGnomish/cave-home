@@ -206,7 +206,10 @@ mod tests {
 
     #[test]
     fn median_odd_and_even() {
-        assert_eq!(Aggregator::Median.apply(&bucket(&[5.0, 1.0, 3.0])), Some(3.0));
+        assert_eq!(
+            Aggregator::Median.apply(&bucket(&[5.0, 1.0, 3.0])),
+            Some(3.0)
+        );
         // Even count: mean of the two middle (sorted: 1,3,5,7 -> (3+5)/2).
         assert_eq!(
             Aggregator::Median.apply(&bucket(&[7.0, 1.0, 5.0, 3.0])),
@@ -252,11 +255,7 @@ mod tests {
         let series = Series::sorted(vec![s(0, 1.0), s(180, 9.0)]);
         let down = downsample(&series, 60, Aggregator::Mean);
         assert_eq!(down.len(), 2);
-        let starts: Vec<i64> = down
-            .samples()
-            .iter()
-            .map(Sample::timestamp)
-            .collect();
+        let starts: Vec<i64> = down.samples().iter().map(Sample::timestamp).collect();
         assert_eq!(starts, vec![0, 180]);
     }
 

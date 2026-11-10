@@ -75,8 +75,11 @@ mod tests {
         let mut store = RetainedStore::default();
         store.apply("home/loft/temp", msg(b"21.0"));
         store.apply("home/cellar/temp", msg(b"12.0"));
-        let mut hits: Vec<_> =
-            store.matching("home/+/temp").into_iter().map(|(t, _)| t).collect();
+        let mut hits: Vec<_> = store
+            .matching("home/+/temp")
+            .into_iter()
+            .map(|(t, _)| t)
+            .collect();
         hits.sort();
         assert_eq!(hits, vec!["home/cellar/temp", "home/loft/temp"]);
         assert_eq!(store.len(), 2);

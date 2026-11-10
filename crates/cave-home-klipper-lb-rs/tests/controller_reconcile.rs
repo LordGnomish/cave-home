@@ -12,7 +12,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
 
-use cave_home_klipper_lb_rs::controller::{reconcile, ReconcileContext, ServiceDisposition};
+use cave_home_klipper_lb_rs::controller::{ReconcileContext, ServiceDisposition, reconcile};
 use cave_home_klipper_lb_rs::node::Node;
 use cave_home_klipper_lb_rs::service::{
     ExternalTrafficPolicy, LoadBalancerService, Protocol, ServicePort,
@@ -90,7 +90,10 @@ fn orphan_daemonset_is_deleted() {
         .with_existing_daemonsets(["svclb-gone".to_owned(), "svclb-old".to_owned()]);
     let r = reconcile(&[], &[], &ctx);
     assert!(r.apply.is_empty());
-    assert_eq!(r.delete, vec!["svclb-gone".to_owned(), "svclb-old".to_owned()]);
+    assert_eq!(
+        r.delete,
+        vec!["svclb-gone".to_owned(), "svclb-old".to_owned()]
+    );
 }
 
 #[test]
@@ -102,7 +105,10 @@ fn existing_daemonset_for_live_service_is_not_deleted() {
     let ctx = ReconcileContext::default().with_existing_daemonsets(["svclb-web".to_owned()]);
     let r = reconcile(&services, &nodes, &ctx);
     assert_eq!(r.apply.len(), 1);
-    assert!(r.delete.is_empty(), "live service's DaemonSet must not be deleted");
+    assert!(
+        r.delete.is_empty(),
+        "live service's DaemonSet must not be deleted"
+    );
 }
 
 #[test]
@@ -138,7 +144,12 @@ fn second_service_on_same_host_port_is_left_pending() {
         other => panic!("expected Pending, got {other:?}"),
     }
     // A pending service publishes no ingress IPs.
-    assert!(r.disposition("default/blog").unwrap().ingress_ips().is_empty());
+    assert!(
+        r.disposition("default/blog")
+            .unwrap()
+            .ingress_ips()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -156,7 +167,10 @@ fn structurally_invalid_service_is_skipped_not_panicked() {
     // on the same port is still programmable.
     let good = http("ok");
     let r2 = reconcile(
-        &[svc("broken", vec![port("http", Protocol::Tcp, 80, 0)]), good],
+        &[
+            svc("broken", vec![port("http", Protocol::Tcp, 80, 0)]),
+            good,
+        ],
         &nodes,
         &ReconcileContext::default(),
     );
@@ -193,7 +207,10 @@ fn local_etp_only_publishes_nodes_with_a_backing_pod() {
 
     let r = reconcile(&[s], &nodes, &ctx);
     let d = r.disposition("default/web").unwrap();
-    assert!(d.is_programmed(), "DaemonSet still deployed under Local ETP");
+    assert!(
+        d.is_programmed(),
+        "DaemonSet still deployed under Local ETP"
+    );
     assert_eq!(d.ingress_ips(), &[ip("10.0.0.2")]);
 }
 

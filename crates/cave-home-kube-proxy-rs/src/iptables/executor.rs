@@ -103,7 +103,9 @@ impl LinuxExecutor {
     /// Override the binary path (test hook + `iptables-legacy-restore` users).
     #[must_use]
     pub fn with_binary(binary: impl Into<String>) -> Self {
-        Self { binary: Some(binary.into()) }
+        Self {
+            binary: Some(binary.into()),
+        }
     }
 }
 
@@ -111,7 +113,7 @@ impl LinuxExecutor {
 #[async_trait]
 impl IptablesExecutor for LinuxExecutor {
     async fn restore(&self, rules: &str) -> Result<(), ProxierError> {
-        use nix::fcntl::{flock, FlockArg};
+        use nix::fcntl::{FlockArg, flock};
         use std::io::Write as _;
         use std::os::fd::AsRawFd as _;
         use tokio::io::AsyncWriteExt as _;

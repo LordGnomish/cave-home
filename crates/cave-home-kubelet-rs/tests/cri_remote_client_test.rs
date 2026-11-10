@@ -110,7 +110,11 @@ async fn pull_image_then_image_status() {
     let image_ref = client.pull_image(spec.clone()).await.unwrap();
     assert!(image_ref.contains("nginx:1.27"));
 
-    let status = client.image_status(spec).await.unwrap().expect("image present");
+    let status = client
+        .image_status(spec)
+        .await
+        .unwrap()
+        .expect("image present");
     assert_eq!(status.repo_tags, vec!["nginx:1.27".to_owned()]);
 
     let absent = client

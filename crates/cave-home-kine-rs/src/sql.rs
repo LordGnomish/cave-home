@@ -46,7 +46,11 @@ pub const SCHEMA: &[Column] = &[
         sql_type: "INTEGER PRIMARY KEY AUTOINCREMENT",
         role: "global revision — monotonic, one per write (etcd main revision)",
     },
-    Column { name: "name", sql_type: "TEXT", role: "the etcd key" },
+    Column {
+        name: "name",
+        sql_type: "TEXT",
+        role: "the etcd key",
+    },
     Column {
         name: "created",
         sql_type: "INTEGER",
@@ -67,8 +71,16 @@ pub const SCHEMA: &[Column] = &[
         sql_type: "INTEGER",
         role: "the row id this row supersedes (for prev_kv / watch)",
     },
-    Column { name: "lease", sql_type: "INTEGER", role: "attached lease id, 0 = none" },
-    Column { name: "value", sql_type: "BLOB", role: "the stored bytes" },
+    Column {
+        name: "lease",
+        sql_type: "INTEGER",
+        role: "attached lease id, 0 = none",
+    },
+    Column {
+        name: "value",
+        sql_type: "BLOB",
+        role: "the stored bytes",
+    },
     Column {
         name: "old_value",
         sql_type: "BLOB",

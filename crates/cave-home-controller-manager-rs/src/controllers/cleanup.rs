@@ -111,32 +111,47 @@ mod tests {
 
     #[test]
     fn no_ttl_leaves_job_alone() {
-        let j = FinishedJob { finished_at: 100, ttl: None };
+        let j = FinishedJob {
+            finished_at: 100,
+            ttl: None,
+        };
         assert_eq!(ttl_decision(&j, 10_000), TtlDecision::NoTtl);
     }
 
     #[test]
     fn ttl_not_elapsed_requeues_with_remaining() {
-        let j = FinishedJob { finished_at: 100, ttl: Some(60) };
+        let j = FinishedJob {
+            finished_at: 100,
+            ttl: Some(60),
+        };
         assert_eq!(ttl_decision(&j, 130), TtlDecision::RequeueAfter(30));
     }
 
     #[test]
     fn ttl_elapsed_deletes() {
-        let j = FinishedJob { finished_at: 100, ttl: Some(60) };
+        let j = FinishedJob {
+            finished_at: 100,
+            ttl: Some(60),
+        };
         assert_eq!(ttl_decision(&j, 160), TtlDecision::Delete);
         assert_eq!(ttl_decision(&j, 200), TtlDecision::Delete);
     }
 
     #[test]
     fn ttl_exactly_at_boundary_deletes() {
-        let j = FinishedJob { finished_at: 100, ttl: Some(60) };
+        let j = FinishedJob {
+            finished_at: 100,
+            ttl: Some(60),
+        };
         assert_eq!(ttl_decision(&j, 160), TtlDecision::Delete);
     }
 
     #[test]
     fn zero_ttl_deletes_at_finish_instant() {
-        let j = FinishedJob { finished_at: 100, ttl: Some(0) };
+        let j = FinishedJob {
+            finished_at: 100,
+            ttl: Some(0),
+        };
         assert_eq!(ttl_decision(&j, 100), TtlDecision::Delete);
     }
 

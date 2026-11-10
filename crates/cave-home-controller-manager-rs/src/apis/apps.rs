@@ -42,7 +42,11 @@ impl ReplicaSet {
     /// A `ReplicaSet` with the given metadata and spec, empty status.
     #[must_use]
     pub fn new(meta: ObjectMeta, spec: ReplicaSetSpec) -> Self {
-        Self { meta, spec, status: ReplicaSetStatus::default() }
+        Self {
+            meta,
+            spec,
+            status: ReplicaSetStatus::default(),
+        }
     }
 }
 
@@ -73,7 +77,10 @@ impl Default for DeploymentStrategy {
     /// Upstream default: 25% surge / 25% unavailable — modelled here as 1/1,
     /// the small-replica rounding the home cluster sees.
     fn default() -> Self {
-        Self::RollingUpdate { max_unavailable: 1, max_surge: 1 }
+        Self::RollingUpdate {
+            max_unavailable: 1,
+            max_surge: 1,
+        }
     }
 }
 
@@ -118,7 +125,11 @@ impl Deployment {
     /// A Deployment with the given metadata and spec, empty status.
     #[must_use]
     pub fn new(meta: ObjectMeta, spec: DeploymentSpec) -> Self {
-        Self { meta, spec, status: DeploymentStatus::default() }
+        Self {
+            meta,
+            spec,
+            status: DeploymentStatus::default(),
+        }
     }
 }
 
@@ -188,7 +199,11 @@ impl StatefulSet {
     /// A `StatefulSet` with the given metadata and spec, empty status.
     #[must_use]
     pub fn new(meta: ObjectMeta, spec: StatefulSetSpec) -> Self {
-        Self { meta, spec, status: StatefulSetStatus::default() }
+        Self {
+            meta,
+            spec,
+            status: StatefulSetStatus::default(),
+        }
     }
 }
 
@@ -242,7 +257,11 @@ impl DaemonSet {
     /// A `DaemonSet` with the given metadata and spec, empty status.
     #[must_use]
     pub fn new(meta: ObjectMeta, spec: DaemonSetSpec) -> Self {
-        Self { meta, spec, status: DaemonSetStatus::default() }
+        Self {
+            meta,
+            spec,
+            status: DaemonSetStatus::default(),
+        }
     }
 }
 

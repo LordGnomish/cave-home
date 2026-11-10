@@ -106,7 +106,7 @@ pub use device::{
     ProtectSensor, ProtectViewer, RecordingMode, SensorId, SensorKind, ViewerId,
 };
 pub use event::{EventGrouper, RingEvent};
-pub use label::{detection_line, ring_line, Lang};
-pub use privacy::{PrivacyState, PrivacySchedule, TimeOfDay};
-pub use recording::{should_record, RecordMode, Schedule};
+pub use label::{Lang, detection_line, ring_line};
+pub use privacy::{PrivacySchedule, PrivacyState, TimeOfDay};
+pub use recording::{RecordMode, Schedule, should_record};
 pub use zone::{LineCrossing, Zone};

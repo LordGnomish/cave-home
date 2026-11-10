@@ -11,8 +11,8 @@
 //! grandma-friendly EN/DE/TR sentence the Portal and voice replies speak.
 
 use crate::color::Rgb;
-use crate::effect::{effect_name, MAX_EFFECT_ID, MAX_PALETTE_ID};
-use crate::label::{brightness_percent, colour_word, Lang};
+use crate::effect::{MAX_EFFECT_ID, MAX_PALETTE_ID, effect_name};
+use crate::label::{Lang, brightness_percent, colour_word};
 use crate::segment::Segment;
 use crate::state::State;
 
@@ -240,7 +240,9 @@ mod tests {
 
     #[test]
     fn brightness_zero_does_not_force_on() {
-        let next = Command::SetBrightness(0).apply(&State::default()).expect("apply");
+        let next = Command::SetBrightness(0)
+            .apply(&State::default())
+            .expect("apply");
         assert_eq!(next.brightness, 0);
     }
 
@@ -263,7 +265,11 @@ mod tests {
         .apply(&s)
         .expect("apply");
         assert_eq!(next.segments[1].primary(), Rgb::new(0, 255, 0));
-        assert_eq!(next.segments[0].primary(), Rgb::new(255, 0, 0), "other segment untouched");
+        assert_eq!(
+            next.segments[0].primary(),
+            Rgb::new(255, 0, 0),
+            "other segment untouched"
+        );
     }
 
     #[test]
@@ -282,7 +288,12 @@ mod tests {
     fn effect_bounds_are_enforced() {
         let s = state_with_segments();
         // In range: accepted.
-        let ok = Command::SetEffect { segment: 0, effect: 73 }.apply(&s).expect("apply");
+        let ok = Command::SetEffect {
+            segment: 0,
+            effect: 73,
+        }
+        .apply(&s)
+        .expect("apply");
         assert_eq!(ok.segments[0].effect, 73);
         // Out of range: rejected, not clamped.
         let err = Command::SetEffect {
@@ -297,7 +308,14 @@ mod tests {
     #[test]
     fn palette_bounds_are_enforced() {
         let s = state_with_segments();
-        assert!(Command::SetPalette { segment: 0, palette: 6 }.apply(&s).is_ok());
+        assert!(
+            Command::SetPalette {
+                segment: 0,
+                palette: 6
+            }
+            .apply(&s)
+            .is_ok()
+        );
         let err = Command::SetPalette {
             segment: 0,
             palette: 200,
@@ -348,9 +366,15 @@ mod tests {
     fn headline_off_when_powered_down() {
         let mut s = State::default();
         s.on = false;
-        assert_eq!(headline("Living-room", &s, Lang::En), "Living-room lights off");
+        assert_eq!(
+            headline("Living-room", &s, Lang::En),
+            "Living-room lights off"
+        );
         assert_eq!(headline("Wohnzimmer", &s, Lang::De), "Wohnzimmer-Licht aus");
-        assert_eq!(headline("Oturma odası", &s, Lang::Tr), "Oturma odası ışıkları kapalı");
+        assert_eq!(
+            headline("Oturma odası", &s, Lang::Tr),
+            "Oturma odası ışıkları kapalı"
+        );
     }
 
     #[test]
@@ -394,8 +418,20 @@ mod tests {
         // are checked case-insensitively as whole-ish tokens; e.g. the German
         // word "Farbpalette" legitimately contains "pal" but is not jargon.
         const BANNED: &[&str] = &[
-            "json", "ddp", "e1.31", "drgb", "udp", "websocket", "mqtt", " fx",
-            "fx ", "segment 0", "byte", "0x", "preset slot", "entity_id",
+            "json",
+            "ddp",
+            "e1.31",
+            "drgb",
+            "udp",
+            "websocket",
+            "mqtt",
+            " fx",
+            "fx ",
+            "segment 0",
+            "byte",
+            "0x",
+            "preset slot",
+            "entity_id",
             "wled",
         ];
         let mut s = State::default();

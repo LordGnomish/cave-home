@@ -93,7 +93,11 @@ fn endpoint_is_ready_when_conditions_ready_true() {
     // Upstream: discovery/v1 EndpointConditions.Ready (default true if nil).
     let e = Endpoint {
         addresses: vec!["10.180.0.1".into()],
-        conditions: EndpointConditions { ready: Some(true), serving: None, terminating: None },
+        conditions: EndpointConditions {
+            ready: Some(true),
+            serving: None,
+            terminating: None,
+        },
     };
     assert!(e.is_ready());
 }
@@ -102,7 +106,11 @@ fn endpoint_is_ready_when_conditions_ready_true() {
 fn endpoint_not_ready_when_condition_false() {
     let e = Endpoint {
         addresses: vec!["10.180.0.1".into()],
-        conditions: EndpointConditions { ready: Some(false), serving: None, terminating: None },
+        conditions: EndpointConditions {
+            ready: Some(false),
+            serving: None,
+            terminating: None,
+        },
     };
     assert!(!e.is_ready());
 }
@@ -112,7 +120,11 @@ fn endpoint_default_unset_ready_treated_as_ready() {
     // Upstream: nil ready pointer means "ready" — defaulting behaviour.
     let e = Endpoint {
         addresses: vec!["10.180.0.1".into()],
-        conditions: EndpointConditions { ready: None, serving: None, terminating: None },
+        conditions: EndpointConditions {
+            ready: None,
+            serving: None,
+            terminating: None,
+        },
     };
     assert!(e.is_ready());
 }
@@ -122,10 +134,18 @@ fn endpointslice_carries_ports_endpoints_and_service_label() {
     let slice = EndpointSlice {
         metadata: NamespacedName::new("ns1", "svc1-abc"),
         service_name: "svc1".into(),
-        ports: vec![EndpointPort { name: "p80".into(), port: 80, protocol: Protocol::Tcp }],
+        ports: vec![EndpointPort {
+            name: "p80".into(),
+            port: 80,
+            protocol: Protocol::Tcp,
+        }],
         endpoints: vec![Endpoint {
             addresses: vec!["10.180.0.1".into()],
-            conditions: EndpointConditions { ready: Some(true), serving: None, terminating: None },
+            conditions: EndpointConditions {
+                ready: Some(true),
+                serving: None,
+                terminating: None,
+            },
         }],
     };
     assert_eq!(slice.service_namespaced_name().to_string(), "ns1/svc1");
@@ -138,7 +158,11 @@ fn watch_event_variants_carry_objects() {
     let svc = Service {
         metadata: NamespacedName::new("ns1", "svc1"),
         cluster_ip: "10.20.30.41".into(),
-        ports: vec![ServicePort { name: "p80".into(), port: 80, protocol: Protocol::Tcp }],
+        ports: vec![ServicePort {
+            name: "p80".into(),
+            port: 80,
+            protocol: Protocol::Tcp,
+        }],
         type_: ServiceType::ClusterIP,
     };
     let added = WatchEvent::ServiceAdded(svc.clone());

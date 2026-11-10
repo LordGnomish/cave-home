@@ -116,7 +116,9 @@ impl HubCapabilities {
     /// An empty hub — nothing added yet.
     #[must_use]
     pub const fn new() -> Self {
-        Self { present: Vec::new() }
+        Self {
+            present: Vec::new(),
+        }
     }
 
     /// Add one capability, keeping the set sorted & de-duplicated.
@@ -159,7 +161,10 @@ mod tests {
     fn every_capability_has_three_language_nouns() {
         for cap in Capability::all() {
             for lang in [Lang::En, Lang::De, Lang::Tr] {
-                assert!(!cap.noun(lang).is_empty(), "{cap:?} missing noun for {lang:?}");
+                assert!(
+                    !cap.noun(lang).is_empty(),
+                    "{cap:?} missing noun for {lang:?}"
+                );
             }
         }
     }

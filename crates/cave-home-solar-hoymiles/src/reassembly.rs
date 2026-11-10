@@ -40,7 +40,12 @@ impl Fragment {
     #[must_use]
     pub fn new(seq: u8, is_last: bool, data: Vec<u8>) -> Self {
         let checksum = crc8(&data);
-        Self { seq, is_last, data, checksum }
+        Self {
+            seq,
+            is_last,
+            data,
+            checksum,
+        }
     }
 
     /// Whether the carried [`checksum`](Self::checksum) matches the data.
@@ -140,11 +145,7 @@ impl Reassembler {
             return Vec::new();
         };
         (1..=last)
-            .filter(|&seq| {
-                self.slots
-                    .get(seq as usize)
-                    .is_none_or(Option::is_none)
-            })
+            .filter(|&seq| self.slots.get(seq as usize).is_none_or(Option::is_none))
             .collect()
     }
 
@@ -184,7 +185,8 @@ mod tests {
     #[test]
     fn assembles_in_order_fragments() {
         let mut r = Reassembler::new();
-        r.accept(&Fragment::new(1, false, vec![0xAA, 0xBB])).unwrap();
+        r.accept(&Fragment::new(1, false, vec![0xAA, 0xBB]))
+            .unwrap();
         r.accept(&Fragment::new(2, true, vec![0xCC])).unwrap();
         assert!(r.is_complete());
         assert_eq!(r.assemble().unwrap(), vec![0xAA, 0xBB, 0xCC]);

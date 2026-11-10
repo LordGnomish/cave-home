@@ -31,7 +31,7 @@
 use tokio_postgres::{Client, GenericClient, NoTls};
 
 use crate::backend::{contains, key_str, like_pattern, resolve_read, validate_range};
-use crate::dialect::{Dialect, Driver, COMPACT_REV_KEY};
+use crate::dialect::{COMPACT_REV_KEY, Dialect, Driver};
 use crate::error::{KineError, Result};
 use crate::range::{RangeRequest, RangeResponse};
 use crate::revision::Revision;
@@ -61,14 +61,20 @@ impl PgStore {
         tokio::spawn(async move {
             let _ = connection.await;
         });
-        let store = Self { client, dialect: Dialect::new(Driver::Postgres) };
+        let store = Self {
+            client,
+            dialect: Dialect::new(Driver::Postgres),
+        };
         store.bootstrap().await?;
         Ok(store)
     }
 
     /// Create the table + indexes (idempotent) and the sentinel row.
     async fn bootstrap(&self) -> Result<()> {
-        self.client.batch_execute(&self.dialect.create_table_sql()).await.map_err(pg_err)?;
+        self.client
+            .batch_execute(&self.dialect.create_table_sql())
+            .await
+            .map_err(pg_err)?;
         for ix in self.dialect.index_sqls() {
             // Index creation races are benign across replicas; ignore "already
             // exists" by using IF NOT EXISTS (the dialect emits it for Postgres).
@@ -83,7 +89,10 @@ impl PgStore {
         let sentinel = COMPACT_REV_KEY;
         let row = self
             .client
-            .query_one("SELECT EXISTS(SELECT 1 FROM kine WHERE name = $1)", &[&sentinel])
+            .query_one(
+                "SELECT EXISTS(SELECT 1 FROM kine WHERE name = $1)",
+                &[&sentinel],
+            )
             .await
             .map_err(pg_err)?;
         if row.get::<_, bool>(0) {
@@ -95,7 +104,9 @@ impl PgStore {
         self.client
             .execute(
                 &self.dialect.fill_sql(),
-                &[&0_i64, &sentinel, &0_i64, &1_i64, &0_i64, &0_i64, &0_i64, &empty, &empty],
+                &[
+                    &0_i64, &sentinel, &0_i64, &1_i64, &0_i64, &0_i64, &0_i64, &empty, &empty,
+                ],
             )
             .await
             .map_err(pg_err)?;
@@ -134,7 +145,12 @@ impl PgStore {
     ///
     /// # Errors
     /// [`KineError::EmptyKey`] / [`KineError::Backend`].
-    pub async fn create(&mut self, key: &[u8], value: &[u8], lease: i64) -> Result<Option<Revision>> {
+    pub async fn create(
+        &mut self,
+        key: &[u8],
+        value: &[u8],
+        lease: i64,
+    ) -> Result<Option<Revision>> {
         let k = key_str(key)?;
         let txn = self.client.transaction().await.map_err(pg_err)?;
         let latest = latest_in(&txn, self.dialect, &k).await?;
@@ -143,7 +159,19 @@ impl PgStore {
             return Ok(None);
         }
         let prev_id = latest.map_or(0, |(id, _, _, _)| id);
-        let rev = insert_in(&txn, self.dialect, &k, true, false, 0, prev_id, lease, value, &[]).await?;
+        let rev = insert_in(
+            &txn,
+            self.dialect,
+            &k,
+            true,
+            false,
+            0,
+            prev_id,
+            lease,
+            value,
+            &[],
+        )
+        .await?;
         txn.commit().await.map_err(pg_err)?;
         Ok(Some(rev))
     }
@@ -152,10 +180,16 @@ impl PgStore {
     ///
     /// # Errors
     /// [`KineError::EmptyKey`] / [`KineError::Backend`].
-    pub async fn update(&mut self, key: &[u8], value: &[u8], lease: i64) -> Result<Option<Revision>> {
+    pub async fn update(
+        &mut self,
+        key: &[u8],
+        value: &[u8],
+        lease: i64,
+    ) -> Result<Option<Revision>> {
         let k = key_str(key)?;
         let txn = self.client.transaction().await.map_err(pg_err)?;
-        let Some((prev_id, create_rev, deleted, old)) = latest_in(&txn, self.dialect, &k).await? else {
+        let Some((prev_id, create_rev, deleted, old)) = latest_in(&txn, self.dialect, &k).await?
+        else {
             txn.rollback().await.map_err(pg_err)?;
             return Ok(None);
         };
@@ -163,7 +197,19 @@ impl PgStore {
             txn.rollback().await.map_err(pg_err)?;
             return Ok(None);
         }
-        let rev = insert_in(&txn, self.dialect, &k, false, false, create_rev, prev_id, lease, value, &old).await?;
+        let rev = insert_in(
+            &txn,
+            self.dialect,
+            &k,
+            false,
+            false,
+            create_rev,
+            prev_id,
+            lease,
+            value,
+            &old,
+        )
+        .await?;
         txn.commit().await.map_err(pg_err)?;
         Ok(Some(rev))
     }
@@ -177,11 +223,35 @@ impl PgStore {
         let txn = self.client.transaction().await.map_err(pg_err)?;
         let rev = match latest_in(&txn, self.dialect, &k).await? {
             Some((prev_id, create_rev, false, old)) => {
-                insert_in(&txn, self.dialect, &k, false, false, create_rev, prev_id, lease, value, &old).await?
+                insert_in(
+                    &txn,
+                    self.dialect,
+                    &k,
+                    false,
+                    false,
+                    create_rev,
+                    prev_id,
+                    lease,
+                    value,
+                    &old,
+                )
+                .await?
             }
             other => {
                 let prev_id = other.map_or(0, |(id, _, _, _)| id);
-                insert_in(&txn, self.dialect, &k, true, false, 0, prev_id, lease, value, &[]).await?
+                insert_in(
+                    &txn,
+                    self.dialect,
+                    &k,
+                    true,
+                    false,
+                    0,
+                    prev_id,
+                    lease,
+                    value,
+                    &[],
+                )
+                .await?
             }
         };
         txn.commit().await.map_err(pg_err)?;
@@ -195,7 +265,8 @@ impl PgStore {
     pub async fn delete(&mut self, key: &[u8]) -> Result<Option<Revision>> {
         let k = key_str(key)?;
         let txn = self.client.transaction().await.map_err(pg_err)?;
-        let Some((prev_id, create_rev, deleted, old)) = latest_in(&txn, self.dialect, &k).await? else {
+        let Some((prev_id, create_rev, deleted, old)) = latest_in(&txn, self.dialect, &k).await?
+        else {
             txn.rollback().await.map_err(pg_err)?;
             return Ok(None);
         };
@@ -203,7 +274,19 @@ impl PgStore {
             txn.rollback().await.map_err(pg_err)?;
             return Ok(None);
         }
-        let rev = insert_in(&txn, self.dialect, &k, false, true, create_rev, prev_id, 0, &[], &old).await?;
+        let rev = insert_in(
+            &txn,
+            self.dialect,
+            &k,
+            false,
+            true,
+            create_rev,
+            prev_id,
+            0,
+            &[],
+            &old,
+        )
+        .await?;
         txn.commit().await.map_err(pg_err)?;
         Ok(Some(rev))
     }
@@ -219,7 +302,10 @@ impl PgStore {
         let read_rev = resolve_read(req.revision, header)?;
         let floor = self.compacted_revision().await?;
         if req.revision != 0 && req.revision < floor {
-            return Err(KineError::Compacted { requested: req.revision, compacted: floor });
+            return Err(KineError::Compacted {
+                requested: req.revision,
+                compacted: floor,
+            });
         }
 
         let mut rows = self.list_rows(req, read_rev).await?;
@@ -231,7 +317,12 @@ impl PgStore {
         } else {
             (rows, false)
         };
-        Ok(RangeResponse { revision: read_rev, kvs, more, count })
+        Ok(RangeResponse {
+            revision: read_rev,
+            kvs,
+            more,
+            count,
+        })
     }
 
     /// Run the latest-row-per-key list query for `req` at `read_rev`.
@@ -242,11 +333,17 @@ impl PgStore {
         let include_deleted = false;
         let pg_rows = if at_rev {
             self.client
-                .query(&self.dialect.list_revision_sql(), &[&pattern, &read_rev, &include_deleted])
+                .query(
+                    &self.dialect.list_revision_sql(),
+                    &[&pattern, &read_rev, &include_deleted],
+                )
                 .await
         } else {
             self.client
-                .query(&self.dialect.list_current_sql(), &[&pattern, &include_deleted])
+                .query(
+                    &self.dialect.list_current_sql(),
+                    &[&pattern, &include_deleted],
+                )
                 .await
         }
         .map_err(pg_err)?;
@@ -263,19 +360,31 @@ impl PgStore {
     /// # Errors
     /// [`KineError::NegativeRevision`] / [`KineError::Compacted`], filter
     /// validation, or [`KineError::Backend`].
-    pub async fn watch_after(&self, filter: &RangeRequest, start_revision: Revision) -> Result<Vec<WatchEvent>> {
+    pub async fn watch_after(
+        &self,
+        filter: &RangeRequest,
+        start_revision: Revision,
+    ) -> Result<Vec<WatchEvent>> {
         if start_revision < 0 {
-            return Err(KineError::NegativeRevision { revision: start_revision });
+            return Err(KineError::NegativeRevision {
+                revision: start_revision,
+            });
         }
         let floor = self.compacted_revision().await?;
         if start_revision != 0 && start_revision < floor {
-            return Err(KineError::Compacted { requested: start_revision, compacted: floor });
+            return Err(KineError::Compacted {
+                requested: start_revision,
+                compacted: floor,
+            });
         }
         validate_range(filter)?;
 
         let pattern = like_pattern(filter);
-        let pg_rows =
-            self.client.query(&self.dialect.after_sql(), &[&pattern, &start_revision]).await.map_err(pg_err)?;
+        let pg_rows = self
+            .client
+            .query(&self.dialect.after_sql(), &[&pattern, &start_revision])
+            .await
+            .map_err(pg_err)?;
         let mut events: Vec<WatchEvent> = pg_rows.iter().map(project_event).collect();
         events.retain(|e| e.key != COMPACT_REV_KEY.as_bytes() && contains(filter, &e.key));
         Ok(events)
@@ -293,18 +402,28 @@ impl PgStore {
         }
         let current = self.current_revision().await?;
         if target > current {
-            return Err(KineError::CompactFutureRevision { requested: target, current });
+            return Err(KineError::CompactFutureRevision {
+                requested: target,
+                current,
+            });
         }
         let floor = self.compacted_revision().await?;
         if target <= floor {
-            return Err(KineError::CompactionNotForward { requested: target, current: floor });
+            return Err(KineError::CompactionNotForward {
+                requested: target,
+                current: floor,
+            });
         }
 
         let before = self.count_rows().await?;
         let sentinel = COMPACT_REV_KEY;
         let txn = self.client.transaction().await.map_err(pg_err)?;
-        txn.execute(&self.dialect.compact_delete_sql(), &[&sentinel, &target]).await.map_err(pg_err)?;
-        txn.execute(&self.dialect.update_compact_sql(), &[&target]).await.map_err(pg_err)?;
+        txn.execute(&self.dialect.compact_delete_sql(), &[&sentinel, &target])
+            .await
+            .map_err(pg_err)?;
+        txn.execute(&self.dialect.update_compact_sql(), &[&target])
+            .await
+            .map_err(pg_err)?;
         txn.commit().await.map_err(pg_err)?;
         let after = self.count_rows().await?;
 
@@ -319,7 +438,11 @@ impl PgStore {
     /// Count real (non-sentinel) rows.
     async fn count_rows(&self) -> Result<i64> {
         let sentinel = COMPACT_REV_KEY;
-        let row = self.client.query_one(&self.dialect.count_rows_sql(), &[&sentinel]).await.map_err(pg_err)?;
+        let row = self
+            .client
+            .query_one(&self.dialect.count_rows_sql(), &[&sentinel])
+            .await
+            .map_err(pg_err)?;
         Ok(row.get::<_, i64>(0))
     }
 
@@ -332,9 +455,15 @@ impl PgStore {
             return Ok(Vec::new());
         }
         let sentinel = COMPACT_REV_KEY;
-        let rows =
-            self.client.query(&self.dialect.keys_with_lease_sql(), &[&lease_id, &sentinel]).await.map_err(pg_err)?;
-        Ok(rows.iter().map(|r| r.get::<_, String>(0).into_bytes()).collect())
+        let rows = self
+            .client
+            .query(&self.dialect.keys_with_lease_sql(), &[&lease_id, &sentinel])
+            .await
+            .map_err(pg_err)?;
+        Ok(rows
+            .iter()
+            .map(|r| r.get::<_, String>(0).into_bytes())
+            .collect())
     }
 
     /// Revoke lease `lease_id`: tombstone every live key attached to it.
@@ -357,7 +486,11 @@ impl PgStore {
     /// # Errors
     /// [`KineError::Backend`] on a query failure.
     pub async fn db_size(&self) -> Result<i64> {
-        let row = self.client.query_one("SELECT pg_total_relation_size('kine')", &[]).await.map_err(pg_err)?;
+        let row = self
+            .client
+            .query_one("SELECT pg_total_relation_size('kine')", &[])
+            .await
+            .map_err(pg_err)?;
         Ok(row.get::<_, i64>(0))
     }
 
@@ -370,17 +503,32 @@ impl PgStore {
     /// [`KineError::Backend`] if the rebuild fails.
     pub async fn defragment(&self) -> Result<i64> {
         let before = self.db_size().await?;
-        self.client.batch_execute("VACUUM FULL kine").await.map_err(pg_err)?;
+        self.client
+            .batch_execute("VACUUM FULL kine")
+            .await
+            .map_err(pg_err)?;
         let after = self.db_size().await?;
         Ok((before - after).max(0))
     }
 }
 
 /// The latest row for `key` via `client` (a `Client` or `Transaction`).
-async fn latest_in<C: GenericClient + Sync>(client: &C, dialect: Dialect, key: &str) -> Result<Option<LatestRow>> {
-    let row = client.query_opt(&dialect.latest_row_sql(), &[&key]).await.map_err(pg_err)?;
+async fn latest_in<C: GenericClient + Sync>(
+    client: &C,
+    dialect: Dialect,
+    key: &str,
+) -> Result<Option<LatestRow>> {
+    let row = client
+        .query_opt(&dialect.latest_row_sql(), &[&key])
+        .await
+        .map_err(pg_err)?;
     Ok(row.map(|r| {
-        (r.get::<_, i64>(0), r.get::<_, i64>(1), r.get::<_, i64>(2) != 0, r.get::<_, Vec<u8>>(3))
+        (
+            r.get::<_, i64>(0),
+            r.get::<_, i64>(1),
+            r.get::<_, i64>(2) != 0,
+            r.get::<_, Vec<u8>>(3),
+        )
     }))
 }
 
@@ -406,13 +554,25 @@ async fn insert_in<C: GenericClient + Sync>(
     let row = client
         .query_one(
             &insert,
-            &[&key, &created_i, &deleted_i, &create_revision, &prev_revision, &lease, &value, &old_value],
+            &[
+                &key,
+                &created_i,
+                &deleted_i,
+                &create_revision,
+                &prev_revision,
+                &lease,
+                &value,
+                &old_value,
+            ],
         )
         .await
         .map_err(pg_err)?;
     let id: i64 = row.get(0);
     if created {
-        client.execute(&dialect.set_create_revision_sql(), &[&id, &id]).await.map_err(pg_err)?;
+        client
+            .execute(&dialect.set_create_revision_sql(), &[&id, &id])
+            .await
+            .map_err(pg_err)?;
     }
     Ok(id)
 }
@@ -435,7 +595,11 @@ fn project_row(r: &tokio_postgres::Row) -> Row {
 fn project_event(r: &tokio_postgres::Row) -> WatchEvent {
     let deleted = r.get::<_, i64>(5) != 0;
     WatchEvent {
-        kind: if deleted { EventKind::Delete } else { EventKind::Put },
+        kind: if deleted {
+            EventKind::Delete
+        } else {
+            EventKind::Put
+        },
         key: r.get::<_, String>(3).into_bytes(),
         value: r.get::<_, Vec<u8>>(9),
         prev_value: r.get::<_, Vec<u8>>(10),
@@ -447,5 +611,7 @@ fn project_event(r: &tokio_postgres::Row) -> WatchEvent {
 /// Wrap a `tokio_postgres` error as a backend error.
 #[allow(clippy::needless_pass_by_value)]
 fn pg_err(e: tokio_postgres::Error) -> KineError {
-    KineError::Backend { message: e.to_string() }
+    KineError::Backend {
+        message: e.to_string(),
+    }
 }

@@ -89,7 +89,12 @@ impl PvArray {
         if !system_derate.is_finite() || !(0.0..=1.0).contains(&system_derate) {
             return Err(ArrayError::BadDerate);
         }
-        Ok(Self { peak_power_kw, tilt_deg, azimuth_deg, system_derate })
+        Ok(Self {
+            peak_power_kw,
+            tilt_deg,
+            azimuth_deg,
+            system_derate,
+        })
     }
 
     #[must_use]
@@ -125,8 +130,7 @@ impl PvArray {
         // Difference between sun azimuth and panel azimuth.
         let d_az = (sun.azimuth_deg - self.azimuth_deg) * PI / 180.0;
         // cosθ = sin(elev)cos(tilt) + cos(elev)sin(tilt)cos(Δaz).
-        let cos_theta =
-            elev.sin() * tilt.cos() + elev.cos() * tilt.sin() * d_az.cos();
+        let cos_theta = elev.sin() * tilt.cos() + elev.cos() * tilt.sin() * d_az.cos();
         cos_theta.clamp(0.0, 1.0)
     }
 
@@ -186,30 +190,54 @@ mod tests {
 
     #[test]
     fn rejects_negative_peak_power() {
-        assert_eq!(PvArray::new(-1.0, 30.0, 180.0, 0.85), Err(ArrayError::BadPeakPower));
+        assert_eq!(
+            PvArray::new(-1.0, 30.0, 180.0, 0.85),
+            Err(ArrayError::BadPeakPower)
+        );
     }
 
     #[test]
     fn rejects_nonfinite_peak_power() {
-        assert_eq!(PvArray::new(f64::NAN, 30.0, 180.0, 0.85), Err(ArrayError::BadPeakPower));
+        assert_eq!(
+            PvArray::new(f64::NAN, 30.0, 180.0, 0.85),
+            Err(ArrayError::BadPeakPower)
+        );
     }
 
     #[test]
     fn rejects_out_of_range_tilt() {
-        assert_eq!(PvArray::new(6.0, -1.0, 180.0, 0.85), Err(ArrayError::BadTilt));
-        assert_eq!(PvArray::new(6.0, 91.0, 180.0, 0.85), Err(ArrayError::BadTilt));
+        assert_eq!(
+            PvArray::new(6.0, -1.0, 180.0, 0.85),
+            Err(ArrayError::BadTilt)
+        );
+        assert_eq!(
+            PvArray::new(6.0, 91.0, 180.0, 0.85),
+            Err(ArrayError::BadTilt)
+        );
     }
 
     #[test]
     fn rejects_out_of_range_azimuth() {
-        assert_eq!(PvArray::new(6.0, 30.0, -10.0, 0.85), Err(ArrayError::BadAzimuth));
-        assert_eq!(PvArray::new(6.0, 30.0, 361.0, 0.85), Err(ArrayError::BadAzimuth));
+        assert_eq!(
+            PvArray::new(6.0, 30.0, -10.0, 0.85),
+            Err(ArrayError::BadAzimuth)
+        );
+        assert_eq!(
+            PvArray::new(6.0, 30.0, 361.0, 0.85),
+            Err(ArrayError::BadAzimuth)
+        );
     }
 
     #[test]
     fn rejects_out_of_range_derate() {
-        assert_eq!(PvArray::new(6.0, 30.0, 180.0, -0.1), Err(ArrayError::BadDerate));
-        assert_eq!(PvArray::new(6.0, 30.0, 180.0, 1.5), Err(ArrayError::BadDerate));
+        assert_eq!(
+            PvArray::new(6.0, 30.0, 180.0, -0.1),
+            Err(ArrayError::BadDerate)
+        );
+        assert_eq!(
+            PvArray::new(6.0, 30.0, 180.0, 1.5),
+            Err(ArrayError::BadDerate)
+        );
     }
 
     #[test]
@@ -232,7 +260,11 @@ mod tests {
         let small = PvArray::new(3.0, 30.0, 180.0, 0.85).unwrap();
         let big = PvArray::new(9.0, 30.0, 180.0, 0.85).unwrap();
         // Same irradiance: 3× the kWp makes 3× the power.
-        close(big.ac_power_kw(800.0, 0.0), 3.0 * small.ac_power_kw(800.0, 0.0), 1e-9);
+        close(
+            big.ac_power_kw(800.0, 0.0),
+            3.0 * small.ac_power_kw(800.0, 0.0),
+            1e-9,
+        );
     }
 
     #[test]
@@ -247,7 +279,10 @@ mod tests {
         let arr = south_array();
         let clear = arr.ac_power_kw(800.0, 0.0);
         let overcast = arr.ac_power_kw(800.0, 1.0);
-        assert!(overcast < clear, "overcast {overcast} should be below clear {clear}");
+        assert!(
+            overcast < clear,
+            "overcast {overcast} should be below clear {clear}"
+        );
         // Overcast retains the ~25% diffuse floor.
         close(overcast, clear * 0.25, 1e-9);
     }

@@ -77,15 +77,18 @@ impl VxlanNetwork {
             return Ok(()); // never program a path to ourselves
         }
         let (public_ip, vtep_mac) = match &lease.data {
-            NodeBackendData::Vxlan { public_ip, vtep_mac } => (*public_ip, *vtep_mac),
+            NodeBackendData::Vxlan {
+                public_ip,
+                vtep_mac,
+            } => (*public_ip, *vtep_mac),
             // A peer advertising a non-VXLAN backend in a VXLAN cluster: ignore.
             _ => return Ok(()),
         };
 
         let subnet = lease.subnet;
         let gw = subnet.network(); // the peer's .0 overlay gateway
-        let direct_ok = self.dev.direct_routing
-            && self.local_underlay.is_some_and(|u| u.contains(public_ip));
+        let direct_ok =
+            self.dev.direct_routing && self.local_underlay.is_some_and(|u| u.contains(public_ip));
 
         if direct_ok {
             // Same underlay → skip encapsulation, just a direct route.
@@ -98,8 +101,14 @@ impl VxlanNetwork {
             return Ok(());
         }
 
-        let arp = Neighbor { mac: vtep_mac, ip: gw };
-        let fdb = Neighbor { mac: vtep_mac, ip: public_ip };
+        let arp = Neighbor {
+            mac: vtep_mac,
+            ip: gw,
+        };
+        let fdb = Neighbor {
+            mac: vtep_mac,
+            ip: public_ip,
+        };
         let route = Route::vxlan(subnet, gw, self.dev.index);
 
         if added {
@@ -193,8 +202,11 @@ mod tests {
     fn add_peer_programs_arp_then_fdb_then_route_in_order() {
         let (mut dp, nw) = local_network(false, None);
         let start = dp.ops.len(); // skip the device-setup ops
-        nw.handle_event(&mut dp, &LeaseEvent::Added(peer("b", "10.42.1.0/24", "192.168.1.2", 2)))
-            .expect("add");
+        nw.handle_event(
+            &mut dp,
+            &LeaseEvent::Added(peer("b", "10.42.1.0/24", "192.168.1.2", 2)),
+        )
+        .expect("add");
         let ops = &dp.ops[start..];
         assert_eq!(ops.len(), 3);
         // 1. ARP: gateway 10.42.1.0 -> peer VTEP MAC, AF_INET.
@@ -265,7 +277,8 @@ mod tests {
                 public_ip: v4("192.168.1.2"),
             },
         };
-        nw.handle_event(&mut dp, &LeaseEvent::Added(l)).expect("skip");
+        nw.handle_event(&mut dp, &LeaseEvent::Added(l))
+            .expect("skip");
         assert_eq!(dp.ops.len(), start);
     }
 
@@ -273,8 +286,11 @@ mod tests {
     fn direct_routing_same_underlay_uses_single_direct_route() {
         let (mut dp, nw) = local_network(true, Some(cidr("192.168.1.0/24")));
         let start = dp.ops.len();
-        nw.handle_event(&mut dp, &LeaseEvent::Added(peer("b", "10.42.1.0/24", "192.168.1.2", 2)))
-            .expect("add");
+        nw.handle_event(
+            &mut dp,
+            &LeaseEvent::Added(peer("b", "10.42.1.0/24", "192.168.1.2", 2)),
+        )
+        .expect("add");
         let ops = &dp.ops[start..];
         assert_eq!(ops.len(), 1, "direct routing programs only one route");
         match &ops[0] {
@@ -292,8 +308,11 @@ mod tests {
         let (mut dp, nw) = local_network(true, Some(cidr("192.168.1.0/24")));
         let start = dp.ops.len();
         // Peer on a different underlay (10.9.x) → must encapsulate.
-        nw.handle_event(&mut dp, &LeaseEvent::Added(peer("b", "10.42.1.0/24", "10.9.9.2", 2)))
-            .expect("add");
+        nw.handle_event(
+            &mut dp,
+            &LeaseEvent::Added(peer("b", "10.42.1.0/24", "10.9.9.2", 2)),
+        )
+        .expect("add");
         assert_eq!(dp.ops[start..].len(), 3, "falls back to ARP+FDB+route");
     }
 

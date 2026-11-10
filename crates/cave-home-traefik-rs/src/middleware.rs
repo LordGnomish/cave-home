@@ -94,7 +94,11 @@ impl Middleware {
                 req.path = format!("{}{}", prefix, req.path);
                 false
             }
-            Self::RedirectScheme { scheme, port, permanent } => {
+            Self::RedirectScheme {
+                scheme,
+                port,
+                permanent,
+            } => {
                 let authority = match port {
                     Some(p) => format!("{}:{}", host_only(&req.host), p),
                     None => req.host.clone(),
@@ -148,7 +152,11 @@ impl MiddlewareChain {
                 break;
             }
         }
-        Applied { request, response, short_circuited }
+        Applied {
+            request,
+            response,
+            short_circuited,
+        }
     }
 }
 
@@ -186,7 +194,9 @@ mod tests {
 
     #[test]
     fn strip_prefix_removes_leading_segment() {
-        let mw = Middleware::StripPrefix { prefixes: vec!["/api".to_string()] };
+        let mw = Middleware::StripPrefix {
+            prefixes: vec!["/api".to_string()],
+        };
         let out = MiddlewareChain::new(vec![mw]).apply(req("/api/users"));
         assert_eq!(out.request.path, "/users");
         assert!(!out.short_circuited);
@@ -194,14 +204,18 @@ mod tests {
 
     #[test]
     fn strip_prefix_exact_becomes_root() {
-        let mw = Middleware::StripPrefix { prefixes: vec!["/api".to_string()] };
+        let mw = Middleware::StripPrefix {
+            prefixes: vec!["/api".to_string()],
+        };
         let out = MiddlewareChain::new(vec![mw]).apply(req("/api"));
         assert_eq!(out.request.path, "/");
     }
 
     #[test]
     fn strip_prefix_no_match_leaves_path() {
-        let mw = Middleware::StripPrefix { prefixes: vec!["/api".to_string()] };
+        let mw = Middleware::StripPrefix {
+            prefixes: vec!["/api".to_string()],
+        };
         let out = MiddlewareChain::new(vec![mw]).apply(req("/apixyz"));
         assert_eq!(out.request.path, "/apixyz");
     }
@@ -217,7 +231,9 @@ mod tests {
 
     #[test]
     fn add_prefix_prepends() {
-        let mw = Middleware::AddPrefix { prefix: "/api".to_string() };
+        let mw = Middleware::AddPrefix {
+            prefix: "/api".to_string(),
+        };
         let out = MiddlewareChain::new(vec![mw]).apply(req("/users"));
         assert_eq!(out.request.path, "/api/users");
     }
@@ -225,8 +241,12 @@ mod tests {
     #[test]
     fn strip_then_add_compose_in_order() {
         let chain = MiddlewareChain::new(vec![
-            Middleware::StripPrefix { prefixes: vec!["/old".to_string()] },
-            Middleware::AddPrefix { prefix: "/new".to_string() },
+            Middleware::StripPrefix {
+                prefixes: vec!["/old".to_string()],
+            },
+            Middleware::AddPrefix {
+                prefix: "/new".to_string(),
+            },
         ]);
         let out = chain.apply(req("/old/thing"));
         assert_eq!(out.request.path, "/new/thing");
@@ -242,7 +262,10 @@ mod tests {
         let out = MiddlewareChain::new(vec![mw]).apply(req("/secure"));
         assert!(out.short_circuited);
         assert_eq!(out.response.status, Some(302));
-        assert_eq!(out.response.header("location"), Some("https://example.com/secure"));
+        assert_eq!(
+            out.response.header("location"),
+            Some("https://example.com/secure")
+        );
     }
 
     #[test]
@@ -254,7 +277,10 @@ mod tests {
         };
         let out = MiddlewareChain::new(vec![mw]).apply(req("/x"));
         assert_eq!(out.response.status, Some(301));
-        assert_eq!(out.response.header("location"), Some("https://example.com:8443/x"));
+        assert_eq!(
+            out.response.header("location"),
+            Some("https://example.com:8443/x")
+        );
     }
 
     #[test]
@@ -265,7 +291,9 @@ mod tests {
                 port: None,
                 permanent: false,
             },
-            Middleware::AddPrefix { prefix: "/should-not-apply".to_string() },
+            Middleware::AddPrefix {
+                prefix: "/should-not-apply".to_string(),
+            },
         ]);
         let out = chain.apply(req("/x"));
         // AddPrefix must NOT have run.
@@ -286,8 +314,14 @@ mod tests {
     #[test]
     fn config_only_middlewares_are_pass_through() {
         let chain = MiddlewareChain::new(vec![
-            Middleware::BasicAuth { realm: "r".to_string(), users: vec!["u:h".to_string()] },
-            Middleware::RateLimit { average: 100, burst: 50 },
+            Middleware::BasicAuth {
+                realm: "r".to_string(),
+                users: vec!["u:h".to_string()],
+            },
+            Middleware::RateLimit {
+                average: 100,
+                burst: 50,
+            },
         ]);
         let out = chain.apply(req("/x"));
         assert!(!out.short_circuited);

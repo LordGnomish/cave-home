@@ -63,12 +63,7 @@ pub fn time_in_state(lang: Lang, state_phrase: &str, seconds: i64) -> String {
 /// [`time_in_state`] when the duration is in raw timestamp units rather than
 /// seconds.
 #[must_use]
-pub fn time_in_state_units(
-    lang: Lang,
-    state_phrase: &str,
-    span: i64,
-    unit: TimeUnit,
-) -> String {
+pub fn time_in_state_units(lang: Lang, state_phrase: &str, span: i64, unit: TimeUnit) -> String {
     let seconds = span / unit.per_second();
     time_in_state(lang, state_phrase, seconds)
 }
@@ -135,7 +130,10 @@ mod tests {
 
     #[test]
     fn average_handles_empty_unit() {
-        assert_eq!(average(Lang::En, "this week", 5.0, ""), "Average this week: 5");
+        assert_eq!(
+            average(Lang::En, "this week", 5.0, ""),
+            "Average this week: 5"
+        );
     }
 
     #[test]
@@ -155,7 +153,10 @@ mod tests {
 
     #[test]
     fn humanize_hours_and_minutes() {
-        assert_eq!(humanize_duration(Lang::En, 2 * 3600 + 30 * 60), "2 hours 30 minutes");
+        assert_eq!(
+            humanize_duration(Lang::En, 2 * 3600 + 30 * 60),
+            "2 hours 30 minutes"
+        );
         assert_eq!(humanize_duration(Lang::En, 45 * 60), "45 minutes");
         assert_eq!(humanize_duration(Lang::En, 60), "1 minute");
     }
@@ -171,7 +172,10 @@ mod tests {
     fn time_in_state_phrasing() {
         assert_eq!(time_in_state(Lang::En, "On", 3 * 3600), "On for 3 hours");
         assert_eq!(time_in_state(Lang::De, "Ein", 3600), "Ein für 1 Stunde");
-        assert_eq!(time_in_state(Lang::Tr, "Açık", 2 * 3600), "2 saat boyunca Açık");
+        assert_eq!(
+            time_in_state(Lang::Tr, "Açık", 2 * 3600),
+            "2 saat boyunca Açık"
+        );
     }
 
     #[test]

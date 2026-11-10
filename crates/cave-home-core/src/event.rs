@@ -67,7 +67,12 @@ mod tests {
     #[test]
     fn new_preserves_explicit_context_and_origin() {
         let ctx = Context::with_user("alice");
-        let evt = Event::new("call_service", json!({"domain": "light"}), EventOrigin::Remote, ctx.clone());
+        let evt = Event::new(
+            "call_service",
+            json!({"domain": "light"}),
+            EventOrigin::Remote,
+            ctx.clone(),
+        );
         assert_eq!(evt.origin, EventOrigin::Remote);
         assert_eq!(evt.context, ctx);
         assert_eq!(evt.data["domain"], "light");

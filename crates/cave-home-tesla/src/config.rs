@@ -142,7 +142,10 @@ mod tests {
 
     #[test]
     fn default_region_parses() {
-        assert_eq!(TeslaConfig::default().region(), Some(Region::NorthAmericaAsiaPacific));
+        assert_eq!(
+            TeslaConfig::default().region(),
+            Some(Region::NorthAmericaAsiaPacific)
+        );
     }
 
     #[test]

@@ -88,9 +88,11 @@ impl JobController {
         let name = format!("{}-{}", job.meta.name, self.pod_seq);
         let mut meta = ObjectMeta::new(&name, &job.meta.namespace, "");
         meta.labels = job.spec.template.labels.clone();
-        meta.owner_references = vec![OwnerReference::to("Job", &job.meta.name, &job.meta.uid)
-            .controller()
-            .blocking()];
+        meta.owner_references = vec![
+            OwnerReference::to("Job", &job.meta.name, &job.meta.uid)
+                .controller()
+                .blocking(),
+        ];
         cluster.pods.create(Pod::new(meta));
     }
 }

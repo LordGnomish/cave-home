@@ -49,16 +49,48 @@ fn message_ids_match_api_proto() {
         (MessageType::DeviceInfoRequest, 9, "DeviceInfoRequest"),
         (MessageType::DeviceInfoResponse, 10, "DeviceInfoResponse"),
         (MessageType::ListEntitiesRequest, 11, "ListEntitiesRequest"),
-        (MessageType::ListEntitiesBinarySensorResponse, 12, "ListEntitiesBinarySensorResponse"),
-        (MessageType::ListEntitiesSensorResponse, 16, "ListEntitiesSensorResponse"),
-        (MessageType::ListEntitiesSwitchResponse, 17, "ListEntitiesSwitchResponse"),
-        (MessageType::ListEntitiesDoneResponse, 19, "ListEntitiesDoneResponse"),
-        (MessageType::SubscribeStatesRequest, 20, "SubscribeStatesRequest"),
-        (MessageType::BinarySensorStateResponse, 21, "BinarySensorStateResponse"),
+        (
+            MessageType::ListEntitiesBinarySensorResponse,
+            12,
+            "ListEntitiesBinarySensorResponse",
+        ),
+        (
+            MessageType::ListEntitiesSensorResponse,
+            16,
+            "ListEntitiesSensorResponse",
+        ),
+        (
+            MessageType::ListEntitiesSwitchResponse,
+            17,
+            "ListEntitiesSwitchResponse",
+        ),
+        (
+            MessageType::ListEntitiesDoneResponse,
+            19,
+            "ListEntitiesDoneResponse",
+        ),
+        (
+            MessageType::SubscribeStatesRequest,
+            20,
+            "SubscribeStatesRequest",
+        ),
+        (
+            MessageType::BinarySensorStateResponse,
+            21,
+            "BinarySensorStateResponse",
+        ),
         (MessageType::SensorStateResponse, 25, "SensorStateResponse"),
         (MessageType::SwitchStateResponse, 26, "SwitchStateResponse"),
-        (MessageType::SubscribeLogsRequest, 28, "SubscribeLogsRequest"),
-        (MessageType::SubscribeLogsResponse, 29, "SubscribeLogsResponse"),
+        (
+            MessageType::SubscribeLogsRequest,
+            28,
+            "SubscribeLogsRequest",
+        ),
+        (
+            MessageType::SubscribeLogsResponse,
+            29,
+            "SubscribeLogsResponse",
+        ),
     ];
     for (variant, id, name) in cases {
         assert_eq!(variant.id(), id, "{name} id");
@@ -111,14 +143,38 @@ fn entity_category_ids_match_esphome() {
 #[test]
 fn entity_kind_maps_to_its_list_and_state_messages() {
     // Each entity kind has a ListEntities*Response and a *StateResponse.
-    assert_eq!(EntityKind::BinarySensor.list_response(), MessageType::ListEntitiesBinarySensorResponse);
-    assert_eq!(EntityKind::BinarySensor.state_response(), MessageType::BinarySensorStateResponse);
-    assert_eq!(EntityKind::Sensor.list_response(), MessageType::ListEntitiesSensorResponse);
-    assert_eq!(EntityKind::Sensor.state_response(), MessageType::SensorStateResponse);
-    assert_eq!(EntityKind::Switch.list_response(), MessageType::ListEntitiesSwitchResponse);
-    assert_eq!(EntityKind::Switch.state_response(), MessageType::SwitchStateResponse);
-    assert_eq!(EntityKind::Light.list_response(), MessageType::ListEntitiesLightResponse);
-    assert_eq!(EntityKind::Light.state_response(), MessageType::LightStateResponse);
+    assert_eq!(
+        EntityKind::BinarySensor.list_response(),
+        MessageType::ListEntitiesBinarySensorResponse
+    );
+    assert_eq!(
+        EntityKind::BinarySensor.state_response(),
+        MessageType::BinarySensorStateResponse
+    );
+    assert_eq!(
+        EntityKind::Sensor.list_response(),
+        MessageType::ListEntitiesSensorResponse
+    );
+    assert_eq!(
+        EntityKind::Sensor.state_response(),
+        MessageType::SensorStateResponse
+    );
+    assert_eq!(
+        EntityKind::Switch.list_response(),
+        MessageType::ListEntitiesSwitchResponse
+    );
+    assert_eq!(
+        EntityKind::Switch.state_response(),
+        MessageType::SwitchStateResponse
+    );
+    assert_eq!(
+        EntityKind::Light.list_response(),
+        MessageType::ListEntitiesLightResponse
+    );
+    assert_eq!(
+        EntityKind::Light.state_response(),
+        MessageType::LightStateResponse
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -157,7 +213,11 @@ fn every_kind_has_a_nonempty_label_in_every_language() {
 #[test]
 fn labels_avoid_protocol_jargon() {
     // A household never sees "protobuf", "varint", "api.proto", "fnv".
-    for kind in [EntityKind::Sensor, EntityKind::Light, EntityKind::BinarySensor] {
+    for kind in [
+        EntityKind::Sensor,
+        EntityKind::Light,
+        EntityKind::BinarySensor,
+    ] {
         for lang in [Lang::En, Lang::De, Lang::Tr] {
             let s = kind.describe(lang).to_lowercase();
             for banned in ["protobuf", "varint", "proto", "fnv", "esphome"] {

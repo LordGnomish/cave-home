@@ -79,7 +79,11 @@ impl RateLimiter {
     /// A limiter that mints a fresh bucket per key on first sight.
     #[must_use]
     pub fn new(average_per_sec: u64, burst: u64) -> Self {
-        Self { average_per_sec, burst, buckets: HashMap::new() }
+        Self {
+            average_per_sec,
+            burst,
+            buckets: HashMap::new(),
+        }
     }
 
     /// Admit (or reject) a request from `key` at `now_ms`.

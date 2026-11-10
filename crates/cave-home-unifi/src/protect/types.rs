@@ -357,10 +357,8 @@ mod tests {
 
     #[test]
     fn disconnected_camera_is_offline() {
-        let w: WireCamera = serde_json::from_str(
-            r#"{"id":"c","name":"n","mac":"m","isConnected":false}"#,
-        )
-        .unwrap();
+        let w: WireCamera =
+            serde_json::from_str(r#"{"id":"c","name":"n","mac":"m","isConnected":false}"#).unwrap();
         assert_eq!(w.into_domain().state, DeviceState::Offline);
     }
 

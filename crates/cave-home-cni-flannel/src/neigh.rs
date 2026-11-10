@@ -123,7 +123,11 @@ pub fn compute_neighbor_plan(
             if peer.node == local_node {
                 continue; // never resolve our own subnet
             }
-            let NodeBackendData::Vxlan { public_ip, vtep_mac } = &peer.data else {
+            let NodeBackendData::Vxlan {
+                public_ip,
+                vtep_mac,
+            } = &peer.data
+            else {
                 continue; // peer advertised a non-VXLAN backend; cannot resolve
             };
             // A directRouting peer on the same underlay is reached by a direct

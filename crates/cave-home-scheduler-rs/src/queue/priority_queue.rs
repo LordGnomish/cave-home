@@ -6,8 +6,8 @@
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
-use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 
 use parking_lot::Mutex;
 use tokio::sync::Notify;
@@ -396,18 +396,17 @@ impl SchedulingQueue for PriorityQueue {
     fn flush_backoff(&self, now_ms: u64) {
         let mut g = self.inner.lock();
         let mut still = Vec::with_capacity(g.backoff.len());
-        let due: Vec<QueuedPodInfo> =
-            std::mem::take(&mut g.backoff)
-                .into_iter()
-                .filter_map(|info| {
-                    if info.ready_at_ms() <= now_ms {
-                        Some(info)
-                    } else {
-                        still.push(info.clone());
-                        None
-                    }
-                })
-                .collect();
+        let due: Vec<QueuedPodInfo> = std::mem::take(&mut g.backoff)
+            .into_iter()
+            .filter_map(|info| {
+                if info.ready_at_ms() <= now_ms {
+                    Some(info)
+                } else {
+                    still.push(info.clone());
+                    None
+                }
+            })
+            .collect();
         g.backoff = still;
         let activated = !due.is_empty();
         for info in due {

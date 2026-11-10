@@ -49,7 +49,10 @@ pub struct DiscoveredModel<'a> {
 /// [`DecodeError::MissingMarker`] if the marker bytes do not match.
 pub fn check_marker(block: &[u16]) -> Result<&[u16], DecodeError> {
     if block.len() < 2 {
-        return Err(DecodeError::OutOfBounds { offset: 2, len: block.len() });
+        return Err(DecodeError::OutOfBounds {
+            offset: 2,
+            len: block.len(),
+        });
     }
     let marker = (u32::from(block[0]) << 16) | u32::from(block[1]);
     if marker != SUNSPEC_MARKER {
@@ -113,7 +116,10 @@ mod tests {
     /// Build a `[u16]` block: marker, then the given `(id, payload)` models,
     /// then the end sentinel.
     fn build_block(models: &[(u16, &[u16])]) -> Vec<u16> {
-        let mut b = vec![(SUNSPEC_MARKER >> 16) as u16, (SUNSPEC_MARKER & 0xFFFF) as u16];
+        let mut b = vec![
+            (SUNSPEC_MARKER >> 16) as u16,
+            (SUNSPEC_MARKER & 0xFFFF) as u16,
+        ];
         for (id, payload) in models {
             b.push(*id);
             b.push(payload.len() as u16);
@@ -136,7 +142,10 @@ mod tests {
         let bad = [0x0000u16, 0x0000, SUNSPEC_END_MODEL_ID];
         assert_eq!(check_marker(&bad), Err(DecodeError::MissingMarker));
         let tiny = [0x5375u16];
-        assert!(matches!(check_marker(&tiny), Err(DecodeError::OutOfBounds { .. })));
+        assert!(matches!(
+            check_marker(&tiny),
+            Err(DecodeError::OutOfBounds { .. })
+        ));
     }
 
     #[test]
@@ -174,7 +183,11 @@ mod tests {
         let chain = [1u16, 65, 0, 0];
         assert!(matches!(
             walk_chain(&chain),
-            Err(DecodeError::LengthMismatch { model_id: 1, declared: 65, .. })
+            Err(DecodeError::LengthMismatch {
+                model_id: 1,
+                declared: 65,
+                ..
+            })
         ));
     }
 }

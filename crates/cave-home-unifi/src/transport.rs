@@ -185,10 +185,7 @@ impl HttpResponse {
     /// Fails with [`UnifiError::Decode`] if the body is not valid JSON for `T`.
     pub fn json_body<T: serde::de::DeserializeOwned>(&self) -> Result<T> {
         serde_json::from_slice(&self.body).map_err(|e| {
-            UnifiError::Decode(format!(
-                "{e}; body was: {}",
-                self.body_text_capped(256)
-            ))
+            UnifiError::Decode(format!("{e}; body was: {}", self.body_text_capped(256)))
         })
     }
 }
@@ -372,8 +369,7 @@ mod tests {
 
     #[test]
     fn request_header_lookup_is_case_insensitive() {
-        let r = HttpRequest::new(HttpMethod::Get, "https://x/")
-            .header("X-CSRF-Token", "abc");
+        let r = HttpRequest::new(HttpMethod::Get, "https://x/").header("X-CSRF-Token", "abc");
         assert_eq!(r.header_value("x-csrf-token"), Some("abc"));
         assert_eq!(r.header_value("missing"), None);
     }

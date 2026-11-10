@@ -85,8 +85,14 @@ mod tests {
 
     #[test]
     fn found_new_reads_like_a_person_wrote_it() {
-        assert_eq!(found_new(Capability::Light, Lang::En), "Found a new light — add it?");
-        assert_eq!(connected("Living-room hub", Lang::En), "Living-room hub connected");
+        assert_eq!(
+            found_new(Capability::Light, Lang::En),
+            "Found a new light — add it?"
+        );
+        assert_eq!(
+            connected("Living-room hub", Lang::En),
+            "Living-room hub connected"
+        );
         assert_eq!(
             retrying("Living-room hub", Lang::En),
             "Couldn't connect to Living-room hub — we'll keep trying"

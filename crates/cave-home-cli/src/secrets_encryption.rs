@@ -27,7 +27,11 @@ pub fn subcommands() -> Vec<&'static str> {
 /// Render the `status` output from the backend view-model.
 #[must_use]
 pub fn render_status(status: &EncryptionStatus) -> String {
-    let state = if status.enabled { "enabled" } else { "disabled" };
+    let state = if status.enabled {
+        "enabled"
+    } else {
+        "disabled"
+    };
     format!(
         "Secrets encryption-at-rest\n  \
          status:    {state}\n  \
@@ -72,8 +76,16 @@ mod tests {
             enabled,
             algorithm: "ML-KEM-768+AES-256-GCM",
             write_key_id: write_key.to_owned(),
-            key_count: if matches!(phase, RotationPhase::Steady) { 1 } else { 2 },
-            read_only_key_count: if matches!(phase, RotationPhase::Steady) { 0 } else { 1 },
+            key_count: if matches!(phase, RotationPhase::Steady) {
+                1
+            } else {
+                2
+            },
+            read_only_key_count: if matches!(phase, RotationPhase::Steady) {
+                0
+            } else {
+                1
+            },
             rotation_phase: phase,
         }
     }

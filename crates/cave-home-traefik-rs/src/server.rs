@@ -15,8 +15,8 @@
 
 use std::convert::Infallible;
 use std::net::IpAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use bytes::Bytes;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
@@ -30,7 +30,7 @@ use tokio::net::{TcpListener, TcpStream};
 
 use crate::backend::upstream_uri;
 use crate::controller::ConfigHolder;
-use crate::forwarded::{strip_hop_by_hop, Forwarded};
+use crate::forwarded::{Forwarded, strip_hop_by_hop};
 use crate::loadbalancer::LoadBalancer;
 use crate::metrics::Metrics;
 use crate::middleware::MiddlewareChain;
@@ -71,7 +71,11 @@ impl Proxy {
             config,
             metrics,
             counter: AtomicU64::new(0),
-            retry: RetryPolicy { attempts: 2, initial_interval_ms: 0, max_interval_ms: 0 },
+            retry: RetryPolicy {
+                attempts: 2,
+                initial_interval_ms: 0,
+                max_interval_ms: 0,
+            },
         }
     }
 
@@ -98,7 +102,8 @@ impl Proxy {
         listener: TcpListener,
         acceptor: tokio_rustls::TlsAcceptor,
     ) {
-        self.accept_loop(listener, Scheme::Https, Some(acceptor)).await;
+        self.accept_loop(listener, Scheme::Https, Some(acceptor))
+            .await;
     }
 
     async fn accept_loop(
@@ -118,11 +123,13 @@ impl Proxy {
                 match acceptor {
                     Some(acc) => {
                         if let Ok(tls) = acc.accept(stream).await {
-                            me.serve_connection(TokioIo::new(tls), scheme, client_ip).await;
+                            me.serve_connection(TokioIo::new(tls), scheme, client_ip)
+                                .await;
                         }
                     }
                     None => {
-                        me.serve_connection(TokioIo::new(stream), scheme, client_ip).await;
+                        me.serve_connection(TokioIo::new(stream), scheme, client_ip)
+                            .await;
                     }
                 }
             });
@@ -185,13 +192,21 @@ impl Proxy {
 
         if applied.short_circuited {
             let (status, headers) = wire::short_circuit_parts(&applied.response);
-            self.metrics
-                .record_request(&router_name, &service.name, parts.method.as_str(), status.as_u16());
+            self.metrics.record_request(
+                &router_name,
+                &service.name,
+                parts.method.as_str(),
+                status.as_u16(),
+            );
             return build_response(status, headers, Bytes::new());
         }
 
         // Buffer the request body once; it is replayed on each retry.
-        let body_bytes = body.collect().await.map(http_body_util::Collected::to_bytes).unwrap_or_default();
+        let body_bytes = body
+            .collect()
+            .await
+            .map(http_body_util::Collected::to_bytes)
+            .unwrap_or_default();
 
         // Base upstream headers: original minus hop-by-hop, plus middleware
         // request-header changes, plus the X-Forwarded-* set.
@@ -207,9 +222,7 @@ impl Proxy {
         .apply(&mut headers);
 
         let cookie = match &service.policy {
-            LoadBalancer::Sticky { cookie_name } => {
-                wire::cookie_value(&parts.headers, cookie_name)
-            }
+            LoadBalancer::Sticky { cookie_name } => wire::cookie_value(&parts.headers, cookie_name),
             LoadBalancer::WeightedRoundRobin => None,
         };
         let query = parts.uri.query();
@@ -241,14 +254,19 @@ impl Proxy {
 
         strip_hop_by_hop(&mut resp_headers);
         wire::apply_response_headers(&mut resp_headers, &applied.response);
-        if let (LoadBalancer::Sticky { cookie_name }, Some(value)) = (&service.policy, &set_cookie) {
+        if let (LoadBalancer::Sticky { cookie_name }, Some(value)) = (&service.policy, &set_cookie)
+        {
             if let Ok(hv) = HeaderValue::from_str(&format!("{cookie_name}={value}; Path=/")) {
                 resp_headers.append(http::header::SET_COOKIE, hv);
             }
         }
 
-        self.metrics
-            .record_request(&router_name, &service.name, parts.method.as_str(), status.as_u16());
+        self.metrics.record_request(
+            &router_name,
+            &service.name,
+            parts.method.as_str(),
+            status.as_u16(),
+        );
         build_response(status, resp_headers, resp_body)
     }
 }
@@ -263,18 +281,26 @@ async fn dial_and_send(
     body: Bytes,
 ) -> Result<(StatusCode, HeaderMap, Bytes), ()> {
     let host = target.host().ok_or(())?;
-    let default_port = if target.scheme_str() == Some("https") { 443 } else { 80 };
+    let default_port = if target.scheme_str() == Some("https") {
+        443
+    } else {
+        80
+    };
     let port = target.port_u16().unwrap_or(default_port);
     let stream = TcpStream::connect((host, port)).await.map_err(|_| ())?;
     let io = TokioIo::new(stream);
-    let (mut sender, conn) = hyper::client::conn::http1::handshake(io).await.map_err(|_| ())?;
+    let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
+        .await
+        .map_err(|_| ())?;
     tokio::spawn(async move {
         let _ = conn.await;
     });
 
     // Origin-form request line (path+query); the Host header (carried over from
     // the client) identifies the virtual host to the backend.
-    let path_and_query = target.path_and_query().map_or("/", http::uri::PathAndQuery::as_str);
+    let path_and_query = target
+        .path_and_query()
+        .map_or("/", http::uri::PathAndQuery::as_str);
     let mut builder = Request::builder().method(method).uri(path_and_query);
     for (name, value) in headers {
         builder = builder.header(name.clone(), value.clone());
@@ -284,7 +310,12 @@ async fn dial_and_send(
     let response = sender.send_request(request).await.map_err(|_| ())?;
     let status = response.status();
     let resp_headers = response.headers().clone();
-    let resp_body = response.into_body().collect().await.map_err(|_| ())?.to_bytes();
+    let resp_body = response
+        .into_body()
+        .collect()
+        .await
+        .map_err(|_| ())?
+        .to_bytes();
     Ok((status, resp_headers, resp_body))
 }
 
@@ -297,9 +328,10 @@ fn apply_request_header_overrides(
 ) {
     for (key, value) in &applied.headers {
         if original.headers.get(key).map(String::as_str) != Some(value.as_str()) {
-            if let (Ok(name), Ok(val)) =
-                (HeaderName::from_bytes(key.as_bytes()), HeaderValue::from_str(value))
-            {
+            if let (Ok(name), Ok(val)) = (
+                HeaderName::from_bytes(key.as_bytes()),
+                HeaderValue::from_str(value),
+            ) {
                 dst.insert(name, val);
             }
         }
@@ -339,11 +371,14 @@ mod tests {
 
     #[test]
     fn header_overrides_only_apply_middleware_changes() {
-        let original = RequestDescriptor::new("GET", "http", "h", "/")
-            .with_header("x-keep", "orig");
+        let original =
+            RequestDescriptor::new("GET", "http", "h", "/").with_header("x-keep", "orig");
         let applied = original.clone().with_header("x-new", "added");
         let mut dst = HeaderMap::new();
-        dst.insert(HeaderName::from_static("x-keep"), HeaderValue::from_static("orig"));
+        dst.insert(
+            HeaderName::from_static("x-keep"),
+            HeaderValue::from_static("orig"),
+        );
         apply_request_header_overrides(&mut dst, &applied, &original);
         // unchanged header is not re-applied, new one is
         assert_eq!(dst.get("x-new").unwrap(), "added");

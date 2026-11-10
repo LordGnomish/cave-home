@@ -181,10 +181,31 @@ mod tests {
         // Charter §6.3 / ADR-007: a Protect notification must never surface a
         // transport, wire field, device model or NVR term.
         const BANNED: &[&str] = &[
-            "WebSocket", "WS ", "bootstrap", "RTSP", "RTSPS", "smartDetect",
-            "smartDetectType", "EventType", "NVR", "Ubiquiti", "UniFi", "G4",
-            "G5", "Protect", "REST", "API", "entity_id", "entity id", "MQTT",
-            "thumbnail_id", "codec", "H.264", "packet", "pod", "namespace",
+            "WebSocket",
+            "WS ",
+            "bootstrap",
+            "RTSP",
+            "RTSPS",
+            "smartDetect",
+            "smartDetectType",
+            "EventType",
+            "NVR",
+            "Ubiquiti",
+            "UniFi",
+            "G4",
+            "G5",
+            "Protect",
+            "REST",
+            "API",
+            "entity_id",
+            "entity id",
+            "MQTT",
+            "thumbnail_id",
+            "codec",
+            "H.264",
+            "packet",
+            "pod",
+            "namespace",
         ];
         let mut texts: Vec<String> = Vec::new();
         for lang in LANGS {

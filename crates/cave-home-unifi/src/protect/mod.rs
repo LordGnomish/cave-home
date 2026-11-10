@@ -13,4 +13,4 @@ pub mod api;
 pub mod types;
 
 pub use api::{Bootstrap, ProtectApi};
-pub use types::{ProtectPacketHeader, WireBootstrap, WireCamera, WireEvent, RTSPS_PORT};
+pub use types::{ProtectPacketHeader, RTSPS_PORT, WireBootstrap, WireCamera, WireEvent};

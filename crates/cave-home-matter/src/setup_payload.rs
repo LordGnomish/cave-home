@@ -279,7 +279,10 @@ pub fn encode_qr_payload(p: &SetupPayload) -> Result<String> {
         },
         COMMISSIONING_FLOW_FIELD_BITS,
     );
-    writer.write(u32::from(p.rendezvous_information.0), RENDEZVOUS_INFO_FIELD_BITS);
+    writer.write(
+        u32::from(p.rendezvous_information.0),
+        RENDEZVOUS_INFO_FIELD_BITS,
+    );
     writer.write(u32::from(p.discriminator), DISCRIMINATOR_FIELD_BITS);
     writer.write(p.passcode, PASSCODE_FIELD_BITS);
     writer.write(0, PADDING_FIELD_BITS);
@@ -524,10 +527,16 @@ mod tests {
         assert_eq!(parsed.product_id, 0x5678);
         assert_eq!(parsed.discriminator, 0xABC);
         assert_eq!(parsed.passcode, 12_345_679);
-        assert!(parsed.rendezvous_information.has(RendezvousInformationFlags::BLE));
-        assert!(parsed
-            .rendezvous_information
-            .has(RendezvousInformationFlags::ON_NETWORK));
+        assert!(
+            parsed
+                .rendezvous_information
+                .has(RendezvousInformationFlags::BLE)
+        );
+        assert!(
+            parsed
+                .rendezvous_information
+                .has(RendezvousInformationFlags::ON_NETWORK)
+        );
     }
 
     #[test]

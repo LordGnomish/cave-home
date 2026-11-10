@@ -31,7 +31,11 @@ impl Server {
     /// A healthy server with weight 1.
     #[must_use]
     pub fn new(url: &str) -> Self {
-        Self { url: url.to_string(), weight: 1, healthy: true }
+        Self {
+            url: url.to_string(),
+            weight: 1,
+            healthy: true,
+        }
     }
 
     /// Builder: set the weight.
@@ -86,7 +90,11 @@ impl Service {
     /// Build a service.
     #[must_use]
     pub fn new(name: &str, servers: Vec<Server>, policy: LoadBalancer) -> Self {
-        Self { name: name.to_string(), servers, policy }
+        Self {
+            name: name.to_string(),
+            servers,
+            policy,
+        }
     }
 
     /// The healthy servers, in declaration order.
@@ -137,10 +145,16 @@ impl Service {
         if let Some(want) = cookie_value
             && let Some(s) = self.servers.iter().find(|s| s.url == want && s.healthy)
         {
-            return Some(StickyPick { server: s, set_cookie: None });
+            return Some(StickyPick {
+                server: s,
+                set_cookie: None,
+            });
         }
         let s = self.pick_round_robin(counter)?;
-        Some(StickyPick { server: s, set_cookie: Some(s.url.clone()) })
+        Some(StickyPick {
+            server: s,
+            set_cookie: Some(s.url.clone()),
+        })
     }
 
     /// Select a server according to this service's configured policy. For
@@ -150,9 +164,12 @@ impl Service {
     #[must_use]
     pub fn select(&self, cookie_value: Option<&str>, counter: u64) -> Option<StickyPick<'_>> {
         match &self.policy {
-            LoadBalancer::WeightedRoundRobin => self
-                .pick_round_robin(counter)
-                .map(|s| StickyPick { server: s, set_cookie: None }),
+            LoadBalancer::WeightedRoundRobin => {
+                self.pick_round_robin(counter).map(|s| StickyPick {
+                    server: s,
+                    set_cookie: None,
+                })
+            }
             LoadBalancer::Sticky { .. } => self.pick_sticky(cookie_value, counter),
         }
     }
@@ -169,7 +186,9 @@ mod tests {
     #[test]
     fn round_robin_cycles_equal_weights() {
         let svc = wrr_service(vec![Server::new("a"), Server::new("b"), Server::new("c")]);
-        let seq: Vec<&str> = (0..6).map(|i| svc.pick_round_robin(i).unwrap().url.as_str()).collect();
+        let seq: Vec<&str> = (0..6)
+            .map(|i| svc.pick_round_robin(i).unwrap().url.as_str())
+            .collect();
         assert_eq!(seq, vec!["a", "b", "c", "a", "b", "c"]);
     }
 
@@ -180,7 +199,9 @@ mod tests {
             Server::new("a").with_weight(3),
             Server::new("b").with_weight(1),
         ]);
-        let seq: Vec<&str> = (0..4).map(|i| svc.pick_round_robin(i).unwrap().url.as_str()).collect();
+        let seq: Vec<&str> = (0..4)
+            .map(|i| svc.pick_round_robin(i).unwrap().url.as_str())
+            .collect();
         assert_eq!(seq, vec!["a", "a", "a", "b"]);
         // wraps deterministically
         assert_eq!(svc.pick_round_robin(4).unwrap().url, "a");
@@ -193,7 +214,9 @@ mod tests {
             Server::new("b").with_healthy(false),
             Server::new("c"),
         ]);
-        let seq: Vec<&str> = (0..4).map(|i| svc.pick_round_robin(i).unwrap().url.as_str()).collect();
+        let seq: Vec<&str> = (0..4)
+            .map(|i| svc.pick_round_robin(i).unwrap().url.as_str())
+            .collect();
         assert_eq!(seq, vec!["a", "c", "a", "c"]);
     }
 
@@ -203,7 +226,9 @@ mod tests {
             Server::new("a").with_weight(0),
             Server::new("b").with_weight(2),
         ]);
-        let seq: Vec<&str> = (0..2).map(|i| svc.pick_round_robin(i).unwrap().url.as_str()).collect();
+        let seq: Vec<&str> = (0..2)
+            .map(|i| svc.pick_round_robin(i).unwrap().url.as_str())
+            .collect();
         assert_eq!(seq, vec!["b", "b"]);
     }
 
@@ -218,7 +243,9 @@ mod tests {
         let svc = Service::new(
             "svc",
             vec![Server::new("a"), Server::new("b")],
-            LoadBalancer::Sticky { cookie_name: "srv".to_string() },
+            LoadBalancer::Sticky {
+                cookie_name: "srv".to_string(),
+            },
         );
         let pick = svc.pick_sticky(Some("b"), 0).unwrap();
         assert_eq!(pick.server.url, "b");
@@ -230,7 +257,9 @@ mod tests {
         let svc = Service::new(
             "svc",
             vec![Server::new("a"), Server::new("b").with_healthy(false)],
-            LoadBalancer::Sticky { cookie_name: "srv".to_string() },
+            LoadBalancer::Sticky {
+                cookie_name: "srv".to_string(),
+            },
         );
         // cookie points at the down server -> fall back, and set a new cookie
         let pick = svc.pick_sticky(Some("b"), 0).unwrap();
@@ -243,7 +272,9 @@ mod tests {
         let svc = Service::new(
             "svc",
             vec![Server::new("a"), Server::new("b")],
-            LoadBalancer::Sticky { cookie_name: "srv".to_string() },
+            LoadBalancer::Sticky {
+                cookie_name: "srv".to_string(),
+            },
         );
         let pick = svc.pick_sticky(None, 0).unwrap();
         assert_eq!(pick.server.url, "a");
@@ -258,17 +289,16 @@ mod tests {
         let sticky = Service::new(
             "svc",
             vec![Server::new("a"), Server::new("b")],
-            LoadBalancer::Sticky { cookie_name: "srv".to_string() },
+            LoadBalancer::Sticky {
+                cookie_name: "srv".to_string(),
+            },
         );
         assert_eq!(sticky.select(Some("b"), 0).unwrap().server.url, "b");
     }
 
     #[test]
     fn healthy_filters_pool() {
-        let svc = wrr_service(vec![
-            Server::new("a"),
-            Server::new("b").with_healthy(false),
-        ]);
+        let svc = wrr_service(vec![Server::new("a"), Server::new("b").with_healthy(false)]);
         assert_eq!(svc.healthy().len(), 1);
     }
 }

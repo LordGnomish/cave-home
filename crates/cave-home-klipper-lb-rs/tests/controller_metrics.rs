@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 use std::net::IpAddr;
 
-use cave_home_klipper_lb_rs::controller::{reconcile, ReconcileContext, ServiceLbMetrics};
+use cave_home_klipper_lb_rs::controller::{ReconcileContext, ServiceLbMetrics, reconcile};
 use cave_home_klipper_lb_rs::node::Node;
 use cave_home_klipper_lb_rs::service::{
     ExternalTrafficPolicy, LoadBalancerService, Protocol, ServicePort,
@@ -107,9 +107,15 @@ fn prometheus_exposition_lists_the_gauges() {
     assert!(text.contains("servicelb_daemonsets_desired 1"));
     assert!(text.contains("servicelb_host_port_conflicts_total 1"));
     // Every non-comment line must be "metric value" (parseable).
-    for line in text.lines().filter(|l| !l.starts_with('#') && !l.is_empty()) {
+    for line in text
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.is_empty())
+    {
         let parts: Vec<&str> = line.split_whitespace().collect();
         assert_eq!(parts.len(), 2, "bad exposition line: {line:?}");
-        assert!(parts[1].parse::<u64>().is_ok(), "non-numeric value: {line:?}");
+        assert!(
+            parts[1].parse::<u64>().is_ok(),
+            "non-numeric value: {line:?}"
+        );
     }
 }

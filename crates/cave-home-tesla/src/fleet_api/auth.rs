@@ -23,8 +23,12 @@ pub const TOKEN_URL: &str = "https://auth.tesla.com/oauth2/v3/token";
 /// The default scopes cave-home requests: identity, offline refresh, energy
 /// read and energy command. (`openid` is required for an id-token; the rest are
 /// the Fleet API energy product scopes.)
-pub const DEFAULT_SCOPES: [&str; 4] =
-    ["openid", "offline_access", "energy_device_data", "energy_cmds"];
+pub const DEFAULT_SCOPES: [&str; 4] = [
+    "openid",
+    "offline_access",
+    "energy_device_data",
+    "energy_cmds",
+];
 
 /// A PKCE verifier/challenge pair (RFC 7636, S256).
 #[derive(Debug, Clone)]

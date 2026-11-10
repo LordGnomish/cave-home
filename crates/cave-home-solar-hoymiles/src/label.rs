@@ -76,11 +76,7 @@ impl SolarStatus {
     // A panel is "shaded" if it makes less than 40% of the best panel's power
     // while the array as a whole is meaningfully producing.
     fn has_shaded_panel(t: &Telemetry) -> bool {
-        let best = t
-            .panels
-            .iter()
-            .map(|p| p.power_w)
-            .fold(0.0_f64, f64::max);
+        let best = t.panels.iter().map(|p| p.power_w).fold(0.0_f64, f64::max);
         if best < 20.0 || t.panels.len() < 2 {
             return false;
         }
@@ -136,13 +132,27 @@ impl SolarStatus {
             (Self::Idle, Lang::De) => "Alles in Ordnung — gerade keine Sonne.",
             (Self::Idle, Lang::Tr) => "Her şey yolunda — şu an güneş yok.",
             (Self::PanelShaded, Lang::En) => "One panel is in shade — check for leaves or dirt.",
-            (Self::PanelShaded, Lang::De) => "Ein Panel liegt im Schatten — auf Laub oder Schmutz prüfen.",
-            (Self::PanelShaded, Lang::Tr) => "Bir panel gölgede — yaprak veya kir olup olmadığına bakın.",
-            (Self::GridProblem, Lang::En) => "The house power looks unstable — call an electrician if it lasts.",
-            (Self::GridProblem, Lang::De) => "Der Hausstrom wirkt instabil — bei Dauer einen Elektriker rufen.",
-            (Self::GridProblem, Lang::Tr) => "Ev elektriği dengesiz görünüyor — sürerse elektrikçi çağırın.",
-            (Self::Overheated, Lang::En) => "The inverter is hot and has slowed down — it will recover when it cools.",
-            (Self::Overheated, Lang::De) => "Der Wechselrichter ist heiß und drosselt — er erholt sich beim Abkühlen.",
+            (Self::PanelShaded, Lang::De) => {
+                "Ein Panel liegt im Schatten — auf Laub oder Schmutz prüfen."
+            }
+            (Self::PanelShaded, Lang::Tr) => {
+                "Bir panel gölgede — yaprak veya kir olup olmadığına bakın."
+            }
+            (Self::GridProblem, Lang::En) => {
+                "The house power looks unstable — call an electrician if it lasts."
+            }
+            (Self::GridProblem, Lang::De) => {
+                "Der Hausstrom wirkt instabil — bei Dauer einen Elektriker rufen."
+            }
+            (Self::GridProblem, Lang::Tr) => {
+                "Ev elektriği dengesiz görünüyor — sürerse elektrikçi çağırın."
+            }
+            (Self::Overheated, Lang::En) => {
+                "The inverter is hot and has slowed down — it will recover when it cools."
+            }
+            (Self::Overheated, Lang::De) => {
+                "Der Wechselrichter ist heiß und drosselt — er erholt sich beim Abkühlen."
+            }
             (Self::Overheated, Lang::Tr) => "Çevirici ısındı ve yavaşladı — soğuyunca düzelir.",
             (Self::Offline, Lang::En) => "No reading yet — probably no sun this early.",
             (Self::Offline, Lang::De) => "Noch keine Daten — wahrscheinlich noch keine Sonne.",
@@ -201,7 +211,11 @@ mod tests {
     }
 
     fn panel(power: f64) -> PanelReading {
-        PanelReading { voltage_v: 34.0, current_a: 1.0, power_w: power }
+        PanelReading {
+            voltage_v: 34.0,
+            current_a: 1.0,
+            power_w: power,
+        }
     }
 
     #[test]
@@ -216,7 +230,10 @@ mod tests {
     #[test]
     fn idle_when_no_ac_power() {
         let t = telem(0.0, vec![panel(0.0)]);
-        assert_eq!(SolarStatus::from_telemetry(&t, AlarmState::Ok), SolarStatus::Idle);
+        assert_eq!(
+            SolarStatus::from_telemetry(&t, AlarmState::Ok),
+            SolarStatus::Idle
+        );
     }
 
     #[test]
@@ -303,8 +320,18 @@ mod tests {
     fn ui_strings_carry_no_implementation_jargon() {
         // Charter §6.3: the UI must never surface protocol / radio terms.
         const BANNED: &[&str] = &[
-            "NRF24", "CMT", "CRC", "Modbus", "MQTT", "opcode", "fragment",
-            "register", "DTU", "HM-", "entity_id", "payload",
+            "NRF24",
+            "CMT",
+            "CRC",
+            "Modbus",
+            "MQTT",
+            "opcode",
+            "fragment",
+            "register",
+            "DTU",
+            "HM-",
+            "entity_id",
+            "payload",
         ];
         for s in [
             SolarStatus::Producing,

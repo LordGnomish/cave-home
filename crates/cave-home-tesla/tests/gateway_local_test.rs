@@ -4,7 +4,7 @@
 //! End-to-end Powerwall local-gateway flow through the public surface.
 
 use cave_home_tesla::fleet_api::client::MockTransport;
-use cave_home_tesla::gateway_local::{login_body, GatewayClient, LoginRequest};
+use cave_home_tesla::gateway_local::{GatewayClient, LoginRequest, login_body};
 
 #[test]
 fn login_body_is_well_formed() {

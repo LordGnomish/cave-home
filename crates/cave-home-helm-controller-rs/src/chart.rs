@@ -360,7 +360,10 @@ mod tests {
 
     #[test]
     fn repo_no_host_rejected() {
-        assert!(matches!(Repo::parse("https://"), Err(SpecError::BadRepo(_))));
+        assert!(matches!(
+            Repo::parse("https://"),
+            Err(SpecError::BadRepo(_))
+        ));
         assert!(matches!(
             Repo::parse("https:// space/x"),
             Err(SpecError::BadRepo(_))

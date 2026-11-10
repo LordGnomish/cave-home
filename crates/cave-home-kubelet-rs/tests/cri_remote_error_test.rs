@@ -6,8 +6,8 @@
 //! on, every other code is surfaced verbatim so callers can log/retry.
 #![cfg(feature = "remote-cri")]
 
-use cave_home_kubelet_rs::cri::remote::error::status_to_cri_error;
 use cave_home_kubelet_rs::cri::CriError;
+use cave_home_kubelet_rs::cri::remote::error::status_to_cri_error;
 use tonic::{Code, Status};
 
 #[test]

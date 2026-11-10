@@ -65,8 +65,14 @@ impl Health {
             HealthState::Down
         } else {
             let total = components.len();
-            let up = components.values().filter(|s| **s == HealthState::Up).count();
-            let down = components.values().filter(|s| **s == HealthState::Down).count();
+            let up = components
+                .values()
+                .filter(|s| **s == HealthState::Up)
+                .count();
+            let down = components
+                .values()
+                .filter(|s| **s == HealthState::Down)
+                .count();
             if up == total {
                 HealthState::Up
             } else if down == total {

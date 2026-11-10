@@ -20,7 +20,7 @@ use std::fmt;
 use crate::loadbalancer::Service;
 use crate::middleware::MiddlewareChain;
 use crate::request::RequestDescriptor;
-use crate::router::{select, Router};
+use crate::router::{Router, select};
 
 /// A validated dynamic-configuration snapshot.
 #[derive(Debug, Clone, Default)]
@@ -62,7 +62,10 @@ impl fmt::Display for ConfigError {
                 write!(f, "router {router} references unknown service {service}")
             }
             Self::UnknownMiddleware { router, middleware } => {
-                write!(f, "router {router} references unknown middleware {middleware}")
+                write!(
+                    f,
+                    "router {router} references unknown middleware {middleware}"
+                )
             }
             Self::DuplicateRouter(n) => write!(f, "duplicate router name: {n}"),
             Self::DuplicateService(n) => write!(f, "duplicate service name: {n}"),
@@ -135,7 +138,11 @@ impl DynamicConfig {
             }
         }
 
-        Ok(Self { routers, services: service_map, middlewares: mw_map })
+        Ok(Self {
+            routers,
+            services: service_map,
+            middlewares: mw_map,
+        })
     }
 
     /// Look up a service by name.
@@ -174,7 +181,11 @@ mod tests {
     use crate::middleware::Middleware;
 
     fn svc(name: &str) -> Service {
-        Service::new(name, vec![Server::new("http://b:80")], LoadBalancer::WeightedRoundRobin)
+        Service::new(
+            name,
+            vec![Server::new("http://b:80")],
+            LoadBalancer::WeightedRoundRobin,
+        )
     }
 
     fn router(name: &str, rule: &str, service: &str) -> Router {
@@ -201,7 +212,10 @@ mod tests {
         .unwrap_err();
         assert_eq!(
             err,
-            ConfigError::UnknownService { router: "r".to_string(), service: "ghost".to_string() }
+            ConfigError::UnknownService {
+                router: "r".to_string(),
+                service: "ghost".to_string()
+            }
         );
     }
 
@@ -221,7 +235,9 @@ mod tests {
     #[test]
     fn known_middleware_reference_is_accepted() {
         let r = router("r", "Host(`a.com`)", "s").with_middlewares(&["strip"]);
-        let mw = MiddlewareChain::new(vec![Middleware::AddPrefix { prefix: "/x".to_string() }]);
+        let mw = MiddlewareChain::new(vec![Middleware::AddPrefix {
+            prefix: "/x".to_string(),
+        }]);
         let cfg = DynamicConfig::build(vec![r], vec![svc("s")], vec![("strip".to_string(), mw)]);
         assert!(cfg.is_ok());
     }
@@ -229,7 +245,10 @@ mod tests {
     #[test]
     fn duplicate_router_name_is_rejected() {
         let err = DynamicConfig::build(
-            vec![router("dup", "Host(`a.com`)", "s"), router("dup", "Host(`b.com`)", "s")],
+            vec![
+                router("dup", "Host(`a.com`)", "s"),
+                router("dup", "Host(`b.com`)", "s"),
+            ],
             vec![svc("s")],
             vec![],
         )

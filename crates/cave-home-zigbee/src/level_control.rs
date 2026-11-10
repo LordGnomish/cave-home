@@ -71,7 +71,9 @@ impl MoveMode {
         match v {
             0x00 => Ok(Self::Up),
             0x01 => Ok(Self::Down),
-            other => Err(ZigbeeError::Zcl(format!("reserved move mode 0x{other:02x}"))),
+            other => Err(ZigbeeError::Zcl(format!(
+                "reserved move mode 0x{other:02x}"
+            ))),
         }
     }
 
@@ -103,7 +105,9 @@ impl StepMode {
         match v {
             0x00 => Ok(Self::Up),
             0x01 => Ok(Self::Down),
-            other => Err(ZigbeeError::Zcl(format!("reserved step mode 0x{other:02x}"))),
+            other => Err(ZigbeeError::Zcl(format!(
+                "reserved step mode 0x{other:02x}"
+            ))),
         }
     }
 

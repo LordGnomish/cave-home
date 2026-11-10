@@ -49,7 +49,10 @@ pub struct Gamut {
 /// Philips Hue **Gamut A** (early `LivingColors` / `LightStrips`).
 pub const GAMUT_A: Gamut = Gamut {
     red: XyPoint { x: 0.704, y: 0.296 },
-    green: XyPoint { x: 0.2151, y: 0.7106 },
+    green: XyPoint {
+        x: 0.2151,
+        y: 0.7106,
+    },
     blue: XyPoint { x: 0.138, y: 0.080 },
 };
 
@@ -62,9 +65,18 @@ pub const GAMUT_B: Gamut = Gamut {
 
 /// Philips Hue **Gamut C** (current colour + extended-colour bulbs / `Lightstrip` Plus).
 pub const GAMUT_C: Gamut = Gamut {
-    red: XyPoint { x: 0.6915, y: 0.3038 },
-    green: XyPoint { x: 0.1700, y: 0.7000 },
-    blue: XyPoint { x: 0.1532, y: 0.0475 },
+    red: XyPoint {
+        x: 0.6915,
+        y: 0.3038,
+    },
+    green: XyPoint {
+        x: 0.1700,
+        y: 0.7000,
+    },
+    blue: XyPoint {
+        x: 0.1532,
+        y: 0.0475,
+    },
 };
 
 impl Default for Gamut {

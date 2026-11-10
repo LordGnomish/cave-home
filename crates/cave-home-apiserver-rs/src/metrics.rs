@@ -113,6 +113,9 @@ mod tests {
         m.inc_inflight();
         m.inc_inflight();
         m.dec_inflight();
-        assert!(m.to_prometheus().contains("apiserver_current_inflight_requests 1"));
+        assert!(
+            m.to_prometheus()
+                .contains("apiserver_current_inflight_requests 1")
+        );
     }
 }
