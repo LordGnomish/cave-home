@@ -179,13 +179,15 @@ mod tests {
     use super::*;
     use crate::sun_position::sun_position_at;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn close(a: f64, b: f64, tol: f64) {
         assert!((a - b).abs() <= tol, "expected {a} ≈ {b} (within {tol})");
     }
 
-    fn south_array() -> PvArray {
+    fn south_array() -> Result<PvArray, ArrayError> {
         // 6 kWp, 30° tilt, due south, 85% system efficiency — a typical roof.
-        PvArray::new(6.0, 30.0, 180.0, 0.85).expect("valid array")
+        PvArray::new(6.0, 30.0, 180.0, 0.85)
     }
 
     #[test]
@@ -247,36 +249,39 @@ mod tests {
     }
 
     #[test]
-    fn power_is_zero_at_night() {
-        let arr = south_array();
+    fn power_is_zero_at_night() -> TestResult {
+        let arr = south_array()?;
         let midnight = sun_position_at(49.7, 172, 0.0);
         let poa = arr.plane_of_array_w_m2(midnight, 172, 0.75);
         assert_eq!(poa, 0.0);
         assert_eq!(arr.ac_power_kw(poa, 0.0), 0.0);
+        Ok(())
     }
 
     #[test]
-    fn power_scales_linearly_with_peak_power() {
-        let small = PvArray::new(3.0, 30.0, 180.0, 0.85).unwrap();
-        let big = PvArray::new(9.0, 30.0, 180.0, 0.85).unwrap();
+    fn power_scales_linearly_with_peak_power() -> TestResult {
+        let small = PvArray::new(3.0, 30.0, 180.0, 0.85)?;
+        let big = PvArray::new(9.0, 30.0, 180.0, 0.85)?;
         // Same irradiance: 3× the kWp makes 3× the power.
         close(
             big.ac_power_kw(800.0, 0.0),
             3.0 * small.ac_power_kw(800.0, 0.0),
             1e-9,
         );
+        Ok(())
     }
 
     #[test]
-    fn power_scales_with_system_derate() {
-        let lossy = PvArray::new(6.0, 30.0, 180.0, 0.70).unwrap();
-        let efficient = PvArray::new(6.0, 30.0, 180.0, 0.90).unwrap();
+    fn power_scales_with_system_derate() -> TestResult {
+        let lossy = PvArray::new(6.0, 30.0, 180.0, 0.70)?;
+        let efficient = PvArray::new(6.0, 30.0, 180.0, 0.90)?;
         assert!(efficient.ac_power_kw(800.0, 0.0) > lossy.ac_power_kw(800.0, 0.0));
+        Ok(())
     }
 
     #[test]
-    fn cloud_cover_reduces_power() {
-        let arr = south_array();
+    fn cloud_cover_reduces_power() -> TestResult {
+        let arr = south_array()?;
         let clear = arr.ac_power_kw(800.0, 0.0);
         let overcast = arr.ac_power_kw(800.0, 1.0);
         assert!(
@@ -285,40 +290,45 @@ mod tests {
         );
         // Overcast retains the ~25% diffuse floor.
         close(overcast, clear * 0.25, 1e-9);
+        Ok(())
     }
 
     #[test]
-    fn south_panel_beats_north_panel_in_north() {
-        let south = PvArray::new(6.0, 30.0, 180.0, 0.85).unwrap();
-        let north = PvArray::new(6.0, 30.0, 0.0, 0.85).unwrap();
+    fn south_panel_beats_north_panel_in_north() -> TestResult {
+        let south = PvArray::new(6.0, 30.0, 180.0, 0.85)?;
+        let north = PvArray::new(6.0, 30.0, 0.0, 0.85)?;
         let noon = sun_position_at(49.7, 172, 12.0);
         let s = south.plane_of_array_w_m2(noon, 172, 0.75);
         let n = north.plane_of_array_w_m2(noon, 172, 0.75);
         assert!(s > n, "south {s} should beat north {n} at noon");
+        Ok(())
     }
 
     #[test]
-    fn cos_incidence_clamped_to_unit_range() {
-        let arr = south_array();
+    fn cos_incidence_clamped_to_unit_range() -> TestResult {
+        let arr = south_array()?;
         let noon = sun_position_at(49.7, 172, 12.0);
         let c = arr.cos_incidence(noon);
         assert!((0.0..=1.0).contains(&c), "cosθ {c} out of range");
+        Ok(())
     }
 
     #[test]
-    fn poa_peaks_near_solar_noon() {
-        let arr = south_array();
+    fn poa_peaks_near_solar_noon() -> TestResult {
+        let arr = south_array()?;
         let morning = arr.plane_of_array_w_m2(sun_position_at(49.7, 172, 8.0), 172, 0.75);
         let noon = arr.plane_of_array_w_m2(sun_position_at(49.7, 172, 12.0), 172, 0.75);
         assert!(noon > morning, "noon {noon} should beat morning {morning}");
+        Ok(())
     }
 
     #[test]
-    fn power_never_exceeds_peak_in_normal_conditions() {
-        let arr = south_array();
+    fn power_never_exceeds_peak_in_normal_conditions() -> TestResult {
+        let arr = south_array()?;
         // Even at full STC irradiance, output is capped by derate × kWp.
         let p = arr.ac_power_kw(STC_IRRADIANCE_W_M2, 0.0);
         close(p, 6.0 * 0.85, 1e-9);
         assert!(p <= arr.peak_power_kw());
+        Ok(())
     }
 }

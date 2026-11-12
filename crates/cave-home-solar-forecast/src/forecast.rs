@@ -207,17 +207,19 @@ pub fn forecast_day(
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn close(a: f64, b: f64, tol: f64) {
         assert!((a - b).abs() <= tol, "expected {a} ≈ {b} (within {tol})");
     }
 
-    fn iphofen() -> Site {
+    fn iphofen() -> Result<Site, ForecastError> {
         // The headline residence: ~49.7°N, ~10.3°E.
-        Site::new(49.7, 10.3).expect("valid site")
+        Site::new(49.7, 10.3)
     }
 
-    fn roof() -> PvArray {
-        PvArray::new(6.0, 30.0, 180.0, 0.85).expect("valid array")
+    fn roof() -> Result<PvArray, crate::array::ArrayError> {
+        PvArray::new(6.0, 30.0, 180.0, 0.85)
     }
 
     #[test]
@@ -240,59 +242,63 @@ mod tests {
     }
 
     #[test]
-    fn rejects_bad_day_of_year() {
+    fn rejects_bad_day_of_year() -> TestResult {
         assert_eq!(
-            forecast_day(iphofen(), roof(), 0, 0.0, 0.25),
+            forecast_day(iphofen()?, roof()?, 0, 0.0, 0.25),
             Err(ForecastError::BadDayOfYear)
         );
         assert_eq!(
-            forecast_day(iphofen(), roof(), 367, 0.0, 0.25),
+            forecast_day(iphofen()?, roof()?, 367, 0.0, 0.25),
             Err(ForecastError::BadDayOfYear)
         );
-        assert!(forecast_day(iphofen(), roof(), 1, 0.0, 0.25).is_ok());
-        assert!(forecast_day(iphofen(), roof(), 366, 0.0, 0.25).is_ok());
+        assert!(forecast_day(iphofen()?, roof()?, 1, 0.0, 0.25).is_ok());
+        assert!(forecast_day(iphofen()?, roof()?, 366, 0.0, 0.25).is_ok());
+        Ok(())
     }
 
     #[test]
-    fn rejects_bad_cloud_cover() {
+    fn rejects_bad_cloud_cover() -> TestResult {
         assert_eq!(
-            forecast_day(iphofen(), roof(), 172, -0.1, 0.25),
+            forecast_day(iphofen()?, roof()?, 172, -0.1, 0.25),
             Err(ForecastError::BadCloudCover)
         );
         assert_eq!(
-            forecast_day(iphofen(), roof(), 172, 1.1, 0.25),
+            forecast_day(iphofen()?, roof()?, 172, 1.1, 0.25),
             Err(ForecastError::BadCloudCover)
         );
+        Ok(())
     }
 
     #[test]
-    fn rejects_bad_step() {
+    fn rejects_bad_step() -> TestResult {
         assert_eq!(
-            forecast_day(iphofen(), roof(), 172, 0.0, 0.0),
+            forecast_day(iphofen()?, roof()?, 172, 0.0, 0.0),
             Err(ForecastError::BadStep)
         );
         assert_eq!(
-            forecast_day(iphofen(), roof(), 172, 0.0, -1.0),
+            forecast_day(iphofen()?, roof()?, 172, 0.0, -1.0),
             Err(ForecastError::BadStep)
         );
+        Ok(())
     }
 
     #[test]
-    fn summer_day_produces_more_than_winter_day() {
-        let summer = forecast_day(iphofen(), roof(), 172, 0.0, 0.1).unwrap();
-        let winter = forecast_day(iphofen(), roof(), 355, 0.0, 0.1).unwrap();
+    fn summer_day_produces_more_than_winter_day() -> TestResult {
+        let summer = forecast_day(iphofen()?, roof()?, 172, 0.0, 0.1)?;
+        let winter = forecast_day(iphofen()?, roof()?, 355, 0.0, 0.1)?;
         assert!(
             summer.energy_kwh > winter.energy_kwh,
             "summer {} vs winter {}",
             summer.energy_kwh,
             winter.energy_kwh
         );
+        Ok(())
     }
 
     #[test]
-    fn clear_day_produces_more_than_cloudy_day() {
-        let clear = forecast_day(iphofen(), roof(), 172, 0.0, 0.1).unwrap();
-        let cloudy = forecast_day(iphofen(), roof(), 172, 1.0, 0.1).unwrap();
+    fn clear_day_produces_more_than_cloudy_day() -> TestResult {
+        let clear = forecast_day(iphofen()?, roof()?, 172, 0.0, 0.1)?;
+        let cloudy = forecast_day(iphofen()?, roof()?, 172, 1.0, 0.1)?;
         assert!(cloudy.energy_kwh < clear.energy_kwh);
         // Full overcast leaves the ~25% diffuse floor of the clear-day energy.
         close(
@@ -300,24 +306,26 @@ mod tests {
             clear.energy_kwh * 0.25,
             clear.energy_kwh * 0.02,
         );
+        Ok(())
     }
 
     #[test]
-    fn daily_energy_is_in_plausible_kwh_range() {
+    fn daily_energy_is_in_plausible_kwh_range() -> TestResult {
         // A clear-sky 6 kWp south roof at ~50°N near the June solstice produces
         // on the order of 30-45 kWh — the right order of magnitude for the
         // simple clear-sky model.
-        let f = forecast_day(iphofen(), roof(), 172, 0.0, 0.05).unwrap();
+        let f = forecast_day(iphofen()?, roof()?, 172, 0.0, 0.05)?;
         assert!(
             (25.0..=50.0).contains(&f.energy_kwh),
             "summer energy {}",
             f.energy_kwh
         );
+        Ok(())
     }
 
     #[test]
-    fn peak_power_occurs_around_solar_noon() {
-        let f = forecast_day(iphofen(), roof(), 172, 0.0, 0.1).unwrap();
+    fn peak_power_occurs_around_solar_noon() -> TestResult {
+        let f = forecast_day(iphofen()?, roof()?, 172, 0.0, 0.1)?;
         assert!(
             (10.0..=14.0).contains(&f.peak_solar_time_h),
             "peak at {}",
@@ -325,58 +333,56 @@ mod tests {
         );
         assert!(f.peak_power_kw > 0.0);
         // Peak never exceeds the rated power after derate.
-        assert!(f.peak_power_kw <= roof().peak_power_kw());
+        assert!(f.peak_power_kw <= roof()?.peak_power_kw());
+        Ok(())
     }
 
     #[test]
-    fn energy_scales_with_array_size() {
-        let small = PvArray::new(3.0, 30.0, 180.0, 0.85).unwrap();
-        let big = PvArray::new(6.0, 30.0, 180.0, 0.85).unwrap();
-        let es = forecast_day(iphofen(), small, 172, 0.0, 0.1)
-            .unwrap()
-            .energy_kwh;
-        let eb = forecast_day(iphofen(), big, 172, 0.0, 0.1)
-            .unwrap()
-            .energy_kwh;
+    fn energy_scales_with_array_size() -> TestResult {
+        let small = PvArray::new(3.0, 30.0, 180.0, 0.85)?;
+        let big = PvArray::new(6.0, 30.0, 180.0, 0.85)?;
+        let es = forecast_day(iphofen()?, small, 172, 0.0, 0.1)?.energy_kwh;
+        let eb = forecast_day(iphofen()?, big, 172, 0.0, 0.1)?.energy_kwh;
         close(eb, 2.0 * es, 1e-6);
+        Ok(())
     }
 
     #[test]
-    fn finer_step_converges() {
+    fn finer_step_converges() -> TestResult {
         // Coarse and fine integration agree to a few percent.
-        let coarse = forecast_day(iphofen(), roof(), 172, 0.0, 0.5)
-            .unwrap()
-            .energy_kwh;
-        let fine = forecast_day(iphofen(), roof(), 172, 0.0, 0.02)
-            .unwrap()
-            .energy_kwh;
+        let coarse = forecast_day(iphofen()?, roof()?, 172, 0.0, 0.5)?.energy_kwh;
+        let fine = forecast_day(iphofen()?, roof()?, 172, 0.0, 0.02)?.energy_kwh;
         assert!(
             (coarse - fine).abs() / fine < 0.05,
             "coarse {coarse} vs fine {fine}"
         );
+        Ok(())
     }
 
     #[test]
-    fn instant_at_noon_has_power_and_daylight() {
-        let m = instant_at(iphofen(), roof(), 172, 12.0, 0.0).unwrap();
+    fn instant_at_noon_has_power_and_daylight() -> TestResult {
+        let m = instant_at(iphofen()?, roof()?, 172, 12.0, 0.0)?;
         assert!(m.sun.is_daylight());
         assert!(m.power_kw > 0.0);
+        Ok(())
     }
 
     #[test]
-    fn instant_at_night_has_no_power() {
-        let m = instant_at(iphofen(), roof(), 172, 0.0, 0.0).unwrap();
+    fn instant_at_night_has_no_power() -> TestResult {
+        let m = instant_at(iphofen()?, roof()?, 172, 0.0, 0.0)?;
         assert!(!m.sun.is_daylight());
         assert_eq!(m.power_kw, 0.0);
+        Ok(())
     }
 
     #[test]
-    fn daylight_length_carried_into_forecast() {
-        let f = forecast_day(iphofen(), roof(), 172, 0.0, 0.25).unwrap();
+    fn daylight_length_carried_into_forecast() -> TestResult {
+        let f = forecast_day(iphofen()?, roof()?, 172, 0.0, 0.25)?;
         assert!(
             f.daylight_hours > 15.0,
             "summer daylight {}",
             f.daylight_hours
         );
+        Ok(())
     }
 }
