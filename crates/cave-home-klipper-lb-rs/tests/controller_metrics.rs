@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! ServiceLB controller observability tests (RED until `metrics` lands).
+//! `ServiceLB` controller observability tests (RED until `metrics` lands).
 //!
 //! The controller exposes the operational signals an operator watches: how many
-//! LoadBalancer Services exist, how many are programmed (have a svclb DaemonSet)
+//! `LoadBalancer` Services exist, how many are programmed (have a svclb `DaemonSet`)
 //! vs pending (host-port conflict) vs invalid, how many actually publish an
-//! ingress IP ("endpoint health"), the svclb DaemonSet (pod-set) count to apply /
+//! ingress IP ("endpoint health"), the svclb `DaemonSet` (pod-set) count to apply /
 //! delete, and the host-port conflict count. These are computed purely from a
 //! `Reconciliation` and rendered as Prometheus text exposition.
 
@@ -17,8 +17,10 @@ use cave_home_klipper_lb_rs::service::{
     ExternalTrafficPolicy, LoadBalancerService, Protocol, ServicePort,
 };
 
-fn ip(s: &str) -> IpAddr {
-    s.parse().expect("test ip")
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+fn ip(s: &str) -> Result<IpAddr, std::net::AddrParseError> {
+    s.parse()
 }
 
 fn svc(name: &str, p: u16, np: u16) -> LoadBalancerService {
@@ -46,12 +48,12 @@ fn empty_reconcile_has_zero_metrics() {
 }
 
 #[test]
-fn metrics_count_programmed_pending_invalid() {
+fn metrics_count_programmed_pending_invalid() -> TestResult {
     // web(80) programmed; blog(80) pending (conflict); broken(nodePort 0) invalid.
     let mut broken = svc("broken", 8080, 0);
     broken.ports[0].node_port = 0;
     let services = vec![svc("web", 80, 30080), svc("blog", 80, 30081), broken];
-    let nodes = vec![Node::new("n1").with_internal_ip(ip("10.0.0.1"))];
+    let nodes = vec![Node::new("n1").with_internal_ip(ip("10.0.0.1")?)];
 
     let m = reconcile(&services, &nodes, &ReconcileContext::default()).metrics();
     assert_eq!(m.services_total, 3);
@@ -63,14 +65,15 @@ fn metrics_count_programmed_pending_invalid() {
     assert_eq!(m.daemonsets_desired, 1);
     assert_eq!(m.daemonsets_apply, 1);
     assert_eq!(m.daemonsets_delete, 0);
+    Ok(())
 }
 
 #[test]
-fn published_counts_only_programmed_services_with_an_ingress_ip() {
+fn published_counts_only_programmed_services_with_an_ingress_ip() -> TestResult {
     // web has a node with an IP -> published. api has NO node IP -> programmed but
     // not published (status still pending).
     let services = vec![svc("web", 80, 30080), svc("api", 8080, 30090)];
-    let nodes = vec![Node::new("n1").with_internal_ip(ip("10.0.0.1"))];
+    let nodes = vec![Node::new("n1").with_internal_ip(ip("10.0.0.1")?)];
     let m = reconcile(&services, &nodes, &ReconcileContext::default()).metrics();
     assert_eq!(m.services_programmed, 2);
     assert_eq!(m.services_published, 2);
@@ -79,6 +82,7 @@ fn published_counts_only_programmed_services_with_an_ingress_ip() {
     let m2 = reconcile(&services, &[Node::new("n1")], &ReconcileContext::default()).metrics();
     assert_eq!(m2.services_programmed, 2);
     assert_eq!(m2.services_published, 0);
+    Ok(())
 }
 
 #[test]
@@ -91,9 +95,9 @@ fn delete_count_tracks_orphans() {
 }
 
 #[test]
-fn prometheus_exposition_lists_the_gauges() {
+fn prometheus_exposition_lists_the_gauges() -> TestResult {
     let services = vec![svc("web", 80, 30080), svc("blog", 80, 30081)];
-    let nodes = vec![Node::new("n1").with_internal_ip(ip("10.0.0.1"))];
+    let nodes = vec![Node::new("n1").with_internal_ip(ip("10.0.0.1")?)];
     let text = reconcile(&services, &nodes, &ReconcileContext::default())
         .metrics()
         .to_prometheus();
@@ -118,4 +122,5 @@ fn prometheus_exposition_lists_the_gauges() {
             "non-numeric value: {line:?}"
         );
     }
+    Ok(())
 }

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cluster node model + svclb node-selection.
 //!
-//! klipper-lb (K3s "svclb" / ServiceLB) runs a `DaemonSet` pod per
+//! klipper-lb (K3s "svclb" / `ServiceLB`) runs a `DaemonSet` pod per
 //! LoadBalancer-type Service; a copy of that pod lands on every node the
-//! DaemonSet schedules onto. This module models the nodes and answers the
-//! question the DaemonSet controller answers: *which nodes should run the
+//! `DaemonSet` schedules onto. This module models the nodes and answers the
+//! question the `DaemonSet` controller answers: *which nodes should run the
 //! svclb pod for a given Service?*
 //!
 //! A node is eligible when it is `Ready`, `schedulable` (not cordoned), and
@@ -133,8 +133,10 @@ pub fn selected_node_names(nodes: &[Node], selector: &BTreeMap<String, String>) 
 mod tests {
     use super::*;
 
-    fn ip(s: &str) -> IpAddr {
-        s.parse().expect("test ip literal")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn ip(s: &str) -> Result<IpAddr, std::net::AddrParseError> {
+        s.parse()
     }
 
     fn sel(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -224,20 +226,21 @@ mod tests {
     }
 
     #[test]
-    fn advertise_ip_prefers_external_then_internal_then_none() {
+    fn advertise_ip_prefers_external_then_internal_then_none() -> TestResult {
         assert_eq!(Node::new("a").advertise_ip(), None);
         assert_eq!(
             Node::new("a")
-                .with_internal_ip(ip("10.0.0.1"))
+                .with_internal_ip(ip("10.0.0.1")?)
                 .advertise_ip(),
-            Some(ip("10.0.0.1"))
+            Some(ip("10.0.0.1")?)
         );
         assert_eq!(
             Node::new("a")
-                .with_internal_ip(ip("10.0.0.1"))
-                .with_external_ip(ip("1.2.3.4"))
+                .with_internal_ip(ip("10.0.0.1")?)
+                .with_external_ip(ip("1.2.3.4")?)
                 .advertise_ip(),
-            Some(ip("1.2.3.4"))
+            Some(ip("1.2.3.4")?)
         );
+        Ok(())
     }
 }

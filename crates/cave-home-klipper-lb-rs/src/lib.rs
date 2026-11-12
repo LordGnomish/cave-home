@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `cave-home-klipper-lb-rs` — the ServiceLB ("svclb" / klipper-lb) decision
+//! `cave-home-klipper-lb-rs` — the `ServiceLB` ("svclb" / klipper-lb) decision
 //! core for the cave-home K3s-style orchestration layer (ADR-004).
 //!
 //! # What this crate is
 //!
-//! K3s ships a built-in service load-balancer — *ServiceLB*, historically
+//! K3s ships a built-in service load-balancer — *`ServiceLB`*, historically
 //! *klipper-lb* — that provides `LoadBalancer`-type Services on bare metal
 //! without a cloud provider. For every `LoadBalancer` Service it creates a
 //! `DaemonSet` (`svclb-<service>`) whose pods bind the Service's ports on each
@@ -15,9 +15,9 @@
 //! svclb pod-spec construction (the `SRC_PORT` / `DEST_PROTO` / `DEST_PORT` /
 //! `DEST_IPS` env contract `entry.sh` consumes), the node selection, and the
 //! `status.loadBalancer.ingress` computation. It is written from the *public*
-//! K3s ServiceLB + Kubernetes Service API docs (see `parity.manifest.toml`
+//! K3s `ServiceLB` + Kubernetes Service API docs (see `parity.manifest.toml`
 //! `spec_sources`), **not** a verbatim line-by-line transcription. Applying the
-//! DaemonSet to a cluster, the in-pod iptables the container programs, and the
+//! `DaemonSet` to a cluster, the in-pod iptables the container programs, and the
 //! Service/Node informer + controller loop are ADR-justified Phase-1b work.
 //!
 //! This is **infrastructure** (Charter §6.3): it is hidden from end-users and

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The ServiceLB controller **reconcile loop** decision core.
+//! The `ServiceLB` controller **reconcile loop** decision core.
 //!
-//! K3s's ServiceLB controller (`pkg/cloudprovider/servicelb.go`) reacts to
-//! Service / Node / Pod / EndpointSlice events and, for each affected Service,
+//! K3s's `ServiceLB` controller (`pkg/cloudprovider/servicelb.go`) reacts to
+//! Service / Node / Pod / `EndpointSlice` events and, for each affected Service,
 //! decides whether to *deploy* the svclb `DaemonSet` (`deployDaemonSet`), *delete*
 //! it (`deleteDaemonSet`), and what the Service's `status.loadBalancer.ingress`
 //! should become (`updateStatus` → `getStatus` → `podIPs`).
@@ -17,8 +17,8 @@
 //! * [`crate::daemonset::build_pod_spec`] — the svclb pod spec to apply,
 //! * [`crate::status::compute_ingress_ips`] — the ingress IPs to patch back,
 //!
-//! into a single [`reconcile`] that returns a [`Reconciliation`]: the DaemonSets
-//! to apply, the orphan DaemonSets to delete, and the per-Service
+//! into a single [`reconcile`] that returns a [`Reconciliation`]: the `DaemonSets`
+//! to apply, the orphan `DaemonSets` to delete, and the per-Service
 //! [`ServiceDisposition`].
 //!
 //! What stays out (ADR-004 Phase 1b, see `parity.manifest.toml`): the apiserver
@@ -46,18 +46,18 @@ pub struct ReconcileContext {
     /// for `externalTrafficPolicy: Local` Services (see
     /// [`crate::status::compute_ingress_ips`]).
     pub backing_pods: BTreeMap<String, BTreeSet<String>>,
-    /// Per-Service: the in-cluster destination IP(s) (the Service ClusterIP) the
+    /// Per-Service: the in-cluster destination IP(s) (the Service `ClusterIP`) the
     /// svclb containers forward to — emitted as the `DEST_IPS` env var. A Service
     /// with no entry forwards to an empty `DEST_IPS` (the caller resolves these).
     pub dest_ips: BTreeMap<String, Vec<IpAddr>>,
-    /// Names (`svclb-<name>`) of svclb DaemonSets that currently exist in the
+    /// Names (`svclb-<name>`) of svclb `DaemonSets` that currently exist in the
     /// cluster. Any not backing a programmed Service this reconcile is an orphan
     /// to delete.
     pub existing_daemonsets: BTreeSet<String>,
 }
 
 impl ReconcileContext {
-    /// Builder: set the existing svclb DaemonSet names (for orphan detection).
+    /// Builder: set the existing svclb `DaemonSet` names (for orphan detection).
     #[must_use]
     pub fn with_existing_daemonsets<I, S>(mut self, names: I) -> Self
     where
@@ -89,23 +89,23 @@ pub enum ServiceDisposition {
     /// Admitted: a svclb `DaemonSet` (named `daemonset`) should exist for this
     /// Service, and its `status.loadBalancer.ingress` should be `ingress_ips`.
     /// The list may be empty when no eligible node can yet advertise an IP (the
-    /// DaemonSet is still deployed — status stays pending until a node is ready),
-    /// matching K3s deploying the DaemonSet before any pod is ready.
+    /// `DaemonSet` is still deployed — status stays pending until a node is ready),
+    /// matching K3s deploying the `DaemonSet` before any pod is ready.
     Programmed {
         daemonset: String,
         ingress_ips: Vec<IpAddr>,
     },
     /// Left pending: another LB Service already holds one of this Service's host
-    /// `(protocol, port)` pairs. No DaemonSet is applied; status stays empty —
+    /// `(protocol, port)` pairs. No `DaemonSet` is applied; status stays empty —
     /// exactly as K3s leaves the second contending Service `<pending>`.
     Pending { conflicts: Vec<PortConflict> },
     /// Rejected by structural validation; skipped (the controller logs and moves
-    /// on) — it claims no host port and gets no DaemonSet.
+    /// on) — it claims no host port and gets no `DaemonSet`.
     Invalid { reason: ServiceError },
 }
 
 impl ServiceDisposition {
-    /// True iff the Service was admitted and a DaemonSet should be applied.
+    /// True iff the Service was admitted and a `DaemonSet` should be applied.
     #[must_use]
     pub const fn is_programmed(&self) -> bool {
         matches!(self, Self::Programmed { .. })
@@ -130,7 +130,7 @@ pub struct Reconciliation {
     /// svclb pod specs to **create-or-update** (`deployDaemonSet` / `Apply`), in
     /// admission order — one per programmed Service.
     pub apply: Vec<SvclbPodSpec>,
-    /// svclb `DaemonSet` names to **delete** (`deleteDaemonSet`): DaemonSets that
+    /// svclb `DaemonSet` names to **delete** (`deleteDaemonSet`): `DaemonSets` that
     /// exist but no longer back a programmed Service. Sorted, de-duplicated.
     pub delete: Vec<String>,
 }
@@ -145,7 +145,7 @@ impl Reconciliation {
             .map(|(_, d)| d)
     }
 
-    /// The set of svclb DaemonSet names this reconcile wants to exist.
+    /// The set of svclb `DaemonSet` names this reconcile wants to exist.
     #[must_use]
     pub fn desired_daemonsets(&self) -> BTreeSet<String> {
         self.apply
@@ -199,20 +199,20 @@ impl Reconciliation {
     }
 }
 
-/// A point-in-time observability snapshot of the ServiceLB controller.
+/// A point-in-time observability snapshot of the `ServiceLB` controller.
 ///
 /// Derived from one [`Reconciliation`] via [`Reconciliation::metrics`], these are
 /// the operational signals the controller surfaces: how many
-/// LoadBalancer Services exist and how they break down (programmed vs pending vs
+/// `LoadBalancer` Services exist and how they break down (programmed vs pending vs
 /// invalid), how many actually publish an ingress IP (the "endpoint health"
-/// line — a Service with a DaemonSet but no advertised node IP is still pending
-/// from the caller's view), the svclb DaemonSet (pod-set) counts to apply /
+/// line — a Service with a `DaemonSet` but no advertised node IP is still pending
+/// from the caller's view), the svclb `DaemonSet` (pod-set) counts to apply /
 /// delete, and the host-port conflict count.
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
 pub struct ServiceLbMetrics {
-    /// Total LoadBalancer Services seen this reconcile.
+    /// Total `LoadBalancer` Services seen this reconcile.
     pub services_total: usize,
-    /// Services admitted with a svclb DaemonSet.
+    /// Services admitted with a svclb `DaemonSet`.
     pub services_programmed: usize,
     /// Services left pending by a host-port conflict.
     pub services_pending: usize,
@@ -220,11 +220,11 @@ pub struct ServiceLbMetrics {
     pub services_invalid: usize,
     /// Programmed Services that publish at least one ingress IP (endpoint health).
     pub services_published: usize,
-    /// svclb DaemonSets that should exist (== one per programmed Service).
+    /// svclb `DaemonSets` that should exist (== one per programmed Service).
     pub daemonsets_desired: usize,
-    /// svclb DaemonSets to create-or-update this reconcile.
+    /// svclb `DaemonSets` to create-or-update this reconcile.
     pub daemonsets_apply: usize,
-    /// Orphan svclb DaemonSets to delete this reconcile.
+    /// Orphan svclb `DaemonSets` to delete this reconcile.
     pub daemonsets_delete: usize,
     /// Total host-port `(protocol, port)` conflicts across all pending Services.
     pub host_port_conflicts: usize,
@@ -297,7 +297,7 @@ impl ServiceLbMetrics {
     }
 }
 
-/// Reconcile one cluster snapshot: decide the svclb DaemonSets to apply, the
+/// Reconcile one cluster snapshot: decide the svclb `DaemonSets` to apply, the
 /// orphans to delete, and every Service's disposition + ingress status.
 ///
 /// `services` must be in a stable admission order (K3s effectively orders by the

@@ -3,7 +3,7 @@
 //!
 //! Once svclb pods are scheduled, K3s publishes the IPs the Service is
 //! reachable on back into `status.loadBalancer.ingress`. The rule klipper-lb /
-//! ServiceLB follows:
+//! `ServiceLB` follows:
 //!
 //! * If the Service requested explicit `loadBalancerIP(s)`, those are published
 //!   verbatim (the operator pinned them).
@@ -16,7 +16,6 @@
 //! This module computes that publish set. It is a behavioural reimplementation
 //! of the documented status flow.
 
-use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::net::IpAddr;
 
@@ -89,9 +88,12 @@ where
 mod tests {
     use super::*;
     use crate::service::{Protocol, ServicePort};
+    use std::collections::BTreeMap;
 
-    fn ip(s: &str) -> IpAddr {
-        s.parse().expect("test ip")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn ip(s: &str) -> Result<IpAddr, std::net::AddrParseError> {
+        s.parse()
     }
 
     fn svc(etp: ExternalTrafficPolicy, lb_ips: Vec<IpAddr>) -> LoadBalancerService {
@@ -111,95 +113,103 @@ mod tests {
     }
 
     #[test]
-    fn explicit_lb_ip_is_published_verbatim() {
-        let s = svc(ExternalTrafficPolicy::Cluster, vec![ip("192.168.1.50")]);
-        let nodes = vec![Node::new("n1").with_internal_ip(ip("10.0.0.1"))];
+    fn explicit_lb_ip_is_published_verbatim() -> TestResult {
+        let s = svc(ExternalTrafficPolicy::Cluster, vec![ip("192.168.1.50")?]);
+        let nodes = vec![Node::new("n1").with_internal_ip(ip("10.0.0.1")?)];
         let got = compute_ingress_ips(&s, &nodes, &BTreeSet::new());
-        assert_eq!(got, vec![ip("192.168.1.50")]);
+        assert_eq!(got, vec![ip("192.168.1.50")?]);
+        Ok(())
     }
 
     #[test]
-    fn cluster_etp_publishes_all_eligible_node_ips() {
+    fn cluster_etp_publishes_all_eligible_node_ips() -> TestResult {
         let s = svc(ExternalTrafficPolicy::Cluster, vec![]);
         let nodes = vec![
-            Node::new("n1").with_internal_ip(ip("10.0.0.1")),
-            Node::new("n2").with_internal_ip(ip("10.0.0.2")),
+            Node::new("n1").with_internal_ip(ip("10.0.0.1")?),
+            Node::new("n2").with_internal_ip(ip("10.0.0.2")?),
         ];
         let got = compute_ingress_ips(&s, &nodes, &BTreeSet::new());
-        assert_eq!(got, vec![ip("10.0.0.1"), ip("10.0.0.2")]);
+        assert_eq!(got, vec![ip("10.0.0.1")?, ip("10.0.0.2")?]);
+        Ok(())
     }
 
     #[test]
-    fn external_ip_preferred_over_internal() {
+    fn external_ip_preferred_over_internal() -> TestResult {
         let s = svc(ExternalTrafficPolicy::Cluster, vec![]);
         let nodes = vec![
             Node::new("n1")
-                .with_internal_ip(ip("10.0.0.1"))
-                .with_external_ip(ip("1.2.3.4")),
+                .with_internal_ip(ip("10.0.0.1")?)
+                .with_external_ip(ip("1.2.3.4")?),
         ];
         let got = compute_ingress_ips(&s, &nodes, &BTreeSet::new());
-        assert_eq!(got, vec![ip("1.2.3.4")]);
+        assert_eq!(got, vec![ip("1.2.3.4")?]);
+        Ok(())
     }
 
     #[test]
-    fn cluster_etp_ignores_pod_placement() {
+    fn cluster_etp_ignores_pod_placement() -> TestResult {
         // Cluster ETP publishes every node even with no local backing pod.
         let s = svc(ExternalTrafficPolicy::Cluster, vec![]);
         let nodes = vec![
-            Node::new("n1").with_internal_ip(ip("10.0.0.1")),
-            Node::new("n2").with_internal_ip(ip("10.0.0.2")),
+            Node::new("n1").with_internal_ip(ip("10.0.0.1")?),
+            Node::new("n2").with_internal_ip(ip("10.0.0.2")?),
         ];
         let got = compute_ingress_ips(&s, &nodes, &pod_node_set(["n1"]));
-        assert_eq!(got, vec![ip("10.0.0.1"), ip("10.0.0.2")]);
+        assert_eq!(got, vec![ip("10.0.0.1")?, ip("10.0.0.2")?]);
+        Ok(())
     }
 
     #[test]
-    fn local_etp_publishes_only_nodes_with_a_ready_pod() {
+    fn local_etp_publishes_only_nodes_with_a_ready_pod() -> TestResult {
         let s = svc(ExternalTrafficPolicy::Local, vec![]);
         let nodes = vec![
-            Node::new("n1").with_internal_ip(ip("10.0.0.1")),
-            Node::new("n2").with_internal_ip(ip("10.0.0.2")),
-            Node::new("n3").with_internal_ip(ip("10.0.0.3")),
+            Node::new("n1").with_internal_ip(ip("10.0.0.1")?),
+            Node::new("n2").with_internal_ip(ip("10.0.0.2")?),
+            Node::new("n3").with_internal_ip(ip("10.0.0.3")?),
         ];
         let got = compute_ingress_ips(&s, &nodes, &pod_node_set(["n1", "n3"]));
-        assert_eq!(got, vec![ip("10.0.0.1"), ip("10.0.0.3")]);
+        assert_eq!(got, vec![ip("10.0.0.1")?, ip("10.0.0.3")?]);
+        Ok(())
     }
 
     #[test]
-    fn local_etp_with_no_backing_pod_publishes_nothing() {
+    fn local_etp_with_no_backing_pod_publishes_nothing() -> TestResult {
         let s = svc(ExternalTrafficPolicy::Local, vec![]);
-        let nodes = vec![Node::new("n1").with_internal_ip(ip("10.0.0.1"))];
+        let nodes = vec![Node::new("n1").with_internal_ip(ip("10.0.0.1")?)];
         let got = compute_ingress_ips(&s, &nodes, &BTreeSet::new());
-        assert!(got.is_empty());
+        assert_eq!(got, [] as [IpAddr; 0]);
         assert!(!is_published(&s, &nodes, &BTreeSet::new()));
+        Ok(())
     }
 
     #[test]
-    fn cordoned_node_is_not_published() {
+    fn cordoned_node_is_not_published() -> TestResult {
         let s = svc(ExternalTrafficPolicy::Cluster, vec![]);
         let nodes = vec![
-            Node::new("n1").with_internal_ip(ip("10.0.0.1")),
+            Node::new("n1").with_internal_ip(ip("10.0.0.1")?),
             Node::new("n2")
-                .with_internal_ip(ip("10.0.0.2"))
+                .with_internal_ip(ip("10.0.0.2")?)
                 .schedulable(false),
         ];
         let got = compute_ingress_ips(&s, &nodes, &BTreeSet::new());
-        assert_eq!(got, vec![ip("10.0.0.1")]);
+        assert_eq!(got, vec![ip("10.0.0.1")?]);
+        Ok(())
     }
 
     #[test]
-    fn node_without_any_ip_is_skipped() {
+    fn node_without_any_ip_is_skipped() -> TestResult {
         let s = svc(ExternalTrafficPolicy::Cluster, vec![]);
         let nodes = vec![
             Node::new("n1"),
-            Node::new("n2").with_internal_ip(ip("10.0.0.2")),
+            Node::new("n2").with_internal_ip(ip("10.0.0.2")?),
         ];
         let got = compute_ingress_ips(&s, &nodes, &BTreeSet::new());
-        assert_eq!(got, vec![ip("10.0.0.2")]);
+        assert_eq!(got, vec![ip("10.0.0.2")?]);
+        Ok(())
     }
 
     #[test]
-    fn node_selector_narrows_published_nodes() {
+    fn node_selector_narrows_published_nodes() -> TestResult {
         let mut s = svc(ExternalTrafficPolicy::Cluster, vec![]);
         s.node_selector.insert(
             "svccontroller.k3s.cattle.io/lbpool".to_owned(),
@@ -207,28 +217,31 @@ mod tests {
         );
         let nodes = vec![
             Node::new("n1")
-                .with_internal_ip(ip("10.0.0.1"))
+                .with_internal_ip(ip("10.0.0.1")?)
                 .with_label("svccontroller.k3s.cattle.io/lbpool", "pool-a"),
-            Node::new("n2").with_internal_ip(ip("10.0.0.2")),
+            Node::new("n2").with_internal_ip(ip("10.0.0.2")?),
         ];
         let got = compute_ingress_ips(&s, &nodes, &BTreeSet::new());
-        assert_eq!(got, vec![ip("10.0.0.1")]);
+        assert_eq!(got, vec![ip("10.0.0.1")?]);
+        Ok(())
     }
 
     #[test]
-    fn duplicate_explicit_lb_ips_are_deduped() {
+    fn duplicate_explicit_lb_ips_are_deduped() -> TestResult {
         let s = svc(
             ExternalTrafficPolicy::Cluster,
-            vec![ip("192.168.1.50"), ip("192.168.1.50")],
+            vec![ip("192.168.1.50")?, ip("192.168.1.50")?],
         );
         let got = compute_ingress_ips(&s, &[], &BTreeSet::new());
-        assert_eq!(got, vec![ip("192.168.1.50")]);
+        assert_eq!(got, vec![ip("192.168.1.50")?]);
+        Ok(())
     }
 
     #[test]
-    fn is_published_true_when_a_node_advertises() {
+    fn is_published_true_when_a_node_advertises() -> TestResult {
         let s = svc(ExternalTrafficPolicy::Cluster, vec![]);
-        let nodes = vec![Node::new("n1").with_internal_ip(ip("10.0.0.1"))];
+        let nodes = vec![Node::new("n1").with_internal_ip(ip("10.0.0.1")?)];
         assert!(is_published(&s, &nodes, &BTreeSet::new()));
+        Ok(())
     }
 }
