@@ -182,47 +182,52 @@ impl Reassembler {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn assembles_in_order_fragments() {
+    fn assembles_in_order_fragments() -> TestResult {
         let mut r = Reassembler::new();
-        r.accept(&Fragment::new(1, false, vec![0xAA, 0xBB]))
-            .unwrap();
-        r.accept(&Fragment::new(2, true, vec![0xCC])).unwrap();
+        r.accept(&Fragment::new(1, false, vec![0xAA, 0xBB]))?;
+        r.accept(&Fragment::new(2, true, vec![0xCC]))?;
         assert!(r.is_complete());
-        assert_eq!(r.assemble().unwrap(), vec![0xAA, 0xBB, 0xCC]);
+        assert_eq!(r.assemble()?, vec![0xAA, 0xBB, 0xCC]);
+        Ok(())
     }
 
     #[test]
-    fn reorders_out_of_order_fragments() {
+    fn reorders_out_of_order_fragments() -> TestResult {
         let mut r = Reassembler::new();
         // Last fragment arrives first, middle fragment second.
-        r.accept(&Fragment::new(3, true, vec![0x33])).unwrap();
-        r.accept(&Fragment::new(1, false, vec![0x11])).unwrap();
-        r.accept(&Fragment::new(2, false, vec![0x22])).unwrap();
+        r.accept(&Fragment::new(3, true, vec![0x33]))?;
+        r.accept(&Fragment::new(1, false, vec![0x11]))?;
+        r.accept(&Fragment::new(2, false, vec![0x22]))?;
         assert!(r.is_complete());
-        assert_eq!(r.assemble().unwrap(), vec![0x11, 0x22, 0x33]);
+        assert_eq!(r.assemble()?, vec![0x11, 0x22, 0x33]);
+        Ok(())
     }
 
     #[test]
-    fn detects_missing_interior_fragment() {
+    fn detects_missing_interior_fragment() -> TestResult {
         let mut r = Reassembler::new();
-        r.accept(&Fragment::new(1, false, vec![0x11])).unwrap();
-        r.accept(&Fragment::new(3, true, vec![0x33])).unwrap();
+        r.accept(&Fragment::new(1, false, vec![0x11]))?;
+        r.accept(&Fragment::new(3, true, vec![0x33]))?;
         assert!(!r.is_complete());
         assert_eq!(r.missing(), vec![2]);
         assert_eq!(
             r.assemble(),
             Err(ReassemblyError::MissingFragments { missing: vec![2] })
         );
+        Ok(())
     }
 
     #[test]
-    fn missing_last_fragment_is_incomplete() {
+    fn missing_last_fragment_is_incomplete() -> TestResult {
         let mut r = Reassembler::new();
-        r.accept(&Fragment::new(1, false, vec![0x11])).unwrap();
-        r.accept(&Fragment::new(2, false, vec![0x22])).unwrap();
+        r.accept(&Fragment::new(1, false, vec![0x11]))?;
+        r.accept(&Fragment::new(2, false, vec![0x22]))?;
         assert!(!r.is_complete());
         assert_eq!(r.assemble(), Err(ReassemblyError::NoLastFragment));
+        Ok(())
     }
 
     #[test]
@@ -246,29 +251,32 @@ mod tests {
     }
 
     #[test]
-    fn idempotent_retransmit_is_accepted() {
+    fn idempotent_retransmit_is_accepted() -> TestResult {
         let mut r = Reassembler::new();
         let f = Fragment::new(1, true, vec![0x11]);
-        r.accept(&f).unwrap();
-        r.accept(&f).unwrap(); // radio retransmit of the same fragment
-        assert_eq!(r.assemble().unwrap(), vec![0x11]);
+        r.accept(&f)?;
+        r.accept(&f)?; // radio retransmit of the same fragment
+        assert_eq!(r.assemble()?, vec![0x11]);
+        Ok(())
     }
 
     #[test]
-    fn conflicting_duplicate_is_rejected() {
+    fn conflicting_duplicate_is_rejected() -> TestResult {
         let mut r = Reassembler::new();
-        r.accept(&Fragment::new(1, false, vec![0x11])).unwrap();
+        r.accept(&Fragment::new(1, false, vec![0x11]))?;
         assert_eq!(
             r.accept(&Fragment::new(1, true, vec![0x99])),
             Err(ReassemblyError::DuplicateSeq { seq: 1 })
         );
+        Ok(())
     }
 
     #[test]
-    fn lists_multiple_missing_fragments() {
+    fn lists_multiple_missing_fragments() -> TestResult {
         let mut r = Reassembler::new();
-        r.accept(&Fragment::new(2, false, vec![0x22])).unwrap();
-        r.accept(&Fragment::new(5, true, vec![0x55])).unwrap();
+        r.accept(&Fragment::new(2, false, vec![0x22]))?;
+        r.accept(&Fragment::new(5, true, vec![0x55]))?;
         assert_eq!(r.missing(), vec![1, 3, 4]);
+        Ok(())
     }
 }

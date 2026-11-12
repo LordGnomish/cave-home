@@ -98,7 +98,7 @@ mod tests {
     fn describe_is_jargon_free() {
         for fam in [Family::OnePanel, Family::TwoPanel, Family::FourPanel] {
             let d = fam.describe();
-            assert!(!d.is_empty());
+            assert_ne!(d, "");
             assert!(!d.contains("HM-"));
         }
     }

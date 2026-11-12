@@ -58,7 +58,7 @@ impl InverterSerial {
     ///
     /// # Errors
     /// Returns [`SerialError`] if `printed` is not exactly 12 decimal digits.
-    pub fn parse_printed(printed: &str) -> Result<Self, SerialError> {
+    pub const fn parse_printed(printed: &str) -> Result<Self, SerialError> {
         if printed.len() != 12 {
             return Err(SerialError::WrongLength);
         }
@@ -131,10 +131,13 @@ impl Command {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn parses_printed_serial_as_packed_bcd() {
-        let s = InverterSerial::parse_printed("114174123456").expect("valid serial");
+    fn parses_printed_serial_as_packed_bcd() -> TestResult {
+        let s = InverterSerial::parse_printed("114174123456")?;
         assert_eq!(s.bytes(), [11, 41, 74, 12, 34, 56]);
+        Ok(())
     }
 
     #[test]
