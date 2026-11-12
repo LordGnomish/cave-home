@@ -23,7 +23,7 @@
 //! - [`label`] — grandma-friendly localised status sentences (Charter §6.3,
 //!   ADR-007).
 //!
-//! The **vendor I/O adapters** (OpenGarage, ESPHome cover bindings, Somfy RTS,
+//! The **vendor I/O adapters** (`OpenGarage`, `ESPHome` cover bindings, Somfy RTS,
 //! and the Zigbee / Z-Wave / Matter / MQTT cover paths), real motor
 //! travel-time calibration, and the cave-home-core entity integration are all
 //! network/RF/hardware-bound and deferred to Phase 1b — every one is enumerated

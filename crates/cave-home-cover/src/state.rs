@@ -52,25 +52,28 @@ impl CoverState {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn at_rest_for_endpoints_and_middle() {
+    fn at_rest_for_endpoints_and_middle() -> TestResult {
         assert_eq!(
             CoverState::at_rest_for(Position::CLOSED),
             CoverState::Closed
         );
         assert_eq!(CoverState::at_rest_for(Position::OPEN), CoverState::Open);
         assert_eq!(
-            CoverState::at_rest_for(Position::new(50).unwrap()),
+            CoverState::at_rest_for(Position::new(50)?),
             CoverState::Stopped
         );
         assert_eq!(
-            CoverState::at_rest_for(Position::new(1).unwrap()),
+            CoverState::at_rest_for(Position::new(1)?),
             CoverState::Stopped
         );
         assert_eq!(
-            CoverState::at_rest_for(Position::new(99).unwrap()),
+            CoverState::at_rest_for(Position::new(99)?),
             CoverState::Stopped
         );
+        Ok(())
     }
 
     #[test]

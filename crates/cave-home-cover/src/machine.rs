@@ -60,7 +60,7 @@ impl core::fmt::Display for CommandError {
 impl std::error::Error for CommandError {}
 
 /// A single cover and its live state.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cover {
     class: DeviceClass,
     features: Features,
@@ -136,23 +136,20 @@ impl Cover {
     /// # Errors
     /// Returns [`CommandError`] for a `SetPosition` on a non-positionable cover
     /// or a `SetTiltPosition` on a cover without tilt.
-    pub fn apply(&mut self, command: CoverCommand) -> Result<(), CommandError> {
+    pub const fn apply(&mut self, command: CoverCommand) -> Result<(), CommandError> {
         match command {
             CoverCommand::Open => {
                 self.position = Position::OPEN;
                 self.state = CoverState::Open;
-                Ok(())
             }
             CoverCommand::Close => {
                 self.position = Position::CLOSED;
                 self.state = CoverState::Closed;
-                Ok(())
             }
             // A Stop is always honoured — cutting the motor is universal. It
             // settles to the at-rest state for wherever the cover currently is.
             CoverCommand::Stop => {
                 self.state = CoverState::at_rest_for(self.position);
-                Ok(())
             }
             CoverCommand::SetPosition(target) => {
                 if !self.features.set_position {
@@ -160,7 +157,6 @@ impl Cover {
                 }
                 self.position = target;
                 self.state = CoverState::at_rest_for(target);
-                Ok(())
             }
             CoverCommand::SetTiltPosition(target) => {
                 if !self.features.tilt {
@@ -168,9 +164,9 @@ impl Cover {
                 }
                 // Tilt is independent: openness and motion are untouched.
                 self.tilt = Some(target);
-                Ok(())
             }
         }
+        Ok(())
     }
 
     /// Begin a positional move *without* completing it, returning the transient
@@ -208,7 +204,7 @@ impl Cover {
 
     /// Settle an in-flight move at `reached`, picking the right at-rest state.
     /// A motor adapter calls this when the cover stops moving.
-    pub fn settle_at(&mut self, reached: Position) {
+    pub const fn settle_at(&mut self, reached: Position) {
         self.position = reached;
         self.state = CoverState::at_rest_for(reached);
     }
@@ -216,7 +212,7 @@ impl Cover {
     /// Force the cover to a halt at its current position because an obstruction
     /// or jam was detected. Safety override: always accepted, whatever the
     /// cover was doing and whatever features it declares.
-    pub fn report_obstruction(&mut self) {
+    pub const fn report_obstruction(&mut self) {
         self.state = CoverState::Stopped;
     }
 
@@ -237,163 +233,181 @@ impl Cover {
 mod tests {
     use super::*;
 
-    fn pos(p: u8) -> Position {
-        Position::new(p).expect("valid test position")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn pos(p: u8) -> Result<Position, crate::position::PositionError> {
+        Position::new(p)
     }
 
     #[test]
-    fn open_drives_to_full_and_open_state() {
+    fn open_drives_to_full_and_open_state() -> TestResult {
         let mut c = Cover::with_class_defaults(DeviceClass::Shutter);
-        c.apply(CoverCommand::Open).unwrap();
+        c.apply(CoverCommand::Open)?;
         assert_eq!(c.position(), Position::OPEN);
         assert_eq!(c.state(), CoverState::Open);
+        Ok(())
     }
 
     #[test]
-    fn close_drives_to_zero_and_closed_state() {
+    fn close_drives_to_zero_and_closed_state() -> TestResult {
         let mut c = Cover::with_class_defaults(DeviceClass::Shutter);
-        c.apply(CoverCommand::Open).unwrap();
-        c.apply(CoverCommand::Close).unwrap();
+        c.apply(CoverCommand::Open)?;
+        c.apply(CoverCommand::Close)?;
         assert_eq!(c.position(), Position::CLOSED);
         assert_eq!(c.state(), CoverState::Closed);
+        Ok(())
     }
 
     #[test]
-    fn set_position_to_middle_settles_stopped() {
+    fn set_position_to_middle_settles_stopped() -> TestResult {
         let mut c = Cover::with_class_defaults(DeviceClass::Shade);
-        c.apply(CoverCommand::SetPosition(pos(40))).unwrap();
-        assert_eq!(c.position(), pos(40));
+        c.apply(CoverCommand::SetPosition(pos(40)?))?;
+        assert_eq!(c.position(), pos(40)?);
         assert_eq!(c.state(), CoverState::Stopped);
+        Ok(())
     }
 
     #[test]
-    fn set_position_to_full_or_zero_settles_open_or_closed() {
+    fn set_position_to_full_or_zero_settles_open_or_closed() -> TestResult {
         let mut c = Cover::with_class_defaults(DeviceClass::Shade);
-        c.apply(CoverCommand::SetPosition(pos(100))).unwrap();
+        c.apply(CoverCommand::SetPosition(pos(100)?))?;
         assert_eq!(c.state(), CoverState::Open);
-        c.apply(CoverCommand::SetPosition(pos(0))).unwrap();
+        c.apply(CoverCommand::SetPosition(pos(0)?))?;
         assert_eq!(c.state(), CoverState::Closed);
+        Ok(())
     }
 
     #[test]
-    fn direction_inferred_opening_when_target_higher() {
+    fn direction_inferred_opening_when_target_higher() -> TestResult {
         let mut c = Cover::with_class_defaults(DeviceClass::Shade);
-        c.apply(CoverCommand::SetPosition(pos(30))).unwrap();
-        let dir = c.begin(CoverCommand::SetPosition(pos(70))).unwrap();
+        c.apply(CoverCommand::SetPosition(pos(30)?))?;
+        let dir = c.begin(CoverCommand::SetPosition(pos(70)?))?;
         assert_eq!(dir, CoverState::Opening);
         assert_eq!(c.state(), CoverState::Opening);
+        Ok(())
     }
 
     #[test]
-    fn direction_inferred_closing_when_target_lower() {
+    fn direction_inferred_closing_when_target_lower() -> TestResult {
         let mut c = Cover::with_class_defaults(DeviceClass::Shade);
-        c.apply(CoverCommand::SetPosition(pos(70))).unwrap();
-        let dir = c.begin(CoverCommand::SetPosition(pos(20))).unwrap();
+        c.apply(CoverCommand::SetPosition(pos(70)?))?;
+        let dir = c.begin(CoverCommand::SetPosition(pos(20)?))?;
         assert_eq!(dir, CoverState::Closing);
+        Ok(())
     }
 
     #[test]
-    fn begin_to_same_position_does_not_move() {
+    fn begin_to_same_position_does_not_move() -> TestResult {
         let mut c = Cover::with_class_defaults(DeviceClass::Shade);
-        c.apply(CoverCommand::SetPosition(pos(55))).unwrap();
-        let dir = c.begin(CoverCommand::SetPosition(pos(55))).unwrap();
+        c.apply(CoverCommand::SetPosition(pos(55)?))?;
+        let dir = c.begin(CoverCommand::SetPosition(pos(55)?))?;
         assert_eq!(dir, CoverState::Stopped);
         assert!(!c.state().is_moving());
+        Ok(())
     }
 
     #[test]
-    fn begin_then_settle_reaches_target() {
+    fn begin_then_settle_reaches_target() -> TestResult {
         let mut c = Cover::with_class_defaults(DeviceClass::Shade);
-        c.begin(CoverCommand::Open).unwrap();
+        c.begin(CoverCommand::Open)?;
         assert_eq!(c.state(), CoverState::Opening);
-        c.settle_at(pos(100));
+        c.settle_at(pos(100)?);
         assert_eq!(c.state(), CoverState::Open);
         assert_eq!(c.position(), Position::OPEN);
+        Ok(())
     }
 
     #[test]
-    fn stop_halts_at_current_position_while_moving() {
+    fn stop_halts_at_current_position_while_moving() -> TestResult {
         let mut c = Cover::with_class_defaults(DeviceClass::Shade);
-        c.begin(CoverCommand::Open).unwrap();
+        c.begin(CoverCommand::Open)?;
         // Motor has travelled to 60% when the household hits stop.
-        c.settle_at(pos(60));
-        c.begin(CoverCommand::Open).unwrap();
-        c.apply(CoverCommand::Stop).unwrap();
-        assert_eq!(c.position(), pos(60));
+        c.settle_at(pos(60)?);
+        c.begin(CoverCommand::Open)?;
+        c.apply(CoverCommand::Stop)?;
+        assert_eq!(c.position(), pos(60)?);
         assert_eq!(c.state(), CoverState::Stopped);
+        Ok(())
     }
 
     #[test]
-    fn stop_is_accepted_even_without_stop_feature() {
+    fn stop_is_accepted_even_without_stop_feature() -> TestResult {
         // A minimal cover has stop=false, yet cutting the motor must work.
         let mut c = Cover::new(DeviceClass::Garage, Features::minimal());
-        c.begin(CoverCommand::Open).unwrap();
+        c.begin(CoverCommand::Open)?;
         assert!(c.apply(CoverCommand::Stop).is_ok());
+        Ok(())
     }
 
     #[test]
-    fn set_position_rejected_when_unsupported() {
+    fn set_position_rejected_when_unsupported() -> TestResult {
         let mut c = Cover::new(DeviceClass::Garage, Features::minimal());
         assert_eq!(
-            c.apply(CoverCommand::SetPosition(pos(50))),
+            c.apply(CoverCommand::SetPosition(pos(50)?)),
             Err(CommandError::PositionUnsupported)
         );
         // The reject must not have moved anything.
         assert_eq!(c.position(), Position::CLOSED);
         assert_eq!(c.state(), CoverState::Closed);
+        Ok(())
     }
 
     #[test]
-    fn begin_set_position_rejected_when_unsupported() {
+    fn begin_set_position_rejected_when_unsupported() -> TestResult {
         let mut c = Cover::new(DeviceClass::Garage, Features::minimal());
         assert_eq!(
-            c.begin(CoverCommand::SetPosition(pos(50))),
+            c.begin(CoverCommand::SetPosition(pos(50)?)),
             Err(CommandError::PositionUnsupported)
         );
+        Ok(())
     }
 
     #[test]
-    fn tilt_rejected_when_unsupported() {
+    fn tilt_rejected_when_unsupported() -> TestResult {
         let mut c = Cover::with_class_defaults(DeviceClass::Shade);
         assert_eq!(
-            c.apply(CoverCommand::SetTiltPosition(pos(50))),
+            c.apply(CoverCommand::SetTiltPosition(pos(50)?)),
             Err(CommandError::TiltUnsupported)
         );
         assert_eq!(c.tilt(), None);
+        Ok(())
     }
 
     #[test]
-    fn tilt_is_independent_of_openness() {
+    fn tilt_is_independent_of_openness() -> TestResult {
         let mut c = Cover::with_class_defaults(DeviceClass::Blind);
-        c.apply(CoverCommand::SetPosition(pos(80))).unwrap();
-        c.apply(CoverCommand::SetTiltPosition(pos(25))).unwrap();
+        c.apply(CoverCommand::SetPosition(pos(80)?))?;
+        c.apply(CoverCommand::SetTiltPosition(pos(25)?))?;
         // Tilting did not disturb the openness or its at-rest state.
-        assert_eq!(c.position(), pos(80));
-        assert_eq!(c.tilt(), Some(pos(25)));
+        assert_eq!(c.position(), pos(80)?);
+        assert_eq!(c.tilt(), Some(pos(25)?));
         assert_eq!(c.state(), CoverState::Stopped);
         // And re-tilting does not move the main axis either.
-        c.apply(CoverCommand::SetTiltPosition(pos(100))).unwrap();
-        assert_eq!(c.position(), pos(80));
-        assert_eq!(c.tilt(), Some(pos(100)));
+        c.apply(CoverCommand::SetTiltPosition(pos(100)?))?;
+        assert_eq!(c.position(), pos(80)?);
+        assert_eq!(c.tilt(), Some(pos(100)?));
+        Ok(())
     }
 
     #[test]
-    fn obstruction_forces_stop_while_opening() {
+    fn obstruction_forces_stop_while_opening() -> TestResult {
         let mut c = Cover::with_class_defaults(DeviceClass::Garage);
-        c.begin(CoverCommand::Open).unwrap();
+        c.begin(CoverCommand::Open)?;
         assert_eq!(c.state(), CoverState::Opening);
         c.report_obstruction();
         assert_eq!(c.state(), CoverState::Stopped);
+        Ok(())
     }
 
     #[test]
-    fn obstruction_forces_stop_while_closing() {
+    fn obstruction_forces_stop_while_closing() -> TestResult {
         let mut c = Cover::with_class_defaults(DeviceClass::Garage);
-        c.apply(CoverCommand::Open).unwrap();
-        c.begin(CoverCommand::Close).unwrap();
+        c.apply(CoverCommand::Open)?;
+        c.begin(CoverCommand::Close)?;
         assert_eq!(c.state(), CoverState::Closing);
         c.report_obstruction();
         assert_eq!(c.state(), CoverState::Stopped);
+        Ok(())
     }
 
     #[test]
