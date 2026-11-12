@@ -500,7 +500,7 @@ mod tests {
     #[test]
     fn an_empty_block_builds_an_empty_chain() {
         let sb = block(". {\n}");
-        assert!(build_chain(&sb).unwrap().plugin_names().is_empty());
+        assert_eq!(build_chain(&sb).unwrap().plugin_names(), [] as [&str; 0]);
     }
 
     #[test]

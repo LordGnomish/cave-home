@@ -599,7 +599,7 @@ mod tests {
             .lookup(&n("www.example.com"), RecordType::Mx)
             .unwrap();
         assert_eq!(r.rcode, Rcode::NoError);
-        assert!(r.answers.is_empty());
+        assert_eq!(r.answers, [] as [ResourceRecord; 0]);
         assert!(matches!(r.authority[0].rdata, Rdata::Soa { .. }));
     }
 
@@ -712,7 +712,7 @@ mail     IN MX    10 mailhost.example.com.
                 .answers[0]
                 .rdata,
             Rdata::Soa {
-                serial: 2026060701,
+                serial: 2_026_060_701,
                 ..
             }
         ));

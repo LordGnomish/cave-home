@@ -354,8 +354,8 @@ mod tests {
         ));
         let line = format_log_line(&query, &reply);
         assert!(line.contains("a.example.com."));
-        assert!(line.contains("A"));
+        assert!(line.contains('A'));
         assert!(line.contains("NOERROR"));
-        assert!(line.contains("1"), "answer count should appear");
+        assert!(line.contains('1'), "answer count should appear");
     }
 }

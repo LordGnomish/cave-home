@@ -702,7 +702,7 @@ mod tests {
         // web has only an IPv4 ClusterIP; AAAA is NODATA, not NXDOMAIN.
         let m = ask("web.default.svc.cluster.local", RecordType::Aaaa);
         assert_eq!(m.header.rcode, Rcode::NoError);
-        assert!(m.answers.is_empty());
+        assert_eq!(m.answers, [] as [ResourceRecord; 0]);
     }
 
     #[test]

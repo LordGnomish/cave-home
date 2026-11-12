@@ -264,11 +264,11 @@ pub struct StaticSource {
 }
 
 impl ApiSource for StaticSource {
-    async fn list_services(&self) -> std::io::Result<String> {
-        Ok(self.services.clone())
+    fn list_services(&self) -> impl std::future::Future<Output = std::io::Result<String>> + Send {
+        std::future::ready(Ok(self.services.clone()))
     }
-    async fn list_endpoints(&self) -> std::io::Result<String> {
-        Ok(self.endpoints.clone())
+    fn list_endpoints(&self) -> impl std::future::Future<Output = std::io::Result<String>> + Send {
+        std::future::ready(Ok(self.endpoints.clone()))
     }
 }
 
@@ -445,7 +445,7 @@ mod tests {
         // address records → NODATA, not a decode failure.
         let m = ask(k, "cache.default.svc.cluster.local", RecordType::A);
         assert_eq!(m.header.rcode, Rcode::NoError);
-        assert!(m.answers.is_empty());
+        assert_eq!(m.answers, [] as [crate::rr::ResourceRecord; 0]);
     }
 
     #[tokio::test]
