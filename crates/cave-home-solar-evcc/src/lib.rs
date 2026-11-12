@@ -149,11 +149,13 @@ pub fn decide(
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     const V: f64 = 230.0;
 
     #[test]
-    fn sunny_pv_only_charges_from_sun() {
-        let snap = PowerSnapshot::new(5000.0, 1000.0, 0.0, 0.0).unwrap();
+    fn sunny_pv_only_charges_from_sun() -> TestResult {
+        let snap = PowerSnapshot::new(5000.0, 1000.0, 0.0, 0.0)?;
         let d = decide(
             &snap,
             ChargeMode::PvOnly,
@@ -161,16 +163,16 @@ mod tests {
             V,
             PhaseCount::Single,
             BatteryPolicy::HoldForHouse,
-        )
-        .unwrap();
+        )?;
         assert!(d.setpoint.is_charging());
         assert_eq!(d.status, ChargeStatus::ChargingFromSun);
         assert!((d.surplus_watts - 4000.0).abs() < 1e-9);
+        Ok(())
     }
 
     #[test]
-    fn cloudy_pv_only_pauses() {
-        let snap = PowerSnapshot::new(900.0, 800.0, 0.0, 0.0).unwrap();
+    fn cloudy_pv_only_pauses() -> TestResult {
+        let snap = PowerSnapshot::new(900.0, 800.0, 0.0, 0.0)?;
         let d = decide(
             &snap,
             ChargeMode::PvOnly,
@@ -178,17 +180,17 @@ mod tests {
             V,
             PhaseCount::Single,
             BatteryPolicy::HoldForHouse,
-        )
-        .unwrap();
+        )?;
         assert_eq!(d.setpoint, ChargeSetpoint::Paused);
         assert_eq!(d.status, ChargeStatus::PausedNotEnoughSun);
+        Ok(())
     }
 
     #[test]
-    fn min_plus_pv_short_sun_tops_up_from_grid() {
+    fn min_plus_pv_short_sun_tops_up_from_grid() -> TestResult {
         // Deficit: house draws more than the roof makes; MinPlusPv still
         // charges at the minimum from the grid.
-        let snap = PowerSnapshot::new(500.0, 1500.0, 0.0, 0.0).unwrap();
+        let snap = PowerSnapshot::new(500.0, 1500.0, 0.0, 0.0)?;
         let d = decide(
             &snap,
             ChargeMode::MinPlusPv,
@@ -196,16 +198,16 @@ mod tests {
             V,
             PhaseCount::Single,
             BatteryPolicy::HoldForHouse,
-        )
-        .unwrap();
+        )?;
         assert!(d.setpoint.is_charging());
         assert!((d.setpoint.amps() - 6.0).abs() < 1e-9);
         assert_eq!(d.status, ChargeStatus::ToppingUpForDeadline);
+        Ok(())
     }
 
     #[test]
-    fn now_mode_charges_fast_even_in_the_dark() {
-        let snap = PowerSnapshot::new(0.0, 0.0, 0.0, 0.0).unwrap();
+    fn now_mode_charges_fast_even_in_the_dark() -> TestResult {
+        let snap = PowerSnapshot::new(0.0, 0.0, 0.0, 0.0)?;
         let d = decide(
             &snap,
             ChargeMode::Now,
@@ -213,15 +215,15 @@ mod tests {
             V,
             PhaseCount::Single,
             BatteryPolicy::HoldForHouse,
-        )
-        .unwrap();
+        )?;
         assert_eq!(d.status, ChargeStatus::ChargingFast);
         assert_eq!(d.setpoint.amps(), 16.0);
+        Ok(())
     }
 
     #[test]
-    fn off_mode_reports_off() {
-        let snap = PowerSnapshot::new(9000.0, 0.0, 0.0, 0.0).unwrap();
+    fn off_mode_reports_off() -> TestResult {
+        let snap = PowerSnapshot::new(9000.0, 0.0, 0.0, 0.0)?;
         let d = decide(
             &snap,
             ChargeMode::Off,
@@ -229,15 +231,15 @@ mod tests {
             V,
             PhaseCount::Single,
             BatteryPolicy::HoldForHouse,
-        )
-        .unwrap();
+        )?;
         assert_eq!(d.status, ChargeStatus::Off);
         assert_eq!(d.setpoint, ChargeSetpoint::Paused);
+        Ok(())
     }
 
     #[test]
-    fn decide_propagates_validation_errors() {
-        let snap = PowerSnapshot::new(5000.0, 0.0, 0.0, 0.0).unwrap();
+    fn decide_propagates_validation_errors() -> TestResult {
+        let snap = PowerSnapshot::new(5000.0, 0.0, 0.0, 0.0)?;
         let err = decide(
             &snap,
             ChargeMode::PvOnly,
@@ -247,5 +249,6 @@ mod tests {
             BatteryPolicy::HoldForHouse,
         );
         assert_eq!(err, Err(EvccError::NonPositiveVoltage));
+        Ok(())
     }
 }

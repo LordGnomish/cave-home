@@ -170,6 +170,8 @@ pub fn decide_current(
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     const V: f64 = 230.0;
 
     #[test]
@@ -190,17 +192,19 @@ mod tests {
     }
 
     #[test]
-    fn current_for_surplus_single_phase() {
+    fn current_for_surplus_single_phase() -> TestResult {
         // 3680 W / 230 V / 1 phase = 16 A.
-        let a = current_for_surplus(3680.0, V, 1).unwrap();
+        let a = current_for_surplus(3680.0, V, 1)?;
         assert!((a - 16.0).abs() < 1e-9);
+        Ok(())
     }
 
     #[test]
-    fn current_for_surplus_three_phase() {
+    fn current_for_surplus_three_phase() -> TestResult {
         // 11040 W / 230 V / 3 phases = 16 A.
-        let a = current_for_surplus(11_040.0, V, 3).unwrap();
+        let a = current_for_surplus(11_040.0, V, 3)?;
         assert!((a - 16.0).abs() < 1e-9);
+        Ok(())
     }
 
     #[test]
@@ -216,7 +220,7 @@ mod tests {
     }
 
     #[test]
-    fn pv_only_pauses_below_single_phase_minimum() {
+    fn pv_only_pauses_below_single_phase_minimum() -> TestResult {
         // 1000 W single-phase -> ~4.35 A, below the 6 A floor -> pause.
         let s = decide_current(
             1000.0,
@@ -224,13 +228,13 @@ mod tests {
             V,
             1,
             ChargeMode::PvOnly,
-        )
-        .unwrap();
+        )?;
         assert_eq!(s, ChargeSetpoint::Paused);
+        Ok(())
     }
 
     #[test]
-    fn pv_only_charges_at_exactly_the_minimum_boundary() {
+    fn pv_only_charges_at_exactly_the_minimum_boundary() -> TestResult {
         // 6 A * 230 V = 1380 W -> exactly the minimum, should charge at 6 A.
         let s = decide_current(
             1380.0,
@@ -238,19 +242,19 @@ mod tests {
             V,
             1,
             ChargeMode::PvOnly,
-        )
-        .unwrap();
+        )?;
         match s {
             ChargeSetpoint::Charge { amps, phases } => {
                 assert!((amps - 6.0).abs() < 1e-9);
                 assert_eq!(phases, 1);
             }
-            ChargeSetpoint::Paused => panic!("should charge at the boundary"),
+            ChargeSetpoint::Paused => return Err("should charge at the boundary".into()),
         }
+        Ok(())
     }
 
     #[test]
-    fn pv_only_clamps_to_max() {
+    fn pv_only_clamps_to_max() -> TestResult {
         // 10 kW single-phase would be ~43 A; clamp to 16 A.
         let s = decide_current(
             10_000.0,
@@ -258,13 +262,13 @@ mod tests {
             V,
             1,
             ChargeMode::PvOnly,
-        )
-        .unwrap();
+        )?;
         assert_eq!(s.amps(), 16.0);
+        Ok(())
     }
 
     #[test]
-    fn min_plus_pv_draws_minimum_from_grid_when_sun_is_short() {
+    fn min_plus_pv_draws_minimum_from_grid_when_sun_is_short() -> TestResult {
         // Almost no sun: still charge at the 6 A minimum (grid tops up).
         let s = decide_current(
             200.0,
@@ -272,14 +276,14 @@ mod tests {
             V,
             1,
             ChargeMode::MinPlusPv,
-        )
-        .unwrap();
+        )?;
         assert!(s.is_charging());
         assert!((s.amps() - 6.0).abs() < 1e-9);
+        Ok(())
     }
 
     #[test]
-    fn min_plus_pv_rides_surplus_above_minimum() {
+    fn min_plus_pv_rides_surplus_above_minimum() -> TestResult {
         // ~2300 W -> 10 A, above the minimum, below max -> charge at 10 A.
         let s = decide_current(
             2300.0,
@@ -287,22 +291,23 @@ mod tests {
             V,
             1,
             ChargeMode::MinPlusPv,
-        )
-        .unwrap();
+        )?;
         assert!((s.amps() - 10.0).abs() < 1e-9);
+        Ok(())
     }
 
     #[test]
-    fn now_charges_at_max_regardless_of_sun() {
-        let s = decide_current(0.0, CurrentLimits::typical_32a(), V, 1, ChargeMode::Now).unwrap();
+    fn now_charges_at_max_regardless_of_sun() -> TestResult {
+        let s = decide_current(0.0, CurrentLimits::typical_32a(), V, 1, ChargeMode::Now)?;
         assert_eq!(s.amps(), 32.0);
+        Ok(())
     }
 
     #[test]
-    fn off_always_pauses() {
-        let s =
-            decide_current(9999.0, CurrentLimits::typical_16a(), V, 3, ChargeMode::Off).unwrap();
+    fn off_always_pauses() -> TestResult {
+        let s = decide_current(9999.0, CurrentLimits::typical_16a(), V, 3, ChargeMode::Off)?;
         assert_eq!(s, ChargeSetpoint::Paused);
+        Ok(())
     }
 
     #[test]
