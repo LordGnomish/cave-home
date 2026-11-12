@@ -196,6 +196,8 @@ impl VacuumMap {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn home() -> VacuumMap {
         VacuumMap::new(vec![
             Segment::new(1, "Kitchen"),
@@ -212,10 +214,11 @@ mod tests {
     }
 
     #[test]
-    fn zone_normalises_corners() {
-        let z = Zone::new(10, 20, 0, 5).expect("valid");
+    fn zone_normalises_corners() -> TestResult {
+        let z = Zone::new(10, 20, 0, 5)?;
         assert_eq!(z.corners(), (0, 5, 10, 20));
         assert_eq!(z.area(), 150);
+        Ok(())
     }
 
     #[test]

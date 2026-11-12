@@ -113,6 +113,8 @@ impl Battery {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn rejects_over_one_hundred() {
         assert_eq!(
@@ -136,31 +138,34 @@ mod tests {
     }
 
     #[test]
-    fn discharging_below_threshold_is_low() {
-        let b = Battery::new(15, ChargeDirection::Discharging).expect("valid");
+    fn discharging_below_threshold_is_low() -> TestResult {
+        let b = Battery::new(15, ChargeDirection::Discharging)?;
         assert!(b.is_low());
         assert!(!b.can_start_clean());
+        Ok(())
     }
 
     #[test]
-    fn at_threshold_is_low() {
-        let b =
-            Battery::new(DEFAULT_RETURN_THRESHOLD, ChargeDirection::Discharging).expect("valid");
+    fn at_threshold_is_low() -> TestResult {
+        let b = Battery::new(DEFAULT_RETURN_THRESHOLD, ChargeDirection::Discharging)?;
         assert!(b.is_low(), "at the threshold counts as low");
+        Ok(())
     }
 
     #[test]
-    fn charging_is_never_low() {
+    fn charging_is_never_low() -> TestResult {
         // Even at 5% on the dock, charging means "do not panic-return".
-        let b = Battery::new(5, ChargeDirection::Charging).expect("valid");
+        let b = Battery::new(5, ChargeDirection::Charging)?;
         assert!(!b.is_low());
         assert!(b.is_charging());
+        Ok(())
     }
 
     #[test]
-    fn well_charged_can_start() {
-        let b = Battery::new(80, ChargeDirection::Discharging).expect("valid");
+    fn well_charged_can_start() -> TestResult {
+        let b = Battery::new(80, ChargeDirection::Discharging)?;
         assert!(!b.is_low());
         assert!(b.can_start_clean());
+        Ok(())
     }
 }
