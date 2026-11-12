@@ -201,6 +201,8 @@ fn home_dir() -> Option<PathBuf> {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     const SAMPLE: &str = r"
 project: cave-home
 root: .
@@ -229,19 +231,23 @@ subsystems:
 ";
 
     #[test]
-    fn parses_sample() {
-        let cfg = TrackerConfig::from_yaml_str(SAMPLE).unwrap();
+    fn parses_sample() -> TestResult {
+        let cfg = TrackerConfig::from_yaml_str(SAMPLE)?;
         assert_eq!(cfg.project, "cave-home");
         assert_eq!(cfg.upstreams.len(), 2);
         assert_eq!(cfg.subsystems.len(), 2);
         assert_eq!(
-            cfg.upstream("kubernetes").unwrap().tag.as_deref(),
+            cfg.upstream("kubernetes")
+                .ok_or("upstream configured")?
+                .tag
+                .as_deref(),
             Some("v1.30.0")
         );
+        Ok(())
     }
 
     #[test]
-    fn rejects_unknown_upstream() {
+    fn rejects_unknown_upstream() -> TestResult {
         let bad = r"
 project: x
 work_dir: /tmp/x
@@ -253,16 +259,20 @@ subsystems:
     upstreams:
       - name: ghost
 ";
-        let err = TrackerConfig::from_yaml_str(bad).unwrap_err();
+        let err = TrackerConfig::from_yaml_str(bad)
+            .err()
+            .ok_or("expected an error")?;
         assert!(matches!(err, crate::TrackerError::NotFound(_)));
+        Ok(())
     }
 
     #[test]
-    fn ref_languages_falls_back_to_upstream() {
-        let cfg = TrackerConfig::from_yaml_str(SAMPLE).unwrap();
+    fn ref_languages_falls_back_to_upstream() -> TestResult {
+        let cfg = TrackerConfig::from_yaml_str(SAMPLE)?;
         let apiserver = &cfg.subsystems[1];
         let r = &apiserver.upstreams[0];
         assert_eq!(cfg.ref_languages(r), vec!["go".to_owned()]);
+        Ok(())
     }
 
     #[test]
@@ -285,7 +295,7 @@ subsystems:
     }
 
     #[test]
-    fn derived_dirs() {
+    fn derived_dirs() -> TestResult {
         // Absolute work_dir needs no tilde expansion, so the assertion is
         // independent of the test runner's $HOME.
         let cfg = TrackerConfig::from_yaml_str(
@@ -295,8 +305,7 @@ work_dir: /var/lib/cave-home-tracker
 upstreams: []
 subsystems: []
 ",
-        )
-        .unwrap();
+        )?;
         assert_eq!(
             cfg.work_dir_path(),
             PathBuf::from("/var/lib/cave-home-tracker")
@@ -306,5 +315,6 @@ subsystems: []
             PathBuf::from("/var/lib/cave-home-tracker/upstreams/k3s")
         );
         assert!(cfg.snapshots_dir().ends_with("snapshots"));
+        Ok(())
     }
 }

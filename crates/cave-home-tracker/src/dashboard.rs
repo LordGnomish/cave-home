@@ -199,6 +199,8 @@ mod tests {
     use crate::stubs::StubCount;
     use std::thread;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn snap() -> Snapshot {
         Snapshot {
             project: "cave-home".into(),
@@ -241,27 +243,25 @@ mod tests {
     }
 
     #[test]
-    fn wire_format_has_status_and_length() {
-        let wire = String::from_utf8(route("GET", "/healthz", None).to_wire()).unwrap();
+    fn wire_format_has_status_and_length() -> TestResult {
+        let wire = String::from_utf8(route("GET", "/healthz", None).to_wire())?;
         assert!(wire.starts_with("HTTP/1.1 200 OK\r\n"));
         assert!(wire.contains("Content-Length: 3"));
         assert!(wire.ends_with("ok\n"));
+        Ok(())
     }
 
     #[test]
-    fn end_to_end_over_a_real_socket() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap().to_string();
+    fn end_to_end_over_a_real_socket() -> TestResult {
+        let listener = TcpListener::bind("127.0.0.1:0")?;
+        let addr = listener.local_addr()?.to_string();
         let handle = thread::spawn(move || {
-            serve_with(&listener, &snap_provider, Some(1));
+            serve_with(&listener, &|| Some(snap()), Some(1));
         });
-        let resp = http_get(&addr, "/metrics").unwrap();
+        let resp = http_get(&addr, "/metrics")?;
         assert!(resp.starts_with("HTTP/1.1 200 OK"));
         assert!(resp.contains("cave_home_tracker_overall_real_pct"));
-        handle.join().unwrap();
-    }
-
-    fn snap_provider() -> Option<Snapshot> {
-        Some(snap())
+        handle.join().map_err(|_| "server thread panicked")?;
+        Ok(())
     }
 }

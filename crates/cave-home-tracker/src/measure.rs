@@ -230,6 +230,8 @@ impl<'a> Measurer<'a> {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn parses_single_result_line() {
         let out = "test result: ok. 12 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out";
@@ -275,34 +277,34 @@ test result: FAILED. 4 passed; 1 failed; 2 ignored; 0 measured; 0 filtered out
         }
     }
 
-    fn write_crate(root: &Path, rel: &str, rust: &str) {
+    fn write_crate(root: &Path, rel: &str, rust: &str) -> TestResult {
         let dir = root.join(rel).join("src");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(root.join(rel).join("Cargo.toml"), "[package]\nname=\"x\"\n").unwrap();
-        std::fs::write(dir.join("lib.rs"), rust).unwrap();
+        std::fs::create_dir_all(&dir)?;
+        std::fs::write(root.join(rel).join("Cargo.toml"), "[package]\nname=\"x\"\n")?;
+        std::fs::write(dir.join("lib.rs"), rust)?;
+        Ok(())
     }
 
     #[test]
-    fn measures_subsystem_end_to_end() {
-        let tmp = tempfile::tempdir().unwrap();
+    fn measures_subsystem_end_to_end() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         let root = tmp.path();
         let work = root.join("work");
 
         // Fake upstream clone with 4 lines of Go.
         let clone = work.join("upstreams/kubernetes/pkg");
-        std::fs::create_dir_all(&clone).unwrap();
+        std::fs::create_dir_all(&clone)?;
         std::fs::write(
             clone.join("a.go"),
             "package a\nfunc A() {}\nfunc B() {}\nfunc C() {}\n",
-        )
-        .unwrap();
+        )?;
 
         // Port crate with 2 lines of Rust, one todo!.
         write_crate(
             root,
             "crates/port",
             "pub fn a() {}\npub fn b() { todo!() }\n",
-        );
+        )?;
 
         let yaml = format!(
             r"
@@ -324,14 +326,14 @@ subsystems:
             root = root.display(),
             work = work.display(),
         );
-        let cfg = TrackerConfig::from_yaml_str(&yaml).unwrap();
+        let cfg = TrackerConfig::from_yaml_str(&yaml)?;
         let tests = FixedTests(TestOutcome {
             passed: 9,
             failed: 1,
             ignored: 0,
         });
         let m = Measurer::new(&cfg, &tests);
-        let metric = m.measure_subsystem("apiserver").unwrap();
+        let metric = m.measure_subsystem("apiserver")?;
 
         assert_eq!(metric.upstream_loc, 4, "4 go code lines");
         assert_eq!(
@@ -355,13 +357,14 @@ subsystems:
             },
         });
         assert!((metric.real_pct - expected).abs() < 1e-9);
+        Ok(())
     }
 
     #[test]
-    fn measure_all_builds_snapshot() {
-        let tmp = tempfile::tempdir().unwrap();
+    fn measure_all_builds_snapshot() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         let root = tmp.path();
-        write_crate(root, "crates/port", "pub fn a() {}\n");
+        write_crate(root, "crates/port", "pub fn a() {}\n")?;
         let yaml = format!(
             r"
 project: cave-home
@@ -376,17 +379,18 @@ subsystems:
             root = root.display(),
             work = root.join("w").display(),
         );
-        let cfg = TrackerConfig::from_yaml_str(&yaml).unwrap();
+        let cfg = TrackerConfig::from_yaml_str(&yaml)?;
         let tests = FixedTests(TestOutcome {
             passed: 5,
             failed: 0,
             ignored: 0,
         });
         let m = Measurer::new(&cfg, &tests);
-        let snap = m.measure_all("2026-06-07", "2026-06-07T06:00:00Z").unwrap();
+        let snap = m.measure_all("2026-06-07", "2026-06-07T06:00:00Z")?;
         assert_eq!(snap.project, "cave-home");
         assert_eq!(snap.subsystems.len(), 1);
         // first-party (no upstream) + has code + tests pass + no stubs => 100%.
         assert!((snap.subsystems[0].real_pct - 100.0).abs() < 1e-9);
+        Ok(())
     }
 }

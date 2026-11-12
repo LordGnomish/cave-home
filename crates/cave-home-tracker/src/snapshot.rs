@@ -258,6 +258,8 @@ impl SnapshotStore {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn metric(name: &str, group: &str, real: f64, upstream: u64) -> SubsystemMetric {
         SubsystemMetric {
             real_pct: real,
@@ -309,44 +311,46 @@ mod tests {
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip() -> TestResult {
         let snap = Snapshot {
             project: "cave-home".into(),
             date: "2026-06-07".into(),
             generated_at: "2026-06-07T06:00:00Z".into(),
             subsystems: vec![metric("kine", "k3s", 50.0, 1000)],
         };
-        let back = Snapshot::from_json(&snap.to_json().unwrap()).unwrap();
+        let back = Snapshot::from_json(&snap.to_json()?)?;
         assert_eq!(snap, back);
+        Ok(())
     }
 
     #[test]
-    fn store_save_load_previous_latest() {
-        let tmp = tempfile::tempdir().unwrap();
-        let store = SnapshotStore::open(tmp.path()).unwrap();
+    fn store_save_load_previous_latest() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        let store = SnapshotStore::open(tmp.path())?;
         let mk = |date: &str, real: f64| Snapshot {
             project: "cave-home".into(),
             date: date.into(),
             generated_at: format!("{date}T06:00:00Z"),
             subsystems: vec![metric("kine", "k3s", real, 1000)],
         };
-        store.save(&mk("2026-06-05", 10.0)).unwrap();
-        store.save(&mk("2026-06-06", 20.0)).unwrap();
-        store.save(&mk("2026-06-07", 30.0)).unwrap();
+        store.save(&mk("2026-06-05", 10.0))?;
+        store.save(&mk("2026-06-06", 20.0))?;
+        store.save(&mk("2026-06-07", 30.0))?;
 
-        let all = store.load_all().unwrap();
+        let all = store.load_all()?;
         assert_eq!(all.len(), 3);
         assert_eq!(all[0].date, "2026-06-05");
-        assert_eq!(store.latest().unwrap().unwrap().date, "2026-06-07");
+        assert_eq!(store.latest()?.ok_or("snapshot stored")?.date, "2026-06-07");
         assert_eq!(
-            store.previous("2026-06-07").unwrap().unwrap().date,
+            store.previous("2026-06-07")?.ok_or("snapshot stored")?.date,
             "2026-06-06"
         );
-        assert!(store.previous("2026-06-05").unwrap().is_none());
+        assert!(store.previous("2026-06-05")?.is_none());
         assert_eq!(
-            store.load("2026-06-06").unwrap().unwrap().date,
+            store.load("2026-06-06")?.ok_or("snapshot stored")?.date,
             "2026-06-06"
         );
-        assert!(store.load("2099-01-01").unwrap().is_none());
+        assert!(store.load("2099-01-01")?.is_none());
+        Ok(())
     }
 }

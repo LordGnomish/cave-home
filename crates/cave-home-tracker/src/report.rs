@@ -231,7 +231,7 @@ mod tests {
     fn new_subsystem_shows_new_in_delta() {
         let cur = snap("2026-06-07", 40.0);
         let dd = diff::diff(None, &cur);
-        let md = render_markdown(&cur, &dd, &[cur.clone()]);
+        let md = render_markdown(&cur, &dd, std::slice::from_ref(&cur));
         assert!(md.contains("new"));
     }
 
