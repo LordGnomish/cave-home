@@ -156,107 +156,115 @@ mod tests {
     use super::*;
     use crate::record::RecordType;
 
-    fn name(n: &str) -> DnsName {
-        DnsName::parse(n).expect("name")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn name(n: &str) -> Result<DnsName, String> {
+        DnsName::parse(n).map_err(|e| format!("{e:?}"))
     }
 
-    fn recs(ip: &str) -> Vec<Record> {
-        vec![Record::address("nas.home.arpa", RecordType::A, ip).expect("rec")]
+    fn recs(ip: &str) -> Result<Vec<Record>, String> {
+        let record =
+            Record::address("nas.home.arpa", RecordType::A, ip).map_err(|e| format!("{e:?}"))?;
+        Ok(vec![record])
     }
 
     #[test]
-    fn insert_then_lookup_within_ttl() {
+    fn insert_then_lookup_within_ttl() -> TestResult {
         let mut c = ResponseCache::new();
         c.insert(
-            name("nas.home.arpa"),
+            name("nas.home.arpa")?,
             RecordType::A,
-            recs("10.0.0.1"),
+            recs("10.0.0.1")?,
             300,
             1_000,
         );
-        let hit = c.lookup(&name("nas.home.arpa"), RecordType::A, 1_100);
+        let hit = c.lookup(&name("nas.home.arpa")?, RecordType::A, 1_100);
         assert!(hit.is_some());
-        assert_eq!(hit.expect("hit").records()[0].data.to_text(), "10.0.0.1");
+        assert_eq!(hit.ok_or("hit")?.records()[0].data.to_text(), "10.0.0.1");
+        Ok(())
     }
 
     #[test]
-    fn lookup_misses_after_expiry() {
+    fn lookup_misses_after_expiry() -> TestResult {
         let mut c = ResponseCache::new();
         c.insert(
-            name("nas.home.arpa"),
+            name("nas.home.arpa")?,
             RecordType::A,
-            recs("10.0.0.1"),
+            recs("10.0.0.1")?,
             300,
             1_000,
         );
         // At exactly now+ttl it is expired (now < expires_at is false).
         assert!(
-            c.lookup(&name("nas.home.arpa"), RecordType::A, 1_300)
+            c.lookup(&name("nas.home.arpa")?, RecordType::A, 1_300)
                 .is_none()
         );
         assert!(
-            c.lookup(&name("nas.home.arpa"), RecordType::A, 5_000)
+            c.lookup(&name("nas.home.arpa")?, RecordType::A, 5_000)
                 .is_none()
         );
+        Ok(())
     }
 
     #[test]
-    fn ttl_is_clamped_to_min_and_max() {
+    fn ttl_is_clamped_to_min_and_max() -> TestResult {
         let clamp = TtlClamp {
             min: 60,
             max: 3_600,
         };
         let mut c = ResponseCache::with_clamp(clamp);
         // Below min -> raised.
-        let used = c.insert(name("a.home.arpa"), RecordType::A, recs("10.0.0.2"), 5, 0);
+        let used = c.insert(name("a.home.arpa")?, RecordType::A, recs("10.0.0.2")?, 5, 0);
         assert_eq!(used, 60);
-        assert!(c.lookup(&name("a.home.arpa"), RecordType::A, 59).is_some());
-        assert!(c.lookup(&name("a.home.arpa"), RecordType::A, 60).is_none());
+        assert!(c.lookup(&name("a.home.arpa")?, RecordType::A, 59).is_some());
+        assert!(c.lookup(&name("a.home.arpa")?, RecordType::A, 60).is_none());
 
         // Above max -> lowered.
         let used = c.insert(
-            name("b.home.arpa"),
+            name("b.home.arpa")?,
             RecordType::A,
-            recs("10.0.0.3"),
+            recs("10.0.0.3")?,
             99_999,
             0,
         );
         assert_eq!(used, 3_600);
+        Ok(())
     }
 
     #[test]
-    fn ttl_remaining_counts_down_and_floors_at_zero() {
+    fn ttl_remaining_counts_down_and_floors_at_zero() -> TestResult {
         let mut c = ResponseCache::new();
         c.insert(
-            name("nas.home.arpa"),
+            name("nas.home.arpa")?,
             RecordType::A,
-            recs("10.0.0.1"),
+            recs("10.0.0.1")?,
             300,
             1_000,
         );
         let e = c
             .map
-            .get(&(name("nas.home.arpa"), RecordType::A))
-            .expect("entry");
+            .get(&(name("nas.home.arpa")?, RecordType::A))
+            .ok_or("entry")?;
         assert_eq!(e.ttl_remaining(1_000), 300);
         assert_eq!(e.ttl_remaining(1_250), 50);
         assert_eq!(e.ttl_remaining(9_999), 0);
+        Ok(())
     }
 
     #[test]
-    fn evict_expired_reaps_only_dead_entries() {
+    fn evict_expired_reaps_only_dead_entries() -> TestResult {
         let mut c = ResponseCache::new();
         c.insert(
-            name("short.home.arpa"),
+            name("short.home.arpa")?,
             RecordType::A,
-            recs("10.0.0.4"),
+            recs("10.0.0.4")?,
             10,
             0,
         );
         c.insert(
-            name("long.home.arpa"),
+            name("long.home.arpa")?,
             RecordType::A,
-            recs("10.0.0.5"),
+            recs("10.0.0.5")?,
             1_000,
             0,
         );
@@ -265,36 +273,38 @@ mod tests {
         assert_eq!(removed, 1);
         assert_eq!(c.len(), 1);
         assert!(
-            c.lookup(&name("long.home.arpa"), RecordType::A, 100)
+            c.lookup(&name("long.home.arpa")?, RecordType::A, 100)
                 .is_some()
         );
+        Ok(())
     }
 
     #[test]
-    fn insert_replaces_existing_entry() {
+    fn insert_replaces_existing_entry() -> TestResult {
         let mut c = ResponseCache::new();
         c.insert(
-            name("nas.home.arpa"),
+            name("nas.home.arpa")?,
             RecordType::A,
-            recs("10.0.0.1"),
+            recs("10.0.0.1")?,
             300,
             0,
         );
         c.insert(
-            name("nas.home.arpa"),
+            name("nas.home.arpa")?,
             RecordType::A,
-            recs("10.0.0.99"),
+            recs("10.0.0.99")?,
             300,
             0,
         );
         assert_eq!(c.len(), 1);
         assert_eq!(
-            c.lookup(&name("nas.home.arpa"), RecordType::A, 1)
-                .expect("hit")
+            c.lookup(&name("nas.home.arpa")?, RecordType::A, 1)
+                .ok_or("hit")?
                 .records()[0]
                 .data
                 .to_text(),
             "10.0.0.99"
         );
+        Ok(())
     }
 }

@@ -151,8 +151,8 @@ mod tests {
             AirCategory::Hazardous,
         ] {
             for lang in [Lang::En, Lang::De, Lang::Tr] {
-                assert!(!cat.name(lang).is_empty());
-                assert!(!cat.advice(lang).is_empty());
+                assert_ne!(cat.name(lang), "");
+                assert_ne!(cat.advice(lang), "");
             }
         }
     }

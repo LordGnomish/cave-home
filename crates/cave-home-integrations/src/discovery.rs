@@ -192,7 +192,7 @@ mod tests {
     fn unknown_service_key_matches_nothing() {
         let r = registry();
         let found = Discovered::mdns("_printer._tcp");
-        assert!(r.match_discovery(&found).is_empty());
+        assert_eq!(r.match_discovery(&found), [] as [String; 0]);
     }
 
     #[test]

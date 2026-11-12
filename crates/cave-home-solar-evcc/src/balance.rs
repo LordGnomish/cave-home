@@ -126,50 +126,58 @@ impl PowerSnapshot {
 mod tests {
     use super::*;
 
-    fn snap(pv: f64, house: f64, batt: f64, charge: f64) -> PowerSnapshot {
-        PowerSnapshot::new(pv, house, batt, charge).expect("valid snapshot")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn snap(pv: f64, house: f64, batt: f64, charge: f64) -> Result<PowerSnapshot, EvccError> {
+        PowerSnapshot::new(pv, house, batt, charge)
     }
 
     #[test]
-    fn surplus_is_pv_minus_house() {
-        let s = snap(5000.0, 1200.0, 0.0, 0.0);
+    fn surplus_is_pv_minus_house() -> TestResult {
+        let s = snap(5000.0, 1200.0, 0.0, 0.0)?;
         assert_eq!(s.surplus_watts(BatteryPolicy::HoldForHouse), 3800.0);
+        Ok(())
     }
 
     #[test]
-    fn car_draw_is_added_back_so_setpoint_does_not_chase_itself() {
+    fn car_draw_is_added_back_so_setpoint_does_not_chase_itself() -> TestResult {
         // PV 5kW, total house load 3.2kW (1.2kW house + 2kW the car is pulling),
         // car drawing 2kW -> spare as if unplugged is 5 - 3.2 + 2 = 3.8kW,
         // matching the 3.8kW the no-car case sees.
-        let s = snap(5000.0, 3200.0, 0.0, 2000.0);
+        let s = snap(5000.0, 3200.0, 0.0, 2000.0)?;
         assert_eq!(s.surplus_watts(BatteryPolicy::HoldForHouse), 3800.0);
+        Ok(())
     }
 
     #[test]
-    fn deficit_clamps_to_zero() {
-        let s = snap(800.0, 2000.0, 0.0, 0.0);
+    fn deficit_clamps_to_zero() -> TestResult {
+        let s = snap(800.0, 2000.0, 0.0, 0.0)?;
         assert_eq!(s.surplus_watts(BatteryPolicy::HoldForHouse), 0.0);
+        Ok(())
     }
 
     #[test]
-    fn charging_battery_reduces_surplus() {
+    fn charging_battery_reduces_surplus() -> TestResult {
         // PV 5kW, house 1kW, battery soaking 2kW -> only 2kW left for the car.
-        let s = snap(5000.0, 1000.0, 2000.0, 0.0);
+        let s = snap(5000.0, 1000.0, 2000.0, 0.0)?;
         assert_eq!(s.surplus_watts(BatteryPolicy::HoldForHouse), 2000.0);
+        Ok(())
     }
 
     #[test]
-    fn discharging_battery_held_for_house_does_not_help_car() {
+    fn discharging_battery_held_for_house_does_not_help_car() -> TestResult {
         // Battery discharging 2kW; HoldForHouse ignores it.
-        let s = snap(1000.0, 1500.0, -2000.0, 0.0);
+        let s = snap(1000.0, 1500.0, -2000.0, 0.0)?;
         assert_eq!(s.surplus_watts(BatteryPolicy::HoldForHouse), 0.0);
+        Ok(())
     }
 
     #[test]
-    fn discharging_battery_assist_car_adds_to_surplus() {
+    fn discharging_battery_assist_car_adds_to_surplus() -> TestResult {
         // PV 1kW, house 1.5kW (deficit 0.5kW), battery lending 2kW.
-        let s = snap(1000.0, 1500.0, -2000.0, 0.0);
+        let s = snap(1000.0, 1500.0, -2000.0, 0.0)?;
         assert_eq!(s.surplus_watts(BatteryPolicy::AssistCar), 1500.0);
+        Ok(())
     }
 
     #[test]

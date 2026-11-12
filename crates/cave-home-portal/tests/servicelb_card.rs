@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Portal ServiceLB card tests (RED until the `Card::ServiceLb` variant lands).
+//! Portal `ServiceLB` card tests (RED until the `Card::ServiceLb` variant lands).
 //!
 //! The Portal's orchestration/cluster surface is developer-only (Charter §6.3:
-//! residents navigate by room, never by infrastructure). ServiceLB status — the
-//! LoadBalancer Services exposed on the cluster and how many are pending — joins
+//! residents navigate by room, never by infrastructure). `ServiceLB` status — the
+//! `LoadBalancer` Services exposed on the cluster and how many are pending — joins
 //! `ClusterTopology` and `Logs` as a power-user-only card the layout engine drops
 //! entirely in Resident mode.
 

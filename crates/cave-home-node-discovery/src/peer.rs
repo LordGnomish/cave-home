@@ -99,7 +99,7 @@ impl core::fmt::Display for PeerError {
 impl std::error::Error for PeerError {}
 
 /// Another cave-home hub as seen on the LAN.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveredPeer {
     node_id: String,
     hostname: String,
@@ -249,6 +249,8 @@ mod tests {
     use super::*;
     use std::net::{Ipv4Addr, Ipv6Addr};
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn ip(a: u8, b: u8, c: u8, d: u8) -> IpAddr {
         IpAddr::V4(Ipv4Addr::new(a, b, c, d))
     }
@@ -261,8 +263,8 @@ mod tests {
         }
     }
 
-    fn peer() -> DiscoveredPeer {
-        DiscoveredPeer::new(
+    fn peer() -> Result<DiscoveredPeer, Box<dyn std::error::Error>> {
+        Ok(DiscoveredPeer::new(
             "hub-kitchen",
             "kitchen.local",
             vec![ip(192, 168, 1, 10)],
@@ -271,16 +273,16 @@ mod tests {
             ver(),
             100,
             120,
-        )
-        .expect("valid peer")
+        )?)
     }
 
     #[test]
-    fn builds_valid_peer() {
-        let p = peer();
+    fn builds_valid_peer() -> TestResult {
+        let p = peer()?;
         assert_eq!(p.node_id(), "hub-kitchen");
         assert_eq!(p.port(), 8123);
         assert_eq!(p.role(), NodeRole::Primary);
+        Ok(())
     }
 
     #[test]
@@ -335,7 +337,7 @@ mod tests {
     }
 
     #[test]
-    fn dedupes_addresses_preserving_order() {
+    fn dedupes_addresses_preserving_order() -> TestResult {
         let p = DiscoveredPeer::new(
             "n",
             "h",
@@ -349,28 +351,30 @@ mod tests {
             ver(),
             0,
             60,
-        )
-        .expect("valid");
+        )?;
         assert_eq!(
             p.addresses(),
             &[ip(192, 168, 1, 10), IpAddr::V6(Ipv6Addr::LOCALHOST)]
         );
+        Ok(())
     }
 
     #[test]
-    fn expiry_uses_supplied_clock() {
-        let p = peer(); // last_seen=100, ttl=120 -> alive through tick 220.
+    fn expiry_uses_supplied_clock() -> TestResult {
+        let p = peer()?; // last_seen=100, ttl=120 -> alive through tick 220.
         assert!(!p.is_expired(220));
         assert!(p.is_expired(221));
         assert!(!p.is_expired(150));
+        Ok(())
     }
 
     #[test]
-    fn refresh_resets_window() {
-        let p = peer();
+    fn refresh_resets_window() -> TestResult {
+        let p = peer()?;
         let r = p.refreshed_at(500);
         assert_eq!(r.last_seen(), 500);
         assert!(!r.is_expired(600));
+        Ok(())
     }
 
     #[test]
@@ -382,8 +386,8 @@ mod tests {
     }
 
     #[test]
-    fn found_message_localised_and_role_aware() {
-        let primary = peer();
+    fn found_message_localised_and_role_aware() -> TestResult {
+        let primary = peer()?;
         assert_eq!(primary.found_message(Lang::En), "Found another hub.");
         let backup = DiscoveredPeer::new(
             "n",
@@ -394,26 +398,26 @@ mod tests {
             ver(),
             0,
             60,
-        )
-        .expect("valid");
+        )?;
         assert_eq!(backup.found_message(Lang::De), "Reserve-Hub verbunden.");
         assert_eq!(backup.found_message(Lang::Tr), "Yedek merkez bağlandı.");
+        Ok(())
     }
 
     #[test]
-    fn every_role_has_three_language_names_and_message() {
+    fn every_role_has_three_language_names_and_message() -> TestResult {
         for role in [NodeRole::Primary, NodeRole::Secondary, NodeRole::MlNode] {
-            let p = DiscoveredPeer::new("n", "h", vec![ip(1, 1, 1, 1)], 8123, role, ver(), 0, 60)
-                .expect("valid");
+            let p = DiscoveredPeer::new("n", "h", vec![ip(1, 1, 1, 1)], 8123, role, ver(), 0, 60)?;
             for lang in [Lang::En, Lang::De, Lang::Tr] {
-                assert!(!role.friendly_name(lang).is_empty());
-                assert!(!p.found_message(lang).is_empty());
+                assert_ne!(role.friendly_name(lang), "");
+                assert_ne!(p.found_message(lang), "");
             }
         }
+        Ok(())
     }
 
     #[test]
-    fn ui_strings_carry_no_implementation_jargon() {
+    fn ui_strings_carry_no_implementation_jargon() -> TestResult {
         // Charter §6.3: the UI must never surface protocol / cluster terms.
         const BANNED: &[&str] = &[
             "mDNS",
@@ -436,8 +440,7 @@ mod tests {
             "cluster",
         ];
         for role in [NodeRole::Primary, NodeRole::Secondary, NodeRole::MlNode] {
-            let p = DiscoveredPeer::new("n", "h", vec![ip(1, 1, 1, 1)], 8123, role, ver(), 0, 60)
-                .expect("valid");
+            let p = DiscoveredPeer::new("n", "h", vec![ip(1, 1, 1, 1)], 8123, role, ver(), 0, 60)?;
             for lang in [Lang::En, Lang::De, Lang::Tr] {
                 let text = format!("{} {}", role.friendly_name(lang), p.found_message(lang));
                 for banned in BANNED {
@@ -448,5 +451,6 @@ mod tests {
                 }
             }
         }
+        Ok(())
     }
 }

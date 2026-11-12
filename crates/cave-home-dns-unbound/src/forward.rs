@@ -98,77 +98,84 @@ mod tests {
     use super::*;
     use crate::record::v4;
 
-    fn name(n: &str) -> DnsName {
-        DnsName::parse(n).expect("name")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn name(n: &str) -> Result<DnsName, String> {
+        DnsName::parse(n).map_err(|e| format!("{e:?}"))
     }
 
-    fn fz(zone: &str, ip: [u8; 4]) -> ForwardZone {
-        ForwardZone::new(
-            name(zone),
+    fn fz(zone: &str, ip: [u8; 4]) -> Result<ForwardZone, Box<dyn std::error::Error>> {
+        Ok(ForwardZone::new(
+            name(zone)?,
             RouteKind::Forward,
             vec![IpAddr::V4(v4(ip[0], ip[1], ip[2], ip[3]))],
-        )
+        ))
     }
 
     #[test]
-    fn root_zone_is_the_default_route() {
+    fn root_zone_is_the_default_route() -> TestResult {
         let mut t = ForwardTable::new();
-        t.add(fz(".", [9, 9, 9, 9]));
-        let r = t.route(&name("example.com")).expect("default route");
+        t.add(fz(".", [9, 9, 9, 9])?);
+        let r = t.route(&name("example.com")?).ok_or("default route")?;
         assert_eq!(r.upstreams()[0], IpAddr::V4(v4(9, 9, 9, 9)));
+        Ok(())
     }
 
     #[test]
-    fn longest_suffix_wins_over_default() {
+    fn longest_suffix_wins_over_default() -> TestResult {
         let mut t = ForwardTable::new();
-        t.add(fz(".", [9, 9, 9, 9]));
-        t.add(fz("example.com", [1, 1, 1, 1]));
-        t.add(fz("corp.example.com", [10, 0, 0, 1]));
+        t.add(fz(".", [9, 9, 9, 9])?);
+        t.add(fz("example.com", [1, 1, 1, 1])?);
+        t.add(fz("corp.example.com", [10, 0, 0, 1])?);
 
         // Most specific match.
         assert_eq!(
-            t.route(&name("host.corp.example.com"))
-                .expect("r")
+            t.route(&name("host.corp.example.com")?)
+                .ok_or("r")?
                 .upstreams()[0],
             IpAddr::V4(v4(10, 0, 0, 1))
         );
         // Falls to the next-most-specific.
         assert_eq!(
-            t.route(&name("www.example.com")).expect("r").upstreams()[0],
+            t.route(&name("www.example.com")?).ok_or("r")?.upstreams()[0],
             IpAddr::V4(v4(1, 1, 1, 1))
         );
         // Falls to the default.
         assert_eq!(
-            t.route(&name("wikipedia.org")).expect("r").upstreams()[0],
+            t.route(&name("wikipedia.org")?).ok_or("r")?.upstreams()[0],
             IpAddr::V4(v4(9, 9, 9, 9))
         );
+        Ok(())
     }
 
     #[test]
-    fn no_route_without_a_default() {
+    fn no_route_without_a_default() -> TestResult {
         let mut t = ForwardTable::new();
-        t.add(fz("example.com", [1, 1, 1, 1]));
-        assert!(t.route(&name("wikipedia.org")).is_none());
-        assert!(t.route(&name("example.com")).is_some());
+        t.add(fz("example.com", [1, 1, 1, 1])?);
+        assert!(t.route(&name("wikipedia.org")?).is_none());
+        assert!(t.route(&name("example.com")?).is_some());
+        Ok(())
     }
 
     #[test]
-    fn stub_and_forward_kinds_are_carried_through() {
+    fn stub_and_forward_kinds_are_carried_through() -> TestResult {
         let mut t = ForwardTable::new();
         t.add(ForwardZone::new(
-            name("home.arpa"),
+            name("home.arpa")?,
             RouteKind::Stub,
             vec![IpAddr::V4(v4(192, 168, 1, 1))],
         ));
-        let r = t.route(&name("nas.home.arpa")).expect("r");
+        let r = t.route(&name("nas.home.arpa")?).ok_or("r")?;
         assert_eq!(r.kind(), RouteKind::Stub);
+        Ok(())
     }
 
     #[test]
-    fn suffix_match_is_label_aligned_not_string() {
+    fn suffix_match_is_label_aligned_not_string() -> TestResult {
         let mut t = ForwardTable::new();
-        t.add(fz("example.com", [1, 1, 1, 1]));
+        t.add(fz("example.com", [1, 1, 1, 1])?);
         // notexample.com must NOT match example.com.
-        assert!(t.route(&name("notexample.com")).is_none());
+        assert!(t.route(&name("notexample.com")?).is_none());
+        Ok(())
     }
 }

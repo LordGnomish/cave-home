@@ -104,6 +104,8 @@ pub fn decide_phases(
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     const V: f64 = 230.0;
     const MIN: f64 = 6.0;
     // 3 * 6 A * 230 V = 4140 W three-phase minimum.
@@ -117,42 +119,47 @@ mod tests {
     }
 
     #[test]
-    fn steps_up_when_surplus_clears_threshold_plus_margin() {
-        let p = decide_phases(TP_MIN + MARGIN, MIN, V, PhaseCount::Single, MARGIN).unwrap();
+    fn steps_up_when_surplus_clears_threshold_plus_margin() -> TestResult {
+        let p = decide_phases(TP_MIN + MARGIN, MIN, V, PhaseCount::Single, MARGIN)?;
         assert_eq!(p, PhaseCount::Three);
+        Ok(())
     }
 
     #[test]
-    fn holds_single_just_below_up_threshold() {
-        let p = decide_phases(TP_MIN + MARGIN - 1.0, MIN, V, PhaseCount::Single, MARGIN).unwrap();
+    fn holds_single_just_below_up_threshold() -> TestResult {
+        let p = decide_phases(TP_MIN + MARGIN - 1.0, MIN, V, PhaseCount::Single, MARGIN)?;
         assert_eq!(p, PhaseCount::Single);
+        Ok(())
     }
 
     #[test]
-    fn steps_down_when_surplus_falls_below_bare_minimum() {
-        let p = decide_phases(TP_MIN - 1.0, MIN, V, PhaseCount::Three, MARGIN).unwrap();
+    fn steps_down_when_surplus_falls_below_bare_minimum() -> TestResult {
+        let p = decide_phases(TP_MIN - 1.0, MIN, V, PhaseCount::Three, MARGIN)?;
         assert_eq!(p, PhaseCount::Single);
+        Ok(())
     }
 
     #[test]
-    fn holds_three_at_bare_minimum() {
-        let p = decide_phases(TP_MIN, MIN, V, PhaseCount::Three, MARGIN).unwrap();
+    fn holds_three_at_bare_minimum() -> TestResult {
+        let p = decide_phases(TP_MIN, MIN, V, PhaseCount::Three, MARGIN)?;
         assert_eq!(p, PhaseCount::Three);
+        Ok(())
     }
 
     #[test]
-    fn hysteresis_band_holds_current_phase_either_way() {
+    fn hysteresis_band_holds_current_phase_either_way() -> TestResult {
         // Inside the band [TP_MIN, TP_MIN+MARGIN): one-phase stays one,
         // three-phase stays three — no flapping.
         let mid = TP_MIN + MARGIN / 2.0;
         assert_eq!(
-            decide_phases(mid, MIN, V, PhaseCount::Single, MARGIN).unwrap(),
+            decide_phases(mid, MIN, V, PhaseCount::Single, MARGIN)?,
             PhaseCount::Single
         );
         assert_eq!(
-            decide_phases(mid, MIN, V, PhaseCount::Three, MARGIN).unwrap(),
+            decide_phases(mid, MIN, V, PhaseCount::Three, MARGIN)?,
             PhaseCount::Three
         );
+        Ok(())
     }
 
     #[test]

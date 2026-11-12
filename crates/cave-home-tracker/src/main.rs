@@ -71,7 +71,7 @@ enum Command {
     },
     /// Serve Prometheus metrics for the latest snapshot.
     Dashboard {
-        /// Address to bind. Defaults to :9102 (9100 is node_exporter's port).
+        /// Address to bind. Defaults to :9102 (9100 is `node_exporter`'s port).
         #[arg(long, default_value = "0.0.0.0:9102")]
         addr: String,
     },

@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn do_not_disturb_line_present_in_each_language() {
         for lang in LANGS {
-            assert!(!do_not_disturb_on(lang).is_empty());
+            assert_ne!(do_not_disturb_on(lang), "");
         }
     }
 

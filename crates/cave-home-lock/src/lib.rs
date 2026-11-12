@@ -18,7 +18,7 @@
 //! - [`label`] — EN / DE / TR status label + advice per state (Charter §6.3,
 //!   ADR-007).
 //!
-//! The **vendor I/O adapters** (Nuki, SwitchBot, August/Yale, Aqara, ESPHome,
+//! The **vendor I/O adapters** (Nuki, `SwitchBot`, August/Yale, Aqara, `ESPHome`,
 //! and the Zigbee/Z-Wave/Matter lock-domain bindings), **real cryptographic PIN
 //! hashing**, and **cave-home-core entity/state integration** are network /
 //! hardware / crypto-bound and deferred to Phase 1b — each is enumerated in

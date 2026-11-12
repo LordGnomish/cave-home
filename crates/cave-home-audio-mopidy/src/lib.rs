@@ -30,8 +30,8 @@
 //!
 //! Deferred to Phase 1b — all network/pipeline-bound, all enumerated in
 //! `parity.manifest.toml` `[[unmapped]]` with an ADR-020 disposition: the TCP
-//! MPD server (idle / command-list / binary responses), the GStreamer audio
-//! playback pipeline, Mopidy backend extensions (local / Spotify / TuneIn / …),
+//! MPD server (idle / command-list / binary responses), the `GStreamer` audio
+//! playback pipeline, Mopidy backend extensions (local / Spotify / `TuneIn` / …),
 //! library browsing over real backends, and the cave-home-core + Snapcast
 //! multi-room integration. They drive this engine; they add no new core logic.
 //!

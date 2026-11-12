@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //
-//! SunSpec meter models — integer (201/202/203) three-phase meters.
+//! `SunSpec` meter models — integer (201/202/203) three-phase meters.
 //!
-//! Source: SunSpec Information Model Specification, meter models.
+//! Source: `SunSpec` Information Model Specification, meter models.
 //!
 //! Like the integer inverter models, every measurement is a raw integer paired
 //! with a `sunssf` power-of-ten scale factor; the energy counters are `acc32`.
@@ -28,7 +28,7 @@ use crate::scale::ScaleFactor;
 
 /// A decoded meter reading in physical units. All measurements have had their
 /// scale factors applied. `None` means the device did not implement that point
-/// (a SunSpec sentinel).
+/// (a `SunSpec` sentinel).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MeterReading {
     /// Total real (active) power, watts (signed; sign convention is the
@@ -81,11 +81,9 @@ impl MeterReading {
 
         // Meter event flags: a bitfield32 (hi word first). The "no events"
         // value is all-zero, so read the raw 32 bits and test for any set bit.
-        let evt_raw = point::uint32(payload, 164)?.unwrap_or_else(|| {
-            // `uint32` returns None on the 0xFFFF_FFFF sentinel; for a bitfield
-            // that still means "all bits set" => an event is present.
-            u32::MAX
-        });
+        // `uint32` returns None on the 0xFFFF_FFFF sentinel; for a bitfield
+        // that still means "all bits set" => an event is present.
+        let evt_raw = point::uint32(payload, 164)?.unwrap_or(u32::MAX);
         let has_event = evt_raw != 0;
 
         Ok(Self {
@@ -114,6 +112,8 @@ pub fn decode_meter(model_id: u16, payload: &[u16]) -> Result<MeterReading, Deco
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn build_meter_203() -> Vec<u16> {
         let mut p = vec![0u16; 166];
         p[18] = 1500u16; // W raw
@@ -129,26 +129,29 @@ mod tests {
     }
 
     #[test]
-    fn power_scaled() {
+    fn power_scaled() -> TestResult {
         let p = build_meter_203();
-        let r = MeterReading::decode_integer(203, &p).unwrap();
-        assert!((r.total_real_power_w.unwrap() - 1500.0).abs() < 1e-6);
+        let r = MeterReading::decode_integer(203, &p)?;
+        assert!((r.total_real_power_w.ok_or("point is implemented")? - 1500.0).abs() < 1e-6);
+        Ok(())
     }
 
     #[test]
-    fn unimplemented_power_is_none() {
+    fn unimplemented_power_is_none() -> TestResult {
         let mut p = build_meter_203();
         p[18] = point::INT16_NA;
-        let r = MeterReading::decode_integer(203, &p).unwrap();
+        let r = MeterReading::decode_integer(203, &p)?;
         assert!(r.total_real_power_w.is_none());
+        Ok(())
     }
 
     #[test]
-    fn event_bit_present() {
+    fn event_bit_present() -> TestResult {
         let mut p = build_meter_203();
         p[165] = 0x0004;
-        let r = MeterReading::decode_integer(203, &p).unwrap();
+        let r = MeterReading::decode_integer(203, &p)?;
         assert!(r.has_event);
+        Ok(())
     }
 
     #[test]

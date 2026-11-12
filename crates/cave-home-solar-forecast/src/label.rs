@@ -144,7 +144,7 @@ mod tests {
             SolarOutlook::Cloudy,
         ] {
             for lang in [Lang::En, Lang::De, Lang::Tr] {
-                assert!(!outlook.headline(lang).is_empty());
+                assert_ne!(outlook.headline(lang), "");
             }
         }
     }
@@ -159,7 +159,7 @@ mod tests {
         assert!(peak_time_phrase(&afternoon, Lang::En).contains("afternoon"));
         // All languages produce something for each band.
         for lang in [Lang::En, Lang::De, Lang::Tr] {
-            assert!(!peak_time_phrase(&noon, lang).is_empty());
+            assert_ne!(peak_time_phrase(&noon, lang), "");
         }
     }
 

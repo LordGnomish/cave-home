@@ -1,6 +1,6 @@
 //! Grandma-friendly status sentences for a display (Charter §6.3, ADR-028).
 //!
-//! The household never sees "media_player", "CEC logical address", "DLNA" or a
+//! The household never sees "`media_player`", "CEC logical address", "DLNA" or a
 //! playback enum — they see "The TV is playing", "The TV is off", or "The sound
 //! is muted", localised to EN / DE / TR (the Charter §6.3 languages mandatory
 //! from M1). This module is the only place display state becomes words a person
@@ -77,7 +77,7 @@ impl Display {
     /// what the TV is doing ("The TV is playing"); if the sound is muted that is
     /// the more important thing to surface, so it reads "The sound is muted".
     #[must_use]
-    pub fn status_sentence(&self, lang: Lang) -> &'static str {
+    pub const fn status_sentence(&self, lang: Lang) -> &'static str {
         if !self.power().is_on() {
             return self.power().label(lang);
         }
@@ -95,6 +95,8 @@ mod tests {
     use crate::source::SourceCatalog;
     use crate::volume::Volume;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn on_tv() -> Display {
         Display::powered_on(SourceCatalog::typical_smart_tv(), Volume::new(30))
     }
@@ -108,29 +110,31 @@ mod tests {
     }
 
     #[test]
-    fn playing_tv_says_playing() {
+    fn playing_tv_says_playing() -> TestResult {
         let mut tv = on_tv();
-        tv.apply(MediaCommand::LaunchApp("netflix".into())).unwrap();
-        tv.apply(MediaCommand::Play).unwrap();
+        tv.apply(MediaCommand::LaunchApp("netflix".into()))?;
+        tv.apply(MediaCommand::Play)?;
         assert_eq!(tv.status_sentence(Lang::En), "The TV is playing");
         assert_eq!(tv.status_sentence(Lang::Tr), "Televizyon oynatıyor");
+        Ok(())
     }
 
     #[test]
-    fn muted_tv_surfaces_the_mute() {
+    fn muted_tv_surfaces_the_mute() -> TestResult {
         let mut tv = on_tv();
-        tv.apply(MediaCommand::LaunchApp("netflix".into())).unwrap();
-        tv.apply(MediaCommand::Play).unwrap();
-        tv.apply(MediaCommand::SetMute(true)).unwrap();
+        tv.apply(MediaCommand::LaunchApp("netflix".into()))?;
+        tv.apply(MediaCommand::Play)?;
+        tv.apply(MediaCommand::SetMute(true))?;
         assert_eq!(tv.status_sentence(Lang::En), "The sound is muted");
         assert_eq!(tv.status_sentence(Lang::De), "Der Ton ist stumm");
+        Ok(())
     }
 
     #[test]
     fn every_power_and_playback_state_has_three_languages() {
         for lang in [Lang::En, Lang::De, Lang::Tr] {
             for p in [PowerState::On, PowerState::Off, PowerState::Standby] {
-                assert!(!p.label(lang).is_empty());
+                assert_ne!(p.label(lang), "");
             }
             for s in [
                 PlaybackState::Playing,
@@ -139,7 +143,7 @@ mod tests {
                 PlaybackState::Idle,
                 PlaybackState::Buffering,
             ] {
-                assert!(!s.label(lang).is_empty());
+                assert_ne!(s.label(lang), "");
             }
         }
     }

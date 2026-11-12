@@ -141,6 +141,8 @@ mod tests {
     use super::*;
     use crate::lifecycle::Failure;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn fresh_entry_is_not_loaded() {
         let e = ConfigEntry::new("hue", "Hue Bridge");
@@ -160,26 +162,27 @@ mod tests {
     }
 
     #[test]
-    fn apply_drives_state_and_rejects_illegal() {
+    fn apply_drives_state_and_rejects_illegal() -> TestResult {
         let mut e = ConfigEntry::new("hue", "Hue Bridge");
-        e.apply(Transition::BeginSetup).expect("begin");
+        e.apply(Transition::BeginSetup)?;
         assert_eq!(e.state(), State::SettingUp);
-        e.apply(Transition::SetupSucceeded).expect("succeed");
+        e.apply(Transition::SetupSucceeded)?;
         assert_eq!(e.state(), State::Loaded);
         // Illegal event leaves the state untouched.
         let before = e.state();
         assert!(e.apply(Transition::SetupSucceeded).is_err());
         assert_eq!(e.state(), before);
+        Ok(())
     }
 
     #[test]
-    fn transient_failure_recorded_on_entry() {
+    fn transient_failure_recorded_on_entry() -> TestResult {
         let mut e = ConfigEntry::new("cloud", "Cloud thing");
-        e.apply(Transition::BeginSetup).expect("begin");
-        e.apply(Transition::SetupFailed(Failure::Unreachable))
-            .expect("fail");
+        e.apply(Transition::BeginSetup)?;
+        e.apply(Transition::SetupFailed(Failure::Unreachable))?;
         assert_eq!(e.state(), State::SetupRetry);
         assert!(e.state().wants_retry());
+        Ok(())
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! Sensor reading model — the typed inputs the air-quality engine consumes.
 //!
-//! Readings are vendor-neutral: an AirGradient, Awair, IKEA Vindriktning or
+//! Readings are vendor-neutral: an `AirGradient`, Awair, IKEA Vindriktning or
 //! Airthings adapter (all deferred to phase-1b, see the parity manifest) maps
 //! its wire format onto these types, and everything downstream — AQI, category,
 //! room assessment — works off this model alone.
@@ -135,6 +135,8 @@ impl Reading {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn rejects_nan_and_infinite() {
         assert_eq!(
@@ -156,9 +158,10 @@ mod tests {
     }
 
     #[test]
-    fn accepts_zero_and_positive() {
+    fn accepts_zero_and_positive() -> TestResult {
         assert!(Reading::new(Pollutant::Pm25, 0.0).is_ok());
-        assert_eq!(Reading::new(Pollutant::Pm25, 12.3).unwrap().value(), 12.3);
+        assert_eq!(Reading::new(Pollutant::Pm25, 12.3)?.value(), 12.3);
+        Ok(())
     }
 
     #[test]

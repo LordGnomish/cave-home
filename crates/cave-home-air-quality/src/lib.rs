@@ -18,7 +18,7 @@
 //! - [`assessment`] — worst-of room aggregation, the surface the rest of
 //!   cave-home consumes.
 //!
-//! The **vendor I/O adapters** (AirGradient local API, Awair, IKEA Vindriktning,
+//! The **vendor I/O adapters** (`AirGradient` local API, Awair, IKEA Vindriktning,
 //! Airthings) are network/BLE-bound and are deferred to Phase 1b — every one is
 //! enumerated in `parity.manifest.toml` `[[unmapped]]` with an ADR-019
 //! disposition. They map their wire formats onto [`reading::Reading`] and then

@@ -296,19 +296,22 @@ fn range(value: u16, max: u16, name: &str, full: &str) -> Result<()> {
 mod tests {
     use super::*;
 
+    type TestResult = core::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn individual_parse_three_level() {
-        let a = IndividualAddress::parse("1.1.5").expect("parse");
+    fn individual_parse_three_level() -> TestResult {
+        let a = IndividualAddress::parse("1.1.5")?;
         assert_eq!(a.area(), 1);
         assert_eq!(a.line(), 1);
         assert_eq!(a.device(), 5);
         assert_eq!(a.raw(), (1 << 12) | (1 << 8) | 5);
         assert_eq!(a.to_string(), "1.1.5");
+        Ok(())
     }
 
     #[test]
-    fn individual_roundtrip_string_raw_bytes() {
-        let a = IndividualAddress::parse("15.15.255").expect("parse");
+    fn individual_roundtrip_string_raw_bytes() -> TestResult {
+        let a = IndividualAddress::parse("15.15.255")?;
         assert_eq!(a.raw(), 0xFFFF);
         assert_eq!(a.to_bytes(), [0xFF, 0xFF]);
         assert_eq!(IndividualAddress::from_bytes(a.to_bytes()), a);
@@ -316,12 +319,14 @@ mod tests {
             IndividualAddress::from_raw(a.raw()).to_string(),
             "15.15.255"
         );
+        Ok(())
     }
 
     #[test]
-    fn individual_bare_number() {
-        let a = IndividualAddress::parse("4353").expect("parse"); // 0x1101 = 1.1.1
+    fn individual_bare_number() -> TestResult {
+        let a = IndividualAddress::parse("4353")?; // 0x1101 = 1.1.1
         assert_eq!(a.to_string(), "1.1.1");
+        Ok(())
     }
 
     #[test]
@@ -339,42 +344,46 @@ mod tests {
     }
 
     #[test]
-    fn group_three_level() {
-        let g = GroupAddress::parse("1/2/3").expect("parse");
+    fn group_three_level() -> TestResult {
+        let g = GroupAddress::parse("1/2/3")?;
         assert_eq!(g.main(), Some(1));
         assert_eq!(g.middle(), Some(2));
         assert_eq!(g.sub(), 3);
         assert_eq!(g.raw(), (1 << 11) | (2 << 8) | 3);
         assert_eq!(g.to_string(), "1/2/3");
         assert_eq!(g.style(), GroupAddressStyle::ThreeLevel);
+        Ok(())
     }
 
     #[test]
-    fn group_two_level() {
-        let g = GroupAddress::parse("1/500").expect("parse");
+    fn group_two_level() -> TestResult {
+        let g = GroupAddress::parse("1/500")?;
         assert_eq!(g.main(), Some(1));
         assert_eq!(g.middle(), None);
         assert_eq!(g.sub(), 500);
-        assert_eq!(g.raw(), (1 << 11) | 500);
+        assert_eq!(g.raw(), (1 << 11) + 500);
         assert_eq!(g.to_string(), "1/500");
         assert_eq!(g.style(), GroupAddressStyle::TwoLevel);
+        Ok(())
     }
 
     #[test]
-    fn group_free() {
-        let g = GroupAddress::parse("12345").expect("parse");
+    fn group_free() -> TestResult {
+        let g = GroupAddress::parse("12345")?;
         assert_eq!(g.main(), None);
         assert_eq!(g.middle(), None);
         assert_eq!(g.sub(), 12345);
         assert_eq!(g.to_string(), "12345");
         assert_eq!(g.style(), GroupAddressStyle::Free);
+        Ok(())
     }
 
     #[test]
-    fn group_roundtrip_bytes() {
-        let g = GroupAddress::parse("4/2/16").expect("parse");
+    fn group_roundtrip_bytes() -> TestResult {
+        let g = GroupAddress::parse("4/2/16")?;
         let bytes = g.to_bytes();
         assert_eq!(GroupAddress::from_bytes(bytes).raw(), g.raw());
+        Ok(())
     }
 
     #[test]
@@ -392,10 +401,11 @@ mod tests {
     }
 
     #[test]
-    fn group_style_override_changes_display_not_wire() {
-        let raw = GroupAddress::parse("1/2/3").expect("parse").raw();
+    fn group_style_override_changes_display_not_wire() -> TestResult {
+        let raw = GroupAddress::parse("1/2/3")?.raw();
         let g = GroupAddress::from_raw(raw).with_style(GroupAddressStyle::TwoLevel);
         assert_eq!(g.raw(), raw); // wire value unchanged
         assert_eq!(g.to_string(), "1/515"); // (2<<8)|3 = 515 in 2-level
+        Ok(())
     }
 }

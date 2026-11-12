@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //
-//! End-to-end tests against a **mock UniFi console** stood up with `wiremock`.
+//! End-to-end tests against a **mock `UniFi` console** stood up with `wiremock`.
 //!
 //! These drive the *real* `reqwest` + `rustls` transport (over plain HTTP, the
-//! one knob `wiremock` exposes) through the full stack — login → session cookie
-//! + CSRF capture → authorized API call → wire-to-domain mapping — so the same
-//! code that talks to a real Cloud Key / UniFi OS console is exercised here. The
-//! acceptance trio is covered: a **device list**, a **camera live URL**, and the
-//! **intercom** path (the answer over REST + the live notification decoded by
-//! the real WebSocket engine).
+//! one knob `wiremock` exposes) through the full stack — login → session
+//! cookie + CSRF capture → authorized API call → wire-to-domain mapping — so
+//! the same code that talks to a real Cloud Key / `UniFi` OS console is
+//! exercised here. The acceptance trio is covered: a **device list**, a
+//! **camera live URL**, and the **intercom** path (the answer over REST + the
+//! live notification decoded by the real WebSocket engine).
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -27,6 +27,8 @@ use cave_home_unifi::protect::ProtectApi;
 use cave_home_unifi::transport::ReqwestTransport;
 use cave_home_unifi::ws::{EventPump, MockWsConnection, WsMessage};
 
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
 /// Build a `Console` and a real transport pointed at a wiremock server.
 fn console_for(server: &MockServer) -> Console {
     let addr = server.address();
@@ -35,11 +37,11 @@ fn console_for(server: &MockServer) -> Console {
         .with_tls(false)
 }
 
-fn transport() -> ReqwestTransport {
-    ReqwestTransport::new(Duration::from_secs(5)).expect("build transport")
+fn transport() -> Result<ReqwestTransport, cave_home_unifi::UnifiError> {
+    ReqwestTransport::new(Duration::from_secs(5))
 }
 
-/// Mount the UniFi OS login endpoint: 200 + a `TOKEN` cookie and CSRF header.
+/// Mount the `UniFi` OS login endpoint: 200 + a `TOKEN` cookie and CSRF header.
 async fn mount_login(server: &MockServer) {
     Mock::given(method("POST"))
         .and(path("/api/auth/login"))
@@ -54,7 +56,7 @@ async fn mount_login(server: &MockServer) {
 }
 
 #[tokio::test]
-async fn e2e_login_then_device_list() {
+async fn e2e_login_then_device_list() -> TestResult {
     let server = MockServer::start().await;
     mount_login(&server).await;
     Mock::given(method("GET"))
@@ -74,29 +76,30 @@ async fn e2e_login_then_device_list() {
     let metrics = Arc::new(Metrics::new());
     let client = ConsoleClient::new(
         console_for(&server),
-        transport(),
+        transport()?,
         Credentials::password("admin", "secret"),
     )
     .with_metrics(Arc::clone(&metrics));
 
-    client.login().await.expect("login");
+    client.login().await?;
     assert!(client.is_authenticated());
 
     let api = NetworkApi::new(&client);
-    let devices = api.devices("default").await.expect("devices");
+    let devices = api.devices("default").await?;
     assert_eq!(devices.len(), 2);
     assert_eq!(devices[0].name(), "Salon switch");
-    assert!(devices[0].port(1).unwrap().poe_active);
+    assert!(devices[0].port(1).ok_or("port 1 present")?.poe_active);
     assert_eq!(devices[1].uplink(), Some("sw:mac"));
 
     // The real session+metrics flowed through: one login, one device call.
     let prom = metrics.render_prometheus();
     assert!(prom.contains("unifi_logins_total 1"));
     assert!(prom.contains("unifi_requests_total{endpoint=\"network/devices\"} 1"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn e2e_camera_live_url_from_bootstrap() {
+async fn e2e_camera_live_url_from_bootstrap() -> TestResult {
     let server = MockServer::start().await;
     mount_login(&server).await;
     Mock::given(method("GET"))
@@ -117,26 +120,24 @@ async fn e2e_camera_live_url_from_bootstrap() {
 
     let client = ConsoleClient::new(
         console_for(&server),
-        transport(),
+        transport()?,
         Credentials::api_key("KEY"),
     );
     let protect = ProtectApi::new(&client);
 
-    let bootstrap = protect.bootstrap().await.expect("bootstrap");
+    let bootstrap = protect.bootstrap().await?;
     assert_eq!(bootstrap.nvr.name, "Home NVR");
     assert_eq!(bootstrap.cameras.len(), 1);
     assert!(bootstrap.cameras[0].is_doorbell);
 
     let host = client.console().host().to_string();
-    let url = protect
-        .camera_live_url("cam-front")
-        .await
-        .expect("live url");
+    let url = protect.camera_live_url("cam-front").await?;
     assert_eq!(url, format!("rtsps://{host}:7441/liveAliasXYZ?enableSrtp"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn e2e_intercom_answer_over_rest() {
+async fn e2e_intercom_answer_over_rest() -> TestResult {
     // The intercom *answer*: a real PUT unlock over the reqwest transport
     // against a mock Access appliance.
     let server = MockServer::start().await;
@@ -153,22 +154,20 @@ async fn e2e_intercom_answer_over_rest() {
     let cfg = AccessConfig::new(addr.ip().to_string(), "ACCESS-TOKEN")
         .with_port(addr.port())
         .with_tls(false);
-    let access = AccessClient::new(cfg, transport());
+    let access = AccessClient::new(cfg, transport()?);
 
-    access
-        .answer_intercom("front")
-        .await
-        .expect("intercom unlock");
+    access.answer_intercom("front").await?;
     assert!(
         access
             .metrics()
             .render_prometheus()
             .contains("unifi_requests_total{endpoint=\"access/intercom_unlock\"} 1")
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn e2e_intercom_event_via_ws_engine() {
+async fn e2e_intercom_event_via_ws_engine() -> TestResult {
     // The intercom *event*: the real WebSocket engine decodes a live Access
     // notification frame (the doorbell call) into a typed notification.
     let metrics = Arc::new(Metrics::new());
@@ -180,13 +179,10 @@ async fn e2e_intercom_event_via_ws_engine() {
     let (tx, mut rx) = tokio::sync::mpsc::channel(8);
     let pump = EventPump::new(Arc::clone(&metrics));
 
-    let forwarded = pump
-        .access_notifications(conn, tx)
-        .await
-        .expect("pump intercom");
+    let forwarded = pump.access_notifications(conn, tx).await?;
     assert_eq!(forwarded, 1);
 
-    let note = rx.recv().await.expect("a notification");
+    let note = rx.recv().await.ok_or("a notification")?;
     assert!(note.is_intercom_call(), "expected an intercom call");
     assert_eq!(note.door_name.as_deref(), Some("Front door"));
     assert_eq!(note.actor.as_deref(), Some("Visitor"));
@@ -195,10 +191,11 @@ async fn e2e_intercom_event_via_ws_engine() {
             .render_prometheus()
             .contains("unifi_ws_events_total{pillar=\"access\"} 1")
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn e2e_block_client_posts_real_command() {
+async fn e2e_block_client_posts_real_command() -> TestResult {
     let server = MockServer::start().await;
     mount_login(&server).await;
     Mock::given(method("POST"))
@@ -211,18 +208,17 @@ async fn e2e_block_client_posts_real_command() {
 
     let client = ConsoleClient::new(
         console_for(&server),
-        transport(),
+        transport()?,
         Credentials::password("admin", "secret"),
     );
-    client.login().await.expect("login");
+    client.login().await?;
     let api = NetworkApi::new(&client);
-    api.block_client("default", "aa:bb:cc:dd:ee:ff")
-        .await
-        .expect("block");
+    api.block_client("default", "aa:bb:cc:dd:ee:ff").await?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn e2e_unauthorized_then_reauth_and_retry() {
+async fn e2e_unauthorized_then_reauth_and_retry() -> TestResult {
     // First device call gets a 401 (session expired); the client re-logs-in and
     // retries transparently. wiremock with `up_to_n_times` sequences this.
     let server = MockServer::start().await;
@@ -251,18 +247,19 @@ async fn e2e_unauthorized_then_reauth_and_retry() {
     let metrics = Arc::new(Metrics::new());
     let client = ConsoleClient::new(
         console_for(&server),
-        transport(),
+        transport()?,
         Credentials::password("admin", "secret"),
     )
     .with_metrics(Arc::clone(&metrics));
-    client.login().await.expect("login");
+    client.login().await?;
 
     let api = NetworkApi::new(&client);
-    let clients = api.clients("default").await.expect("clients after reauth");
+    let clients = api.clients("default").await?;
     assert_eq!(clients.len(), 1);
     assert_eq!(clients[0].name(), "phone");
 
     let prom = metrics.render_prometheus();
     assert!(prom.contains("unifi_reauth_total 1"), "{prom}");
     assert!(prom.contains("unifi_logins_total 2"), "{prom}");
+    Ok(())
 }

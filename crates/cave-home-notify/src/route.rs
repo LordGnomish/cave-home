@@ -77,7 +77,7 @@ impl Subscriber {
     }
 
     #[must_use]
-    pub fn topic(&self) -> &Topic {
+    pub const fn topic(&self) -> &Topic {
         &self.topic
     }
 
@@ -170,65 +170,70 @@ mod tests {
     use super::*;
     use crate::notification::Notification;
 
-    fn topic(name: &str) -> Topic {
-        Topic::new(name).expect("valid test topic")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn topic(name: &str) -> Result<Topic, crate::topic::TopicError> {
+        Topic::new(name)
     }
 
-    fn note(t: &str, p: Priority) -> Notification {
-        Notification::new(topic(t), "Title", "Body", 0).with_priority(p)
+    fn note(t: &str, p: Priority) -> Result<Notification, Box<dyn std::error::Error>> {
+        Ok(Notification::new(topic(t)?, "Title", "Body", 0).with_priority(p))
     }
 
     #[test]
-    fn routes_to_matching_topic_subscriber() {
+    fn routes_to_matching_topic_subscriber() -> TestResult {
         let subs = [Subscriber::new(
             "mum",
-            topic("leak"),
+            topic("leak")?,
             Priority::Low,
             [Channel::Push],
         )];
-        let plan = route(&note("leak", Priority::Default), &subs);
+        let plan = route(&note("leak", Priority::Default)?, &subs);
         assert_eq!(plan.len(), 1);
         assert_eq!(plan.deliveries[0].subscriber, "mum");
         assert_eq!(plan.deliveries[0].channel, Channel::Push);
+        Ok(())
     }
 
     #[test]
-    fn filters_other_topics() {
+    fn filters_other_topics() -> TestResult {
         let subs = [Subscriber::new(
             "mum",
-            topic("door"),
+            topic("door")?,
             Priority::Min,
             [Channel::Push],
         )];
-        let plan = route(&note("leak", Priority::Max), &subs);
+        let plan = route(&note("leak", Priority::Max)?, &subs);
         assert!(plan.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn filters_below_minimum_priority() {
+    fn filters_below_minimum_priority() -> TestResult {
         let subs = [Subscriber::new(
             "mum",
-            topic("leak"),
+            topic("leak")?,
             Priority::High,
             [Channel::Push],
         )];
         // Default < High -> filtered.
-        assert!(route(&note("leak", Priority::Default), &subs).is_empty());
+        assert!(route(&note("leak", Priority::Default)?, &subs).is_empty());
         // High == High -> delivered.
-        assert_eq!(route(&note("leak", Priority::High), &subs).len(), 1);
+        assert_eq!(route(&note("leak", Priority::High)?, &subs).len(), 1);
         // Max > High -> delivered.
-        assert_eq!(route(&note("leak", Priority::Max), &subs).len(), 1);
+        assert_eq!(route(&note("leak", Priority::Max)?, &subs).len(), 1);
+        Ok(())
     }
 
     #[test]
-    fn fans_out_to_all_a_subscribers_channels() {
+    fn fans_out_to_all_a_subscribers_channels() -> TestResult {
         let subs = [Subscriber::new(
             "dad",
-            topic("alarm"),
+            topic("alarm")?,
             Priority::Default,
             [Channel::Push, Channel::Email, Channel::Sms],
         )];
-        let plan = route(&note("alarm", Priority::High), &subs);
+        let plan = route(&note("alarm", Priority::High)?, &subs);
         assert_eq!(plan.len(), 3);
         assert_eq!(
             plan.deliveries
@@ -237,34 +242,36 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![Channel::Push, Channel::Email, Channel::Sms]
         );
+        Ok(())
     }
 
     #[test]
-    fn multi_subscriber_routing_preserves_order() {
+    fn multi_subscriber_routing_preserves_order() -> TestResult {
         let subs = [
-            Subscriber::new("mum", topic("leak"), Priority::Min, [Channel::Push]),
-            Subscriber::new("dad", topic("leak"), Priority::High, [Channel::Sms]),
-            Subscriber::new("sitter", topic("door"), Priority::Min, [Channel::Push]),
+            Subscriber::new("mum", topic("leak")?, Priority::Min, [Channel::Push]),
+            Subscriber::new("dad", topic("leak")?, Priority::High, [Channel::Sms]),
+            Subscriber::new("sitter", topic("door")?, Priority::Min, [Channel::Push]),
         ];
         // Default priority: mum (min Min) gets it, dad (min High) does not,
         // sitter is on a different topic.
-        let plan = route(&note("leak", Priority::Default), &subs);
+        let plan = route(&note("leak", Priority::Default)?, &subs);
         assert_eq!(plan.recipients(), vec!["mum"]);
         // Max priority: mum and dad both clear; sitter still wrong topic.
-        let plan = route(&note("leak", Priority::Max), &subs);
+        let plan = route(&note("leak", Priority::Max)?, &subs);
         assert_eq!(plan.recipients(), vec!["mum", "dad"]);
+        Ok(())
     }
 
     #[test]
-    fn capability_gating_only_uses_declared_channels() {
+    fn capability_gating_only_uses_declared_channels() -> TestResult {
         // A webhook-only integration never receives a Push or Sms decision.
         let subs = [Subscriber::new(
             "logger",
-            topic("leak"),
+            topic("leak")?,
             Priority::Min,
             [Channel::Webhook],
         )];
-        let plan = route(&note("leak", Priority::Min), &subs);
+        let plan = route(&note("leak", Priority::Min)?, &subs);
         assert_eq!(plan.len(), 1);
         assert_eq!(plan.deliveries[0].channel, Channel::Webhook);
         assert!(
@@ -273,21 +280,24 @@ mod tests {
                 .iter()
                 .any(|d| d.channel == Channel::Push || d.channel == Channel::Sms)
         );
+        Ok(())
     }
 
     #[test]
-    fn subscriber_dedups_repeated_channels() {
+    fn subscriber_dedups_repeated_channels() -> TestResult {
         let sub = Subscriber::new(
             "mum",
-            topic("leak"),
+            topic("leak")?,
             Priority::Min,
             [Channel::Push, Channel::Push, Channel::Email],
         );
         assert_eq!(sub.channels(), [Channel::Push, Channel::Email]);
+        Ok(())
     }
 
     #[test]
-    fn empty_subscriber_list_routes_nothing() {
-        assert!(route(&note("leak", Priority::Max), &[]).is_empty());
+    fn empty_subscriber_list_routes_nothing() -> TestResult {
+        assert!(route(&note("leak", Priority::Max)?, &[]).is_empty());
+        Ok(())
     }
 }

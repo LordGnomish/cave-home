@@ -120,7 +120,7 @@ impl Playback {
     }
 
     /// Begin (or resume) playback at a queue position.
-    pub fn play_at(&mut self, pos: usize) {
+    pub const fn play_at(&mut self, pos: usize) {
         self.current = Some(pos);
         self.elapsed = 0.0;
         self.state = PlayState::Play;
@@ -128,7 +128,7 @@ impl Playback {
 
     /// Resume from pause without moving the cursor; if nothing is loaded this is
     /// a no-op that leaves the player stopped.
-    pub fn resume(&mut self) {
+    pub const fn resume(&mut self) {
         if self.current.is_some() {
             self.state = PlayState::Play;
         }
@@ -142,7 +142,7 @@ impl Playback {
     }
 
     /// Set the paused-state explicitly (MPD's `pause 0|1`).
-    pub fn set_paused(&mut self, paused: bool) {
+    pub const fn set_paused(&mut self, paused: bool) {
         match (paused, self.state) {
             (true, PlayState::Play) => self.state = PlayState::Pause,
             (false, PlayState::Pause) => self.state = PlayState::Play,
@@ -151,13 +151,13 @@ impl Playback {
     }
 
     /// Stop: keep the cursor but reset elapsed and mark stopped.
-    pub fn stop(&mut self) {
+    pub const fn stop(&mut self) {
         self.state = PlayState::Stop;
         self.elapsed = 0.0;
     }
 
     /// Stop and unload the current song (the queue is now empty / cleared).
-    pub fn unload(&mut self) {
+    pub const fn unload(&mut self) {
         self.state = PlayState::Stop;
         self.current = None;
         self.elapsed = 0.0;
@@ -176,19 +176,19 @@ impl Playback {
         }
     }
 
-    pub fn set_random(&mut self, on: bool) {
+    pub const fn set_random(&mut self, on: bool) {
         self.modes.random = on;
     }
 
-    pub fn set_repeat(&mut self, on: bool) {
+    pub const fn set_repeat(&mut self, on: bool) {
         self.modes.repeat = on;
     }
 
-    pub fn set_single(&mut self, on: bool) {
+    pub const fn set_single(&mut self, on: bool) {
         self.modes.single = on;
     }
 
-    pub fn set_consume(&mut self, on: bool) {
+    pub const fn set_consume(&mut self, on: bool) {
         self.modes.consume = on;
     }
 }
@@ -196,6 +196,8 @@ impl Playback {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[test]
     fn defaults_are_stopped_half_volume_nothing_loaded() {
@@ -219,13 +221,14 @@ mod tests {
     }
 
     #[test]
-    fn play_at_sets_cursor_and_resets_elapsed() {
+    fn play_at_sets_cursor_and_resets_elapsed() -> TestResult {
         let mut p = Playback::new();
-        p.set_elapsed(30.0).unwrap();
+        p.set_elapsed(30.0)?;
         p.play_at(2);
         assert_eq!(p.state(), PlayState::Play);
         assert_eq!(p.current(), Some(2));
         assert_eq!(p.elapsed(), 0.0);
+        Ok(())
     }
 
     #[test]

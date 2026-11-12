@@ -108,6 +108,8 @@ fn walk(dir: &Path, total: &mut StubCount) -> crate::Result<()> {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn counts_each_marker_kind() {
         let src =
@@ -134,13 +136,14 @@ mod tests {
     }
 
     #[test]
-    fn walks_directory_skipping_target() {
-        let tmp = tempfile::tempdir().unwrap();
+    fn walks_directory_skipping_target() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         let root = tmp.path();
-        std::fs::write(root.join("a.rs"), "fn a() { todo!() }\n").unwrap();
-        std::fs::create_dir_all(root.join("target")).unwrap();
-        std::fs::write(root.join("target/b.rs"), "fn b() { todo!() }\n").unwrap();
-        let c = count_stubs(root).unwrap();
+        std::fs::write(root.join("a.rs"), "fn a() { todo!() }\n")?;
+        std::fs::create_dir_all(root.join("target"))?;
+        std::fs::write(root.join("target/b.rs"), "fn b() { todo!() }\n")?;
+        let c = count_stubs(root)?;
         assert_eq!(c.todo, 1, "target/ is ignored");
+        Ok(())
     }
 }

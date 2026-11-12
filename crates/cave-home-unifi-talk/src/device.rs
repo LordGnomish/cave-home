@@ -2,7 +2,7 @@
 //!
 //! A [`TalkDevice`] is one physical endpoint in the home: a desk phone in the
 //! study, a wall intercom panel, the front-door doorbell. Devices are
-//! vendor-neutral here — the (deferred) UniFi Talk provisioning adapter maps
+//! vendor-neutral here — the (deferred) `UniFi` Talk provisioning adapter maps
 //! the controller's device list onto these types, and everything downstream
 //! (extensions, routing) works off this model alone.
 

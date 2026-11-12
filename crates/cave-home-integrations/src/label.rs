@@ -102,12 +102,12 @@ mod tests {
     #[test]
     fn all_messages_exist_in_three_languages() {
         for lang in [Lang::En, Lang::De, Lang::Tr] {
-            assert!(!found_new(Capability::Camera, lang).is_empty());
-            assert!(!connected("Hub", lang).is_empty());
-            assert!(!retrying("Hub", lang).is_empty());
-            assert!(!needs_attention("Hub", lang).is_empty());
-            assert!(!removed("Hub", lang).is_empty());
-            assert!(!already_added("Hub", lang).is_empty());
+            assert_ne!(found_new(Capability::Camera, lang), "");
+            assert_ne!(connected("Hub", lang), "");
+            assert_ne!(retrying("Hub", lang), "");
+            assert_ne!(needs_attention("Hub", lang), "");
+            assert_ne!(removed("Hub", lang), "");
+            assert_ne!(already_added("Hub", lang), "");
         }
     }
 

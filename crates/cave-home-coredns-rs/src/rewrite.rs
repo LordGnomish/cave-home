@@ -242,6 +242,8 @@ mod tests {
     use crate::rr::{Class, Rdata, RecordType, ResourceRecord};
     use std::net::Ipv4Addr;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     /// Downstream plugin: answers an A record owned by the name it *received*,
     /// and a root-owned TXT carrying that name so tests can see what reached it.
     struct Echo;
@@ -280,15 +282,15 @@ mod tests {
         chain.handle(&Message::query(Name::parse(name).unwrap(), t, 1))
     }
 
-    fn downstream_name(m: &Message) -> String {
+    fn downstream_name(m: &Message) -> Result<String, &'static str> {
         match &m.answers[1].rdata {
-            Rdata::Txt(s) => String::from_utf8(s[0].clone()).unwrap(),
-            _ => panic!("expected TXT"),
+            Rdata::Txt(s) => Ok(String::from_utf8(s[0].clone()).unwrap()),
+            _ => Err("expected TXT"),
         }
     }
 
     #[test]
-    fn exact_name_rewrite_and_response_restore() {
+    fn exact_name_rewrite_and_response_restore() -> TestResult {
         let m = run(
             vec![Rule::name(
                 NameRule::Exact,
@@ -299,15 +301,16 @@ mod tests {
             RecordType::A,
         );
         // Downstream saw the rewritten name.
-        assert_eq!(downstream_name(&m), "new.example.com.");
+        assert_eq!(downstream_name(&m)?, "new.example.com.");
         // The client's answer owner is restored to what it asked for.
         assert_eq!(m.answers[0].name, Name::parse("old.example.com").unwrap());
         // And the question is restored too.
         assert_eq!(m.questions[0].name, Name::parse("old.example.com").unwrap());
+        Ok(())
     }
 
     #[test]
-    fn suffix_name_rewrite() {
+    fn suffix_name_rewrite() -> TestResult {
         let m = run(
             vec![Rule::name(
                 NameRule::Suffix,
@@ -317,31 +320,34 @@ mod tests {
             "host.example.internal",
             RecordType::A,
         );
-        assert_eq!(downstream_name(&m), "host.example.com.");
+        assert_eq!(downstream_name(&m)?, "host.example.com.");
+        Ok(())
     }
 
     #[test]
-    fn prefix_name_rewrite() {
+    fn prefix_name_rewrite() -> TestResult {
         let m = run(
             vec![Rule::name(NameRule::Prefix, "dev.", "prod.")],
             "dev.example.com",
             RecordType::A,
         );
-        assert_eq!(downstream_name(&m), "prod.example.com.");
+        assert_eq!(downstream_name(&m)?, "prod.example.com.");
+        Ok(())
     }
 
     #[test]
-    fn substring_name_rewrite() {
+    fn substring_name_rewrite() -> TestResult {
         let m = run(
             vec![Rule::name(NameRule::Substring, "-staging", "")],
             "api-staging.example.com",
             RecordType::A,
         );
-        assert_eq!(downstream_name(&m), "api.example.com.");
+        assert_eq!(downstream_name(&m)?, "api.example.com.");
+        Ok(())
     }
 
     #[test]
-    fn type_rewrite() {
+    fn type_rewrite() -> TestResult {
         let m = run(
             vec![Rule::rtype(RecordType::Any, RecordType::A)],
             "x.example.com",
@@ -350,23 +356,25 @@ mod tests {
         // The downstream type (3rd answer TXT) reflects the rewrite to A.
         let seen_type = match &m.answers[2].rdata {
             Rdata::Txt(s) => String::from_utf8(s[0].clone()).unwrap(),
-            _ => panic!(),
+            _ => return Err("expected TXT".into()),
         };
         assert_eq!(seen_type, "Some(A)");
+        Ok(())
     }
 
     #[test]
-    fn no_rule_matches_passes_through_unchanged() {
+    fn no_rule_matches_passes_through_unchanged() -> TestResult {
         let m = run(
             vec![Rule::name(NameRule::Exact, "other.example.com", "x")],
             "host.example.com",
             RecordType::A,
         );
-        assert_eq!(downstream_name(&m), "host.example.com.");
+        assert_eq!(downstream_name(&m)?, "host.example.com.");
+        Ok(())
     }
 
     #[test]
-    fn stop_policy_applies_only_the_first_matching_rule() {
+    fn stop_policy_applies_only_the_first_matching_rule() -> TestResult {
         let m = run(
             vec![
                 Rule::name(NameRule::Suffix, ".a", ".b"), // stop (default)
@@ -375,11 +383,12 @@ mod tests {
             "host.a",
             RecordType::A,
         );
-        assert_eq!(downstream_name(&m), "host.b.");
+        assert_eq!(downstream_name(&m)?, "host.b.");
+        Ok(())
     }
 
     #[test]
-    fn continue_policy_chains_rules() {
+    fn continue_policy_chains_rules() -> TestResult {
         let m = run(
             vec![
                 Rule::name(NameRule::Suffix, ".a", ".b").continuing(),
@@ -388,6 +397,7 @@ mod tests {
             "host.a",
             RecordType::A,
         );
-        assert_eq!(downstream_name(&m), "host.c.");
+        assert_eq!(downstream_name(&m)?, "host.c.");
+        Ok(())
     }
 }

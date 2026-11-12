@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use std::net::IpAddr;
 
 /// What observing a record did to the registry.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ObserveEvent {
     /// A node id not seen before was added.
     NewPeer,
@@ -146,43 +146,46 @@ mod tests {
     use crate::peer::NodeRole;
     use std::net::Ipv4Addr;
 
-    fn record_with(node_id: &str, addr: u8) -> ServiceRecord {
-        announce_self(
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn record_with(node_id: &str, addr: u8) -> Result<ServiceRecord, Box<dyn std::error::Error>> {
+        Ok(announce_self(
             node_id,
             "kitchen.local",
             NodeRole::Primary,
             "1.4.0",
             8123,
             IpAddr::V4(Ipv4Addr::new(192, 168, 1, addr)),
-        )
-        .expect("valid record")
+        )?)
     }
 
     #[test]
-    fn observe_adds_new_peer() {
+    fn observe_adds_new_peer() -> TestResult {
         let mut reg = PeerRegistry::new();
-        let ev = reg.observe(&record_with("hub-a", 10), 0);
+        let ev = reg.observe(&record_with("hub-a", 10)?, 0);
         assert_eq!(ev, ObserveEvent::NewPeer);
         assert!(ev.is_new());
         assert_eq!(reg.len(), 1);
-        assert_eq!(reg.get("hub-a").expect("present").port(), 8123);
+        assert_eq!(reg.get("hub-a").ok_or("present")?.port(), 8123);
+        Ok(())
     }
 
     #[test]
-    fn observe_dedupes_by_node_id() {
+    fn observe_dedupes_by_node_id() -> TestResult {
         let mut reg = PeerRegistry::new();
-        reg.observe(&record_with("hub-a", 10), 0);
-        let ev = reg.observe(&record_with("hub-a", 10), 50);
+        reg.observe(&record_with("hub-a", 10)?, 0);
+        let ev = reg.observe(&record_with("hub-a", 10)?, 50);
         assert_eq!(ev, ObserveEvent::Refreshed);
         assert_eq!(reg.len(), 1, "same node id must not duplicate");
-        assert_eq!(reg.get("hub-a").expect("present").last_seen(), 50);
+        assert_eq!(reg.get("hub-a").ok_or("present")?.last_seen(), 50);
+        Ok(())
     }
 
     #[test]
-    fn observe_detects_address_change() {
+    fn observe_detects_address_change() -> TestResult {
         let mut reg = PeerRegistry::new();
-        reg.observe(&record_with("hub-a", 10), 0);
-        let ev = reg.observe(&record_with("hub-a", 99), 5);
+        reg.observe(&record_with("hub-a", 10)?, 0);
+        let ev = reg.observe(&record_with("hub-a", 99)?, 5);
         assert_eq!(
             ev,
             ObserveEvent::AddressChanged {
@@ -190,40 +193,44 @@ mod tests {
             }
         );
         assert_eq!(
-            reg.get("hub-a").expect("present").addresses(),
+            reg.get("hub-a").ok_or("present")?.addresses(),
             &[IpAddr::V4(Ipv4Addr::new(192, 168, 1, 99))]
         );
+        Ok(())
     }
 
     #[test]
-    fn distinct_node_ids_coexist() {
+    fn distinct_node_ids_coexist() -> TestResult {
         let mut reg = PeerRegistry::new();
-        reg.observe(&record_with("hub-a", 10), 0);
-        reg.observe(&record_with("hub-b", 11), 0);
+        reg.observe(&record_with("hub-a", 10)?, 0);
+        reg.observe(&record_with("hub-b", 11)?, 0);
         assert_eq!(reg.len(), 2);
         let ids: Vec<&str> = reg.peers().iter().map(|p| p.node_id()).collect();
         assert_eq!(ids, vec!["hub-a", "hub-b"]);
+        Ok(())
     }
 
     #[test]
-    fn expire_drops_only_stale_peers() {
+    fn expire_drops_only_stale_peers() -> TestResult {
         let mut reg = PeerRegistry::new();
         // TTL is 120s (DEFAULT_TTL_SECS); seen at tick 0 -> alive through 120.
-        reg.observe(&record_with("hub-a", 10), 0);
-        reg.observe(&record_with("hub-b", 11), 100);
+        reg.observe(&record_with("hub-a", 10)?, 0);
+        reg.observe(&record_with("hub-b", 11)?, 100);
         let removed = reg.expire(121);
         assert_eq!(removed, vec!["hub-a".to_owned()]);
         assert_eq!(reg.len(), 1);
         assert!(reg.get("hub-b").is_some());
+        Ok(())
     }
 
     #[test]
-    fn expire_noop_when_all_fresh() {
+    fn expire_noop_when_all_fresh() -> TestResult {
         let mut reg = PeerRegistry::new();
-        reg.observe(&record_with("hub-a", 10), 10);
+        reg.observe(&record_with("hub-a", 10)?, 10);
         let removed = reg.expire(50);
-        assert!(removed.is_empty());
+        assert_eq!(removed, [] as [String; 0]);
         assert_eq!(reg.len(), 1);
+        Ok(())
     }
 
     #[test]
@@ -235,12 +242,13 @@ mod tests {
     }
 
     #[test]
-    fn refresh_after_expiry_window_extends_life() {
+    fn refresh_after_expiry_window_extends_life() -> TestResult {
         let mut reg = PeerRegistry::new();
-        reg.observe(&record_with("hub-a", 10), 0);
+        reg.observe(&record_with("hub-a", 10)?, 0);
         // Re-observe before expiry, pushing last_seen forward.
-        reg.observe(&record_with("hub-a", 10), 100);
+        reg.observe(&record_with("hub-a", 10)?, 100);
         let removed = reg.expire(121);
         assert!(removed.is_empty(), "refreshed peer should survive");
+        Ok(())
     }
 }

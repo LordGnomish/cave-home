@@ -279,7 +279,7 @@ mod tests {
         // host has no MX; NODATA = NOERROR + empty + authoritative.
         let m = ask(&chain, "host.example.com", RecordType::Mx);
         assert_eq!(m.header.rcode, Rcode::NoError);
-        assert!(m.answers.is_empty());
+        assert_eq!(m.answers, [] as [ResourceRecord; 0]);
         assert!(m.header.aa);
     }
 

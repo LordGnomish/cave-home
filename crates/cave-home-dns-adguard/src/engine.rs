@@ -186,12 +186,13 @@ mod tests {
     }
 
     #[test]
-    fn decision_carries_the_originating_rule() {
+    fn decision_carries_the_originating_rule() -> Result<(), String> {
         let rs = ruleset("0.0.0.0 ads.example.com\n");
         match rs.decide("ads.example.com") {
             FilterDecision::Blocked(r) => assert_eq!(r.source(), "0.0.0.0 ads.example.com"),
-            other => panic!("expected Blocked, got {other:?}"),
+            other => return Err(format!("expected Blocked, got {other:?}")),
         }
+        Ok(())
     }
 
     #[test]

@@ -90,11 +90,14 @@ pub fn decode_label(wire: &[u8], pos: usize) -> Result<(Vec<u8>, usize), LabelEr
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn encode_prefixes_length() {
+    fn encode_prefixes_length() -> TestResult {
         let mut out = Vec::new();
-        encode_label("local", &mut out).expect("encodes");
+        encode_label("local", &mut out)?;
         assert_eq!(out, vec![5, b'l', b'o', b'c', b'a', b'l']);
+        Ok(())
     }
 
     #[test]
@@ -119,19 +122,21 @@ mod tests {
     }
 
     #[test]
-    fn decode_reads_label_and_advances() {
+    fn decode_reads_label_and_advances() -> TestResult {
         let wire = vec![5, b'l', b'o', b'c', b'a', b'l', 0];
-        let (label, next) = decode_label(&wire, 0).expect("decodes");
+        let (label, next) = decode_label(&wire, 0)?;
         assert_eq!(label, b"local");
         assert_eq!(next, 6);
+        Ok(())
     }
 
     #[test]
-    fn decode_root_terminator_is_empty() {
+    fn decode_root_terminator_is_empty() -> TestResult {
         let wire = vec![0u8];
-        let (label, next) = decode_label(&wire, 0).expect("decodes root");
-        assert!(label.is_empty());
+        let (label, next) = decode_label(&wire, 0)?;
+        assert_eq!(label, [] as [u8; 0]);
         assert_eq!(next, 1);
+        Ok(())
     }
 
     #[test]
@@ -155,10 +160,11 @@ mod tests {
     }
 
     #[test]
-    fn round_trip_single_label() {
+    fn round_trip_single_label() -> TestResult {
         let mut out = Vec::new();
-        encode_label("cavehome", &mut out).expect("encodes");
-        let (back, _) = decode_label(&out, 0).expect("decodes");
+        encode_label("cavehome", &mut out)?;
+        let (back, _) = decode_label(&out, 0)?;
         assert_eq!(back, b"cavehome");
+        Ok(())
     }
 }

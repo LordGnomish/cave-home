@@ -112,6 +112,8 @@ pub fn cloud_derate(clear_sky_w_m2: f64, cloud_cover: f64) -> f64 {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn close(a: f64, b: f64, tol: f64) {
         assert!((a - b).abs() <= tol, "expected {a} ≈ {b} (within {tol})");
     }
@@ -136,21 +138,23 @@ mod tests {
     }
 
     #[test]
-    fn air_mass_is_one_at_zenith() {
+    fn air_mass_is_one_at_zenith() -> TestResult {
         // Straight overhead: one atmosphere thickness.
-        close(air_mass(90.0).unwrap(), 1.0, 0.01);
+        close(air_mass(90.0).ok_or("sun is above the horizon")?, 1.0, 0.01);
+        Ok(())
     }
 
     #[test]
-    fn air_mass_grows_toward_horizon() {
-        let high = air_mass(60.0).unwrap();
-        let mid = air_mass(30.0).unwrap();
-        let low = air_mass(5.0).unwrap();
+    fn air_mass_grows_toward_horizon() -> TestResult {
+        let high = air_mass(60.0).ok_or("sun is above the horizon")?;
+        let mid = air_mass(30.0).ok_or("sun is above the horizon")?;
+        let low = air_mass(5.0).ok_or("sun is above the horizon")?;
         assert!(high < mid && mid < low, "{high} < {mid} < {low}");
         // ~30° elevation is close to 2 air masses.
         close(mid, 2.0, 0.05);
         // Near the horizon the path is dozens of air masses.
         assert!(low > 10.0, "low-sun air mass {low}");
+        Ok(())
     }
 
     #[test]

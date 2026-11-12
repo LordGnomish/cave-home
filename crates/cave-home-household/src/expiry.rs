@@ -154,8 +154,10 @@ mod tests {
     use super::*;
     use crate::product::QuantityUnit;
 
-    fn yogurt(bb: Option<i64>) -> Product {
-        Product::new("Yogurt", QuantityUnit::Piece, 1.0, 0.0, bb).expect("valid")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn yogurt(bb: Option<i64>) -> Result<Product, crate::product::ProductError> {
+        Product::new("Yogurt", QuantityUnit::Piece, 1.0, 0.0, bb)
     }
 
     #[test]
@@ -184,33 +186,36 @@ mod tests {
     }
 
     #[test]
-    fn report_groups_by_freshness() {
+    fn report_groups_by_freshness() -> TestResult {
         let products = [
-            yogurt(Some(99)),  // expired
-            yogurt(Some(101)), // soon (window 3)
-            yogurt(Some(200)), // fresh
-            yogurt(None),      // fresh
+            yogurt(Some(99))?,  // expired
+            yogurt(Some(101))?, // soon (window 3)
+            yogurt(Some(200))?, // fresh
+            yogurt(None)?,      // fresh
         ];
         let r = report(&products, 100, 3);
         assert_eq!(r.expired().len(), 1);
         assert_eq!(r.expiring_soon().len(), 1);
         assert!(!r.all_fresh());
+        Ok(())
     }
 
     #[test]
-    fn report_all_fresh_when_nothing_pressing() {
-        let products = [yogurt(None), yogurt(Some(500))];
+    fn report_all_fresh_when_nothing_pressing() -> TestResult {
+        let products = [yogurt(None)?, yogurt(Some(500))?];
         assert!(report(&products, 100, 3).all_fresh());
+        Ok(())
     }
 
     #[test]
-    fn lines_are_plain_language() {
-        let r = report(&[yogurt(Some(101))], 100, 3);
+    fn lines_are_plain_language() -> TestResult {
+        let r = report(&[yogurt(Some(101))?], 100, 3);
         assert_eq!(r.entries[0].line(Lang::En), "Yogurt expires tomorrow");
-        let gone = report(&[yogurt(Some(50))], 100, 3);
+        let gone = report(&[yogurt(Some(50))?], 100, 3);
         assert_eq!(
             gone.entries[0].line(Lang::De),
             "Yogurt ist abgelaufen — wegwerfen"
         );
+        Ok(())
     }
 }

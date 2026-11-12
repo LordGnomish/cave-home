@@ -68,7 +68,7 @@ impl TimeOfDay {
 /// deliberately plain: a visitor, the front door, motion outside — never a
 /// protocol or a device model.
 #[must_use]
-pub fn ringing(lang: Lang) -> &'static str {
+pub const fn ringing(lang: Lang) -> &'static str {
     match lang {
         Lang::En => "Someone is at the front door",
         Lang::De => "Es ist jemand an der Haustür",
@@ -78,7 +78,7 @@ pub fn ringing(lang: Lang) -> &'static str {
 
 /// The line for a motion-only alert (no button press).
 #[must_use]
-pub fn motion(lang: Lang) -> &'static str {
+pub const fn motion(lang: Lang) -> &'static str {
     match lang {
         Lang::En => "Front door — motion outside",
         Lang::De => "Haustür — Bewegung draußen",
@@ -88,7 +88,7 @@ pub fn motion(lang: Lang) -> &'static str {
 
 /// The line for an answered visit.
 #[must_use]
-pub fn answered(lang: Lang) -> &'static str {
+pub const fn answered(lang: Lang) -> &'static str {
     match lang {
         Lang::En => "You answered the front door",
         Lang::De => "Sie haben die Haustür beantwortet",
@@ -98,7 +98,7 @@ pub fn answered(lang: Lang) -> &'static str {
 
 /// The line for a declined visit.
 #[must_use]
-pub fn declined(lang: Lang) -> &'static str {
+pub const fn declined(lang: Lang) -> &'static str {
     match lang {
         Lang::En => "You turned the visitor away",
         Lang::De => "Sie haben den Besucher abgewiesen",
@@ -108,7 +108,7 @@ pub fn declined(lang: Lang) -> &'static str {
 
 /// The line for a finished call.
 #[must_use]
-pub fn ended(lang: Lang) -> &'static str {
+pub const fn ended(lang: Lang) -> &'static str {
     match lang {
         Lang::En => "The front-door call ended",
         Lang::De => "Das Gespräch an der Haustür ist beendet",
@@ -130,7 +130,7 @@ pub fn missed_at(lang: Lang, when: TimeOfDay) -> String {
 /// The plain headline for a settled (or in-flight) call state, without a time.
 /// `Idle` has no notification, so returns an empty string.
 #[must_use]
-pub fn for_state(state: CallState, lang: Lang) -> &'static str {
+pub const fn for_state(state: CallState, lang: Lang) -> &'static str {
     match state {
         CallState::Idle => "",
         CallState::Ringing => ringing(lang),
@@ -151,6 +151,8 @@ pub fn for_state(state: CallState, lang: Lang) -> &'static str {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     const LANGS: [Lang; 3] = [Lang::En, Lang::De, Lang::Tr];
 
     #[test]
@@ -162,17 +164,19 @@ mod tests {
     }
 
     #[test]
-    fn hhmm_is_zero_padded() {
-        assert_eq!(TimeOfDay::new(9, 5).unwrap().hhmm(), "09:05");
-        assert_eq!(TimeOfDay::new(14, 30).unwrap().hhmm(), "14:30");
+    fn hhmm_is_zero_padded() -> TestResult {
+        assert_eq!(TimeOfDay::new(9, 5)?.hhmm(), "09:05");
+        assert_eq!(TimeOfDay::new(14, 30)?.hhmm(), "14:30");
+        Ok(())
     }
 
     #[test]
-    fn missed_at_embeds_the_time_in_each_language() {
-        let t = TimeOfDay::new(14, 30).unwrap();
+    fn missed_at_embeds_the_time_in_each_language() -> TestResult {
+        let t = TimeOfDay::new(14, 30)?;
         assert_eq!(missed_at(Lang::En, t), "Missed visitor at 14:30");
         assert!(missed_at(Lang::De, t).contains("14:30"));
         assert!(missed_at(Lang::Tr, t).contains("14:30"));
+        Ok(())
     }
 
     #[test]
@@ -212,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn ui_strings_carry_no_implementation_jargon() {
+    fn ui_strings_carry_no_implementation_jargon() -> TestResult {
         // Charter §6.3 / ADR-018: the front-door UI must never surface
         // protocol, transport or device-model terms.
         const BANNED: &[&str] = &[
@@ -236,7 +240,7 @@ mod tests {
             "kubelet",
             "namespace",
         ];
-        let t = TimeOfDay::new(14, 30).unwrap();
+        let t = TimeOfDay::new(14, 30)?;
         let mut texts: Vec<String> = Vec::new();
         for lang in LANGS {
             texts.push(ringing(lang).to_owned());
@@ -263,5 +267,6 @@ mod tests {
                 );
             }
         }
+        Ok(())
     }
 }

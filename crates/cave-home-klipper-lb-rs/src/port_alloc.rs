@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Host-port allocation + conflict detection across LoadBalancer Services.
+//! Host-port allocation + conflict detection across `LoadBalancer` Services.
 //!
 //! klipper-lb's svclb pod binds the Service's published `port` on the *host*
 //! network of every node it runs on (`hostPort`), then forwards to the cluster
-//! Service's NodePort. Because every svclb pod for a given Service shares the
-//! same host port on every node, two LoadBalancer Services that want the same
+//! Service's `NodePort`. Because every svclb pod for a given Service shares the
+//! same host port on every node, two `LoadBalancer` Services that want the same
 //! `(protocol, port)` cannot both be bound — the second one conflicts and is
 //! skipped, exactly as K3s leaves the second Service `<pending>`.
 //!
@@ -60,7 +60,7 @@ impl AllocationOutcome {
     }
 }
 
-/// Tracks host-port claims across every admitted LoadBalancer Service on a
+/// Tracks host-port claims across every admitted `LoadBalancer` Service on a
 /// node's host network.
 #[derive(Debug, Clone, Default)]
 pub struct HostPortAllocator {
@@ -115,7 +115,7 @@ impl HostPortAllocator {
     }
 
     /// Release every host port held by the given Service key (Service deleted /
-    /// type changed away from LoadBalancer). Returns the freed ports.
+    /// type changed away from `LoadBalancer`). Returns the freed ports.
     pub fn release(&mut self, key: &str) -> Vec<HostPort> {
         let freed: Vec<HostPort> = self
             .claims
@@ -143,8 +143,10 @@ impl HostPortAllocator {
 }
 
 /// Allocate a batch of Services in the given (admission) order, returning each
-/// Service key paired with its outcome. Earlier Services win ports; later
-/// conflicting Services are skipped — matching K3s's first-come ordering.
+/// Service key paired with its outcome.
+///
+/// Earlier Services win ports; later conflicting Services are skipped —
+/// matching K3s's first-come ordering.
 #[must_use]
 pub fn allocate_all(svcs: &[LoadBalancerService]) -> Vec<(String, AllocationOutcome)> {
     let mut alloc = HostPortAllocator::new();
@@ -155,6 +157,8 @@ pub fn allocate_all(svcs: &[LoadBalancerService]) -> Vec<(String, AllocationOutc
 mod tests {
     use super::*;
     use crate::service::{ExternalTrafficPolicy, ServicePort};
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     fn svc(ns: &str, name: &str, ports: &[(Protocol, u16, u16)]) -> LoadBalancerService {
         LoadBalancerService {
@@ -189,7 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn second_service_same_port_conflicts() {
+    fn second_service_same_port_conflicts() -> TestResult {
         let mut a = HostPortAllocator::new();
         assert!(
             a.allocate(&svc("default", "web", &[(Protocol::Tcp, 80, 30080)]))
@@ -203,10 +207,11 @@ mod tests {
                 assert_eq!(conflicts[0].requested_by, "default/blog");
                 assert_eq!(conflicts[0].port, HostPort::new(Protocol::Tcp, 80));
             }
-            AllocationOutcome::Allocated { .. } => panic!("expected conflict"),
+            AllocationOutcome::Allocated { .. } => return Err("expected conflict".into()),
         }
         // The conflicting Service claimed nothing.
         assert_eq!(a.claimed_count(), 1);
+        Ok(())
     }
 
     #[test]
@@ -274,7 +279,7 @@ mod tests {
     #[test]
     fn release_unknown_service_frees_nothing() {
         let mut a = HostPortAllocator::new();
-        assert!(a.release("ghost/none").is_empty());
+        assert_eq!(a.release("ghost/none"), [] as [HostPort; 0]);
     }
 
     #[test]
@@ -294,7 +299,7 @@ mod tests {
     }
 
     #[test]
-    fn multi_port_service_claims_all_its_ports() {
+    fn multi_port_service_claims_all_its_ports() -> TestResult {
         let mut a = HostPortAllocator::new();
         let out = a.allocate(&svc(
             "default",
@@ -303,8 +308,9 @@ mod tests {
         ));
         match out {
             AllocationOutcome::Allocated { ports } => assert_eq!(ports.len(), 2),
-            AllocationOutcome::Conflicted { .. } => panic!("expected allocation"),
+            AllocationOutcome::Conflicted { .. } => return Err("expected allocation".into()),
         }
         assert_eq!(a.claimed_count(), 2);
+        Ok(())
     }
 }

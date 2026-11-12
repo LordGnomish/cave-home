@@ -209,15 +209,15 @@ impl Tracklist {
             };
         }
         if modes.random {
-            return self.next_in_order(&self.shuffle_order(seed), current, modes.repeat);
+            return Self::next_in_order(&self.shuffle_order(seed), current, modes.repeat);
         }
         let order: Vec<usize> = (0..self.songs.len()).collect();
-        self.next_in_order(&order, current, modes.repeat)
+        Self::next_in_order(&order, current, modes.repeat)
     }
 
     /// Given a play `order` (a permutation of positions), find the position that
     /// follows `current`, wrapping when `repeat` is set.
-    fn next_in_order(&self, order: &[usize], current: usize, repeat: bool) -> NextSong {
+    fn next_in_order(order: &[usize], current: usize, repeat: bool) -> NextSong {
         let Some(idx) = order.iter().position(|&p| p == current) else {
             // `current` is not in the order (e.g. it was just consumed); start
             // at the front of the order.
@@ -282,6 +282,8 @@ impl Tracklist {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn fixture() -> Tracklist {
         let mut t = Tracklist::new();
         t.add("local:a", Some("A".into()), None);
@@ -300,25 +302,27 @@ mod tests {
     }
 
     #[test]
-    fn songid_survives_reorder_but_position_does_not() {
+    fn songid_survives_reorder_but_position_does_not() -> TestResult {
         let mut t = fixture();
         let b_id = t.songs()[1].id;
         assert_eq!(t.position_of_id(b_id), Some(1));
-        t.move_song(1, 0).unwrap();
+        t.move_song(1, 0)?;
         // Position changed, id did not.
         assert_eq!(t.position_of_id(b_id), Some(0));
         assert_eq!(t.songs()[0].id, b_id);
+        Ok(())
     }
 
     #[test]
-    fn delete_by_position_and_by_id() {
+    fn delete_by_position_and_by_id() -> TestResult {
         let mut t = fixture();
-        let removed = t.delete(0).unwrap();
+        let removed = t.delete(0)?;
         assert_eq!(removed.uri, "local:a");
         let c_id = t.songs()[1].id;
-        t.delete_id(c_id).unwrap();
+        t.delete_id(c_id)?;
         assert_eq!(t.len(), 1);
         assert_eq!(t.songs()[0].uri, "local:b");
+        Ok(())
     }
 
     #[test]
@@ -330,11 +334,12 @@ mod tests {
     }
 
     #[test]
-    fn move_shifts_intermediate_songs() {
+    fn move_shifts_intermediate_songs() -> TestResult {
         let mut t = fixture(); // A B C
-        t.move_song(0, 2).unwrap(); // -> B C A
+        t.move_song(0, 2)?; // -> B C A
         let uris: Vec<_> = t.songs().iter().map(|s| s.uri.as_str()).collect();
         assert_eq!(uris, ["local:b", "local:c", "local:a"]);
+        Ok(())
     }
 
     #[test]
@@ -432,15 +437,16 @@ mod tests {
     }
 
     #[test]
-    fn random_without_repeat_stops_at_end_of_shuffle() {
+    fn random_without_repeat_stops_at_end_of_shuffle() -> TestResult {
         let t = fixture();
         let m = Modes {
             random: true,
             ..Modes::default()
         };
         let order = t.shuffle_order(99);
-        let last = *order.last().unwrap();
+        let last = *order.last().ok_or("shuffle order is not empty")?;
         assert_eq!(t.next_after(last, m, 99), NextSong::Stop);
+        Ok(())
     }
 
     #[test]

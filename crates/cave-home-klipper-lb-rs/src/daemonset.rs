@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! svclb `DaemonSet` pod-spec construction.
 //!
-//! For each LoadBalancer Service, K3s's ServiceLB controller creates a
+//! For each `LoadBalancer` Service, K3s's `ServiceLB` controller creates a
 //! `DaemonSet` named `svclb-<service>`; each pod has one container per Service
 //! port. Each container runs the `klipper-lb` image and is parameterised purely
 //! through environment variables that `entry.sh` reads:
@@ -9,11 +9,11 @@
 //! * `SRC_PORT`   — the host port the container binds (the Service `port`),
 //! * `SRC_RANGE`  — the source CIDR allowed to reach it (`0.0.0.0/0` default),
 //! * `DEST_PROTO` — `TCP` / `UDP`,
-//! * `DEST_PORT`  — the cluster Service port to forward to (the NodePort),
+//! * `DEST_PORT`  — the cluster Service port to forward to (the `NodePort`),
 //! * `DEST_IPS`   — the destination IP(s) the traffic is forwarded to.
 //!
 //! This module builds that spec as plain data so it can be asserted in tests.
-//! It does **not** apply the DaemonSet to a cluster — that (and the in-pod
+//! It does **not** apply the `DaemonSet` to a cluster — that (and the in-pod
 //! iptables the container programs from these vars) is deferred Phase 1b.
 
 use crate::service::{LoadBalancerService, Protocol, ServicePort};
@@ -64,8 +64,8 @@ const DEFAULT_SRC_RANGE: &str = "0.0.0.0/0";
 /// Build the env block for one container.
 ///
 /// `dest_ips` is the comma-joined destination set the container forwards to
-/// (the cluster Service / NodePort target). For svclb this is conventionally
-/// the cluster's Service ClusterIP or NodePort target; the controller resolves
+/// (the cluster Service / `NodePort` target). For svclb this is conventionally
+/// the cluster's Service `ClusterIP` or `NodePort` target; the controller resolves
 /// it. We accept it as a parameter so the spec is self-contained and testable.
 fn container_env(port: &ServicePort, dest_ips: &str) -> Vec<EnvVar> {
     vec![
@@ -94,7 +94,7 @@ fn build_container(port: &ServicePort, dest_ips: &str) -> SvclbContainer {
 /// Build the full svclb pod spec for a Service.
 ///
 /// `dest_ips` are the destination IP(s) all containers forward to (typically
-/// the cluster Service ClusterIP); they are comma-joined into `DEST_IPS` as
+/// the cluster Service `ClusterIP`); they are comma-joined into `DEST_IPS` as
 /// klipper-lb expects. An empty `dest_ips` yields an empty `DEST_IPS` value —
 /// callers should validate the Service first.
 #[must_use]
@@ -133,8 +133,10 @@ mod tests {
     use std::collections::BTreeMap;
     use std::net::IpAddr;
 
-    fn ip(s: &str) -> IpAddr {
-        s.parse().expect("test ip")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn ip(s: &str) -> Result<IpAddr, std::net::AddrParseError> {
+        s.parse()
     }
 
     fn svc(name: &str, ports: Vec<ServicePort>) -> LoadBalancerService {
@@ -158,17 +160,18 @@ mod tests {
     }
 
     #[test]
-    fn daemonset_name_is_svclb_prefixed() {
+    fn daemonset_name_is_svclb_prefixed() -> TestResult {
         let spec = build_pod_spec(
             &svc("web", vec![port("http", Protocol::Tcp, 80, 30080)]),
-            &[ip("10.43.0.10")],
+            &[ip("10.43.0.10")?],
         );
         assert_eq!(spec.daemonset_name, "svclb-web");
         assert_eq!(spec.service_key, "default/web");
+        Ok(())
     }
 
     #[test]
-    fn one_container_per_port() {
+    fn one_container_per_port() -> TestResult {
         let spec = build_pod_spec(
             &svc(
                 "web",
@@ -177,25 +180,27 @@ mod tests {
                     port("https", Protocol::Tcp, 443, 30443),
                 ],
             ),
-            &[ip("10.43.0.10")],
+            &[ip("10.43.0.10")?],
         );
         assert_eq!(spec.containers.len(), 2);
+        Ok(())
     }
 
     #[test]
-    fn container_name_encodes_proto_and_port() {
+    fn container_name_encodes_proto_and_port() -> TestResult {
         let spec = build_pod_spec(
             &svc("dns", vec![port("dns", Protocol::Udp, 53, 30053)]),
-            &[ip("10.43.0.10")],
+            &[ip("10.43.0.10")?],
         );
         assert_eq!(spec.containers[0].name, "lb-udp-53");
+        Ok(())
     }
 
     #[test]
-    fn env_vars_match_klipper_lb_contract() {
+    fn env_vars_match_klipper_lb_contract() -> TestResult {
         let spec = build_pod_spec(
             &svc("web", vec![port("http", Protocol::Tcp, 80, 30080)]),
-            &[ip("10.43.0.10")],
+            &[ip("10.43.0.10")?],
         );
         let c = &spec.containers[0];
         assert_eq!(c.host_port, 80);
@@ -204,31 +209,34 @@ mod tests {
         assert_eq!(c.env_value("DEST_PROTO"), Some("TCP"));
         assert_eq!(c.env_value("DEST_PORT"), Some("30080"));
         assert_eq!(c.env_value("DEST_IPS"), Some("10.43.0.10"));
+        Ok(())
     }
 
     #[test]
-    fn udp_proto_is_uppercased_in_env() {
+    fn udp_proto_is_uppercased_in_env() -> TestResult {
         let spec = build_pod_spec(
             &svc("dns", vec![port("dns", Protocol::Udp, 53, 30053)]),
-            &[ip("10.43.0.10")],
+            &[ip("10.43.0.10")?],
         );
         assert_eq!(spec.containers[0].env_value("DEST_PROTO"), Some("UDP"));
+        Ok(())
     }
 
     #[test]
-    fn dest_ips_are_comma_joined_for_dual_stack() {
+    fn dest_ips_are_comma_joined_for_dual_stack() -> TestResult {
         let spec = build_pod_spec(
             &svc("web", vec![port("http", Protocol::Tcp, 80, 30080)]),
-            &[ip("10.43.0.10"), ip("fd00::10")],
+            &[ip("10.43.0.10")?, ip("fd00::10")?],
         );
         assert_eq!(
             spec.containers[0].env_value("DEST_IPS"),
             Some("10.43.0.10,fd00::10")
         );
+        Ok(())
     }
 
     #[test]
-    fn every_container_has_the_five_env_vars() {
+    fn every_container_has_the_five_env_vars() -> TestResult {
         let spec = build_pod_spec(
             &svc(
                 "web",
@@ -237,7 +245,7 @@ mod tests {
                     port("dns", Protocol::Udp, 53, 30053),
                 ],
             ),
-            &[ip("10.43.0.10")],
+            &[ip("10.43.0.10")?],
         );
         for c in &spec.containers {
             assert_eq!(c.env.len(), 5);
@@ -251,10 +259,11 @@ mod tests {
                 assert!(c.env_value(name).is_some(), "missing {name}");
             }
         }
+        Ok(())
     }
 
     #[test]
-    fn multi_port_dest_ports_track_their_node_ports() {
+    fn multi_port_dest_ports_track_their_node_ports() -> TestResult {
         let spec = build_pod_spec(
             &svc(
                 "web",
@@ -263,9 +272,10 @@ mod tests {
                     port("https", Protocol::Tcp, 443, 30443),
                 ],
             ),
-            &[ip("10.43.0.10")],
+            &[ip("10.43.0.10")?],
         );
         assert_eq!(spec.containers[0].env_value("DEST_PORT"), Some("30080"));
         assert_eq!(spec.containers[1].env_value("DEST_PORT"), Some("30443"));
+        Ok(())
     }
 }

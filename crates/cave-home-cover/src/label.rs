@@ -1,6 +1,6 @@
 //! Grandma-friendly, localised labels for covers (Charter §6.3, ADR-007).
 //!
-//! The household never sees "set_position", "RTS rolling code" or a raw
+//! The household never sees "`set_position`", "RTS rolling code" or a raw
 //! percentage in prose. They see "The garage door is open", "Die Jalousie ist
 //! halb offen", "Salon panjuru kapalı". This module turns a device class plus a
 //! [`CoverState`] (and openness) into that sentence, in EN / DE / TR — the
@@ -169,8 +169,10 @@ pub fn status_sentence(
 mod tests {
     use super::*;
 
-    fn pos(p: u8) -> Position {
-        Position::new(p).expect("valid test position")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn pos(p: u8) -> Result<Position, crate::position::PositionError> {
+        Position::new(p)
     }
 
     #[test]
@@ -187,7 +189,7 @@ mod tests {
             DeviceClass::Window,
         ] {
             for lang in [Lang::En, Lang::De, Lang::Tr] {
-                assert!(!class.noun(lang).is_empty());
+                assert_ne!(class.noun(lang), "");
             }
         }
     }
@@ -215,40 +217,48 @@ mod tests {
     }
 
     #[test]
-    fn partway_cover_uses_coarse_openness_words_not_numbers() {
-        let s = status_sentence(DeviceClass::Blind, CoverState::Stopped, pos(50), Lang::En);
+    fn partway_cover_uses_coarse_openness_words_not_numbers() -> TestResult {
+        let s = status_sentence(DeviceClass::Blind, CoverState::Stopped, pos(50)?, Lang::En);
         assert!(s.contains("half open"), "got: {s}");
         // No digits leak into the user-facing string.
         assert!(!s.chars().any(|c| c.is_ascii_digit()));
+        Ok(())
     }
 
     #[test]
-    fn openness_bands_cover_the_range() {
-        assert_eq!(Openness::of(pos(0)), Openness::Closed);
-        assert_eq!(Openness::of(pos(10)), Openness::ABitOpen);
-        assert_eq!(Openness::of(pos(50)), Openness::HalfOpen);
-        assert_eq!(Openness::of(pos(80)), Openness::MostlyOpen);
-        assert_eq!(Openness::of(pos(100)), Openness::Open);
+    fn openness_bands_cover_the_range() -> TestResult {
+        assert_eq!(Openness::of(pos(0)?), Openness::Closed);
+        assert_eq!(Openness::of(pos(10)?), Openness::ABitOpen);
+        assert_eq!(Openness::of(pos(50)?), Openness::HalfOpen);
+        assert_eq!(Openness::of(pos(80)?), Openness::MostlyOpen);
+        assert_eq!(Openness::of(pos(100)?), Openness::Open);
+        Ok(())
     }
 
     #[test]
-    fn moving_states_localised() {
+    fn moving_states_localised() -> TestResult {
         assert_eq!(
-            status_sentence(DeviceClass::Shutter, CoverState::Closing, pos(40), Lang::Tr),
+            status_sentence(
+                DeviceClass::Shutter,
+                CoverState::Closing,
+                pos(40)?,
+                Lang::Tr
+            ),
             "kepenk kapanıyor."
         );
         assert_eq!(
-            status_sentence(DeviceClass::Awning, CoverState::Opening, pos(20), Lang::De),
+            status_sentence(DeviceClass::Awning, CoverState::Opening, pos(20)?, Lang::De),
             "Das/Die Markise öffnet sich."
         );
         assert_eq!(
-            status_sentence(DeviceClass::Blind, CoverState::Stopped, pos(50), Lang::De),
+            status_sentence(DeviceClass::Blind, CoverState::Stopped, pos(50)?, Lang::De),
             "Das/Die Jalousie ist halb offen."
         );
+        Ok(())
     }
 
     #[test]
-    fn ui_strings_carry_no_implementation_jargon() {
+    fn ui_strings_carry_no_implementation_jargon() -> TestResult {
         // Charter §6.3: the UI must never surface protocol/vendor/impl terms.
         const BANNED: &[&str] = &[
             "set_position",
@@ -287,7 +297,7 @@ mod tests {
                 CoverState::Closing,
                 CoverState::Stopped,
             ] {
-                for p in [pos(0), pos(20), pos(50), pos(80), pos(100)] {
+                for p in [pos(0)?, pos(20)?, pos(50)?, pos(80)?, pos(100)?] {
                     for lang in [Lang::En, Lang::De, Lang::Tr] {
                         let text = status_sentence(class, state, p, lang);
                         for banned in BANNED {
@@ -300,5 +310,6 @@ mod tests {
                 }
             }
         }
+        Ok(())
     }
 }

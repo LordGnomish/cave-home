@@ -159,6 +159,8 @@ mod tests {
     use crate::integration::Integration;
     use crate::lifecycle::Transition;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn reg() -> Registry {
         let mut r = Registry::new();
         // network <- mqtt <- light; hue after mqtt.
@@ -178,40 +180,45 @@ mod tests {
         r
     }
 
-    fn pos(order: &[String], d: &str) -> usize {
-        order.iter().position(|x| x == d).expect("present")
+    fn pos(order: &[String], d: &str) -> Result<usize, &'static str> {
+        order.iter().position(|x| x == d).ok_or("present")
     }
 
     #[test]
-    fn dependency_comes_before_dependent() {
+    fn dependency_comes_before_dependent() -> TestResult {
         let r = reg();
-        let order = resolve_setup_order(&r, &["light", "mqtt", "network"]).expect("order");
+        let order = resolve_setup_order(&r, &["light", "mqtt", "network"])?;
         assert_eq!(order.len(), 3);
-        assert!(pos(&order, "network") < pos(&order, "mqtt"));
-        assert!(pos(&order, "mqtt") < pos(&order, "light"));
+        assert!(pos(&order, "network")? < pos(&order, "mqtt")?);
+        assert!(pos(&order, "mqtt")? < pos(&order, "light")?);
+        Ok(())
     }
 
     #[test]
-    fn after_dependency_orders_when_present() {
+    fn after_dependency_orders_when_present() -> TestResult {
         let r = reg();
-        let order = resolve_setup_order(&r, &["hue", "mqtt", "network"]).expect("order");
-        assert!(pos(&order, "mqtt") < pos(&order, "hue"));
+        let order = resolve_setup_order(&r, &["hue", "mqtt", "network"])?;
+        assert!(pos(&order, "mqtt")? < pos(&order, "hue")?);
+        Ok(())
     }
 
     #[test]
-    fn after_dependency_ignored_when_absent() {
+    fn after_dependency_ignored_when_absent() -> TestResult {
         let r = reg();
         // mqtt not in the set; hue's `after` is soft, so this still resolves.
-        let order = resolve_setup_order(&r, &["hue"]).expect("order");
+        let order = resolve_setup_order(&r, &["hue"])?;
         assert_eq!(order, vec!["hue".to_string()]);
+        Ok(())
     }
 
     #[test]
-    fn missing_hard_dependency_is_an_error() {
+    fn missing_hard_dependency_is_an_error() -> TestResult {
         let mut r = Registry::new();
         r.register(Integration::new("light", "Light").depends_on("mqtt"));
         // mqtt is never registered.
-        let err = resolve_setup_order(&r, &["light"]).unwrap_err();
+        let err = resolve_setup_order(&r, &["light"])
+            .err()
+            .ok_or("expected an error")?;
         assert_eq!(
             err,
             ResolveError::MissingDependency {
@@ -219,68 +226,79 @@ mod tests {
                 missing: "mqtt".into()
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn cycle_is_detected_not_looped() {
+    fn cycle_is_detected_not_looped() -> TestResult {
         let mut r = Registry::new();
         r.register(Integration::new("a", "A").depends_on("b"));
         r.register(Integration::new("b", "B").depends_on("a"));
-        let err = resolve_setup_order(&r, &["a", "b"]).unwrap_err();
+        let err = resolve_setup_order(&r, &["a", "b"])
+            .err()
+            .ok_or("expected an error")?;
         assert_eq!(
             err,
             ResolveError::Cycle {
                 domains: vec!["a".into(), "b".into()]
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn three_node_cycle_is_detected() {
+    fn three_node_cycle_is_detected() -> TestResult {
         let mut r = Registry::new();
         r.register(Integration::new("a", "A").depends_on("b"));
         r.register(Integration::new("b", "B").depends_on("c"));
         r.register(Integration::new("c", "C").depends_on("a"));
-        let err = resolve_setup_order(&r, &["a", "b", "c"]).unwrap_err();
+        let err = resolve_setup_order(&r, &["a", "b", "c"])
+            .err()
+            .ok_or("expected an error")?;
         assert!(matches!(err, ResolveError::Cycle { .. }));
+        Ok(())
     }
 
     #[test]
-    fn empty_set_resolves_to_empty_order() {
+    fn empty_set_resolves_to_empty_order() -> TestResult {
         let r = reg();
-        assert!(resolve_setup_order(&r, &[]).expect("ok").is_empty());
+        assert_eq!(resolve_setup_order(&r, &[])?, [] as [String; 0]);
+        Ok(())
     }
 
     #[test]
-    fn order_is_deterministic_across_runs() {
+    fn order_is_deterministic_across_runs() -> TestResult {
         let r = reg();
-        let a = resolve_setup_order(&r, &["network", "mqtt", "light", "hue"]).expect("a");
-        let b = resolve_setup_order(&r, &["hue", "light", "mqtt", "network"]).expect("b");
+        let a = resolve_setup_order(&r, &["network", "mqtt", "light", "hue"])?;
+        let b = resolve_setup_order(&r, &["hue", "light", "mqtt", "network"])?;
         assert_eq!(a, b, "tie-break by registration order must be stable");
+        Ok(())
     }
 
     #[test]
-    fn hub_capabilities_aggregate_loaded_only() {
+    fn hub_capabilities_aggregate_loaded_only() -> TestResult {
         let r = reg();
         let mut hue = ConfigEntry::new("hue", "Hue");
-        hue.apply(Transition::BeginSetup).expect("s");
-        hue.apply(Transition::SetupSucceeded).expect("l");
+        hue.apply(Transition::BeginSetup)?;
+        hue.apply(Transition::SetupSucceeded)?;
         // light entry exists but is not loaded -> contributes nothing.
         let light = ConfigEntry::new("light", "Light");
         let hub = hub_capabilities(&r, &[hue, light]);
         assert!(hub.has(Capability::Light));
         assert!(hub.has(Capability::Sensor));
         assert_eq!(hub.len(), 2, "only the loaded hue's caps count");
+        Ok(())
     }
 
     #[test]
-    fn disabled_entry_contributes_no_capabilities() {
+    fn disabled_entry_contributes_no_capabilities() -> TestResult {
         let r = reg();
         let mut hue = ConfigEntry::new("hue", "Hue");
-        hue.apply(Transition::BeginSetup).expect("s");
-        hue.apply(Transition::SetupSucceeded).expect("l");
+        hue.apply(Transition::BeginSetup)?;
+        hue.apply(Transition::SetupSucceeded)?;
         hue.disable(crate::config_entry::DisabledBy::User);
         let hub = hub_capabilities(&r, &[hue]);
         assert!(hub.is_empty());
+        Ok(())
     }
 }

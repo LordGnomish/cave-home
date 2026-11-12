@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //
-//! SunSpec inverter models — integer (101/102/103) and float (111/112/113).
+//! `SunSpec` inverter models — integer (101/102/103) and float (111/112/113).
 //!
-//! Source: SunSpec Information Model Specification, inverter models.
+//! Source: `SunSpec` Information Model Specification, inverter models.
 //!
 //! The integer models 101/102/103 (single / split / three phase) and the
 //! float models 111/112/113 share the same point *layout* — the only
@@ -65,9 +65,9 @@ impl InverterPhase {
     }
 }
 
-/// SunSpec inverter operating state (`St`, enum16).
+/// `SunSpec` inverter operating state (`St`, enum16).
 ///
-/// Source: SunSpec inverter model `St` enumeration.
+/// Source: `SunSpec` inverter model `St` enumeration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperatingState {
     /// `1` OFF — inverter shut off.
@@ -80,7 +80,7 @@ pub enum OperatingState {
     Mppt,
     /// `5` THROTTLED — producing but power-limited.
     Throttled,
-    /// `6` SHUTTING_DOWN.
+    /// `6` `SHUTTING_DOWN`.
     ShuttingDown,
     /// `7` FAULT — an error condition.
     Fault,
@@ -122,7 +122,7 @@ impl OperatingState {
 
 /// A decoded inverter reading in physical units. All measurements have had
 /// their scale factors applied. `None` means the device did not implement
-/// that point (a SunSpec sentinel).
+/// that point (a `SunSpec` sentinel).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InverterReading {
     pub phase: InverterPhase,
@@ -273,6 +273,8 @@ impl InverterReading {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     /// Build a model-103 integer payload producing `power_w` watts at
     /// `230.x` V, `50.00` Hz, with a lifetime counter and cabinet temp.
     fn build_int_103() -> Vec<u16> {
@@ -297,34 +299,37 @@ mod tests {
     }
 
     #[test]
-    fn decode_three_phase_integer() {
+    fn decode_three_phase_integer() -> TestResult {
         let p = build_int_103();
-        let r = InverterReading::decode_integer(103, &p).unwrap();
+        let r = InverterReading::decode_integer(103, &p)?;
         assert_eq!(r.phase, InverterPhase::Three);
-        assert!((r.ac_power_w.unwrap() - 7500.0).abs() < 1e-6);
-        assert!((r.ac_current_a.unwrap() - 32.6).abs() < 1e-6);
-        assert!((r.ac_voltage_v.unwrap() - 230.1).abs() < 1e-6);
-        assert!((r.frequency_hz.unwrap() - 50.0).abs() < 1e-6);
-        assert!((r.dc_power_w.unwrap() - 7700.0).abs() < 1e-6);
-        assert!((r.lifetime_energy_wh.unwrap() - 1_000_000.0).abs() < 1e-6);
-        assert!((r.lifetime_energy_kwh().unwrap() - 1000.0).abs() < 1e-6);
-        assert!((r.temperature_c.unwrap() - 35.0).abs() < 1e-6);
+        assert!((r.ac_power_w.ok_or("point is implemented")? - 7500.0).abs() < 1e-6);
+        assert!((r.ac_current_a.ok_or("point is implemented")? - 32.6).abs() < 1e-6);
+        assert!((r.ac_voltage_v.ok_or("point is implemented")? - 230.1).abs() < 1e-6);
+        assert!((r.frequency_hz.ok_or("point is implemented")? - 50.0).abs() < 1e-6);
+        assert!((r.dc_power_w.ok_or("point is implemented")? - 7700.0).abs() < 1e-6);
+        assert!((r.lifetime_energy_wh.ok_or("point is implemented")? - 1_000_000.0).abs() < 1e-6);
+        assert!((r.lifetime_energy_kwh().ok_or("point is implemented")? - 1000.0).abs() < 1e-6);
+        assert!((r.temperature_c.ok_or("point is implemented")? - 35.0).abs() < 1e-6);
         assert_eq!(r.state, OperatingState::Mppt);
         assert!(r.state.is_producing());
+        Ok(())
     }
 
     #[test]
-    fn single_phase_model_101_topology() {
+    fn single_phase_model_101_topology() -> TestResult {
         let p = build_int_103();
-        let r = InverterReading::decode_integer(101, &p).unwrap();
+        let r = InverterReading::decode_integer(101, &p)?;
         assert_eq!(r.phase, InverterPhase::Single);
+        Ok(())
     }
 
     #[test]
-    fn split_phase_model_102_topology() {
+    fn split_phase_model_102_topology() -> TestResult {
         let p = build_int_103();
-        let r = InverterReading::decode_integer(102, &p).unwrap();
+        let r = InverterReading::decode_integer(102, &p)?;
         assert_eq!(r.phase, InverterPhase::Split);
+        Ok(())
     }
 
     #[test]
@@ -346,44 +351,48 @@ mod tests {
     }
 
     #[test]
-    fn unimplemented_temperature_is_none() {
+    fn unimplemented_temperature_is_none() -> TestResult {
         let mut p = build_int_103();
         p[31] = point::INT16_NA; // sentinel
-        let r = InverterReading::decode_integer(103, &p).unwrap();
+        let r = InverterReading::decode_integer(103, &p)?;
         assert!(r.temperature_c.is_none());
+        Ok(())
     }
 
     #[test]
-    fn never_accumulated_energy_is_none() {
+    fn never_accumulated_energy_is_none() -> TestResult {
         let mut p = build_int_103();
         p[22] = 0;
         p[23] = 0;
-        let r = InverterReading::decode_integer(103, &p).unwrap();
+        let r = InverterReading::decode_integer(103, &p)?;
         assert!(r.lifetime_energy_wh.is_none());
+        Ok(())
     }
 
     #[test]
-    fn negative_power_means_importing() {
+    fn negative_power_means_importing() -> TestResult {
         let mut p = build_int_103();
         p[12] = (-200i16) as u16; // W raw
         p[13] = 0;
-        let r = InverterReading::decode_integer(103, &p).unwrap();
-        assert!((r.ac_power_w.unwrap() + 200.0).abs() < 1e-6);
+        let r = InverterReading::decode_integer(103, &p)?;
+        assert!((r.ac_power_w.ok_or("point is implemented")? + 200.0).abs() < 1e-6);
+        Ok(())
     }
 
     #[test]
-    fn state_mapping_covers_sleeping_and_fault() {
+    fn state_mapping_covers_sleeping_and_fault() -> TestResult {
         let mut p = build_int_103();
         p[36] = 2; // sleeping
-        let r = InverterReading::decode_integer(103, &p).unwrap();
+        let r = InverterReading::decode_integer(103, &p)?;
         assert_eq!(r.state, OperatingState::Sleeping);
         assert!(!r.state.is_producing());
         p[36] = 7; // fault
-        let r = InverterReading::decode_integer(103, &p).unwrap();
+        let r = InverterReading::decode_integer(103, &p)?;
         assert!(r.state.is_fault());
         p[36] = 99; // vendor / future
-        let r = InverterReading::decode_integer(103, &p).unwrap();
+        let r = InverterReading::decode_integer(103, &p)?;
         assert_eq!(r.state, OperatingState::Other(99));
+        Ok(())
     }
 
     /// Build a float model-111 payload (single phase) with float32 points.
@@ -406,25 +415,27 @@ mod tests {
     }
 
     #[test]
-    fn decode_float_model_111() {
+    fn decode_float_model_111() -> TestResult {
         let p = build_float_111();
-        let r = InverterReading::decode_float(111, &p).unwrap();
+        let r = InverterReading::decode_float(111, &p)?;
         assert_eq!(r.phase, InverterPhase::Single);
-        assert!((r.ac_power_w.unwrap() - 3200.0).abs() < 1e-3);
-        assert!((r.ac_voltage_v.unwrap() - 240.2).abs() < 1e-3);
-        assert!((r.frequency_hz.unwrap() - 60.01).abs() < 1e-3);
-        assert!((r.lifetime_energy_kwh().unwrap() - 250.0).abs() < 1e-3);
+        assert!((r.ac_power_w.ok_or("point is implemented")? - 3200.0).abs() < 1e-3);
+        assert!((r.ac_voltage_v.ok_or("point is implemented")? - 240.2).abs() < 1e-3);
+        assert!((r.frequency_hz.ok_or("point is implemented")? - 60.01).abs() < 1e-3);
+        assert!((r.lifetime_energy_kwh().ok_or("point is implemented")? - 250.0).abs() < 1e-3);
         assert_eq!(r.state, OperatingState::Mppt);
+        Ok(())
     }
 
     #[test]
-    fn float_model_unimplemented_point_is_none() {
+    fn float_model_unimplemented_point_is_none() -> TestResult {
         let mut p = build_float_111();
         let nan = f32::NAN.to_bits();
         p[31] = (nan >> 16) as u16;
         p[32] = (nan & 0xFFFF) as u16;
-        let r = InverterReading::decode_float(111, &p).unwrap();
+        let r = InverterReading::decode_float(111, &p)?;
         assert!(r.temperature_c.is_none());
+        Ok(())
     }
 
     #[test]

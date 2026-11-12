@@ -246,8 +246,8 @@ mod tests {
         ];
         for v in &samples {
             for lang in [Lang::En, Lang::De, Lang::Tr] {
-                assert!(!describe(v, None, lang).is_empty());
-                assert!(!describe(v, Some("Room"), lang).is_empty());
+                assert_ne!(describe(v, None, lang), "");
+                assert_ne!(describe(v, Some("Room"), lang), "");
             }
         }
     }

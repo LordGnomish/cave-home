@@ -91,14 +91,16 @@ impl CallMachine {
     /// # Errors
     /// [`CallError::IllegalTransition`] if the event makes no sense from the
     /// current state.
-    pub fn apply(&mut self, event: DoorbellEvent, now: Tick) -> Result<CallState, CallError> {
+    pub const fn apply(&mut self, event: DoorbellEvent, now: Tick) -> Result<CallState, CallError> {
         let next = match (self.state, event) {
             // A press or motion at rest (or while already ringing) (re)starts
             // the ring. While already ringing it simply refreshes the timer —
             // a real "should this even ring again?" decision is the de-dup
             // layer's job (see crate::cooldown), not the state machine's.
-            (CallState::Idle | CallState::Ringing, DoorbellEvent::ButtonPressed)
-            | (CallState::Idle | CallState::Ringing, DoorbellEvent::MotionDetected) => {
+            (
+                CallState::Idle | CallState::Ringing,
+                DoorbellEvent::ButtonPressed | DoorbellEvent::MotionDetected,
+            ) => {
                 self.ringing_since = Some(now);
                 CallState::Ringing
             }
@@ -148,7 +150,7 @@ impl CallMachine {
 
     /// Reset the machine to [`CallState::Idle`], ready for the next visitor.
     /// The household calls this after acknowledging a terminal outcome.
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.state = CallState::Idle;
         self.ringing_since = None;
     }
@@ -158,116 +160,125 @@ impl CallMachine {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn full_ring_answer_end_cycle() {
+    fn full_ring_answer_end_cycle() -> TestResult {
         let mut m = CallMachine::new(30);
         assert_eq!(m.state(), CallState::Idle);
 
         assert_eq!(
-            m.apply(DoorbellEvent::ButtonPressed, 0).unwrap(),
+            m.apply(DoorbellEvent::ButtonPressed, 0)?,
             CallState::Ringing
         );
         assert_eq!(m.ringing_since(), Some(0));
 
         assert_eq!(
-            m.apply(DoorbellEvent::CallAnswered, 5).unwrap(),
+            m.apply(DoorbellEvent::CallAnswered, 5)?,
             CallState::Answered
         );
         assert_eq!(m.ringing_since(), None);
 
-        assert_eq!(
-            m.apply(DoorbellEvent::CallEnded, 90).unwrap(),
-            CallState::Ended
-        );
+        assert_eq!(m.apply(DoorbellEvent::CallEnded, 90)?, CallState::Ended);
         assert!(m.state().is_terminal());
+        Ok(())
     }
 
     #[test]
-    fn ring_then_decline() {
+    fn ring_then_decline() -> TestResult {
         let mut m = CallMachine::new(30);
-        m.apply(DoorbellEvent::ButtonPressed, 0).unwrap();
+        m.apply(DoorbellEvent::ButtonPressed, 0)?;
         assert_eq!(
-            m.apply(DoorbellEvent::CallDeclined, 3).unwrap(),
+            m.apply(DoorbellEvent::CallDeclined, 3)?,
             CallState::Declined
         );
+        Ok(())
     }
 
     #[test]
-    fn motion_can_start_a_ring() {
+    fn motion_can_start_a_ring() -> TestResult {
         let mut m = CallMachine::new(30);
         assert_eq!(
-            m.apply(DoorbellEvent::MotionDetected, 10).unwrap(),
+            m.apply(DoorbellEvent::MotionDetected, 10)?,
             CallState::Ringing
         );
         assert_eq!(m.ringing_since(), Some(10));
+        Ok(())
     }
 
     #[test]
-    fn unanswered_ring_times_out_to_missed_at_boundary() {
+    fn unanswered_ring_times_out_to_missed_at_boundary() -> TestResult {
         let mut m = CallMachine::new(30);
-        m.apply(DoorbellEvent::ButtonPressed, 100).unwrap();
+        m.apply(DoorbellEvent::ButtonPressed, 100)?;
         // One second short of the timeout: still ringing.
         assert_eq!(m.tick(129), CallState::Ringing);
         // Exactly at the timeout boundary: missed.
         assert_eq!(m.tick(130), CallState::Missed);
         assert_eq!(m.ringing_since(), None);
+        Ok(())
     }
 
     #[test]
-    fn timeout_event_path_also_misses() {
+    fn timeout_event_path_also_misses() -> TestResult {
         let mut m = CallMachine::new(30);
-        m.apply(DoorbellEvent::ButtonPressed, 0).unwrap();
+        m.apply(DoorbellEvent::ButtonPressed, 0)?;
         assert_eq!(
-            m.apply(DoorbellEvent::VisitorTimeout, 31).unwrap(),
+            m.apply(DoorbellEvent::VisitorTimeout, 31)?,
             CallState::Missed
         );
+        Ok(())
     }
 
     #[test]
-    fn zero_timeout_misses_on_first_tick() {
+    fn zero_timeout_misses_on_first_tick() -> TestResult {
         let mut m = CallMachine::new(0);
-        m.apply(DoorbellEvent::ButtonPressed, 7).unwrap();
+        m.apply(DoorbellEvent::ButtonPressed, 7)?;
         assert_eq!(m.tick(7), CallState::Missed);
+        Ok(())
     }
 
     #[test]
-    fn tick_before_ring_start_does_not_underflow_or_miss() {
+    fn tick_before_ring_start_does_not_underflow_or_miss() -> TestResult {
         let mut m = CallMachine::new(30);
-        m.apply(DoorbellEvent::ButtonPressed, 100).unwrap();
+        m.apply(DoorbellEvent::ButtonPressed, 100)?;
         // A clock that hands back an earlier "now" must not panic or miss.
         assert_eq!(m.tick(50), CallState::Ringing);
+        Ok(())
     }
 
     #[test]
-    fn answering_after_timeout_window_is_still_allowed_until_ticked() {
+    fn answering_after_timeout_window_is_still_allowed_until_ticked() -> TestResult {
         // The miss only happens when the caller advances time. Until then a
         // late pickup is honoured.
         let mut m = CallMachine::new(30);
-        m.apply(DoorbellEvent::ButtonPressed, 0).unwrap();
+        m.apply(DoorbellEvent::ButtonPressed, 0)?;
         assert_eq!(
-            m.apply(DoorbellEvent::CallAnswered, 999).unwrap(),
+            m.apply(DoorbellEvent::CallAnswered, 999)?,
             CallState::Answered
         );
+        Ok(())
     }
 
     #[test]
-    fn tick_on_answered_call_never_misses() {
+    fn tick_on_answered_call_never_misses() -> TestResult {
         let mut m = CallMachine::new(30);
-        m.apply(DoorbellEvent::ButtonPressed, 0).unwrap();
-        m.apply(DoorbellEvent::CallAnswered, 1).unwrap();
+        m.apply(DoorbellEvent::ButtonPressed, 0)?;
+        m.apply(DoorbellEvent::CallAnswered, 1)?;
         assert_eq!(m.tick(10_000), CallState::Answered);
+        Ok(())
     }
 
     #[test]
-    fn re_press_while_ringing_refreshes_the_timer() {
+    fn re_press_while_ringing_refreshes_the_timer() -> TestResult {
         let mut m = CallMachine::new(30);
-        m.apply(DoorbellEvent::ButtonPressed, 0).unwrap();
+        m.apply(DoorbellEvent::ButtonPressed, 0)?;
         // A second press at t=20 restarts the 30 s window.
-        m.apply(DoorbellEvent::ButtonPressed, 20).unwrap();
+        m.apply(DoorbellEvent::ButtonPressed, 20)?;
         assert_eq!(m.ringing_since(), Some(20));
         // t=49 is only 29 s after the refresh: still ringing.
         assert_eq!(m.tick(49), CallState::Ringing);
         assert_eq!(m.tick(50), CallState::Missed);
+        Ok(())
     }
 
     #[test]
@@ -280,25 +291,27 @@ mod tests {
     }
 
     #[test]
-    fn ending_a_call_that_never_started_is_illegal() {
+    fn ending_a_call_that_never_started_is_illegal() -> TestResult {
         let mut m = CallMachine::new(30);
-        m.apply(DoorbellEvent::ButtonPressed, 0).unwrap();
+        m.apply(DoorbellEvent::ButtonPressed, 0)?;
         // Still only ringing — there is no live call to end.
         assert_eq!(
             m.apply(DoorbellEvent::CallEnded, 1),
             Err(CallError::IllegalTransition)
         );
+        Ok(())
     }
 
     #[test]
-    fn declining_an_answered_call_is_illegal() {
+    fn declining_an_answered_call_is_illegal() -> TestResult {
         let mut m = CallMachine::new(30);
-        m.apply(DoorbellEvent::ButtonPressed, 0).unwrap();
-        m.apply(DoorbellEvent::CallAnswered, 1).unwrap();
+        m.apply(DoorbellEvent::ButtonPressed, 0)?;
+        m.apply(DoorbellEvent::CallAnswered, 1)?;
         assert_eq!(
             m.apply(DoorbellEvent::CallDeclined, 2),
             Err(CallError::IllegalTransition)
         );
+        Ok(())
     }
 
     #[test]
@@ -311,10 +324,10 @@ mod tests {
     }
 
     #[test]
-    fn events_on_a_terminal_state_are_illegal_until_reset() {
+    fn events_on_a_terminal_state_are_illegal_until_reset() -> TestResult {
         let mut m = CallMachine::new(30);
-        m.apply(DoorbellEvent::ButtonPressed, 0).unwrap();
-        m.apply(DoorbellEvent::CallDeclined, 1).unwrap();
+        m.apply(DoorbellEvent::ButtonPressed, 0)?;
+        m.apply(DoorbellEvent::CallDeclined, 1)?;
         assert_eq!(
             m.apply(DoorbellEvent::CallAnswered, 2),
             Err(CallError::IllegalTransition)
@@ -323,8 +336,9 @@ mod tests {
         assert_eq!(m.state(), CallState::Idle);
         // After reset the door rings again cleanly.
         assert_eq!(
-            m.apply(DoorbellEvent::ButtonPressed, 3).unwrap(),
+            m.apply(DoorbellEvent::ButtonPressed, 3)?,
             CallState::Ringing
         );
+        Ok(())
     }
 }

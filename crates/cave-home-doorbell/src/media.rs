@@ -77,22 +77,26 @@ impl MediaRequest {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn button_press_requests_a_snapshot() {
+    fn button_press_requests_a_snapshot() -> TestResult {
         let req = MediaRequest::for_event(DoorbellEvent::ButtonPressed, 42)
-            .expect("press should request media");
+            .ok_or("press should request media")?;
         assert_eq!(req.kind, MediaKind::Snapshot);
         assert_eq!(req.reason, MediaReason::ButtonPress);
         assert_eq!(req.at, 42);
+        Ok(())
     }
 
     #[test]
-    fn motion_requests_a_clip() {
+    fn motion_requests_a_clip() -> TestResult {
         let req = MediaRequest::for_event(DoorbellEvent::MotionDetected, 7)
-            .expect("motion should request media");
+            .ok_or("motion should request media")?;
         assert_eq!(req.kind, MediaKind::Clip);
         assert_eq!(req.reason, MediaReason::Motion);
         assert_eq!(req.at, 7);
+        Ok(())
     }
 
     #[test]

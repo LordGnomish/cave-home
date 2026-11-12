@@ -2,15 +2,17 @@
 //! front-door interaction moves through.
 //!
 //! Nothing here touches a vendor, a radio, a camera or an audio channel. The
-//! wire adapters that *produce* these events (a Reolink / DoorBird / Ring-RTSP
+//! wire adapters that *produce* these events (a Reolink / `DoorBird` / Ring-RTSP
 //! button-press webhook, a PIR motion edge) and the two-way SIP/WebRTC audio
 //! that an answered call would carry are Phase-1b and network/hardware-bound
 //! (see `parity.manifest.toml`, ADR-018). This module is just the typed
 //! vocabulary the pure call engine reasons over.
 
-/// A whole-second tick supplied by the caller. The crate reads no clock; every
-/// time-dependent decision (ring timeout, motion/ring de-dup cooldown) is taken
-/// against an explicit tick so the logic stays pure and exhaustively testable.
+/// A whole-second tick supplied by the caller.
+///
+/// The crate reads no clock; every time-dependent decision (ring timeout,
+/// motion/ring de-dup cooldown) is taken against an explicit tick so the logic
+/// stays pure and exhaustively testable.
 pub type Tick = u64;
 
 /// The state of a single front-door interaction.

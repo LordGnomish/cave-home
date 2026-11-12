@@ -144,11 +144,12 @@ mod tests {
     }
 
     #[test]
-    fn valid_theme_builds() {
-        let t = Theme::new("Our home", Mode::Dark, "#ffb000").expect("valid");
+    fn valid_theme_builds() -> Result<(), ThemeError> {
+        let t = Theme::new("Our home", Mode::Dark, "#ffb000")?;
         assert_eq!(t.brand, "Our home");
         assert_eq!(t.accent(), "#ffb000");
         assert_eq!(t.mode, Mode::Dark);
+        Ok(())
     }
 
     #[test]
@@ -179,6 +180,6 @@ mod tests {
     fn default_theme_is_valid() {
         let t = Theme::cave_home_default();
         assert!(is_hex_color(t.accent()));
-        assert!(!t.brand.is_empty());
+        assert_ne!(t.brand, "");
     }
 }

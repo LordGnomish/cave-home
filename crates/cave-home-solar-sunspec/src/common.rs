@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //
-//! SunSpec Model 1 — Common (manufacturer, model, version, serial).
+//! `SunSpec` Model 1 — Common (manufacturer, model, version, serial).
 //!
-//! Source: SunSpec Information Model Specification, model 1 definition.
+//! Source: `SunSpec` Information Model Specification, model 1 definition.
 //!
 //! Payload layout (register offsets from the start of the model payload):
 //! ```text
@@ -39,7 +39,7 @@ pub enum InverterFamily {
 impl InverterFamily {
     /// Map a manufacturer string to a family. Case-insensitive substring
     /// match because manufacturer strings vary ("SMA Solar Technology AG",
-    /// "Fronius International GmbH", …).
+    /// "Fronius International `GmbH`", …).
     #[must_use]
     pub fn from_manufacturer(mfr: &str) -> Self {
         let m = mfr.to_ascii_lowercase();
@@ -75,7 +75,7 @@ pub struct CommonModel {
 }
 
 impl CommonModel {
-    /// SunSpec model id for the common block.
+    /// `SunSpec` model id for the common block.
     pub const MODEL_ID: u16 = 1;
     /// Minimum payload length we require (through the version field at 48).
     pub const MIN_LENGTH: usize = 64;
@@ -117,6 +117,8 @@ impl CommonModel {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     /// Pack an ASCII string into `len_regs` registers, MSB-first, NUL-padded.
     fn ascii_to_regs(s: &str, len_regs: usize) -> Vec<u16> {
         let mut bytes: Vec<u8> = s.bytes().collect();
@@ -139,15 +141,16 @@ mod tests {
     }
 
     #[test]
-    fn decode_full_common_block() {
+    fn decode_full_common_block() -> TestResult {
         let regs = build_common("Fronius", "Symo 8.2-3-M", "3.18.7-1", "12345678", 126);
-        let m = CommonModel::decode(&regs).unwrap();
+        let m = CommonModel::decode(&regs)?;
         assert_eq!(m.manufacturer, "Fronius");
         assert_eq!(m.model, "Symo 8.2-3-M");
         assert_eq!(m.version, "3.18.7-1");
         assert_eq!(m.serial_number, "12345678");
         assert_eq!(m.device_address, 126);
         assert_eq!(m.family, InverterFamily::Fronius);
+        Ok(())
     }
 
     #[test]
@@ -179,11 +182,12 @@ mod tests {
     }
 
     #[test]
-    fn device_address_optional_when_field_absent() {
+    fn device_address_optional_when_field_absent() -> TestResult {
         let mut regs = build_common("SMA", "Sunny Boy", "1.0", "SN1", 0);
         regs.pop(); // drop the device-address word
-        let m = CommonModel::decode(&regs).unwrap();
+        let m = CommonModel::decode(&regs)?;
         assert_eq!(m.device_address, 0);
         assert_eq!(m.family, InverterFamily::Sma);
+        Ok(())
     }
 }

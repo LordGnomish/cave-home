@@ -119,7 +119,9 @@ mod tests {
     use super::*;
     use crate::product::QuantityUnit;
 
-    fn milk(stock: f64) -> Product {
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn milk(stock: f64) -> Result<Product, crate::product::ProductError> {
         Product::new(
             "Milk",
             QuantityUnit::Millilitres { step: 1000.0 },
@@ -127,24 +129,25 @@ mod tests {
             1000.0,
             None,
         )
-        .expect("valid product")
     }
 
     #[test]
-    fn consume_reduces_stock() {
-        let p = milk(2000.0);
+    fn consume_reduces_stock() -> TestResult {
+        let p = milk(2000.0)?;
         assert_eq!(consume(&p, 500.0), Ok(1500.0));
+        Ok(())
     }
 
     #[test]
-    fn consume_to_exactly_zero_is_allowed() {
-        let p = milk(1000.0);
+    fn consume_to_exactly_zero_is_allowed() -> TestResult {
+        let p = milk(1000.0)?;
         assert_eq!(consume(&p, 1000.0), Ok(0.0));
+        Ok(())
     }
 
     #[test]
-    fn over_consume_is_an_error_not_a_negative() {
-        let p = milk(500.0);
+    fn over_consume_is_an_error_not_a_negative() -> TestResult {
+        let p = milk(500.0)?;
         assert_eq!(
             consume(&p, 800.0),
             Err(StockError::NotEnoughStock {
@@ -152,37 +155,42 @@ mod tests {
                 available: 500.0
             })
         );
+        Ok(())
     }
 
     #[test]
-    fn purchase_increases_stock() {
-        let p = milk(500.0);
+    fn purchase_increases_stock() -> TestResult {
+        let p = milk(500.0)?;
         assert_eq!(purchase(&p, 1000.0), Ok(1500.0));
+        Ok(())
     }
 
     #[test]
-    fn open_does_not_change_stock_but_needs_a_package() {
-        let p = milk(1000.0);
+    fn open_does_not_change_stock_but_needs_a_package() -> TestResult {
+        let p = milk(1000.0)?;
         assert_eq!(open(&p, 1000.0), Ok(1000.0));
-        let empty = milk(0.0);
+        let empty = milk(0.0)?;
         assert!(matches!(
             open(&empty, 1000.0),
             Err(StockError::NotEnoughStock { .. })
         ));
+        Ok(())
     }
 
     #[test]
-    fn bad_amounts_are_rejected() {
-        let p = milk(1000.0);
+    fn bad_amounts_are_rejected() -> TestResult {
+        let p = milk(1000.0)?;
         assert_eq!(consume(&p, f64::NAN), Err(StockError::BadAmount));
         assert_eq!(purchase(&p, -1.0), Err(StockError::BadAmount));
+        Ok(())
     }
 
     #[test]
-    fn apply_commits_a_computed_amount() {
-        let mut p = milk(2000.0);
-        let after = consume(&p, 500.0).unwrap();
-        apply(&mut p, after).unwrap();
+    fn apply_commits_a_computed_amount() -> TestResult {
+        let mut p = milk(2000.0)?;
+        let after = consume(&p, 500.0)?;
+        apply(&mut p, after)?;
         assert_eq!(p.stock(), 1500.0);
+        Ok(())
     }
 }

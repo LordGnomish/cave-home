@@ -24,10 +24,12 @@ use crate::dashboard::{Dashboard, View};
 use crate::label::Lang;
 
 /// Build the full operator Portal: the auto-generated household dashboard with
-/// the five orchestration subsystem pages appended. This is the mount point the
-/// unified binary uses to expose every linked control-plane crate in one place;
-/// residents still see only the household tabs (the appended pages are
-/// developer-only and dropped by [`Dashboard::for_mode`]).
+/// the five orchestration subsystem pages appended.
+///
+/// This is the mount point the unified binary uses to expose every linked
+/// control-plane crate in one place; residents still see only the household
+/// tabs (the appended pages are developer-only and dropped by
+/// [`Dashboard::for_mode`]).
 #[must_use]
 pub fn operator_dashboard(home: &Home, lang: Lang) -> Dashboard {
     let mut dashboard = auto_dashboard(home, lang);

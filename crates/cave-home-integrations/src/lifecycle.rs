@@ -172,37 +172,40 @@ pub const fn next(current: State, event: Transition) -> Result<State, Transition
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn happy_path_setup_to_loaded() {
-        let s = next(State::NotLoaded, Transition::BeginSetup).expect("begin");
+    fn happy_path_setup_to_loaded() -> TestResult {
+        let s = next(State::NotLoaded, Transition::BeginSetup)?;
         assert_eq!(s, State::SettingUp);
-        let s = next(s, Transition::SetupSucceeded).expect("succeed");
+        let s = next(s, Transition::SetupSucceeded)?;
         assert_eq!(s, State::Loaded);
         assert!(s.is_running());
+        Ok(())
     }
 
     #[test]
-    fn transient_failure_goes_to_retry() {
+    fn transient_failure_goes_to_retry() -> TestResult {
         let s = next(
             State::SettingUp,
             Transition::SetupFailed(Failure::Unreachable),
-        )
-        .expect("fail");
+        )?;
         assert_eq!(s, State::SetupRetry);
         assert!(s.wants_retry());
         assert!(!s.needs_attention());
+        Ok(())
     }
 
     #[test]
-    fn permanent_failure_goes_to_error() {
+    fn permanent_failure_goes_to_error() -> TestResult {
         let s = next(
             State::SettingUp,
             Transition::SetupFailed(Failure::BadCredentials),
-        )
-        .expect("fail");
+        )?;
         assert_eq!(s, State::SetupError);
         assert!(!s.wants_retry());
         assert!(s.needs_attention());
+        Ok(())
     }
 
     #[test]
@@ -216,55 +219,63 @@ mod tests {
     }
 
     #[test]
-    fn retry_re_enters_setup() {
-        let s = next(State::SetupRetry, Transition::Retry).expect("retry");
+    fn retry_re_enters_setup() -> TestResult {
+        let s = next(State::SetupRetry, Transition::Retry)?;
         assert_eq!(s, State::SettingUp);
+        Ok(())
     }
 
     #[test]
-    fn reload_is_unload_then_setup() {
-        let s = next(State::Loaded, Transition::BeginUnload).expect("unload");
+    fn reload_is_unload_then_setup() -> TestResult {
+        let s = next(State::Loaded, Transition::BeginUnload)?;
         assert_eq!(s, State::Unloading);
-        let s = next(s, Transition::Unloaded).expect("unloaded");
+        let s = next(s, Transition::Unloaded)?;
         assert_eq!(s, State::NotLoaded);
-        let s = next(s, Transition::BeginSetup).expect("re-setup");
+        let s = next(s, Transition::BeginSetup)?;
         assert_eq!(s, State::SettingUp);
+        Ok(())
     }
 
     #[test]
-    fn migration_round_trip() {
-        let s = next(State::Loaded, Transition::BeginMigration).expect("migrate");
+    fn migration_round_trip() -> TestResult {
+        let s = next(State::Loaded, Transition::BeginMigration)?;
         assert_eq!(s, State::Migrating);
-        let s = next(s, Transition::MigrationDone).expect("done");
+        let s = next(s, Transition::MigrationDone)?;
         assert_eq!(s, State::SettingUp);
+        Ok(())
     }
 
     #[test]
-    fn giving_up_after_retries_is_terminal_until_manual() {
-        let s = next(State::SetupRetry, Transition::GiveUp).expect("give up");
+    fn giving_up_after_retries_is_terminal_until_manual() -> TestResult {
+        let s = next(State::SetupRetry, Transition::GiveUp)?;
         assert_eq!(s, State::Failed);
         assert!(s.needs_attention());
         // A household-initiated manual setup can still revive it... but only
         // from a state we allow BeginSetup; Failed needs no auto-revival.
         assert!(next(State::Failed, Transition::Retry).is_err());
+        Ok(())
     }
 
     #[test]
-    fn illegal_transitions_are_rejected_not_ignored() {
+    fn illegal_transitions_are_rejected_not_ignored() -> TestResult {
         // Can't succeed setup we never began.
         assert!(next(State::NotLoaded, Transition::SetupSucceeded).is_err());
         // Can't retry something that's running fine.
         assert!(next(State::Loaded, Transition::Retry).is_err());
         // Can't unload something that was never loaded.
         assert!(next(State::NotLoaded, Transition::BeginUnload).is_err());
-        let e = next(State::Loaded, Transition::Retry).unwrap_err();
+        let e = next(State::Loaded, Transition::Retry)
+            .err()
+            .ok_or("expected an error")?;
         assert_eq!(e.from, State::Loaded);
+        Ok(())
     }
 
     #[test]
-    fn manual_retry_from_permanent_error_is_allowed() {
+    fn manual_retry_from_permanent_error_is_allowed() -> TestResult {
         // The household fixed the password and asks us to try again.
-        let s = next(State::SetupError, Transition::BeginSetup).expect("manual retry");
+        let s = next(State::SetupError, Transition::BeginSetup)?;
         assert_eq!(s, State::SettingUp);
+        Ok(())
     }
 }

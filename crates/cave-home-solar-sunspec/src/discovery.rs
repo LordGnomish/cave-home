@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //
-//! SunSpec device model-chain discovery.
+//! `SunSpec` device model-chain discovery.
 //!
-//! Source: SunSpec Information Model Specification — "Model Discovery".
+//! Source: `SunSpec` Information Model Specification — "Model Discovery".
 //!
-//! A SunSpec device lays its models out as one contiguous register block:
+//! A `SunSpec` device lays its models out as one contiguous register block:
 //!
 //! ```text
 //!   word 0..1  SunSpec marker = 0x53756e53 ("SunS")
@@ -23,7 +23,7 @@
 
 use crate::fault::DecodeError;
 
-/// The 32-bit SunSpec identifier marker — ASCII `"SunS"`.
+/// The 32-bit `SunSpec` identifier marker — ASCII `"SunS"`.
 pub const SUNSPEC_MARKER: u32 = 0x5375_6e53;
 
 /// End-of-chain sentinel: a model id of `0xFFFF` means "no more models".
@@ -99,7 +99,7 @@ pub fn walk_chain(chain: &[u16]) -> Result<Vec<DiscoveredModel<'_>>, DecodeError
     Ok(out)
 }
 
-/// Discover all models in a full SunSpec block (marker included). Convenience
+/// Discover all models in a full `SunSpec` block (marker included). Convenience
 /// wrapper combining [`check_marker`] and [`walk_chain`].
 ///
 /// # Errors
@@ -112,6 +112,8 @@ pub fn discover(block: &[u16]) -> Result<Vec<DiscoveredModel<'_>>, DecodeError> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     /// Build a `[u16]` block: marker, then the given `(id, payload)` models,
     /// then the end sentinel.
@@ -149,32 +151,35 @@ mod tests {
     }
 
     #[test]
-    fn empty_chain_yields_no_models() {
+    fn empty_chain_yields_no_models() -> TestResult {
         let block = build_block(&[]);
-        assert!(discover(&block).unwrap().is_empty());
+        assert_eq!(discover(&block)?, [] as [DiscoveredModel<'_>; 0]);
+        Ok(())
     }
 
     #[test]
-    fn single_model_walk() {
+    fn single_model_walk() -> TestResult {
         let payload = [0u16; 65];
         let block = build_block(&[(1, &payload)]);
-        let models = discover(&block).unwrap();
+        let models = discover(&block)?;
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].model_id, 1);
         assert_eq!(models[0].length, 65);
         assert_eq!(models[0].payload.len(), 65);
+        Ok(())
     }
 
     #[test]
-    fn two_model_chain_in_order() {
+    fn two_model_chain_in_order() -> TestResult {
         let common = [0u16; 4];
         let inv = [0u16; 50];
         let block = build_block(&[(1, &common), (103, &inv)]);
-        let models = discover(&block).unwrap();
+        let models = discover(&block)?;
         assert_eq!(models.len(), 2);
         assert_eq!(models[0].model_id, 1);
         assert_eq!(models[1].model_id, 103);
         assert_eq!(models[1].length, 50);
+        Ok(())
     }
 
     #[test]

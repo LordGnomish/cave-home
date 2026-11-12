@@ -197,7 +197,7 @@ mod tests {
             SolarStatus::Unknown,
         ] {
             for lang in [Lang::En, Lang::De, Lang::Tr] {
-                assert!(!status.line(lang).is_empty());
+                assert_ne!(status.line(lang), "");
             }
         }
     }

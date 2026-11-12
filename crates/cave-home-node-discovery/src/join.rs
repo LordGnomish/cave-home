@@ -152,7 +152,7 @@ pub struct Pairing {
 impl Pairing {
     /// Begin a pairing for a discovered node, with the hub's expected token.
     #[must_use]
-    pub fn begin(expected: JoinToken) -> Self {
+    pub const fn begin(expected: JoinToken) -> Self {
         Self {
             expected,
             state: PairingState::Discovered,
@@ -161,13 +161,13 @@ impl Pairing {
 
     /// The current state.
     #[must_use]
-    pub fn state(&self) -> &PairingState {
+    pub const fn state(&self) -> &PairingState {
         &self.state
     }
 
     /// Whether the handshake has reached a terminal state.
     #[must_use]
-    pub fn is_terminal(&self) -> bool {
+    pub const fn is_terminal(&self) -> bool {
         matches!(self.state, PairingState::Joined | PairingState::Rejected(_))
     }
 
@@ -202,7 +202,7 @@ impl Pairing {
     /// Reject the pairing outright (e.g. the discovery layer found the node on
     /// an incompatible version, [`crate::compat`]). Terminal from any
     /// non-terminal state.
-    pub fn reject(&mut self, reason: RejectReason) {
+    pub const fn reject(&mut self, reason: RejectReason) {
         if !self.is_terminal() {
             self.state = PairingState::Rejected(reason);
         }
@@ -213,15 +213,18 @@ impl Pairing {
 mod tests {
     use super::*;
 
-    fn good_token() -> JoinToken {
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn good_token() -> Result<JoinToken, Box<dyn std::error::Error>> {
         // 12 chars, all from the charset.
-        JoinToken::parse("ABCDEFGHJKMN", 0, 300).expect("valid token")
+        Ok(JoinToken::parse("ABCDEFGHJKMN", 0, 300)?)
     }
 
     #[test]
-    fn parses_valid_token() {
-        let t = good_token();
+    fn parses_valid_token() -> TestResult {
+        let t = good_token()?;
         assert_eq!(t.value(), "ABCDEFGHJKMN");
+        Ok(())
     }
 
     #[test]
@@ -255,79 +258,87 @@ mod tests {
     }
 
     #[test]
-    fn validity_window_uses_clock() {
-        let t = JoinToken::parse("ABCDEFGHJKMN", 100, 200).expect("valid");
+    fn validity_window_uses_clock() -> TestResult {
+        let t = JoinToken::parse("ABCDEFGHJKMN", 100, 200)?;
         assert!(!t.is_valid_at(99));
         assert!(t.is_valid_at(100));
         assert!(t.is_valid_at(300));
         assert!(!t.is_valid_at(301));
+        Ok(())
     }
 
     #[test]
-    fn happy_path_reaches_joined() {
-        let mut p = Pairing::begin(good_token());
+    fn happy_path_reaches_joined() -> TestResult {
+        let mut p = Pairing::begin(good_token()?);
         assert_eq!(p.state(), &PairingState::Discovered);
         p.offer_token();
         assert_eq!(p.state(), &PairingState::TokenOffered);
         p.verify("ABCDEFGHJKMN", 10);
         assert_eq!(p.state(), &PairingState::Joined);
         assert!(p.is_terminal());
+        Ok(())
     }
 
     #[test]
-    fn token_mismatch_is_rejected() {
-        let mut p = Pairing::begin(good_token());
+    fn token_mismatch_is_rejected() -> TestResult {
+        let mut p = Pairing::begin(good_token()?);
         p.offer_token();
         p.verify("WRONGTOKEN23", 10);
         assert_eq!(
             p.state(),
             &PairingState::Rejected(RejectReason::TokenMismatch)
         );
+        Ok(())
     }
 
     #[test]
-    fn expired_token_is_rejected() {
-        let mut p = Pairing::begin(JoinToken::parse("ABCDEFGHJKMN", 0, 50).expect("valid"));
+    fn expired_token_is_rejected() -> TestResult {
+        let mut p = Pairing::begin(JoinToken::parse("ABCDEFGHJKMN", 0, 50)?);
         p.offer_token();
         p.verify("ABCDEFGHJKMN", 100); // past issued_at+lifetime=50
         assert_eq!(
             p.state(),
             &PairingState::Rejected(RejectReason::TokenExpired)
         );
+        Ok(())
     }
 
     #[test]
-    fn verify_is_noop_before_token_offered() {
-        let mut p = Pairing::begin(good_token());
+    fn verify_is_noop_before_token_offered() -> TestResult {
+        let mut p = Pairing::begin(good_token()?);
         // Skipping offer_token: verify must not advance from Discovered.
         p.verify("ABCDEFGHJKMN", 10);
         assert_eq!(p.state(), &PairingState::Discovered);
+        Ok(())
     }
 
     #[test]
-    fn version_incompatible_rejects_from_any_stage() {
-        let mut p = Pairing::begin(good_token());
+    fn version_incompatible_rejects_from_any_stage() -> TestResult {
+        let mut p = Pairing::begin(good_token()?);
         p.reject(RejectReason::VersionIncompatible);
         assert_eq!(
             p.state(),
             &PairingState::Rejected(RejectReason::VersionIncompatible)
         );
         assert!(p.is_terminal());
+        Ok(())
     }
 
     #[test]
-    fn reject_does_not_override_terminal_joined() {
-        let mut p = Pairing::begin(good_token());
+    fn reject_does_not_override_terminal_joined() -> TestResult {
+        let mut p = Pairing::begin(good_token()?);
         p.offer_token();
         p.verify("ABCDEFGHJKMN", 10);
         p.reject(RejectReason::TokenMismatch);
         assert_eq!(p.state(), &PairingState::Joined, "joined is terminal");
+        Ok(())
     }
 
     #[test]
-    fn token_matches_compares_value() {
-        let t = good_token();
+    fn token_matches_compares_value() -> TestResult {
+        let t = good_token()?;
         assert!(t.matches("ABCDEFGHJKMN"));
         assert!(!t.matches("ABCDEFGHJKMM"));
+        Ok(())
     }
 }

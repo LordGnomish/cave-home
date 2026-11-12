@@ -69,15 +69,18 @@ impl GroupService {
 mod tests {
     use super::*;
 
+    type TestResult = core::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn service_codes_round_trip() {
+    fn service_codes_round_trip() -> TestResult {
         for s in [
             GroupService::Read,
             GroupService::Response,
             GroupService::Write,
         ] {
-            assert_eq!(GroupService::from_apci_code(s.apci_code()).unwrap(), s);
+            assert_eq!(GroupService::from_apci_code(s.apci_code())?, s);
         }
+        Ok(())
     }
 
     #[test]

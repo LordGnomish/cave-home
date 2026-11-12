@@ -148,6 +148,8 @@ pub fn plan(inputs: PlanInputs) -> Result<ChargePlan, EvccError> {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn base() -> PlanInputs {
         PlanInputs {
             capacity_kwh: 60.0,
@@ -160,59 +162,65 @@ mod tests {
     }
 
     #[test]
-    fn already_met_when_at_or_above_target() {
+    fn already_met_when_at_or_above_target() -> TestResult {
         let mut i = base();
         i.current_soc = 80.0;
-        let p = plan(i).unwrap();
+        let p = plan(i)?;
         assert_eq!(p.outcome, PlanOutcome::AlreadyMet);
         assert_eq!(p.energy_needed_kwh, 0.0);
 
         i.current_soc = 90.0;
-        assert_eq!(plan(i).unwrap().outcome, PlanOutcome::AlreadyMet);
+        assert_eq!(plan(i)?.outcome, PlanOutcome::AlreadyMet);
+        Ok(())
     }
 
     #[test]
-    fn sun_makes_it_with_a_long_sunny_window() {
+    fn sun_makes_it_with_a_long_sunny_window() -> TestResult {
         // Need 30% of 60 kWh = 18 kWh; 3 kW * 8 h = 24 kWh of sun -> sun wins.
-        let p = plan(base()).unwrap();
+        let p = plan(base())?;
         assert_eq!(p.outcome, PlanOutcome::SunWillMakeIt);
         assert!((p.energy_needed_kwh - 18.0).abs() < 1e-9);
         assert_eq!(p.grid_topup_kwh, 0.0);
+        Ok(())
     }
 
     #[test]
-    fn needs_grid_topup_when_sun_falls_short_but_charger_can_reach() {
+    fn needs_grid_topup_when_sun_falls_short_but_charger_can_reach() -> TestResult {
         let mut i = base();
         i.hours_remaining = 2.0; // 3 kW * 2 h = 6 kWh sun, need 18 kWh.
-        let p = plan(i).unwrap();
+        let p = plan(i)?;
         assert_eq!(p.outcome, PlanOutcome::NeedsGridTopUp);
         assert!((p.grid_topup_kwh - 12.0).abs() < 1e-9); // 18 - 6
+        Ok(())
     }
 
     #[test]
-    fn unreachable_when_even_full_charger_cannot_make_deadline() {
+    fn unreachable_when_even_full_charger_cannot_make_deadline() -> TestResult {
         let mut i = base();
         i.hours_remaining = 1.0;
         i.expected_pv_watts = 0.0;
         i.max_charge_watts = 11_000.0; // 11 kWh max in 1 h, need 18 kWh.
-        let p = plan(i).unwrap();
+        let p = plan(i)?;
         assert_eq!(p.outcome, PlanOutcome::Unreachable);
+        Ok(())
     }
 
     #[test]
-    fn boundary_sun_exactly_meets_need() {
+    fn boundary_sun_exactly_meets_need() -> TestResult {
         let mut i = base();
         // Need 18 kWh; make sun deliver exactly 18 kWh: 2250 W * 8 h.
         i.expected_pv_watts = 2250.0;
-        let p = plan(i).unwrap();
+        let p = plan(i)?;
         assert_eq!(p.outcome, PlanOutcome::SunWillMakeIt);
+        Ok(())
     }
 
     #[test]
-    fn zero_hours_remaining_is_unreachable_when_energy_needed() {
+    fn zero_hours_remaining_is_unreachable_when_energy_needed() -> TestResult {
         let mut i = base();
         i.hours_remaining = 0.0;
-        assert_eq!(plan(i).unwrap().outcome, PlanOutcome::Unreachable);
+        assert_eq!(plan(i)?.outcome, PlanOutcome::Unreachable);
+        Ok(())
     }
 
     #[test]

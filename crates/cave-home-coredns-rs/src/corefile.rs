@@ -279,7 +279,7 @@ mod tests {
         assert_eq!(s.plugins[1].name, "cache");
         assert_eq!(s.plugins[1].args, vec!["30"]);
         assert_eq!(s.plugins[2].name, "log");
-        assert!(s.plugins[2].args.is_empty());
+        assert_eq!(s.plugins[2].args, [] as [String; 0]);
     }
 
     #[test]
@@ -314,7 +314,7 @@ mod tests {
         assert_eq!(k.block[0].name, "pods");
         assert_eq!(k.block[0].args, vec!["insecure"]);
         assert_eq!(k.block[1].name, "fallthrough");
-        assert!(k.block[1].args.is_empty());
+        assert_eq!(k.block[1].args, [] as [String; 0]);
     }
 
     #[test]

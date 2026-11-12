@@ -108,9 +108,7 @@ impl PresetMode {
     #[must_use]
     pub const fn label(self, lang: Lang) -> &'static str {
         match (self, lang) {
-            (Self::None, Lang::En) => "Normal",
-            (Self::None, Lang::De) => "Normal",
-            (Self::None, Lang::Tr) => "Normal",
+            (Self::None, Lang::En | Lang::De | Lang::Tr) => "Normal",
             (Self::Eco, Lang::En) => "Energy saving",
             (Self::Eco, Lang::De) => "Energiesparen",
             (Self::Eco, Lang::Tr) => "Enerji tasarrufu",
@@ -164,7 +162,9 @@ pub fn action_sentence(action: HvacAction, target_celsius: Option<f64>, lang: La
 fn round_half(celsius: f64) -> String {
     let rounded = (celsius * 2.0).round() / 2.0;
     if (rounded - rounded.trunc()).abs() < 1e-9 {
-        format!("{}", rounded.trunc() as i64)
+        // Whole degrees: print without a fraction. Adding `0.0` folds a
+        // negative zero (e.g. from -0.1) into plain zero so it reads "0".
+        format!("{:.0}", rounded.trunc() + 0.0)
     } else {
         format!("{rounded}")
     }
@@ -243,6 +243,8 @@ mod tests {
         assert_eq!(round_half(21.5), "21.5");
         assert_eq!(round_half(21.24), "21");
         assert_eq!(round_half(21.26), "21.5");
+        assert_eq!(round_half(-0.1), "0");
+        assert_eq!(round_half(-3.0), "-3");
     }
 
     #[test]

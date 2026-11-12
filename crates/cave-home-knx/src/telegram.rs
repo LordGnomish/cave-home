@@ -198,77 +198,85 @@ mod tests {
     use super::*;
     use crate::dpt;
 
-    fn src() -> IndividualAddress {
-        IndividualAddress::parse("1.1.5").expect("source")
+    type TestResult = core::result::Result<(), Box<dyn std::error::Error>>;
+
+    fn src() -> Result<IndividualAddress> {
+        IndividualAddress::parse("1.1.5")
     }
 
-    fn dst() -> GroupAddress {
-        GroupAddress::parse("1/2/3").expect("destination")
+    fn dst() -> Result<GroupAddress> {
+        GroupAddress::parse("1/2/3")
     }
 
     #[test]
-    fn read_telegram_has_two_byte_apdu() {
-        let t = GroupTelegram::read(src(), dst());
-        let apdu = t.encode_apdu().unwrap();
+    fn read_telegram_has_two_byte_apdu() -> TestResult {
+        let t = GroupTelegram::read(src()?, dst()?);
+        let apdu = t.encode_apdu()?;
         assert_eq!(apdu.len(), 2);
         // Read APCI is all zero across both control bytes.
         assert_eq!(apdu, vec![0x00, 0x00]);
-        let back = GroupTelegram::decode_apdu(src(), dst(), &apdu).unwrap();
+        let back = GroupTelegram::decode_apdu(src()?, dst()?, &apdu)?;
         assert_eq!(back, t);
+        Ok(())
     }
 
     #[test]
-    fn write_small_switch_on_roundtrips() {
+    fn write_small_switch_on_roundtrips() -> TestResult {
         // DPT 1 "on" packed as a 6-bit small payload.
         let value = dpt::dpt1::encode(true); // 1
-        let t = GroupTelegram::write_small(src(), dst(), value).unwrap();
-        let apdu = t.encode_apdu().unwrap();
+        let t = GroupTelegram::write_small(src()?, dst()?, value)?;
+        let apdu = t.encode_apdu()?;
         assert_eq!(apdu.len(), 2, "small payload stays in the control byte");
         // Write APCI = 0b0010 -> byte0 low2=0b00, byte1 high2=0b10 -> 0x80 | value.
         assert_eq!(apdu, vec![0x00, 0x80 | 1]);
-        let back = GroupTelegram::decode_apdu(src(), dst(), &apdu).unwrap();
+        let back = GroupTelegram::decode_apdu(src()?, dst()?, &apdu)?;
         assert_eq!(back.service, GroupService::Write);
         assert_eq!(back.payload, Payload::Small(1));
+        Ok(())
     }
 
     #[test]
-    fn write_bytes_temperature_roundtrips() {
+    fn write_bytes_temperature_roundtrips() -> TestResult {
         // DPT 9 temperature is a 2-byte appended payload.
-        let bytes = dpt::dpt9::encode(21.0).unwrap().to_vec();
-        let t = GroupTelegram::write(src(), dst(), bytes.clone());
-        let apdu = t.encode_apdu().unwrap();
+        let bytes = dpt::dpt9::encode(21.0)?.to_vec();
+        let t = GroupTelegram::write(src()?, dst()?, bytes.clone());
+        let apdu = t.encode_apdu()?;
         assert_eq!(apdu.len(), 4, "two control bytes + two payload bytes");
         assert_eq!(&apdu[2..], &bytes[..]);
-        let back = GroupTelegram::decode_apdu(src(), dst(), &apdu).unwrap();
+        let back = GroupTelegram::decode_apdu(src()?, dst()?, &apdu)?;
         assert_eq!(back.payload, Payload::Bytes(bytes));
         assert_eq!(back.service, GroupService::Write);
+        Ok(())
     }
 
     #[test]
-    fn response_roundtrips() {
+    fn response_roundtrips() -> TestResult {
         let t = GroupTelegram {
-            source: src(),
-            destination: dst(),
+            source: src()?,
+            destination: dst()?,
             service: GroupService::Response,
             payload: Payload::Small(1),
         };
-        let apdu = t.encode_apdu().unwrap();
-        let back = GroupTelegram::decode_apdu(src(), dst(), &apdu).unwrap();
+        let apdu = t.encode_apdu()?;
+        let back = GroupTelegram::decode_apdu(src()?, dst()?, &apdu)?;
         assert_eq!(back.service, GroupService::Response);
         assert_eq!(back.payload, Payload::Small(1));
+        Ok(())
     }
 
     #[test]
-    fn small_payload_range_is_enforced() {
+    fn small_payload_range_is_enforced() -> TestResult {
         assert!(Payload::small(64).is_err());
         assert!(Payload::small(63).is_ok());
-        assert!(GroupTelegram::write_small(src(), dst(), 100).is_err());
+        assert!(GroupTelegram::write_small(src()?, dst()?, 100).is_err());
+        Ok(())
     }
 
     #[test]
-    fn short_or_unknown_apdu_rejected() {
-        assert!(GroupTelegram::decode_apdu(src(), dst(), &[0x00]).is_err());
+    fn short_or_unknown_apdu_rejected() -> TestResult {
+        assert!(GroupTelegram::decode_apdu(src()?, dst()?, &[0x00]).is_err());
         // APCI 0b1111 (memory write region) is not modelled.
-        assert!(GroupTelegram::decode_apdu(src(), dst(), &[0x03, 0xC0]).is_err());
+        assert!(GroupTelegram::decode_apdu(src()?, dst()?, &[0x03, 0xC0]).is_err());
+        Ok(())
     }
 }

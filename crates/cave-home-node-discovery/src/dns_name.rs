@@ -182,17 +182,21 @@ impl core::fmt::Display for DnsName {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn parse_dotted_name() {
-        let n = DnsName::parse("_cavehome._tcp.local").expect("parses");
+    fn parse_dotted_name() -> TestResult {
+        let n = DnsName::parse("_cavehome._tcp.local")?;
         assert_eq!(n.labels(), &["_cavehome", "_tcp", "local"]);
         assert_eq!(n.to_dotted(), "_cavehome._tcp.local");
+        Ok(())
     }
 
     #[test]
-    fn parse_tolerates_trailing_dot() {
-        let n = DnsName::parse("kitchen.local.").expect("parses");
+    fn parse_tolerates_trailing_dot() -> TestResult {
+        let n = DnsName::parse("kitchen.local.")?;
         assert_eq!(n.to_dotted(), "kitchen.local");
+        Ok(())
     }
 
     #[test]
@@ -215,23 +219,25 @@ mod tests {
     }
 
     #[test]
-    fn wire_round_trip_service_name() {
-        let n = DnsName::parse("_cavehome._tcp.local").expect("parses");
-        let wire = n.encode().expect("encodes");
+    fn wire_round_trip_service_name() -> TestResult {
+        let n = DnsName::parse("_cavehome._tcp.local")?;
+        let wire = n.encode()?;
         // 1+9 + 1+4 + 1+5 + 1(root) = 22 octets.
         assert_eq!(wire.len(), 22);
-        assert_eq!(*wire.last().expect("non-empty"), 0u8);
-        let (back, consumed) = DnsName::decode(&wire, 0).expect("decodes");
+        assert_eq!(*wire.last().ok_or("non-empty")?, 0u8);
+        let (back, consumed) = DnsName::decode(&wire, 0)?;
         assert_eq!(back, n);
         assert_eq!(consumed, wire.len());
+        Ok(())
     }
 
     #[test]
-    fn wire_round_trip_instance_name() {
-        let n = DnsName::parse("hub-kitchen._cavehome._tcp.local").expect("parses");
-        let wire = n.encode().expect("encodes");
-        let (back, _) = DnsName::decode(&wire, 0).expect("decodes");
+    fn wire_round_trip_instance_name() -> TestResult {
+        let n = DnsName::parse("hub-kitchen._cavehome._tcp.local")?;
+        let wire = n.encode()?;
+        let (back, _) = DnsName::decode(&wire, 0)?;
         assert!(back.eq_ignore_case(&n));
+        Ok(())
     }
 
     #[test]
@@ -245,20 +251,22 @@ mod tests {
     }
 
     #[test]
-    fn case_insensitive_equality() {
-        let a = DnsName::parse("Kitchen.Local").expect("parses");
-        let b = DnsName::parse("kitchen.local").expect("parses");
+    fn case_insensitive_equality() -> TestResult {
+        let a = DnsName::parse("Kitchen.Local")?;
+        let b = DnsName::parse("kitchen.local")?;
         assert!(a.eq_ignore_case(&b));
         // Plain Eq is case-sensitive (stores raw labels).
         assert_ne!(a, b);
+        Ok(())
     }
 
     #[test]
-    fn encode_rejects_overlong_name() {
+    fn encode_rejects_overlong_name() -> TestResult {
         // Many maximal labels overflow the 255-octet wire cap.
         let label = "a".repeat(MAX_LABEL_LEN);
         let labels: Vec<String> = (0..5).map(|_| label.clone()).collect();
-        let n = DnsName::new(labels).expect("labels individually valid");
+        let n = DnsName::new(labels)?;
         assert_eq!(n.encode(), Err(NameError::TooLong));
+        Ok(())
     }
 }

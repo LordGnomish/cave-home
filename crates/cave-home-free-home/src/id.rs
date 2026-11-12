@@ -198,19 +198,23 @@ fn parse_hex4(s: &str) -> Result<u16, IdError> {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn channel_round_trips() {
-        let c = ChannelId::parse("ch0003").expect("valid");
+    fn channel_round_trips() -> TestResult {
+        let c = ChannelId::parse("ch0003")?;
         assert_eq!(c.index(), 3);
         assert_eq!(c.to_string(), "ch0003");
+        Ok(())
     }
 
     #[test]
-    fn channel_high_index_round_trips() {
-        let c = ChannelId::parse("ch00ff").expect("valid");
+    fn channel_high_index_round_trips() -> TestResult {
+        let c = ChannelId::parse("ch00ff")?;
         assert_eq!(c.index(), 255);
         assert_eq!(c.to_string(), "ch00ff");
         assert_eq!(ChannelId::new(255).to_string(), "ch00ff");
+        Ok(())
     }
 
     #[test]
@@ -222,21 +226,23 @@ mod tests {
     }
 
     #[test]
-    fn datapoint_output_round_trips() {
-        let d = DatapointId::parse("odp0000").expect("valid");
+    fn datapoint_output_round_trips() -> TestResult {
+        let d = DatapointId::parse("odp0000")?;
         assert_eq!(d.direction(), Direction::Output);
         assert_eq!(d.index(), 0);
         assert!(!d.is_input());
         assert_eq!(d.to_string(), "odp0000");
+        Ok(())
     }
 
     #[test]
-    fn datapoint_input_round_trips() {
-        let d = DatapointId::parse("idp0001").expect("valid");
+    fn datapoint_input_round_trips() -> TestResult {
+        let d = DatapointId::parse("idp0001")?;
         assert_eq!(d.direction(), Direction::Input);
         assert_eq!(d.index(), 1);
         assert!(d.is_input());
         assert_eq!(d.to_string(), "idp0001");
+        Ok(())
     }
 
     #[test]
@@ -248,10 +254,11 @@ mod tests {
     }
 
     #[test]
-    fn serial_parses_and_preserves_text() {
-        let s = DeviceSerial::parse("ABB700C12345").expect("valid");
+    fn serial_parses_and_preserves_text() -> TestResult {
+        let s = DeviceSerial::parse("ABB700C12345")?;
         assert_eq!(s.as_str(), "ABB700C12345");
         assert_eq!(s.to_string(), "ABB700C12345");
+        Ok(())
     }
 
     #[test]

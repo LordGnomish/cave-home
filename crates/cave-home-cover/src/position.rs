@@ -83,11 +83,14 @@ impl Position {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn new_accepts_full_range() {
-        assert_eq!(Position::new(0).unwrap().percent(), 0);
-        assert_eq!(Position::new(50).unwrap().percent(), 50);
-        assert_eq!(Position::new(100).unwrap().percent(), 100);
+    fn new_accepts_full_range() -> TestResult {
+        assert_eq!(Position::new(0)?.percent(), 0);
+        assert_eq!(Position::new(50)?.percent(), 50);
+        assert_eq!(Position::new(100)?.percent(), 100);
+        Ok(())
     }
 
     #[test]
@@ -104,19 +107,21 @@ mod tests {
     }
 
     #[test]
-    fn closed_and_open_constants_and_predicates() {
+    fn closed_and_open_constants_and_predicates() -> TestResult {
         assert!(Position::CLOSED.is_closed());
         assert!(!Position::CLOSED.is_open());
         assert!(Position::OPEN.is_open());
         assert!(!Position::OPEN.is_closed());
-        assert!(!Position::new(50).unwrap().is_open());
-        assert!(!Position::new(50).unwrap().is_closed());
+        assert!(!Position::new(50)?.is_open());
+        assert!(!Position::new(50)?.is_closed());
+        Ok(())
     }
 
     #[test]
-    fn ordering_follows_openness() {
-        assert!(Position::CLOSED < Position::new(1).unwrap());
-        assert!(Position::new(40).unwrap() < Position::new(60).unwrap());
-        assert!(Position::new(99).unwrap() < Position::OPEN);
+    fn ordering_follows_openness() -> TestResult {
+        assert!(Position::CLOSED < Position::new(1)?);
+        assert!(Position::new(40)? < Position::new(60)?);
+        assert!(Position::new(99)? < Position::OPEN);
+        Ok(())
     }
 }

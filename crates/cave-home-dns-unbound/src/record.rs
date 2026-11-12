@@ -216,6 +216,8 @@ pub const fn v6(a: u16, b: u16, c: u16, d: u16, e: u16, f: u16, g: u16, h: u16) 
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), RecordError>;
+
     #[test]
     fn record_type_round_trips_through_mnemonic() {
         for rt in [
@@ -236,17 +238,19 @@ mod tests {
     }
 
     #[test]
-    fn parses_ipv4_dotted_quad_for_a_record() {
-        let d = RecordData::parse_addr(RecordType::A, "192.168.1.50").expect("ok");
+    fn parses_ipv4_dotted_quad_for_a_record() -> TestResult {
+        let d = RecordData::parse_addr(RecordType::A, "192.168.1.50")?;
         assert_eq!(d, RecordData::Addr(IpAddr::V4(v4(192, 168, 1, 50))));
         assert_eq!(d.to_text(), "192.168.1.50");
+        Ok(())
     }
 
     #[test]
-    fn parses_ipv6_for_aaaa_record_and_compresses() {
-        let d = RecordData::parse_addr(RecordType::Aaaa, "2001:db8:0:0:0:0:0:1").expect("ok");
+    fn parses_ipv6_for_aaaa_record_and_compresses() -> TestResult {
+        let d = RecordData::parse_addr(RecordType::Aaaa, "2001:db8:0:0:0:0:0:1")?;
         // std compresses the zero run.
         assert_eq!(d.to_text(), "2001:db8::1");
+        Ok(())
     }
 
     #[test]

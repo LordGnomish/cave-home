@@ -105,7 +105,7 @@ pub fn route_call(
     if let Some(ForwardTarget::Extension(target)) = &prefs.forward {
         return RouteOutcome::Forward(target.clone());
     }
-    if let Some(ForwardTarget::Voicemail) = &prefs.forward {
+    if matches!(&prefs.forward, Some(ForwardTarget::Voicemail)) {
         return RouteOutcome::Voicemail;
     }
 
@@ -162,10 +162,7 @@ where
             // Keep the member if they are reachable: not on DND, or an
             // emergency overrides DND. A member with no prefs entry is treated
             // as available (default prefs).
-            match prefs_of(num) {
-                Some(p) => is_emergency || !p.do_not_disturb,
-                None => true,
-            }
+            prefs_of(num).is_none_or(|p| is_emergency || !p.do_not_disturb)
         })
         .collect();
 

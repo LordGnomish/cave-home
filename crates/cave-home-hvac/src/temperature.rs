@@ -16,7 +16,7 @@ pub const MAX_CELSIUS: f64 = 60.0;
 /// A validated temperature, stored canonically in degrees Celsius.
 ///
 /// Construction rejects non-finite values and anything outside
-/// [`MIN_CELSIUS`]`..=`[`MAX_CELSIUS`], so downstream control logic never has to
+/// <code>[MIN_CELSIUS]..=[MAX_CELSIUS]</code>, so downstream control logic never has to
 /// defend against `NaN` or absurd readings.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Temperature {
@@ -48,7 +48,7 @@ impl Temperature {
     ///
     /// # Errors
     /// Returns [`TemperatureError`] if `celsius` is non-finite or outside
-    /// [`MIN_CELSIUS`]`..=`[`MAX_CELSIUS`].
+    /// <code>[MIN_CELSIUS]..=[MAX_CELSIUS]</code>.
     pub fn from_celsius(celsius: f64) -> Result<Self, TemperatureError> {
         if !celsius.is_finite() {
             return Err(TemperatureError::NotFinite);
@@ -99,6 +99,8 @@ pub fn fahrenheit_to_celsius(fahrenheit: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[test]
     fn rejects_nan_and_infinite() {
@@ -151,10 +153,11 @@ mod tests {
     }
 
     #[test]
-    fn from_fahrenheit_stores_canonical_celsius() {
-        let t = Temperature::from_fahrenheit(68.0).expect("68 °F is in range");
+    fn from_fahrenheit_stores_canonical_celsius() -> TestResult {
+        let t = Temperature::from_fahrenheit(68.0)?;
         assert!((t.celsius() - 20.0).abs() < 1e-9);
         assert!((t.fahrenheit() - 68.0).abs() < 1e-9);
+        Ok(())
     }
 
     #[test]

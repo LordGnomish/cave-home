@@ -163,7 +163,7 @@ mod tests {
     fn zero_cap_records_nothing() {
         let mut log = VisitorLog::with_capacity(0);
         log.record(VisitorEntry::observed(DoorbellEvent::ButtonPressed, 1));
-        assert!(log.entries().is_empty());
+        assert_eq!(log.entries(), []);
         assert_eq!(log.latest(), None);
     }
 

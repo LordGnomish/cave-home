@@ -175,6 +175,8 @@ pub fn encode(value: f64, precision: u8, scale: u8, size: u8) -> ZwaveResult<Vec
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn split_meta_matches_spec_layout() {
         // precision=1 (0b001), scale=0 (0b00), size=2 (0b010) => 0b001_00_010 = 0x22
@@ -184,38 +186,42 @@ mod tests {
     }
 
     #[test]
-    fn temperature_24_4_celsius() {
+    fn temperature_24_4_celsius() -> TestResult {
         // 0x22 = precision 1, scale 0 (Celsius), size 2; 0x00F4 = 244 => 24.4
-        let fp = decode(&[0x22, 0x00, 0xF4]).expect("valid temperature");
+        let fp = decode(&[0x22, 0x00, 0xF4])?;
         assert!((fp.value - 24.4).abs() < 1e-9);
         assert_eq!(fp.scale, 0);
         assert_eq!(fp.precision, 1);
         assert_eq!(fp.size, 2);
+        Ok(())
     }
 
     #[test]
-    fn negative_temperature_two_complement() {
+    fn negative_temperature_two_complement() -> TestResult {
         // precision 1, size 2, raw 0xFF38 = -200 => -20.0
-        let fp = decode(&[0x22, 0xFF, 0x38]).expect("valid negative temp");
+        let fp = decode(&[0x22, 0xFF, 0x38])?;
         assert!((fp.value - (-20.0)).abs() < 1e-9);
+        Ok(())
     }
 
     #[test]
-    fn humidity_single_byte_no_fraction() {
+    fn humidity_single_byte_no_fraction() -> TestResult {
         // precision 0, scale 0, size 1, raw 0x2A = 42 => 42 %
-        let fp = decode(&[0x01, 0x2A]).expect("valid humidity");
+        let fp = decode(&[0x01, 0x2A])?;
         assert!((fp.value - 42.0).abs() < 1e-9);
         assert_eq!(fp.precision, 0);
         assert_eq!(fp.size, 1);
+        Ok(())
     }
 
     #[test]
-    fn luminance_four_byte() {
+    fn luminance_four_byte() -> TestResult {
         // precision 0, scale 1 (lux), size 4, raw 0x0001_86A0 = 100000 => 100000 lux
-        let fp = decode(&[0x0C, 0x00, 0x01, 0x86, 0xA0]).expect("valid luminance");
+        let fp = decode(&[0x0C, 0x00, 0x01, 0x86, 0xA0])?;
         assert!((fp.value - 100_000.0).abs() < 1e-9);
         assert_eq!(fp.scale, 1);
         assert_eq!(fp.size, 4);
+        Ok(())
     }
 
     #[test]
@@ -238,11 +244,12 @@ mod tests {
     }
 
     #[test]
-    fn encode_then_decode_roundtrips() {
-        let bytes = encode(24.4, 1, 0, 2).expect("encodable");
+    fn encode_then_decode_roundtrips() -> TestResult {
+        let bytes = encode(24.4, 1, 0, 2)?;
         assert_eq!(bytes, vec![0x22, 0x00, 0xF4]);
-        let fp = decode(&bytes).expect("decodable");
+        let fp = decode(&bytes)?;
         assert!((fp.value - 24.4).abs() < 1e-9);
+        Ok(())
     }
 
     #[test]

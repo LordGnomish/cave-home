@@ -116,7 +116,7 @@ pub const fn payload_len(family: Family) -> usize {
 }
 
 // Read a big-endian u16 register at byte offset `at`.
-fn reg(payload: &[u8], at: usize) -> u16 {
+const fn reg(payload: &[u8], at: usize) -> u16 {
     u16::from_be_bytes([payload[at], payload[at + 1]])
 }
 
@@ -171,6 +171,8 @@ pub fn decode(payload: &[u8], family: Family) -> Result<Telemetry, DecodeError> 
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     // Build a real-time payload for `family` from register values, appending
     // the correct CRC-16/Modbus trailer. `regs` must be the full register run
     // (4*N panel + 7 AC/summary) as big-endian u16s.
@@ -203,9 +205,9 @@ mod tests {
     }
 
     #[test]
-    fn decodes_one_panel_fields_and_scaling() {
+    fn decodes_one_panel_fields_and_scaling() -> TestResult {
         let payload = build_payload(&one_panel_regs());
-        let t = decode(&payload, Family::OnePanel).expect("decodes");
+        let t = decode(&payload, Family::OnePanel)?;
         assert_eq!(t.panels.len(), 1);
         assert!((t.panels[0].voltage_v - 34.0).abs() < 1e-9);
         assert!((t.panels[0].current_a - 8.50).abs() < 1e-9);
@@ -216,28 +218,31 @@ mod tests {
         assert!((t.today_wh - 123.0).abs() < 1e-9);
         assert!((t.total_wh - 100_000.0).abs() < 1e-9);
         assert!((t.temperature_c - 45.2).abs() < 1e-9);
+        Ok(())
     }
 
     #[test]
-    fn efficiency_is_ac_over_dc() {
+    fn efficiency_is_ac_over_dc() -> TestResult {
         let payload = build_payload(&one_panel_regs());
-        let t = decode(&payload, Family::OnePanel).unwrap();
+        let t = decode(&payload, Family::OnePanel)?;
         // 280 AC / 289 DC.
         assert!((t.efficiency() - (280.0 / 289.0)).abs() < 1e-9);
+        Ok(())
     }
 
     #[test]
-    fn efficiency_is_zero_at_night() {
+    fn efficiency_is_zero_at_night() -> TestResult {
         let mut regs = one_panel_regs();
         regs[2] = 0; // no PV power
         regs[6] = 0; // no AC power
         let payload = build_payload(&regs);
-        let t = decode(&payload, Family::OnePanel).unwrap();
+        let t = decode(&payload, Family::OnePanel)?;
         assert_eq!(t.efficiency(), 0.0);
+        Ok(())
     }
 
     #[test]
-    fn two_panel_has_two_panel_readings() {
+    fn two_panel_has_two_panel_readings() -> TestResult {
         // 2 panels * 4 + 7 = 15 registers.
         let regs = vec![
             340, 850, 2890, 0, // panel 1
@@ -245,33 +250,36 @@ mod tests {
             2300, 5000, 3400, 50, 0, 5000, 410, // AC + summary
         ];
         let payload = build_payload(&regs);
-        let t = decode(&payload, Family::TwoPanel).unwrap();
+        let t = decode(&payload, Family::TwoPanel)?;
         assert_eq!(t.panels.len(), 2);
         assert!((t.panels[1].power_w - 60.0).abs() < 1e-9);
         assert!((t.dc_power_w() - (289.0 + 60.0)).abs() < 1e-9);
+        Ok(())
     }
 
     #[test]
-    fn four_panel_has_four_panel_readings() {
+    fn four_panel_has_four_panel_readings() -> TestResult {
         // 4 panels * 4 + 7 = 23 registers.
         let mut regs = vec![0u16; 23];
         for k in 0..4 {
             regs[4 * k + 2] = 1000; // 100.0 W each panel
         }
         let payload = build_payload(&regs);
-        let t = decode(&payload, Family::FourPanel).unwrap();
+        let t = decode(&payload, Family::FourPanel)?;
         assert_eq!(t.panels.len(), 4);
         assert!((t.dc_power_w() - 400.0).abs() < 1e-9);
+        Ok(())
     }
 
     #[test]
-    fn rejects_truncated_payload() {
+    fn rejects_truncated_payload() -> TestResult {
         let payload = build_payload(&one_panel_regs());
         let short = &payload[..payload.len() - 5];
         match decode(short, Family::OnePanel) {
             Err(DecodeError::Truncated { .. }) => {}
-            other => panic!("expected Truncated, got {other:?}"),
+            other => return Err(format!("expected Truncated, got {other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]

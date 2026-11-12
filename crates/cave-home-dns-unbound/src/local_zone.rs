@@ -182,100 +182,109 @@ mod tests {
     use super::*;
     use crate::record::RecordType;
 
-    fn zone(apex: &str, t: LocalZoneType) -> LocalZone {
-        LocalZone::new(DnsName::parse(apex).expect("apex"), t)
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn zone(apex: &str, t: LocalZoneType) -> Result<LocalZone, String> {
+        Ok(LocalZone::new(name(apex)?, t))
     }
 
-    fn name(n: &str) -> DnsName {
-        DnsName::parse(n).expect("name")
+    fn name(n: &str) -> Result<DnsName, String> {
+        DnsName::parse(n).map_err(|e| format!("{e:?}"))
     }
 
-    fn a_record(n: &str, ip: &str) -> Record {
-        Record::address(n, RecordType::A, ip).expect("record")
+    fn a_record(n: &str, ip: &str) -> Result<Record, String> {
+        Record::address(n, RecordType::A, ip).map_err(|e| format!("{e:?}"))
     }
 
     #[test]
-    fn static_answers_matching_name_and_type() {
-        let mut z = zone("home.arpa", LocalZoneType::Static);
-        z.add(a_record("printer.home.arpa", "192.168.1.50"));
-        match z.decide(&name("printer.home.arpa"), RecordType::A) {
+    fn static_answers_matching_name_and_type() -> TestResult {
+        let mut z = zone("home.arpa", LocalZoneType::Static)?;
+        z.add(a_record("printer.home.arpa", "192.168.1.50")?);
+        match z.decide(&name("printer.home.arpa")?, RecordType::A) {
             LocalDecision::Answer(recs) => {
                 assert_eq!(recs.len(), 1);
                 assert_eq!(recs[0].data.to_text(), "192.168.1.50");
             }
-            other => panic!("expected Answer, got {other:?}"),
+            other => return Err(format!("expected Answer, got {other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]
-    fn static_name_present_wrong_type_is_nodata() {
-        let mut z = zone("home.arpa", LocalZoneType::Static);
-        z.add(a_record("printer.home.arpa", "192.168.1.50"));
+    fn static_name_present_wrong_type_is_nodata() -> TestResult {
+        let mut z = zone("home.arpa", LocalZoneType::Static)?;
+        z.add(a_record("printer.home.arpa", "192.168.1.50")?);
         assert_eq!(
-            z.decide(&name("printer.home.arpa"), RecordType::Aaaa),
+            z.decide(&name("printer.home.arpa")?, RecordType::Aaaa),
             LocalDecision::NoData
         );
+        Ok(())
     }
 
     #[test]
-    fn static_absent_name_is_nxdomain_never_recurses() {
-        let mut z = zone("home.arpa", LocalZoneType::Static);
-        z.add(a_record("printer.home.arpa", "192.168.1.50"));
+    fn static_absent_name_is_nxdomain_never_recurses() -> TestResult {
+        let mut z = zone("home.arpa", LocalZoneType::Static)?;
+        z.add(a_record("printer.home.arpa", "192.168.1.50")?);
         assert_eq!(
-            z.decide(&name("toaster.home.arpa"), RecordType::A),
+            z.decide(&name("toaster.home.arpa")?, RecordType::A),
             LocalDecision::NxDomain
         );
+        Ok(())
     }
 
     #[test]
-    fn transparent_answers_local_then_passes_through() {
-        let mut z = zone("home.arpa", LocalZoneType::Transparent);
-        z.add(a_record("nas.home.arpa", "192.168.1.10"));
-        assert!(z.decide(&name("nas.home.arpa"), RecordType::A).is_answer());
+    fn transparent_answers_local_then_passes_through() -> TestResult {
+        let mut z = zone("home.arpa", LocalZoneType::Transparent)?;
+        z.add(a_record("nas.home.arpa", "192.168.1.10")?);
+        assert!(z.decide(&name("nas.home.arpa")?, RecordType::A).is_answer());
         // No local data for this one -> recursion handles it.
         assert_eq!(
-            z.decide(&name("unknown.home.arpa"), RecordType::A),
+            z.decide(&name("unknown.home.arpa")?, RecordType::A),
             LocalDecision::Passthrough
         );
+        Ok(())
     }
 
     #[test]
-    fn redirect_sends_every_subname_to_apex_data() {
-        let mut z = zone("ads.example", LocalZoneType::Redirect);
-        z.add(a_record("ads.example", "0.0.0.0"));
+    fn redirect_sends_every_subname_to_apex_data() -> TestResult {
+        let mut z = zone("ads.example", LocalZoneType::Redirect)?;
+        z.add(a_record("ads.example", "0.0.0.0")?);
         for q in ["ads.example", "tracker.ads.example", "a.b.ads.example"] {
-            match z.decide(&name(q), RecordType::A) {
+            match z.decide(&name(q)?, RecordType::A) {
                 LocalDecision::Answer(recs) => assert_eq!(recs[0].data.to_text(), "0.0.0.0"),
-                other => panic!("{q}: expected redirect Answer, got {other:?}"),
+                other => return Err(format!("{q}: expected redirect Answer, got {other:?}").into()),
             }
         }
+        Ok(())
     }
 
     #[test]
-    fn refuse_deny_and_always_nxdomain() {
+    fn refuse_deny_and_always_nxdomain() -> TestResult {
         assert_eq!(
-            zone("blocked.test", LocalZoneType::Refuse)
-                .decide(&name("x.blocked.test"), RecordType::A),
+            zone("blocked.test", LocalZoneType::Refuse)?
+                .decide(&name("x.blocked.test")?, RecordType::A),
             LocalDecision::Refuse
         );
         assert_eq!(
-            zone("blocked.test", LocalZoneType::Deny)
-                .decide(&name("x.blocked.test"), RecordType::A),
+            zone("blocked.test", LocalZoneType::Deny)?
+                .decide(&name("x.blocked.test")?, RecordType::A),
             LocalDecision::Drop
         );
         assert_eq!(
-            zone("gone.test", LocalZoneType::AlwaysNxdomain)
-                .decide(&name("anything.gone.test"), RecordType::A),
+            zone("gone.test", LocalZoneType::AlwaysNxdomain)?
+                .decide(&name("anything.gone.test")?, RecordType::A),
             LocalDecision::NxDomain
         );
+        Ok(())
     }
 
     #[test]
-    fn name_outside_zone_passes_through() {
-        let z = zone("home.arpa", LocalZoneType::Static);
+    fn name_outside_zone_passes_through() -> TestResult {
+        let z = zone("home.arpa", LocalZoneType::Static)?;
         assert_eq!(
-            z.decide(&name("example.com"), RecordType::A),
+            z.decide(&name("example.com")?, RecordType::A),
             LocalDecision::Passthrough
         );
+        Ok(())
     }
 }

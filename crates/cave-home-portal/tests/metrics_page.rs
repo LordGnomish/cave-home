@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! RED-phase test for the **Portal Metrics page** — the developer-only live
 //! node / workload CPU + memory dashboard backed by the in-process
-//! metrics_server pipeline.
+//! `metrics_server` pipeline.
 //!
 //! The cluster resource metrics (`kubectl top`-class data) are power-user
 //! content, so the page is **developer-only** (Charter §6.3): it is structurally

@@ -22,7 +22,7 @@
 //!   rest of cave-home consumes.
 //! - [`label`] — grandma-friendly EN / DE / TR labels and advice.
 //!
-//! The **vendor I/O adapters** (Viessmann Open3EClient, Daikin, LG ThinQ,
+//! The **vendor I/O adapters** (Viessmann `Open3EClient`, Daikin, LG `ThinQ`,
 //! Bosch, Mitsubishi, Samsung; generic Zigbee / Z-Wave / Matter thermostats),
 //! scheduling / PID tuning, and the cave-home-core entity/state integration are
 //! network/hardware-bound and are deferred to Phase 1b — every one is

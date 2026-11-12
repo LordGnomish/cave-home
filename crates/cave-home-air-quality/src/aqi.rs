@@ -33,12 +33,10 @@ struct Breakpoint {
 /// per the EPA table precision for each pollutant.
 const fn truncation_decimals(p: Pollutant) -> i32 {
     match p {
-        // PM2.5 tables are stated to 0.1 µg/m³.
-        Pollutant::Pm25 => 1,
+        // PM2.5 tables are stated to 0.1 µg/m³, CO (ppm) to 0.1 ppm.
+        Pollutant::Pm25 | Pollutant::CarbonMonoxide => 1,
         // O3 (ppm) is stated to 0.001 ppm.
         Pollutant::Ozone => 3,
-        // CO (ppm) is stated to 0.1 ppm.
-        Pollutant::CarbonMonoxide => 1,
         // PM10 (µg/m³), NO2 / SO2 (ppb) are stated to integer precision.
         _ => 0,
     }
@@ -110,7 +108,7 @@ const CO: [Breakpoint; 6] = [
 
 /// EPA breakpoint table for an AQI pollutant. `None` for pollutants graded by
 /// [`crate::classify`] instead (CO₂, VOC, radon).
-fn table(p: Pollutant) -> Option<&'static [Breakpoint]> {
+const fn table(p: Pollutant) -> Option<&'static [Breakpoint]> {
     match p {
         Pollutant::Pm25 => Some(&PM25),
         Pollutant::Pm10 => Some(&PM10),

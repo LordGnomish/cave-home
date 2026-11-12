@@ -99,6 +99,8 @@ mod tests {
     use super::*;
     use crate::stubs::StubCount;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn snap(date: &str, metrics: Vec<SubsystemMetric>) -> Snapshot {
         Snapshot {
             project: "cave-home".into(),
@@ -131,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn diff_reports_growth() {
+    fn diff_reports_growth() -> TestResult {
         let prev = snap(
             "2026-06-06",
             vec![dm("kine", 1000, 200, 5, 0, StubCount::default())],
@@ -141,39 +143,42 @@ mod tests {
             vec![dm("kine", 1000, 400, 9, 0, StubCount::default())],
         );
         let dd = diff(Some(&prev), &cur);
-        let k = dd.subsystem("kine").unwrap();
+        let k = dd.subsystem("kine").ok_or("subsystem in the diff")?;
         assert!(!k.is_new);
         assert_eq!(k.d_port_loc, 200);
         assert_eq!(k.d_tests_passed, 4);
         assert!(k.d_real_pct > 0.0);
         assert!(dd.d_overall_real_pct > 0.0);
         assert_eq!(dd.from_date, "2026-06-06");
+        Ok(())
     }
 
     #[test]
-    fn new_subsystem_flagged() {
+    fn new_subsystem_flagged() -> TestResult {
         let prev = snap("2026-06-06", vec![]);
         let cur = snap(
             "2026-06-07",
             vec![dm("hue", 0, 100, 3, 0, StubCount::default())],
         );
         let dd = diff(Some(&prev), &cur);
-        assert!(dd.subsystem("hue").unwrap().is_new);
+        assert!(dd.subsystem("hue").ok_or("subsystem in the diff")?.is_new);
+        Ok(())
     }
 
     #[test]
-    fn no_baseline_treats_all_new() {
+    fn no_baseline_treats_all_new() -> TestResult {
         let cur = snap(
             "2026-06-07",
             vec![dm("hue", 0, 100, 3, 0, StubCount::default())],
         );
         let dd = diff(None, &cur);
         assert_eq!(dd.from_date, "");
-        assert!(dd.subsystem("hue").unwrap().is_new);
+        assert!(dd.subsystem("hue").ok_or("subsystem in the diff")?.is_new);
+        Ok(())
     }
 
     #[test]
-    fn detects_regressions() {
+    fn detects_regressions() -> TestResult {
         let prev = snap(
             "2026-06-06",
             vec![dm("kine", 1000, 400, 9, 0, StubCount::default())],
@@ -193,9 +198,10 @@ mod tests {
             )],
         );
         let dd = diff(Some(&prev), &cur);
-        let k = dd.subsystem("kine").unwrap();
+        let k = dd.subsystem("kine").ok_or("subsystem in the diff")?;
         assert_eq!(k.d_tests_passed, -2);
         assert_eq!(k.d_stubs, 1);
         assert!(k.d_real_pct < 0.0);
+        Ok(())
     }
 }

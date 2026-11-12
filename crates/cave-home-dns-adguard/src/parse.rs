@@ -158,20 +158,24 @@ fn parse_plain_domain(trimmed: &str) -> Option<Rule> {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn parses_hosts_style_with_zero_sink() {
-        let r = parse_line("0.0.0.0 ads.example.com").expect("hosts line");
+    fn parses_hosts_style_with_zero_sink() -> TestResult {
+        let r = parse_line("0.0.0.0 ads.example.com").ok_or("hosts line")?;
         assert_eq!(r.action(), Action::Block);
         assert_eq!(
             r.pattern(),
             &DomainPattern::Subdomain("ads.example.com".into())
         );
+        Ok(())
     }
 
     #[test]
-    fn parses_hosts_style_with_loopback_sink() {
-        let r = parse_line("127.0.0.1\ttracker.example.net").expect("hosts line");
+    fn parses_hosts_style_with_loopback_sink() -> TestResult {
+        let r = parse_line("127.0.0.1\ttracker.example.net").ok_or("hosts line")?;
         assert_eq!(r.pattern().domain(), "tracker.example.net");
+        Ok(())
     }
 
     #[test]
@@ -181,38 +185,42 @@ mod tests {
     }
 
     #[test]
-    fn parses_adblock_subdomain_block() {
-        let r = parse_line("||ads.example.com^").expect("adblock line");
+    fn parses_adblock_subdomain_block() -> TestResult {
+        let r = parse_line("||ads.example.com^").ok_or("adblock line")?;
         assert_eq!(r.action(), Action::Block);
         assert_eq!(
             r.pattern(),
             &DomainPattern::Subdomain("ads.example.com".into())
         );
+        Ok(())
     }
 
     #[test]
-    fn parses_adblock_allow_exception() {
-        let r = parse_line("@@||good.example.com^").expect("allow line");
+    fn parses_adblock_allow_exception() -> TestResult {
+        let r = parse_line("@@||good.example.com^").ok_or("allow line")?;
         assert_eq!(r.action(), Action::Allow);
         assert_eq!(
             r.pattern(),
             &DomainPattern::Subdomain("good.example.com".into())
         );
+        Ok(())
     }
 
     #[test]
-    fn parses_adblock_exact_anchor() {
-        let r = parse_line("|example.com|").expect("exact line");
+    fn parses_adblock_exact_anchor() -> TestResult {
+        let r = parse_line("|example.com|").ok_or("exact line")?;
         assert_eq!(r.pattern(), &DomainPattern::Exact("example.com".into()));
         assert!(r.matches("example.com"));
         assert!(!r.matches("ads.example.com"));
+        Ok(())
     }
 
     #[test]
-    fn parses_plain_domain_as_subdomain_block() {
-        let r = parse_line("doubleclick.net").expect("plain domain");
+    fn parses_plain_domain_as_subdomain_block() -> TestResult {
+        let r = parse_line("doubleclick.net").ok_or("plain domain")?;
         assert_eq!(r.action(), Action::Block);
         assert!(r.matches("ad.doubleclick.net"));
+        Ok(())
     }
 
     #[test]
@@ -262,8 +270,9 @@ http://nope.example/x
     }
 
     #[test]
-    fn hosts_line_trailing_comment_ignored() {
-        let r = parse_line("0.0.0.0 ads.example.com # inline note").expect("hosts");
+    fn hosts_line_trailing_comment_ignored() -> TestResult {
+        let r = parse_line("0.0.0.0 ads.example.com # inline note").ok_or("hosts")?;
         assert_eq!(r.pattern().domain(), "ads.example.com");
+        Ok(())
     }
 }

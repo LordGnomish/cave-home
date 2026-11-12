@@ -287,35 +287,39 @@ mod tests {
     }
 
     #[test]
-    fn version_empty_is_latest() {
-        assert!(VersionPolicy::parse("").unwrap().is_latest());
-        assert!(VersionPolicy::parse("   ").unwrap().is_latest());
+    fn version_empty_is_latest() -> Result<(), SpecError> {
+        assert!(VersionPolicy::parse("")?.is_latest());
+        assert!(VersionPolicy::parse("   ")?.is_latest());
+        Ok(())
     }
 
     #[test]
-    fn version_latest_keyword_case_insensitive() {
-        assert!(VersionPolicy::parse("Latest").unwrap().is_latest());
-        assert!(VersionPolicy::parse("LATEST").unwrap().is_latest());
+    fn version_latest_keyword_case_insensitive() -> Result<(), SpecError> {
+        assert!(VersionPolicy::parse("Latest")?.is_latest());
+        assert!(VersionPolicy::parse("LATEST")?.is_latest());
+        Ok(())
     }
 
     #[test]
-    fn version_pinned_with_and_without_v_prefix() {
+    fn version_pinned_with_and_without_v_prefix() -> Result<(), SpecError> {
         assert_eq!(
-            VersionPolicy::parse("1.2.3").unwrap(),
+            VersionPolicy::parse("1.2.3")?,
             VersionPolicy::Pinned("1.2.3".into())
         );
         assert_eq!(
-            VersionPolicy::parse("v1.2.3").unwrap(),
+            VersionPolicy::parse("v1.2.3")?,
             VersionPolicy::Pinned("1.2.3".into())
         );
+        Ok(())
     }
 
     #[test]
-    fn version_pinned_prerelease_ok() {
+    fn version_pinned_prerelease_ok() -> Result<(), SpecError> {
         assert_eq!(
-            VersionPolicy::parse("1.2.3-rc.1").unwrap(),
+            VersionPolicy::parse("1.2.3-rc.1")?,
             VersionPolicy::Pinned("1.2.3-rc.1".into())
         );
+        Ok(())
     }
 
     #[test]
@@ -335,15 +339,17 @@ mod tests {
     }
 
     #[test]
-    fn repo_https_ok() {
-        let r = Repo::parse("https://charts.example.com/stable").unwrap();
+    fn repo_https_ok() -> Result<(), SpecError> {
+        let r = Repo::parse("https://charts.example.com/stable")?;
         assert_eq!(r.kind, RepoKind::Http);
+        Ok(())
     }
 
     #[test]
-    fn repo_oci_ok() {
-        let r = Repo::parse("oci://registry.example.com/charts").unwrap();
+    fn repo_oci_ok() -> Result<(), SpecError> {
+        let r = Repo::parse("oci://registry.example.com/charts")?;
         assert_eq!(r.kind, RepoKind::Oci);
+        Ok(())
     }
 
     #[test]

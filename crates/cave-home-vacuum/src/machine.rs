@@ -182,14 +182,12 @@ impl Vacuum {
             VacuumCommand::Locate => {
                 // Locate is a no-op on state: it just makes a sound. Allowed any
                 // time, including while faulted, so a person can find the unit.
-                Ok(self.state)
             }
             VacuumCommand::SetFanSpeed(speed) => {
                 if !self.features.fan.supports(speed) {
                     return Err(CommandError::Unsupported);
                 }
                 self.fan_speed = speed;
-                Ok(self.state)
             }
             VacuumCommand::Start => {
                 if !self.can_begin_clean() {
@@ -199,7 +197,6 @@ impl Vacuum {
                     return Err(CommandError::BatteryTooLow);
                 }
                 self.state = VacuumState::Cleaning;
-                Ok(self.state)
             }
             VacuumCommand::CleanSpot => {
                 if !self.features.supports_spot {
@@ -212,7 +209,6 @@ impl Vacuum {
                     return Err(CommandError::BatteryTooLow);
                 }
                 self.state = VacuumState::SpotCleaning;
-                Ok(self.state)
             }
             VacuumCommand::CleanSegments(ids) => {
                 if !self.features.supports_zones {
@@ -229,7 +225,6 @@ impl Vacuum {
                     return Err(CommandError::BatteryTooLow);
                 }
                 self.state = VacuumState::Cleaning;
-                Ok(self.state)
             }
             VacuumCommand::CleanZones(zones) => {
                 if !self.features.supports_zones {
@@ -245,14 +240,12 @@ impl Vacuum {
                     return Err(CommandError::BatteryTooLow);
                 }
                 self.state = VacuumState::Cleaning;
-                Ok(self.state)
             }
             VacuumCommand::Pause => {
                 if !self.state.is_busy() {
                     return Err(CommandError::IllegalTransition);
                 }
                 self.state = VacuumState::Paused;
-                Ok(self.state)
             }
             VacuumCommand::Stop => {
                 // Stop is meaningful from any moving or paused state; it parks
@@ -268,17 +261,15 @@ impl Vacuum {
                     return Err(CommandError::IllegalTransition);
                 }
                 self.state = VacuumState::Idle;
-                Ok(self.state)
             }
             VacuumCommand::ReturnToBase => {
                 // Already docked? Nothing to do, but not an error.
-                if matches!(self.state, VacuumState::Returning | VacuumState::Docked) {
-                    return Ok(self.state);
+                if !matches!(self.state, VacuumState::Returning | VacuumState::Docked) {
+                    self.state = VacuumState::Returning;
                 }
-                self.state = VacuumState::Returning;
-                Ok(self.state)
             }
         }
+        Ok(self.state)
     }
 
     /// Convenience: clean a set of named rooms by id. Equivalent to
@@ -359,11 +350,13 @@ impl Vacuum {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::battery::ChargeDirection;
+    use crate::battery::{BatteryError, ChargeDirection};
     use crate::map::{Segment, VacuumMap};
 
-    fn full_battery() -> Battery {
-        Battery::new(90, ChargeDirection::Discharging).expect("valid")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn full_battery() -> Result<Battery, BatteryError> {
+        Battery::new(90, ChargeDirection::Discharging)
     }
 
     fn home_map() -> VacuumMap {
@@ -373,32 +366,38 @@ mod tests {
         ])
     }
 
-    fn full_vac(state: VacuumState) -> Vacuum {
-        Vacuum::with_state(VacuumFeatures::full(), state, full_battery())
+    fn full_vac(state: VacuumState) -> Result<Vacuum, BatteryError> {
+        Ok(Vacuum::with_state(
+            VacuumFeatures::full(),
+            state,
+            full_battery()?,
+        ))
     }
 
     // ---- start / pause / stop / return -----------------------------------
 
     #[test]
-    fn start_from_docked_goes_cleaning() {
-        let mut v = full_vac(VacuumState::Docked);
+    fn start_from_docked_goes_cleaning() -> TestResult {
+        let mut v = full_vac(VacuumState::Docked)?;
         assert_eq!(v.apply(VacuumCommand::Start), Ok(VacuumState::Cleaning));
+        Ok(())
     }
 
     #[test]
-    fn start_from_idle_and_paused_goes_cleaning() {
-        let mut idle = full_vac(VacuumState::Idle);
+    fn start_from_idle_and_paused_goes_cleaning() -> TestResult {
+        let mut idle = full_vac(VacuumState::Idle)?;
         assert_eq!(idle.apply(VacuumCommand::Start), Ok(VacuumState::Cleaning));
-        let mut paused = full_vac(VacuumState::Paused);
+        let mut paused = full_vac(VacuumState::Paused)?;
         assert_eq!(
             paused.apply(VacuumCommand::Start),
             Ok(VacuumState::Cleaning)
         );
+        Ok(())
     }
 
     #[test]
-    fn start_while_already_cleaning_is_rejected() {
-        let mut v = full_vac(VacuumState::Cleaning);
+    fn start_while_already_cleaning_is_rejected() -> TestResult {
+        let mut v = full_vac(VacuumState::Cleaning)?;
         assert_eq!(
             v.apply(VacuumCommand::Start),
             Err(CommandError::IllegalTransition)
@@ -408,104 +407,115 @@ mod tests {
             VacuumState::Cleaning,
             "rejected start changes nothing"
         );
+        Ok(())
     }
 
     #[test]
-    fn return_to_base_from_cleaning_goes_returning() {
-        let mut v = full_vac(VacuumState::Cleaning);
+    fn return_to_base_from_cleaning_goes_returning() -> TestResult {
+        let mut v = full_vac(VacuumState::Cleaning)?;
         assert_eq!(
             v.apply(VacuumCommand::ReturnToBase),
             Ok(VacuumState::Returning)
         );
+        Ok(())
     }
 
     #[test]
-    fn reaching_dock_settles_to_docked() {
-        let mut v = full_vac(VacuumState::Returning);
+    fn reaching_dock_settles_to_docked() -> TestResult {
+        let mut v = full_vac(VacuumState::Returning)?;
         v.reached_dock();
         assert_eq!(v.state(), VacuumState::Docked);
         assert!(v.state().is_docked());
+        Ok(())
     }
 
     #[test]
-    fn pause_then_resume_clean() {
-        let mut v = full_vac(VacuumState::Cleaning);
+    fn pause_then_resume_clean() -> TestResult {
+        let mut v = full_vac(VacuumState::Cleaning)?;
         assert_eq!(v.apply(VacuumCommand::Pause), Ok(VacuumState::Paused));
         assert_eq!(v.apply(VacuumCommand::Start), Ok(VacuumState::Cleaning));
+        Ok(())
     }
 
     #[test]
-    fn pause_while_docked_is_rejected() {
-        let mut v = full_vac(VacuumState::Docked);
+    fn pause_while_docked_is_rejected() -> TestResult {
+        let mut v = full_vac(VacuumState::Docked)?;
         assert_eq!(
             v.apply(VacuumCommand::Pause),
             Err(CommandError::IllegalTransition)
         );
+        Ok(())
     }
 
     #[test]
-    fn stop_parks_the_vacuum_idle() {
-        let mut v = full_vac(VacuumState::Cleaning);
+    fn stop_parks_the_vacuum_idle() -> TestResult {
+        let mut v = full_vac(VacuumState::Cleaning)?;
         assert_eq!(v.apply(VacuumCommand::Stop), Ok(VacuumState::Idle));
+        Ok(())
     }
 
     #[test]
-    fn stop_while_docked_is_rejected() {
-        let mut v = full_vac(VacuumState::Docked);
+    fn stop_while_docked_is_rejected() -> TestResult {
+        let mut v = full_vac(VacuumState::Docked)?;
         assert_eq!(
             v.apply(VacuumCommand::Stop),
             Err(CommandError::IllegalTransition)
         );
+        Ok(())
     }
 
     #[test]
-    fn return_when_already_docked_is_a_noop_success() {
-        let mut v = full_vac(VacuumState::Docked);
+    fn return_when_already_docked_is_a_noop_success() -> TestResult {
+        let mut v = full_vac(VacuumState::Docked)?;
         assert_eq!(
             v.apply(VacuumCommand::ReturnToBase),
             Ok(VacuumState::Docked)
         );
+        Ok(())
     }
 
     // ---- spot cleaning + capability ---------------------------------------
 
     #[test]
-    fn spot_clean_from_idle() {
-        let mut v = full_vac(VacuumState::Idle);
+    fn spot_clean_from_idle() -> TestResult {
+        let mut v = full_vac(VacuumState::Idle)?;
         assert_eq!(
             v.apply(VacuumCommand::CleanSpot),
             Ok(VacuumState::SpotCleaning)
         );
+        Ok(())
     }
 
     #[test]
-    fn spot_clean_unsupported_is_rejected() {
+    fn spot_clean_unsupported_is_rejected() -> TestResult {
         let feats = VacuumFeatures {
             supports_spot: false,
             ..VacuumFeatures::basic()
         };
-        let mut v = Vacuum::with_state(feats, VacuumState::Idle, full_battery());
+        let mut v = Vacuum::with_state(feats, VacuumState::Idle, full_battery()?);
         assert_eq!(
             v.apply(VacuumCommand::CleanSpot),
             Err(CommandError::Unsupported)
         );
+        Ok(())
     }
 
     // ---- fan-speed gating -------------------------------------------------
 
     #[test]
-    fn set_supported_fan_speed_takes_effect() {
-        let mut v = full_vac(VacuumState::Idle);
+    fn set_supported_fan_speed_takes_effect() -> TestResult {
+        let mut v = full_vac(VacuumState::Idle)?;
         assert_eq!(
             v.apply(VacuumCommand::SetFanSpeed(FanSpeed::Turbo)),
             Ok(VacuumState::Idle)
         );
         assert_eq!(v.fan_speed(), FanSpeed::Turbo);
+        Ok(())
     }
 
     #[test]
-    fn set_unsupported_fan_speed_is_rejected() {
-        let mut v = Vacuum::with_state(VacuumFeatures::basic(), VacuumState::Idle, full_battery());
+    fn set_unsupported_fan_speed_is_rejected() -> TestResult {
+        let mut v = Vacuum::with_state(VacuumFeatures::basic(), VacuumState::Idle, full_battery()?);
         assert_eq!(
             v.apply(VacuumCommand::SetFanSpeed(FanSpeed::Turbo)),
             Err(CommandError::Unsupported)
@@ -515,19 +525,21 @@ mod tests {
             FanSpeed::Medium,
             "rejected change leaves default"
         );
+        Ok(())
     }
 
     // ---- segment / zone cleaning + validation -----------------------------
 
     #[test]
-    fn clean_known_rooms_goes_cleaning() {
-        let mut v = Vacuum::docked(VacuumFeatures::full(), full_battery(), home_map());
+    fn clean_known_rooms_goes_cleaning() -> TestResult {
+        let mut v = Vacuum::docked(VacuumFeatures::full(), full_battery()?, home_map());
         assert_eq!(v.clean_rooms(&[1, 2]), Ok(VacuumState::Cleaning));
+        Ok(())
     }
 
     #[test]
-    fn clean_unknown_room_is_rejected_by_validation() {
-        let mut v = Vacuum::docked(VacuumFeatures::full(), full_battery(), home_map());
+    fn clean_unknown_room_is_rejected_by_validation() -> TestResult {
+        let mut v = Vacuum::docked(VacuumFeatures::full(), full_battery()?, home_map());
         assert_eq!(
             v.clean_rooms(&[1, 9]),
             Err(CommandError::BadCleanRequest(
@@ -539,93 +551,103 @@ mod tests {
             VacuumState::Docked,
             "rejected clean changes nothing"
         );
+        Ok(())
     }
 
     #[test]
-    fn clean_rooms_unsupported_on_basic_unit() {
-        let mut v = Vacuum::with_state(VacuumFeatures::basic(), VacuumState::Idle, full_battery());
+    fn clean_rooms_unsupported_on_basic_unit() -> TestResult {
+        let mut v = Vacuum::with_state(VacuumFeatures::basic(), VacuumState::Idle, full_battery()?);
         assert_eq!(v.clean_rooms(&[1]), Err(CommandError::Unsupported));
+        Ok(())
     }
 
     #[test]
-    fn empty_segment_request_is_rejected() {
-        let mut v = Vacuum::docked(VacuumFeatures::full(), full_battery(), home_map());
+    fn empty_segment_request_is_rejected() -> TestResult {
+        let mut v = Vacuum::docked(VacuumFeatures::full(), full_battery()?, home_map());
         assert_eq!(
             v.clean_rooms(&[]),
             Err(CommandError::BadCleanRequest(SegmentRequestError::Empty))
         );
+        Ok(())
     }
 
     #[test]
-    fn clean_zones_goes_cleaning() {
-        let mut v = Vacuum::docked(VacuumFeatures::full(), full_battery(), home_map());
-        let z = Zone::new(0, 0, 100, 100).expect("valid");
+    fn clean_zones_goes_cleaning() -> TestResult {
+        let mut v = Vacuum::docked(VacuumFeatures::full(), full_battery()?, home_map());
+        let z = Zone::new(0, 0, 100, 100)?;
         assert_eq!(v.clean_zones(&[z]), Ok(VacuumState::Cleaning));
+        Ok(())
     }
 
     #[test]
-    fn empty_zone_request_is_rejected() {
-        let mut v = Vacuum::docked(VacuumFeatures::full(), full_battery(), home_map());
+    fn empty_zone_request_is_rejected() -> TestResult {
+        let mut v = Vacuum::docked(VacuumFeatures::full(), full_battery()?, home_map());
         assert_eq!(
             v.clean_zones(&[]),
             Err(CommandError::BadCleanRequest(SegmentRequestError::Empty))
         );
+        Ok(())
     }
 
     // ---- battery ----------------------------------------------------------
 
     #[test]
-    fn low_battery_while_cleaning_auto_returns() {
-        let mut v = full_vac(VacuumState::Cleaning);
-        let low = Battery::new(15, ChargeDirection::Discharging).expect("valid");
+    fn low_battery_while_cleaning_auto_returns() -> TestResult {
+        let mut v = full_vac(VacuumState::Cleaning)?;
+        let low = Battery::new(15, ChargeDirection::Discharging)?;
         let triggered = v.update_battery(low);
         assert!(
             triggered,
             "low battery while cleaning must trigger auto-return"
         );
         assert_eq!(v.state(), VacuumState::Returning);
+        Ok(())
     }
 
     #[test]
-    fn low_battery_while_idle_does_not_return() {
-        let mut v = full_vac(VacuumState::Idle);
-        let low = Battery::new(15, ChargeDirection::Discharging).expect("valid");
+    fn low_battery_while_idle_does_not_return() -> TestResult {
+        let mut v = full_vac(VacuumState::Idle)?;
+        let low = Battery::new(15, ChargeDirection::Discharging)?;
         assert!(!v.update_battery(low));
         assert_eq!(v.state(), VacuumState::Idle);
+        Ok(())
     }
 
     #[test]
-    fn start_blocked_when_battery_too_low() {
-        let low = Battery::new(10, ChargeDirection::Discharging).expect("valid");
+    fn start_blocked_when_battery_too_low() -> TestResult {
+        let low = Battery::new(10, ChargeDirection::Discharging)?;
         let mut v = Vacuum::with_state(VacuumFeatures::full(), VacuumState::Docked, low);
         assert_eq!(
             v.apply(VacuumCommand::Start),
             Err(CommandError::BatteryTooLow)
         );
+        Ok(())
     }
 
     #[test]
-    fn charging_battery_never_forces_return() {
-        let mut v = full_vac(VacuumState::Cleaning);
-        let charging_low = Battery::new(10, ChargeDirection::Charging).expect("valid");
+    fn charging_battery_never_forces_return() -> TestResult {
+        let mut v = full_vac(VacuumState::Cleaning)?;
+        let charging_low = Battery::new(10, ChargeDirection::Charging)?;
         assert!(!v.update_battery(charging_low));
         assert_eq!(v.state(), VacuumState::Cleaning);
+        Ok(())
     }
 
     // ---- error gating + clearing ------------------------------------------
 
     #[test]
-    fn fault_enters_error_state() {
-        let mut v = full_vac(VacuumState::Cleaning);
+    fn fault_enters_error_state() -> TestResult {
+        let mut v = full_vac(VacuumState::Cleaning)?;
         v.report_error(ErrorCode::BrushStuck);
         assert_eq!(v.state(), VacuumState::Error);
         assert_eq!(v.error(), Some(ErrorCode::BrushStuck));
         assert!(v.state().needs_attention());
+        Ok(())
     }
 
     #[test]
-    fn cleaning_commands_gated_while_faulted() {
-        let mut v = full_vac(VacuumState::Cleaning);
+    fn cleaning_commands_gated_while_faulted() -> TestResult {
+        let mut v = full_vac(VacuumState::Cleaning)?;
         v.report_error(ErrorCode::WheelStuck);
         assert_eq!(v.apply(VacuumCommand::Start), Err(CommandError::Faulted));
         assert_eq!(
@@ -633,11 +655,12 @@ mod tests {
             Err(CommandError::Faulted)
         );
         assert_eq!(v.clean_rooms(&[1]), Err(CommandError::Faulted));
+        Ok(())
     }
 
     #[test]
-    fn locate_and_return_allowed_while_faulted() {
-        let mut v = full_vac(VacuumState::Cleaning);
+    fn locate_and_return_allowed_while_faulted() -> TestResult {
+        let mut v = full_vac(VacuumState::Cleaning)?;
         v.report_error(ErrorCode::Lost);
         // Locate is allowed and does not change state.
         assert_eq!(v.apply(VacuumCommand::Locate), Ok(VacuumState::Error));
@@ -646,27 +669,30 @@ mod tests {
             v.apply(VacuumCommand::ReturnToBase),
             Ok(VacuumState::Returning)
         );
+        Ok(())
     }
 
     #[test]
-    fn clear_error_returns_to_idle() {
-        let mut v = full_vac(VacuumState::Cleaning);
+    fn clear_error_returns_to_idle() -> TestResult {
+        let mut v = full_vac(VacuumState::Cleaning)?;
         v.report_error(ErrorCode::BinFull);
         assert_eq!(v.clear_error(), Ok(VacuumState::Idle));
         assert_eq!(v.error(), None);
         // And now commands flow again.
         assert_eq!(v.apply(VacuumCommand::Start), Ok(VacuumState::Cleaning));
+        Ok(())
     }
 
     #[test]
-    fn clearing_with_no_fault_is_rejected() {
-        let mut v = full_vac(VacuumState::Idle);
+    fn clearing_with_no_fault_is_rejected() -> TestResult {
+        let mut v = full_vac(VacuumState::Idle)?;
         assert_eq!(v.clear_error(), Err(CommandError::IllegalTransition));
+        Ok(())
     }
 
     #[test]
-    fn reached_dock_ignored_while_faulted() {
-        let mut v = full_vac(VacuumState::Returning);
+    fn reached_dock_ignored_while_faulted() -> TestResult {
+        let mut v = full_vac(VacuumState::Returning)?;
         v.report_error(ErrorCode::Trapped);
         v.reached_dock();
         assert_eq!(
@@ -674,22 +700,25 @@ mod tests {
             VacuumState::Error,
             "a fault is not silently docked away"
         );
+        Ok(())
     }
 
     // ---- manual -----------------------------------------------------------
 
     #[test]
-    fn enter_manual_from_idle() {
-        let mut v = full_vac(VacuumState::Idle);
+    fn enter_manual_from_idle() -> TestResult {
+        let mut v = full_vac(VacuumState::Idle)?;
         assert_eq!(v.enter_manual(), Ok(VacuumState::Manual));
         // And manual can be stopped back to idle.
         assert_eq!(v.apply(VacuumCommand::Stop), Ok(VacuumState::Idle));
+        Ok(())
     }
 
     #[test]
-    fn enter_manual_blocked_while_faulted() {
-        let mut v = full_vac(VacuumState::Idle);
+    fn enter_manual_blocked_while_faulted() -> TestResult {
+        let mut v = full_vac(VacuumState::Idle)?;
         v.report_error(ErrorCode::Generic);
         assert_eq!(v.enter_manual(), Err(CommandError::Faulted));
+        Ok(())
     }
 }

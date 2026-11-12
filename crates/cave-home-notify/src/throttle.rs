@@ -158,117 +158,130 @@ mod tests {
     use crate::priority::Priority;
     use crate::topic::Topic;
 
-    fn topic(name: &str) -> Topic {
-        Topic::new(name).expect("valid test topic")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn topic(name: &str) -> Result<Topic, crate::topic::TopicError> {
+        Topic::new(name)
     }
 
-    fn note_at(t: &str, tick: Tick) -> Notification {
-        Notification::new(topic(t), "Leak", "Kitchen", tick).with_priority(Priority::High)
+    fn note_at(t: &str, tick: Tick) -> Result<Notification, Box<dyn std::error::Error>> {
+        Ok(Notification::new(topic(t)?, "Leak", "Kitchen", tick).with_priority(Priority::High))
     }
 
     // ---- dedup ----
 
     #[test]
-    fn dedup_suppresses_identical_within_window() {
+    fn dedup_suppresses_identical_within_window() -> TestResult {
         let mut cache = DedupCache::new(60);
-        assert!(cache.admit(&note_at("leak", 0)));
+        assert!(cache.admit(&note_at("leak", 0)?));
         // 30s later, same content -> suppressed.
-        assert!(!cache.admit(&note_at("leak", 30)));
-        assert!(!cache.admit(&note_at("leak", 59)));
+        assert!(!cache.admit(&note_at("leak", 30)?));
+        assert!(!cache.admit(&note_at("leak", 59)?));
+        Ok(())
     }
 
     #[test]
-    fn dedup_allows_after_window_boundary() {
+    fn dedup_allows_after_window_boundary() -> TestResult {
         let mut cache = DedupCache::new(60);
-        assert!(cache.admit(&note_at("leak", 0)));
+        assert!(cache.admit(&note_at("leak", 0)?));
         // Exactly at the window edge: elapsed == window is NOT "within" -> allow.
-        assert!(cache.admit(&note_at("leak", 60)));
+        assert!(cache.admit(&note_at("leak", 60)?));
         // And that re-arms the window from 60.
-        assert!(!cache.admit(&note_at("leak", 90)));
+        assert!(!cache.admit(&note_at("leak", 90)?));
+        Ok(())
     }
 
     #[test]
-    fn dedup_zero_window_never_suppresses() {
+    fn dedup_zero_window_never_suppresses() -> TestResult {
         let mut cache = DedupCache::new(0);
-        assert!(cache.admit(&note_at("leak", 0)));
-        assert!(cache.admit(&note_at("leak", 0)));
+        assert!(cache.admit(&note_at("leak", 0)?));
+        assert!(cache.admit(&note_at("leak", 0)?));
+        Ok(())
     }
 
     #[test]
-    fn dedup_distinguishes_content() {
+    fn dedup_distinguishes_content() -> TestResult {
         let mut cache = DedupCache::new(1000);
-        let a = Notification::new(topic("leak"), "Leak", "Kitchen", 0);
-        let b = Notification::new(topic("leak"), "Leak", "Bathroom", 1);
+        let a = Notification::new(topic("leak")?, "Leak", "Kitchen", 0);
+        let b = Notification::new(topic("leak")?, "Leak", "Bathroom", 1);
         assert!(cache.admit(&a));
         assert!(cache.admit(&b)); // different body -> not a duplicate
+        Ok(())
     }
 
     #[test]
-    fn dedup_prune_drops_stale_keys() {
+    fn dedup_prune_drops_stale_keys() -> TestResult {
         let mut cache = DedupCache::new(60);
-        assert!(cache.admit(&note_at("leak", 0)));
+        assert!(cache.admit(&note_at("leak", 0)?));
         assert_eq!(cache.tracked(), 1);
         cache.prune(1000); // far past the window
         assert_eq!(cache.tracked(), 0);
+        Ok(())
     }
 
     #[test]
-    fn dedup_handles_backwards_clock_as_within_window() {
+    fn dedup_handles_backwards_clock_as_within_window() -> TestResult {
         let mut cache = DedupCache::new(60);
-        assert!(cache.admit(&note_at("leak", 100)));
+        assert!(cache.admit(&note_at("leak", 100)?));
         // A notification stamped earlier than the last seen is suppressed
         // rather than panicking on underflow.
-        assert!(!cache.admit(&note_at("leak", 50)));
+        assert!(!cache.admit(&note_at("leak", 50)?));
+        Ok(())
     }
 
     // ---- rate limit ----
 
     #[test]
-    fn rate_limit_spends_the_burst_then_throttles() {
+    fn rate_limit_spends_the_burst_then_throttles() -> TestResult {
         let mut rl = RateLimiter::new(3, 10);
-        assert!(rl.admit(&note_at("leak", 0)));
-        assert!(rl.admit(&note_at("leak", 0)));
-        assert!(rl.admit(&note_at("leak", 0)));
+        assert!(rl.admit(&note_at("leak", 0)?));
+        assert!(rl.admit(&note_at("leak", 0)?));
+        assert!(rl.admit(&note_at("leak", 0)?));
         // Burst exhausted, no time passed -> throttled.
-        assert!(!rl.admit(&note_at("leak", 0)));
+        assert!(!rl.admit(&note_at("leak", 0)?));
         assert_eq!(rl.available("leak"), 0);
+        Ok(())
     }
 
     #[test]
-    fn rate_limit_refills_one_token_per_interval() {
+    fn rate_limit_refills_one_token_per_interval() -> TestResult {
         let mut rl = RateLimiter::new(1, 10);
-        assert!(rl.admit(&note_at("leak", 0))); // spends the only token
-        assert!(!rl.admit(&note_at("leak", 5))); // half an interval, no refill
-        assert!(rl.admit(&note_at("leak", 10))); // one interval -> one token back
-        assert!(!rl.admit(&note_at("leak", 11)));
+        assert!(rl.admit(&note_at("leak", 0)?)); // spends the only token
+        assert!(!rl.admit(&note_at("leak", 5)?)); // half an interval, no refill
+        assert!(rl.admit(&note_at("leak", 10)?)); // one interval -> one token back
+        assert!(!rl.admit(&note_at("leak", 11)?));
+        Ok(())
     }
 
     #[test]
-    fn rate_limit_refill_clamps_to_burst() {
+    fn rate_limit_refill_clamps_to_burst() -> TestResult {
         let mut rl = RateLimiter::new(2, 10);
-        assert!(rl.admit(&note_at("leak", 0)));
+        assert!(rl.admit(&note_at("leak", 0)?));
         // A long idle gap would refill many tokens, but the ceiling is 2.
-        assert!(rl.admit(&note_at("leak", 10_000)));
-        assert!(rl.admit(&note_at("leak", 10_000)));
-        assert!(!rl.admit(&note_at("leak", 10_000)));
+        assert!(rl.admit(&note_at("leak", 10_000)?));
+        assert!(rl.admit(&note_at("leak", 10_000)?));
+        assert!(!rl.admit(&note_at("leak", 10_000)?));
+        Ok(())
     }
 
     #[test]
-    fn rate_limit_is_per_topic() {
+    fn rate_limit_is_per_topic() -> TestResult {
         let mut rl = RateLimiter::new(1, 10);
-        assert!(rl.admit(&note_at("leak", 0)));
-        assert!(!rl.admit(&note_at("leak", 0)));
+        assert!(rl.admit(&note_at("leak", 0)?));
+        assert!(!rl.admit(&note_at("leak", 0)?));
         // A different topic has its own independent bucket.
-        assert!(rl.admit(&note_at("door", 0)));
+        assert!(rl.admit(&note_at("door", 0)?));
+        Ok(())
     }
 
     #[test]
-    fn rate_limit_zero_interval_is_a_fixed_quota() {
+    fn rate_limit_zero_interval_is_a_fixed_quota() -> TestResult {
         let mut rl = RateLimiter::new(2, 0);
-        assert!(rl.admit(&note_at("leak", 0)));
-        assert!(rl.admit(&note_at("leak", 1_000_000)));
+        assert!(rl.admit(&note_at("leak", 0)?));
+        assert!(rl.admit(&note_at("leak", 1_000_000)?));
         // Never refills, so the third is throttled no matter how much time passes.
-        assert!(!rl.admit(&note_at("leak", u64::MAX)));
+        assert!(!rl.admit(&note_at("leak", u64::MAX)?));
+        Ok(())
     }
 
     #[test]

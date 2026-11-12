@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //
-//! `cave-home-solar-sunspec` — a vendor-agnostic SunSpec register-map decoder
+//! `cave-home-solar-sunspec` — a vendor-agnostic `SunSpec` register-map decoder
 //! for solar-inverter monitoring.
 //!
 //! # What this is
 //!
-//! SunSpec is an **open, public standard** maintained by the SunSpec
+//! `SunSpec` is an **open, public standard** maintained by the `SunSpec`
 //! Alliance (<https://sunspec.org/sunspec-information-model-specifications/>).
-//! It defines how solar inverters from SMA, Fronius, SolarEdge, Huawei,
+//! It defines how solar inverters from SMA, Fronius, `SolarEdge`, Huawei,
 //! Goodwe, Kostal and others expose their data as a chain of typed *models*
 //! laid out in Modbus holding registers. This crate decodes that register map
 //! into typed, physical-unit readings — and then into plain sentences a
@@ -24,7 +24,7 @@
 //!
 //! 1. [`discovery`] — verify the `"SunS"` marker and walk the model chain to
 //!    find each `(model_id, length)` block.
-//! 2. [`point`] — decode SunSpec point types (`int16`, `uint16`, `int32`,
+//! 2. [`point`] — decode `SunSpec` point types (`int16`, `uint16`, `int32`,
 //!    `uint32`, `acc32`, `float32`, `sunssf`, `string`), honouring the
 //!    not-implemented sentinels.
 //! 3. [`scale`] — apply a `sunssf` power-of-ten scale factor to a raw point.
@@ -100,16 +100,18 @@ pub fn decode_inverter(model_id: u16, payload: &[u16]) -> Result<InverterReading
     }
 }
 
-/// Well-known TCP base registers where a SunSpec device places its `"SunS"`
+/// Well-known TCP base registers where a `SunSpec` device places its `"SunS"`
 /// marker.
 ///
 /// A live transport (Phase-1b) probes these in order; the decode layer is
-/// address-agnostic. Source: SunSpec Modbus specification.
+/// address-agnostic. Source: `SunSpec` Modbus specification.
 pub const SUNSPEC_BASE_REGISTERS: &[u16] = &[40_000, 50_000, 0];
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     fn build_block_with_inverter(model_id: u16, payload: &[u16]) -> Vec<u16> {
         let mut b = vec![
@@ -130,22 +132,26 @@ mod tests {
     }
 
     #[test]
-    fn end_to_end_discover_then_decode() {
+    fn end_to_end_discover_then_decode() -> TestResult {
         let mut payload = vec![0u16; 50];
         payload[12] = 4200; // W
         payload[13] = 0; // W_SF
         payload[36] = 4; // MPPT
         let block = build_block_with_inverter(103, &payload);
 
-        let models = discover(&block).unwrap();
+        let models = discover(&block)?;
         assert_eq!(models.len(), 2);
-        let inv = models.iter().find(|m| m.model_id == 103).unwrap();
-        let reading = decode_inverter(inv.model_id, inv.payload).unwrap();
+        let inv = models
+            .iter()
+            .find(|m| m.model_id == 103)
+            .ok_or("inverter model 103 discovered")?;
+        let reading = decode_inverter(inv.model_id, inv.payload)?;
         assert_eq!(reading.ac_power_w, Some(4200.0));
         assert_eq!(
             describe(&reading, Lang::En),
             "Solar inverter is producing 4.2 kW"
         );
+        Ok(())
     }
 
     #[test]
@@ -157,13 +163,14 @@ mod tests {
     }
 
     #[test]
-    fn float_model_dispatches_to_float_decoder() {
+    fn float_model_dispatches_to_float_decoder() -> TestResult {
         let mut p = vec![0u16; 60];
         let bits = 2500.0f32.to_bits();
         p[12] = (bits >> 16) as u16;
         p[13] = (bits & 0xFFFF) as u16;
         p[38] = 4; // MPPT
-        let r = decode_inverter(111, &p).unwrap();
-        assert!((r.ac_power_w.unwrap() - 2500.0).abs() < 1e-3);
+        let r = decode_inverter(111, &p)?;
+        assert!((r.ac_power_w.ok_or("point is implemented")? - 2500.0).abs() < 1e-3);
+        Ok(())
     }
 }

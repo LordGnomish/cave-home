@@ -361,6 +361,8 @@ pub fn generate_spec(
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn base_config() -> ContainerConfig {
         ContainerConfig {
             hostname: "box".to_owned(),
@@ -374,8 +376,8 @@ mod tests {
     }
 
     #[test]
-    fn generates_process_and_root_fields() {
-        let spec = generate_spec("c1", "/kubepods/podx", &base_config()).expect("spec");
+    fn generates_process_and_root_fields() -> TestResult {
+        let spec = generate_spec("c1", "/kubepods/podx", &base_config())?;
         assert_eq!(spec.oci_version, OCI_VERSION);
         assert_eq!(spec.hostname, "box");
         assert_eq!(spec.process.args, vec!["/bin/sh", "-c", "echo hi"]);
@@ -384,14 +386,16 @@ mod tests {
         assert_eq!(spec.process.uid, 1000);
         assert_eq!(spec.root.path, "rootfs");
         assert!(!spec.root.readonly);
+        Ok(())
     }
 
     #[test]
-    fn empty_working_dir_defaults_to_root() {
+    fn empty_working_dir_defaults_to_root() -> TestResult {
         let mut cfg = base_config();
         cfg.working_dir = String::new();
-        let spec = generate_spec("c1", "", &cfg).expect("spec");
+        let spec = generate_spec("c1", "", &cfg)?;
         assert_eq!(spec.process.cwd, "/");
+        Ok(())
     }
 
     #[test]
@@ -417,7 +421,7 @@ mod tests {
     }
 
     #[test]
-    fn default_mounts_precede_user_mounts() {
+    fn default_mounts_precede_user_mounts() -> TestResult {
         let mut cfg = base_config();
         cfg.mounts = vec![Mount {
             destination: "/data".to_owned(),
@@ -425,15 +429,16 @@ mod tests {
             mount_type: "bind".to_owned(),
             options: vec!["rbind".to_owned(), "rw".to_owned()],
         }];
-        let spec = generate_spec("c1", "", &cfg).expect("spec");
+        let spec = generate_spec("c1", "", &cfg)?;
         assert_eq!(spec.mounts.len(), 4);
         assert_eq!(spec.mounts[0].destination, "/proc");
-        assert_eq!(spec.mounts.last().expect("last").destination, "/data");
+        assert_eq!(spec.mounts.last().ok_or("last")?.destination, "/data");
+        Ok(())
     }
 
     #[test]
-    fn default_namespace_set_is_present() {
-        let spec = generate_spec("c1", "", &base_config()).expect("spec");
+    fn default_namespace_set_is_present() -> TestResult {
+        let spec = generate_spec("c1", "", &base_config())?;
         let kinds: Vec<_> = spec.linux.namespaces.iter().map(|n| n.kind).collect();
         assert!(kinds.contains(&NamespaceType::Pid));
         assert!(kinds.contains(&NamespaceType::Network));
@@ -444,34 +449,37 @@ mod tests {
             .namespaces
             .iter()
             .find(|n| n.kind == NamespaceType::Network)
-            .expect("netns");
+            .ok_or("netns")?;
         assert!(net.path.is_none());
+        Ok(())
     }
 
     #[test]
-    fn shared_network_namespace_path_is_joined() {
+    fn shared_network_namespace_path_is_joined() -> TestResult {
         let mut cfg = base_config();
         cfg.network_ns_path = Some("/var/run/netns/cni-abc".to_owned());
-        let spec = generate_spec("c1", "", &cfg).expect("spec");
+        let spec = generate_spec("c1", "", &cfg)?;
         let net = spec
             .linux
             .namespaces
             .iter()
             .find(|n| n.kind == NamespaceType::Network)
-            .expect("netns");
+            .ok_or("netns")?;
         assert_eq!(net.path.as_deref(), Some("/var/run/netns/cni-abc"));
+        Ok(())
     }
 
     #[test]
-    fn cgroups_path_uses_parent_and_id() {
-        let spec = generate_spec("ctr9", "/kubepods/burstable", &base_config()).expect("spec");
+    fn cgroups_path_uses_parent_and_id() -> TestResult {
+        let spec = generate_spec("ctr9", "/kubepods/burstable", &base_config())?;
         assert_eq!(spec.linux.cgroups_path, "/kubepods/burstable/ctr9");
-        let spec2 = generate_spec("ctr9", "", &base_config()).expect("spec");
+        let spec2 = generate_spec("ctr9", "", &base_config())?;
         assert_eq!(spec2.linux.cgroups_path, "/cri-containerd/ctr9");
+        Ok(())
     }
 
     #[test]
-    fn resources_are_lowered() {
+    fn resources_are_lowered() -> TestResult {
         let mut cfg = base_config();
         cfg.resources = Resources {
             memory_limit_bytes: Some(256 * 1024 * 1024),
@@ -479,27 +487,30 @@ mod tests {
             cpu_quota_us: Some(50_000),
             cpu_period_us: Some(100_000),
         };
-        let spec = generate_spec("c1", "", &cfg).expect("spec");
+        let spec = generate_spec("c1", "", &cfg)?;
         assert_eq!(
             spec.linux.resources.memory_limit_bytes,
             Some(256 * 1024 * 1024)
         );
         assert_eq!(spec.linux.resources.cpu_shares, Some(512));
         assert_eq!(spec.linux.resources.cpu_quota_us, Some(50_000));
+        Ok(())
     }
 
     #[test]
-    fn readonly_rootfs_is_propagated() {
+    fn readonly_rootfs_is_propagated() -> TestResult {
         let mut cfg = base_config();
         cfg.readonly_rootfs = true;
-        let spec = generate_spec("c1", "", &cfg).expect("spec");
+        let spec = generate_spec("c1", "", &cfg)?;
         assert!(spec.root.readonly);
+        Ok(())
     }
 
     #[test]
-    fn default_masked_and_readonly_paths_present() {
-        let spec = generate_spec("c1", "", &base_config()).expect("spec");
+    fn default_masked_and_readonly_paths_present() -> TestResult {
+        let spec = generate_spec("c1", "", &base_config())?;
         assert!(spec.linux.masked_paths.contains(&"/proc/kcore".to_owned()));
         assert!(spec.linux.readonly_paths.contains(&"/proc/sys".to_owned()));
+        Ok(())
     }
 }

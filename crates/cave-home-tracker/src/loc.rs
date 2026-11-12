@@ -308,87 +308,116 @@ pub fn count_subpaths(root: &Path, subpaths: &[String]) -> crate::Result<LocRepo
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn classifies_extensions() {
-        assert_eq!(Language::from_extension("rs").unwrap().name(), "rust");
-        assert_eq!(Language::from_extension("GO").unwrap().name(), "go");
-        assert_eq!(Language::from_extension("Py").unwrap().name(), "python");
+    fn classifies_extensions() -> TestResult {
+        assert_eq!(
+            Language::from_extension("rs")
+                .ok_or("known extension")?
+                .name(),
+            "rust"
+        );
+        assert_eq!(
+            Language::from_extension("GO")
+                .ok_or("known extension")?
+                .name(),
+            "go"
+        );
+        assert_eq!(
+            Language::from_extension("Py")
+                .ok_or("known extension")?
+                .name(),
+            "python"
+        );
         assert!(Language::from_extension("xyz").is_none());
+        Ok(())
     }
 
     #[test]
-    fn classifies_shell_by_shebang() {
-        assert_eq!(Language::from_shebang("#!/bin/sh").unwrap().name(), "shell");
+    fn classifies_shell_by_shebang() -> TestResult {
+        assert_eq!(
+            Language::from_shebang("#!/bin/sh")
+                .ok_or("known extension")?
+                .name(),
+            "shell"
+        );
         assert_eq!(
             Language::from_shebang("#!/usr/bin/env bash")
-                .unwrap()
+                .ok_or("known extension")?
                 .name(),
             "shell"
         );
         assert!(Language::from_shebang("#!/usr/bin/env python3").is_none());
         assert!(Language::from_shebang("not a shebang").is_none());
+        Ok(())
     }
 
     #[test]
-    fn count_dir_counts_extensionless_shell_script() {
-        let tmp = tempfile::tempdir().unwrap();
+    fn count_dir_counts_extensionless_shell_script() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         let root = tmp.path();
         // An `entry`-style script with no extension (klipper-lb's whole source).
         std::fs::write(
             root.join("entry"),
             "#!/bin/sh\n# guard\nset -e\niptables -t nat -A PREROUTING\n",
-        )
-        .unwrap();
+        )?;
         // A genuinely opaque extensionless file must NOT be counted as code.
-        std::fs::write(root.join("LICENSE"), "Apache License 2.0\nblah\n").unwrap();
-        let report = count_dir(root).unwrap();
+        std::fs::write(root.join("LICENSE"), "Apache License 2.0\nblah\n")?;
+        let report = count_dir(root)?;
         assert_eq!(report.code_for(&["shell"]), 2, "set -e + iptables line");
+        Ok(())
     }
 
     #[test]
-    fn counts_rust_code_comment_blank() {
+    fn counts_rust_code_comment_blank() -> TestResult {
         let src = "fn main() {\n    // a comment\n    let x = 1;\n\n}\n";
-        let rust = Language::from_extension("rs").unwrap();
+        let rust = Language::from_extension("rs").ok_or("known extension")?;
         let stat = rust.count(src);
         assert_eq!(stat.code, 3, "fn/let/closing-brace are code");
         assert_eq!(stat.comment, 1);
         assert_eq!(stat.blank, 1);
         assert_eq!(stat.files, 1);
+        Ok(())
     }
 
     #[test]
-    fn handles_block_comments() {
+    fn handles_block_comments() -> TestResult {
         let src = "let a = 1;\n/* multi\n line\n comment */\nlet b = 2;\n";
-        let rust = Language::from_extension("rs").unwrap();
+        let rust = Language::from_extension("rs").ok_or("known extension")?;
         let stat = rust.count(src);
         assert_eq!(stat.code, 2);
         assert_eq!(stat.comment, 3);
+        Ok(())
     }
 
     #[test]
-    fn single_line_block_comment_is_one_comment() {
-        let rust = Language::from_extension("rs").unwrap();
+    fn single_line_block_comment_is_one_comment() -> TestResult {
+        let rust = Language::from_extension("rs").ok_or("known extension")?;
         let stat = rust.count("/* one liner */\ncode();\n");
         assert_eq!(stat.comment, 1);
         assert_eq!(stat.code, 1);
+        Ok(())
     }
 
     #[test]
-    fn trailing_block_open_enters_block_state() {
-        let rust = Language::from_extension("rs").unwrap();
+    fn trailing_block_open_enters_block_state() -> TestResult {
+        let rust = Language::from_extension("rs").ok_or("known extension")?;
         // code line that opens a block at its end
         let stat = rust.count("let x = 1; /* note\nstill comment */\ndone();\n");
         assert_eq!(stat.code, 2, "first and last lines are code");
         assert_eq!(stat.comment, 1, "the middle line closes the block");
+        Ok(())
     }
 
     #[test]
-    fn python_uses_hash_comments() {
-        let py = Language::from_extension("py").unwrap();
+    fn python_uses_hash_comments() -> TestResult {
+        let py = Language::from_extension("py").ok_or("known extension")?;
         let stat = py.count("# header\nx = 1\n\n");
         assert_eq!(stat.comment, 1);
         assert_eq!(stat.code, 1);
         assert_eq!(stat.blank, 1);
+        Ok(())
     }
 
     #[test]
@@ -429,36 +458,37 @@ mod tests {
     }
 
     #[test]
-    fn count_dir_walks_and_skips_target() {
-        let tmp = tempfile::tempdir().unwrap();
+    fn count_dir_walks_and_skips_target() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         let root = tmp.path();
-        std::fs::write(root.join("a.rs"), "fn a() {}\n").unwrap();
-        std::fs::create_dir_all(root.join("sub")).unwrap();
-        std::fs::write(root.join("sub/b.go"), "package main\nfunc b() {}\n").unwrap();
-        std::fs::create_dir_all(root.join("target")).unwrap();
-        std::fs::write(root.join("target/junk.rs"), "fn junk() {}\n").unwrap();
+        std::fs::write(root.join("a.rs"), "fn a() {}\n")?;
+        std::fs::create_dir_all(root.join("sub"))?;
+        std::fs::write(root.join("sub/b.go"), "package main\nfunc b() {}\n")?;
+        std::fs::create_dir_all(root.join("target"))?;
+        std::fs::write(root.join("target/junk.rs"), "fn junk() {}\n")?;
 
-        let report = count_dir(root).unwrap();
+        let report = count_dir(root)?;
         assert_eq!(report.code_for(&["rust"]), 1, "only a.rs, target skipped");
         assert_eq!(report.code_for(&["go"]), 2);
+        Ok(())
     }
 
     #[test]
-    fn count_subpaths_restricts_scope() {
-        let tmp = tempfile::tempdir().unwrap();
+    fn count_subpaths_restricts_scope() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         let root = tmp.path();
-        std::fs::create_dir_all(root.join("pkg/kine")).unwrap();
-        std::fs::create_dir_all(root.join("pkg/other")).unwrap();
-        std::fs::write(root.join("pkg/kine/k.go"), "package kine\nfunc K() {}\n").unwrap();
+        std::fs::create_dir_all(root.join("pkg/kine"))?;
+        std::fs::create_dir_all(root.join("pkg/other"))?;
+        std::fs::write(root.join("pkg/kine/k.go"), "package kine\nfunc K() {}\n")?;
         std::fs::write(
             root.join("pkg/other/o.go"),
             "package other\nfunc O() {}\nfunc P(){}\n",
-        )
-        .unwrap();
+        )?;
 
-        let scoped = count_subpaths(root, &["pkg/kine".to_owned()]).unwrap();
+        let scoped = count_subpaths(root, &["pkg/kine".to_owned()])?;
         assert_eq!(scoped.code_for(&["go"]), 2);
-        let all = count_subpaths(root, &[]).unwrap();
+        let all = count_subpaths(root, &[])?;
         assert_eq!(all.code_for(&["go"]), 5);
+        Ok(())
     }
 }

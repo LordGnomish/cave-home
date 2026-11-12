@@ -25,7 +25,7 @@
 //! - [`log`] — the bounded, append-only [`VisitorLog`] for history.
 //! - [`label`] — grandma-friendly EN/DE/TR notification lines (Charter §6.3).
 //!
-//! The **doorbell hardware adapters** (Reolink / DoorBird / Amcrest / UniFi /
+//! The **doorbell hardware adapters** (Reolink / `DoorBird` / Amcrest / `UniFi` /
 //! Ring-RTSP / Aqara over their own protocols), the **two-way SIP/WebRTC
 //! audio**, the **camera-pillar snapshot/clip capture** itself, and the
 //! **cave-home-core event-bus integration** are network/hardware-bound and

@@ -310,8 +310,8 @@ mod tests {
             SolarStatus::Offline,
         ] {
             for lang in [Lang::En, Lang::De, Lang::Tr] {
-                assert!(!s.name(lang).is_empty());
-                assert!(!s.advice(lang).is_empty());
+                assert_ne!(s.name(lang), "");
+                assert_ne!(s.advice(lang), "");
             }
         }
     }

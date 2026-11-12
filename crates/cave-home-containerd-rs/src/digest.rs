@@ -244,21 +244,25 @@ impl Descriptor {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn parses_canonical_sha256() {
+    fn parses_canonical_sha256() -> TestResult {
         let s = format!("sha256:{}", "a".repeat(64));
-        let d = Digest::parse(&s).expect("valid");
+        let d = Digest::parse(&s)?;
         assert_eq!(d.algorithm(), Algorithm::Sha256);
         assert_eq!(d.encoded().len(), 64);
         assert_eq!(d.to_string(), s);
+        Ok(())
     }
 
     #[test]
-    fn parses_sha512_with_full_length() {
+    fn parses_sha512_with_full_length() -> TestResult {
         let s = format!("sha512:{}", "0".repeat(128));
-        let d = Digest::parse(&s).expect("valid");
+        let d = Digest::parse(&s)?;
         assert_eq!(d.algorithm(), Algorithm::Sha512);
         assert_eq!(d.encoded().len(), 128);
+        Ok(())
     }
 
     #[test]
@@ -290,8 +294,8 @@ mod tests {
     }
 
     #[test]
-    fn rejects_wrong_length() {
-        let err = Digest::parse("sha256:abcd").expect_err("too short");
+    fn rejects_wrong_length() -> TestResult {
+        let err = Digest::parse("sha256:abcd").err().ok_or("too short")?;
         assert_eq!(
             err,
             DigestError::BadLength {
@@ -299,6 +303,7 @@ mod tests {
                 got: 4
             }
         );
+        Ok(())
     }
 
     #[test]
@@ -314,17 +319,18 @@ mod tests {
     }
 
     #[test]
-    fn digest_round_trips_and_orders() {
-        let a = Digest::parse(&format!("sha256:{}", "0".repeat(64))).expect("valid");
-        let b = Digest::parse(&format!("sha256:{}", "1".repeat(64))).expect("valid");
+    fn digest_round_trips_and_orders() -> TestResult {
+        let a = Digest::parse(&format!("sha256:{}", "0".repeat(64)))?;
+        let b = Digest::parse(&format!("sha256:{}", "1".repeat(64)))?;
         assert!(a < b);
-        let re = Digest::parse(&a.to_string()).expect("round trip");
+        let re = Digest::parse(&a.to_string())?;
         assert_eq!(a, re);
+        Ok(())
     }
 
     #[test]
-    fn descriptor_requires_media_type_and_size() {
-        let d = Digest::parse(&format!("sha256:{}", "a".repeat(64))).expect("valid");
+    fn descriptor_requires_media_type_and_size() -> TestResult {
+        let d = Digest::parse(&format!("sha256:{}", "a".repeat(64)))?;
         assert_eq!(
             Descriptor::new("", d.clone(), 10),
             Err(DescriptorError::EmptyMediaType)
@@ -333,8 +339,9 @@ mod tests {
             Descriptor::new(media_type::OCI_CONFIG, d.clone(), 0),
             Err(DescriptorError::ZeroSize)
         );
-        let ok = Descriptor::new(media_type::OCI_MANIFEST, d, 1234).expect("valid");
+        let ok = Descriptor::new(media_type::OCI_MANIFEST, d, 1234)?;
         assert_eq!(ok.media_type, media_type::OCI_MANIFEST);
         assert_eq!(ok.size, 1234);
+        Ok(())
     }
 }

@@ -46,7 +46,7 @@ pub enum Card {
     /// Live node / workload CPU + memory usage (the `metrics_server` dashboard).
     /// Developer only.
     ClusterMetrics,
-    /// ServiceLB (K3s svclb) status — the LoadBalancer Services exposed on the
+    /// `ServiceLB` (K3s svclb) status — the `LoadBalancer` Services exposed on the
     /// cluster, which are published vs pending. Developer only.
     ServiceLb,
     /// Live log tail for an add-on. Developer only.

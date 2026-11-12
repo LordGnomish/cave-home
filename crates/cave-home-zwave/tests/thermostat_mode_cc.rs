@@ -2,7 +2,7 @@
 //! RED-phase integration test for the **Thermostat Mode Command Class (0x40)**.
 //!
 //! This drives a NEW feature that does not yet exist in `cave-home-zwave`:
-//! decode/encode support for THERMOSTAT_MODE (CC id `0x40`). It is written
+//! decode/encode support for `THERMOSTAT_MODE` (CC id `0x40`). It is written
 //! against the crate's *existing* public conventions so that Phase B can
 //! implement exactly the shapes asserted here.
 //!
@@ -20,6 +20,7 @@
 //!     * `EnergySaveHeat`      = 0x0B
 //!     * `EnergySaveCool`      = 0x0C
 //!     * `ManufacturerSpecific`= 0x1F
+//!
 //!   with `ThermostatMode::from_u8(u8) -> Option<Self>` and
 //!   `ThermostatMode::to_u8(self) -> u8`, mirroring the `CommandClass` pattern.
 //! - Three new `Command` variants, tuple-style like `BasicSet`/`BasicReport`
@@ -30,7 +31,7 @@
 //!
 //! ## Wire layout (public Z-Wave CC spec, SDS13781 family)
 //!
-//! Command Class id `0x40` (THERMOSTAT_MODE). Within the class:
+//! Command Class id `0x40` (`THERMOSTAT_MODE`). Within the class:
 //!   * Set    cmd `0x01`: `[0x40, 0x01, mode]`  (mode = low 5 bits)
 //!   * Get    cmd `0x02`: `[0x40, 0x02]`        (no body)
 //!   * Report cmd `0x03`: `[0x40, 0x03, mode]`
@@ -44,20 +45,23 @@
 //! `ZwaveError::OutOfRange { field, value }` (see Battery rejecting 101..=254
 //! and Multilevel Switch rejecting the reserved 100..=254 level range). A
 //! thermostat mode byte of `0x1E` is unassigned by the spec — it is neither one
-//! of the named modes nor the `0x1F` ManufacturerSpecific sentinel — so this
+//! of the named modes nor the `0x1F` `ManufacturerSpecific` sentinel — so this
 //! test asserts the same `OutOfRange` rejection rather than fabricating a mode.
-//! `0x1F` IS modelled (ManufacturerSpecific) and must decode successfully.
+//! `0x1F` IS modelled (`ManufacturerSpecific`) and must decode successfully.
 
 use cave_home_zwave::{Command, CommandClass, ThermostatMode, ZwaveError};
 
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
 /// Round-trip helper: encode then decode must return the original command.
-fn roundtrip(cmd: Command) {
+fn roundtrip(cmd: Command) -> TestResult {
     let bytes = cmd.encode();
-    let back = Command::decode(&bytes).expect("re-decodes");
+    let back = Command::decode(&bytes)?;
     assert_eq!(
         back, cmd,
         "round-trip mismatch for {cmd:?} via {bytes:02x?}"
     );
+    Ok(())
 }
 
 #[test]
@@ -90,39 +94,43 @@ fn mode_enum_byte_mapping() {
 }
 
 #[test]
-fn decode_report_heat() {
+fn decode_report_heat() -> TestResult {
     // [0x40, 0x03, 0x01] : CC=THERMOSTAT_MODE, cmd=REPORT, mode byte 0x01 = Heat.
     assert_eq!(
-        Command::decode(&[0x40, 0x03, 0x01]).expect("valid report"),
+        Command::decode(&[0x40, 0x03, 0x01])?,
         Command::ThermostatModeReport(ThermostatMode::Heat)
     );
+    Ok(())
 }
 
 #[test]
-fn decode_report_cool() {
+fn decode_report_cool() -> TestResult {
     // mode byte 0x02 = Cool.
     assert_eq!(
-        Command::decode(&[0x40, 0x03, 0x02]).expect("valid report"),
+        Command::decode(&[0x40, 0x03, 0x02])?,
         Command::ThermostatModeReport(ThermostatMode::Cool)
     );
+    Ok(())
 }
 
 #[test]
-fn decode_report_off() {
+fn decode_report_off() -> TestResult {
     // mode byte 0x00 = Off.
     assert_eq!(
-        Command::decode(&[0x40, 0x03, 0x00]).expect("valid report"),
+        Command::decode(&[0x40, 0x03, 0x00])?,
         Command::ThermostatModeReport(ThermostatMode::Off)
     );
+    Ok(())
 }
 
 #[test]
-fn decode_report_auto() {
+fn decode_report_auto() -> TestResult {
     // mode byte 0x03 = Auto.
     assert_eq!(
-        Command::decode(&[0x40, 0x03, 0x03]).expect("valid report"),
+        Command::decode(&[0x40, 0x03, 0x03])?,
         Command::ThermostatModeReport(ThermostatMode::Auto)
     );
+    Ok(())
 }
 
 #[test]
@@ -141,24 +149,25 @@ fn encode_get_known_bytes() {
 }
 
 #[test]
-fn set_and_report_roundtrip() {
+fn set_and_report_roundtrip() -> TestResult {
     // Set round-trips: encode([0x40,0x01,mode]) decodes back to the same Set.
-    roundtrip(Command::ThermostatModeSet(ThermostatMode::Heat));
-    roundtrip(Command::ThermostatModeSet(ThermostatMode::Cool));
-    roundtrip(Command::ThermostatModeSet(ThermostatMode::Off));
-    roundtrip(Command::ThermostatModeSet(ThermostatMode::Auto));
-    roundtrip(Command::ThermostatModeSet(ThermostatMode::EnergySaveHeat));
-    roundtrip(Command::ThermostatModeSet(ThermostatMode::EnergySaveCool));
+    roundtrip(Command::ThermostatModeSet(ThermostatMode::Heat))?;
+    roundtrip(Command::ThermostatModeSet(ThermostatMode::Cool))?;
+    roundtrip(Command::ThermostatModeSet(ThermostatMode::Off))?;
+    roundtrip(Command::ThermostatModeSet(ThermostatMode::Auto))?;
+    roundtrip(Command::ThermostatModeSet(ThermostatMode::EnergySaveHeat))?;
+    roundtrip(Command::ThermostatModeSet(ThermostatMode::EnergySaveCool))?;
     roundtrip(Command::ThermostatModeSet(
         ThermostatMode::ManufacturerSpecific,
-    ));
+    ))?;
 
     // Report round-trips likewise.
-    roundtrip(Command::ThermostatModeReport(ThermostatMode::Heat));
-    roundtrip(Command::ThermostatModeReport(ThermostatMode::Auto));
+    roundtrip(Command::ThermostatModeReport(ThermostatMode::Heat))?;
+    roundtrip(Command::ThermostatModeReport(ThermostatMode::Auto))?;
 
     // Get round-trips (no body).
-    roundtrip(Command::ThermostatModeGet);
+    roundtrip(Command::ThermostatModeGet)?;
+    Ok(())
 }
 
 #[test]

@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //
-//! SunSpec point-type decoders over a slice of Modbus holding registers.
+//! `SunSpec` point-type decoders over a slice of Modbus holding registers.
 //!
-//! A SunSpec device exposes its data as a block of 16-bit holding registers.
+//! A `SunSpec` device exposes its data as a block of 16-bit holding registers.
 //! When read over Modbus the values arrive big-endian, so a 32-bit point
-//! spans two consecutive registers with the high word first. Each SunSpec
+//! spans two consecutive registers with the high word first. Each `SunSpec`
 //! *point* has a declared type (`int16`, `uint16`, `int32`, `uint32`,
 //! `acc32`, `float32`, `sunssf`, `string`); this module turns the raw `u16`
 //! words into typed Rust values.
 //!
 //! # Sentinels
 //!
-//! SunSpec reserves a "not implemented" / "not accumulated" sentinel per
+//! `SunSpec` reserves a "not implemented" / "not accumulated" sentinel per
 //! type so a device can advertise a point it does not actually populate.
 //! Decoding a sentinel returns [`None`] — never a bogus number. Source:
-//! SunSpec Information Model Specification, "Data Point Types" table.
+//! `SunSpec` Information Model Specification, "Data Point Types" table.
 //!
 //! | Type     | Not-implemented sentinel |
 //! | -------- | ------------------------ |
@@ -30,15 +30,15 @@
 
 use crate::fault::DecodeError;
 
-/// SunSpec `int16` not-implemented sentinel.
+/// `SunSpec` `int16` not-implemented sentinel.
 pub const INT16_NA: u16 = 0x8000;
-/// SunSpec `uint16` not-implemented sentinel.
+/// `SunSpec` `uint16` not-implemented sentinel.
 pub const UINT16_NA: u16 = 0xFFFF;
-/// SunSpec `int32` not-implemented sentinel.
+/// `SunSpec` `int32` not-implemented sentinel.
 pub const INT32_NA: u32 = 0x8000_0000;
-/// SunSpec `uint32` not-implemented sentinel.
+/// `SunSpec` `uint32` not-implemented sentinel.
 pub const UINT32_NA: u32 = 0xFFFF_FFFF;
-/// SunSpec `acc32` not-accumulated sentinel (a lifetime counter that has
+/// `SunSpec` `acc32` not-accumulated sentinel (a lifetime counter that has
 /// never ticked reads as zero and carries no information).
 pub const ACC32_NA: u32 = 0x0000_0000;
 
@@ -115,7 +115,7 @@ pub fn acc32(regs: &[u16], offset: usize) -> Result<Option<u32>, DecodeError> {
 }
 
 /// Read two consecutive registers as a big-endian IEEE-754 `float32`.
-/// A NaN payload is the SunSpec not-implemented marker and decodes to
+/// A NaN payload is the `SunSpec` not-implemented marker and decodes to
 /// [`None`].
 ///
 /// # Errors
@@ -129,10 +129,10 @@ pub fn float32(regs: &[u16], offset: usize) -> Result<Option<f32>, DecodeError> 
     Ok(Some(value))
 }
 
-/// Decode a SunSpec fixed-length string point.
+/// Decode a `SunSpec` fixed-length string point.
 ///
 /// A string point occupies `len_regs` consecutive registers (`2 * len_regs`
-/// bytes), MSB-first within each register. The string is NUL-padded; SunSpec
+/// bytes), MSB-first within each register. The string is NUL-padded; `SunSpec`
 /// also pads with spaces in some implementations, so both trailing NULs and
 /// trailing ASCII spaces are trimmed. An all-NUL field decodes to an empty
 /// string.
@@ -184,77 +184,88 @@ fn u32_words(regs: &[u16], offset: usize) -> Result<u32, DecodeError> {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn int16_decodes_signed() {
+    fn int16_decodes_signed() -> TestResult {
         let regs = [0x0000, 0x7FFF, (-5i16) as u16];
-        assert_eq!(int16(&regs, 0).unwrap(), Some(0));
-        assert_eq!(int16(&regs, 1).unwrap(), Some(32_767));
-        assert_eq!(int16(&regs, 2).unwrap(), Some(-5));
+        assert_eq!(int16(&regs, 0)?, Some(0));
+        assert_eq!(int16(&regs, 1)?, Some(32_767));
+        assert_eq!(int16(&regs, 2)?, Some(-5));
+        Ok(())
     }
 
     #[test]
-    fn int16_sentinel_is_none() {
+    fn int16_sentinel_is_none() -> TestResult {
         let regs = [INT16_NA];
-        assert_eq!(int16(&regs, 0).unwrap(), None);
+        assert_eq!(int16(&regs, 0)?, None);
+        Ok(())
     }
 
     #[test]
-    fn uint16_decodes_and_sentinel() {
+    fn uint16_decodes_and_sentinel() -> TestResult {
         let regs = [0u16, 1234, UINT16_NA];
-        assert_eq!(uint16(&regs, 0).unwrap(), Some(0));
-        assert_eq!(uint16(&regs, 1).unwrap(), Some(1234));
-        assert_eq!(uint16(&regs, 2).unwrap(), None);
+        assert_eq!(uint16(&regs, 0)?, Some(0));
+        assert_eq!(uint16(&regs, 1)?, Some(1234));
+        assert_eq!(uint16(&regs, 2)?, None);
+        Ok(())
     }
 
     #[test]
-    fn int32_big_endian_word_order() {
+    fn int32_big_endian_word_order() -> TestResult {
         // 0x000F_4240 == 1_000_000
         let regs = [0x000F, 0x4240];
-        assert_eq!(int32(&regs, 0).unwrap(), Some(1_000_000));
+        assert_eq!(int32(&regs, 0)?, Some(1_000_000));
+        Ok(())
     }
 
     #[test]
-    fn int32_negative_and_sentinel() {
+    fn int32_negative_and_sentinel() -> TestResult {
         let neg = (-2i32) as u32;
         let regs = [(neg >> 16) as u16, (neg & 0xFFFF) as u16];
-        assert_eq!(int32(&regs, 0).unwrap(), Some(-2));
+        assert_eq!(int32(&regs, 0)?, Some(-2));
         let na = [0x8000u16, 0x0000];
-        assert_eq!(int32(&na, 0).unwrap(), None);
+        assert_eq!(int32(&na, 0)?, None);
+        Ok(())
     }
 
     #[test]
-    fn uint32_decodes_and_sentinel() {
+    fn uint32_decodes_and_sentinel() -> TestResult {
         let regs = [0xFFFF, 0xFFFE];
-        assert_eq!(uint32(&regs, 0).unwrap(), Some(0xFFFF_FFFE));
+        assert_eq!(uint32(&regs, 0)?, Some(0xFFFF_FFFE));
         let na = [0xFFFFu16, 0xFFFF];
-        assert_eq!(uint32(&na, 0).unwrap(), None);
+        assert_eq!(uint32(&na, 0)?, None);
+        Ok(())
     }
 
     #[test]
-    fn acc32_zero_is_not_accumulated() {
+    fn acc32_zero_is_not_accumulated() -> TestResult {
         let zero = [0u16, 0];
-        assert_eq!(acc32(&zero, 0).unwrap(), None);
+        assert_eq!(acc32(&zero, 0)?, None);
         let some = [0x0001u16, 0x86A0]; // 100_000
-        assert_eq!(acc32(&some, 0).unwrap(), Some(100_000));
+        assert_eq!(acc32(&some, 0)?, Some(100_000));
+        Ok(())
     }
 
     #[test]
-    fn float32_round_trips() {
+    fn float32_round_trips() -> TestResult {
         let bits = 230.5f32.to_bits();
         let regs = [(bits >> 16) as u16, (bits & 0xFFFF) as u16];
-        let got = float32(&regs, 0).unwrap().expect("finite");
+        let got = float32(&regs, 0)?.ok_or("finite")?;
         assert!((got - 230.5).abs() < f32::EPSILON);
+        Ok(())
     }
 
     #[test]
-    fn float32_nan_is_none() {
+    fn float32_nan_is_none() -> TestResult {
         let bits = f32::NAN.to_bits();
         let regs = [(bits >> 16) as u16, (bits & 0xFFFF) as u16];
-        assert_eq!(float32(&regs, 0).unwrap(), None);
+        assert_eq!(float32(&regs, 0)?, None);
+        Ok(())
     }
 
     #[test]
-    fn string_decodes_msb_first_and_trims_padding() {
+    fn string_decodes_msb_first_and_trims_padding() -> TestResult {
         // "Fronius" packed two bytes per register, NUL padded to 4 regs.
         let regs = [
             (u16::from(b'F') << 8) | u16::from(b'r'),
@@ -262,22 +273,25 @@ mod tests {
             (u16::from(b'i') << 8) | u16::from(b'u'),
             (u16::from(b's') << 8),
         ];
-        assert_eq!(string(&regs, 0, 4).unwrap(), "Fronius");
+        assert_eq!(string(&regs, 0, 4)?, "Fronius");
+        Ok(())
     }
 
     #[test]
-    fn string_trims_trailing_spaces() {
+    fn string_trims_trailing_spaces() -> TestResult {
         let regs = [
             (u16::from(b'S') << 8) | u16::from(b'M'),
             (u16::from(b'A') << 8) | u16::from(b' '),
         ];
-        assert_eq!(string(&regs, 0, 2).unwrap(), "SMA");
+        assert_eq!(string(&regs, 0, 2)?, "SMA");
+        Ok(())
     }
 
     #[test]
-    fn string_empty_field() {
+    fn string_empty_field() -> TestResult {
         let regs = [0u16, 0, 0, 0];
-        assert_eq!(string(&regs, 0, 4).unwrap(), "");
+        assert_eq!(string(&regs, 0, 4)?, "");
+        Ok(())
     }
 
     #[test]
@@ -298,8 +312,9 @@ mod tests {
     }
 
     #[test]
-    fn sunssf_is_int16_decode() {
+    fn sunssf_is_int16_decode() -> TestResult {
         let regs = [(-2i16) as u16];
-        assert_eq!(sunssf(&regs, 0).unwrap(), Some(-2));
+        assert_eq!(sunssf(&regs, 0)?, Some(-2));
+        Ok(())
     }
 }

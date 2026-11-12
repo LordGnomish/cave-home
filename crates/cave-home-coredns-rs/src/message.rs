@@ -278,7 +278,7 @@ mod tests {
         assert_eq!(reply.header.id, 7);
         assert!(reply.header.qr);
         assert_eq!(reply.questions, query.questions);
-        assert!(reply.answers.is_empty());
+        assert_eq!(reply.answers, [] as [ResourceRecord; 0]);
         let nx = query.reply().with_rcode(Rcode::NxDomain);
         assert_eq!(nx.header.rcode, Rcode::NxDomain);
     }

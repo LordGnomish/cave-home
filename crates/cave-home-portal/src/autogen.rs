@@ -111,6 +111,8 @@ mod tests {
     use crate::area::{Area, Entity};
     use crate::view_mode::{Surface, ViewMode};
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn furnished_home() -> Home {
         let mut h = Home::new();
         h.add_area(Area::new("living", "Living room", "sofa"));
@@ -160,9 +162,9 @@ mod tests {
     #[test]
     fn empty_home_yields_empty_dashboard() {
         let d = auto_dashboard(&Home::new(), Lang::En);
-        assert!(d.views.is_empty());
-        assert!(d.scenes.is_empty());
-        assert!(d.favorites.is_empty());
+        assert_eq!(d.views, [] as [crate::dashboard::View; 0]);
+        assert_eq!(d.scenes, [] as [String; 0]);
+        assert_eq!(d.favorites, [] as [crate::dashboard::Favorite; 0]);
     }
 
     #[test]
@@ -180,13 +182,13 @@ mod tests {
     }
 
     #[test]
-    fn cards_match_domain() {
+    fn cards_match_domain() -> TestResult {
         let d = auto_dashboard(&furnished_home(), Lang::En);
         let living = d
             .views
             .iter()
             .find(|v| v.title == "Living room")
-            .expect("living");
+            .ok_or("living")?;
         // light → Light, camera → Camera, climate → Thermostat, cover → Cover, scene → Scene
         assert!(living.cards.iter().any(|c| matches!(c, Card::Light { .. })));
         assert!(
@@ -204,20 +206,22 @@ mod tests {
         assert!(living.cards.iter().any(|c| matches!(c, Card::Cover { .. })));
         assert!(living.cards.iter().any(|c| matches!(c, Card::Scene { .. })));
 
-        let bed = d.views.iter().find(|v| v.title == "Bedroom").expect("bed");
+        let bed = d.views.iter().find(|v| v.title == "Bedroom").ok_or("bed")?;
         assert!(
             bed.cards
                 .iter()
                 .any(|c| matches!(c, Card::SensorGraph { .. }))
         );
+        Ok(())
     }
 
     #[test]
-    fn unassigned_lands_in_other_view() {
+    fn unassigned_lands_in_other_view() -> TestResult {
         let d = auto_dashboard(&furnished_home(), Lang::En);
-        let other = d.views.iter().find(|v| v.title == "Other").expect("other");
+        let other = d.views.iter().find(|v| v.title == "Other").ok_or("other")?;
         assert_eq!(other.cards.len(), 1);
         assert!(matches!(other.cards[0], Card::Entity { .. })); // a switch
+        Ok(())
     }
 
     #[test]

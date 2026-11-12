@@ -57,7 +57,7 @@ pub enum ExternalTrafficPolicy {
     Local,
 }
 
-/// One port of a LoadBalancer Service (`k8s.io/api/core/v1.ServicePort`).
+/// One port of a `LoadBalancer` Service (`k8s.io/api/core/v1.ServicePort`).
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ServicePort {
     /// Port name (unique within a multi-port Service; may be empty for single
@@ -66,8 +66,8 @@ pub struct ServicePort {
     pub protocol: Protocol,
     /// The Service's published port (`port`) — svclb binds this on the host.
     pub port: u16,
-    /// Allocated NodePort (`nodePort`). klipper-lb forwards the host port to the
-    /// cluster Service; the NodePort is the in-cluster handle it targets.
+    /// Allocated `NodePort` (`nodePort`). klipper-lb forwards the host port to the
+    /// cluster Service; the `NodePort` is the in-cluster handle it targets.
     pub node_port: u16,
 }
 
@@ -110,7 +110,7 @@ pub enum ServiceError {
     NoPorts { key: String },
     /// A `port` was zero (invalid).
     InvalidPort { key: String, name: String },
-    /// A `nodePort` was zero (invalid for a LoadBalancer Service).
+    /// A `nodePort` was zero (invalid for a `LoadBalancer` Service).
     InvalidNodePort { key: String, name: String },
     /// Two ports share a (protocol, port) pair within one Service.
     DuplicatePort {

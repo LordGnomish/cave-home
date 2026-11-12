@@ -161,6 +161,8 @@ mod tests {
     use super::*;
     use std::cell::RefCell;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[derive(Default)]
     struct MockGit {
         synced: RefCell<Vec<(String, PathBuf, Option<String>)>>,
@@ -183,8 +185,8 @@ mod tests {
         }
     }
 
-    fn cfg() -> TrackerConfig {
-        TrackerConfig::from_yaml_str(
+    fn cfg() -> Result<TrackerConfig, Box<dyn std::error::Error>> {
+        Ok(TrackerConfig::from_yaml_str(
             r"
 project: t
 work_dir: /tmp/tracker-test
@@ -197,56 +199,59 @@ upstreams:
     tag: v9.9.9
 subsystems: []
 ",
-        )
-        .unwrap()
+        )?)
     }
 
     #[test]
-    fn poll_one_records_sync_and_resolves() {
-        let cfg = cfg();
+    fn poll_one_records_sync_and_resolves() -> TestResult {
+        let cfg = cfg()?;
         let git = MockGit::default();
-        let res = poll_one(&cfg, &git, "k3s").unwrap();
+        let res = poll_one(&cfg, &git, "k3s")?;
         assert_eq!(res.head_commit, "deadbeef");
         assert_eq!(res.latest_tag.as_deref(), Some("v1.2.3"));
         let synced = git.synced.borrow();
         assert_eq!(synced.len(), 1);
         assert_eq!(synced[0].0, "https://example.invalid/k3s");
         assert_eq!(synced[0].2, None);
+        Ok(())
     }
 
     #[test]
-    fn poll_one_passes_tag() {
-        let cfg = cfg();
+    fn poll_one_passes_tag() -> TestResult {
+        let cfg = cfg()?;
         let git = MockGit::default();
-        poll_one(&cfg, &git, "pinned").unwrap();
+        poll_one(&cfg, &git, "pinned")?;
         assert_eq!(git.synced.borrow()[0].2.as_deref(), Some("v9.9.9"));
+        Ok(())
     }
 
     #[test]
-    fn poll_unknown_is_not_found() {
-        let cfg = cfg();
+    fn poll_unknown_is_not_found() -> TestResult {
+        let cfg = cfg()?;
         let git = MockGit::default();
         assert!(matches!(
             poll_one(&cfg, &git, "ghost"),
             Err(crate::TrackerError::NotFound(_))
         ));
+        Ok(())
     }
 
     #[test]
-    fn poll_all_visits_every_upstream() {
-        let cfg = cfg();
+    fn poll_all_visits_every_upstream() -> TestResult {
+        let cfg = cfg()?;
         let git = MockGit::default();
         let results = poll_all(&cfg, &git);
         assert_eq!(results.len(), 2);
         assert!(results.iter().all(|(_, r)| r.is_ok()));
+        Ok(())
     }
 
     /// Real `git`: clone shallowly from a local source repo (no network).
     #[test]
-    fn shell_git_clones_real_local_repo() {
-        let tmp = tempfile::tempdir().unwrap();
+    fn shell_git_clones_real_local_repo() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         let src = tmp.path().join("src");
-        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&src)?;
         let s = src.to_string_lossy().into_owned();
         // Build a tiny source repo with one tagged commit.
         for args in [
@@ -254,24 +259,25 @@ subsystems: []
             vec!["-C", &s, "config", "user.email", "t@t"],
             vec!["-C", &s, "config", "user.name", "t"],
         ] {
-            run_git(&args).unwrap();
+            run_git(&args)?;
         }
-        std::fs::write(src.join("f.go"), "package main\nfunc main() {}\n").unwrap();
-        run_git(&["-C", &s, "add", "."]).unwrap();
-        run_git(&["-C", &s, "commit", "-q", "-m", "init"]).unwrap();
-        run_git(&["-C", &s, "tag", "v0.1.0"]).unwrap();
+        std::fs::write(src.join("f.go"), "package main\nfunc main() {}\n")?;
+        run_git(&["-C", &s, "add", "."])?;
+        run_git(&["-C", &s, "commit", "-q", "-m", "init"])?;
+        run_git(&["-C", &s, "tag", "v0.1.0"])?;
 
         let dest = tmp.path().join("clone");
         let git = ShellGit::new();
         let url = format!("file://{s}");
-        git.sync(&url, &dest, None).unwrap();
+        git.sync(&url, &dest, None)?;
         assert!(dest.join("f.go").exists(), "file was cloned");
-        let head = git.head_commit(&dest).unwrap();
+        let head = git.head_commit(&dest)?;
         assert_eq!(head.len(), 40, "full sha resolved");
         // Tag presence depends on shallow fetch semantics; just assert no error.
-        let _ = git.latest_tag(&dest).unwrap();
+        let _ = git.latest_tag(&dest)?;
 
         // Second sync on the existing clone must succeed (fetch path).
-        git.sync(&url, &dest, None).unwrap();
+        git.sync(&url, &dest, None)?;
+        Ok(())
     }
 }
