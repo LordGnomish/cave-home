@@ -100,7 +100,7 @@ impl Lock {
 
     /// Whether `command` is legal from the current state, ignoring the optimism
     /// of the transition. This is the pure transition table.
-    fn is_legal(&self, command: LockCommand) -> Result<(), TransitionError> {
+    const fn is_legal(&self, command: LockCommand) -> Result<(), TransitionError> {
         // Capability gate first: a missing capability is always Unsupported,
         // regardless of state, so the caller gets the most specific reason.
         if matches!(command, LockCommand::Open) && !self.features.supports_open {
@@ -166,7 +166,7 @@ impl Lock {
     /// The hardware confirms a transient move succeeded: `Locking` settles to
     /// `Locked`, `Unlocking` to `Unlocked`. Confirming from a settled state is
     /// a no-op (idempotent), so a late or duplicate confirmation is harmless.
-    pub fn confirm(&mut self) {
+    pub const fn confirm(&mut self) {
         self.state = match self.state {
             LockState::Locking => LockState::Locked,
             LockState::Unlocking => LockState::Unlocked,
@@ -178,7 +178,7 @@ impl Lock {
     /// motor stalled): the lock settles to [`LockState::Jammed`]. Failing from a
     /// settled state still surfaces the jam — a lock can report a jam any time
     /// it discovers one.
-    pub fn fail(&mut self) {
+    pub const fn fail(&mut self) {
         self.state = LockState::Jammed;
     }
 
@@ -188,7 +188,7 @@ impl Lock {
     /// # Errors
     /// [`TransitionError::IllegalTransition`] if the lock is not jammed (there
     /// is nothing to clear) or if `observed` is itself a non-settled state.
-    pub fn clear_jam(&mut self, observed: LockState) -> Result<(), TransitionError> {
+    pub const fn clear_jam(&mut self, observed: LockState) -> Result<(), TransitionError> {
         if !matches!(self.state, LockState::Jammed) {
             return Err(TransitionError::IllegalTransition);
         }
@@ -203,6 +203,8 @@ impl Lock {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     fn deadbolt(state: LockState) -> Lock {
         Lock::with_state(LockFeatures::deadbolt(), state)
@@ -227,13 +229,14 @@ mod tests {
     }
 
     #[test]
-    fn locking_that_fails_becomes_jammed() {
+    fn locking_that_fails_becomes_jammed() -> TestResult {
         let mut lock = deadbolt(LockState::Unlocked);
-        lock.apply(LockCommand::Lock).expect("legal");
+        lock.apply(LockCommand::Lock)?;
         lock.fail();
         assert_eq!(lock.state(), LockState::Jammed);
         assert!(lock.state().needs_attention());
         assert!(!lock.state().is_secure());
+        Ok(())
     }
 
     #[test]
@@ -339,37 +342,39 @@ mod tests {
     }
 
     #[test]
-    fn keypad_unlock_with_correct_code() {
-        let stored = LockCode::parse("1379").expect("valid");
+    fn keypad_unlock_with_correct_code() -> TestResult {
+        let stored = LockCode::parse("1379")?;
         let mut cred = CodeCredential::enroll(&stored);
         let mut lock = deadbolt(LockState::Locked);
-        let attempt = LockCode::parse("1379").expect("valid");
+        let attempt = LockCode::parse("1379")?;
         assert_eq!(
             lock.apply_with_code(LockCommand::Unlock, &mut cred, &attempt),
             Ok(LockState::Unlocking)
         );
+        Ok(())
     }
 
     #[test]
-    fn keypad_unlock_with_wrong_code_rejected() {
-        let stored = LockCode::parse("1379").expect("valid");
+    fn keypad_unlock_with_wrong_code_rejected() -> TestResult {
+        let stored = LockCode::parse("1379")?;
         let mut cred = CodeCredential::enroll(&stored);
         let mut lock = deadbolt(LockState::Locked);
-        let attempt = LockCode::parse("0000").expect("valid");
+        let attempt = LockCode::parse("0000")?;
         assert_eq!(
             lock.apply_with_code(LockCommand::Unlock, &mut cred, &attempt),
             Err(TransitionError::CodeRejected)
         );
         // A rejected code must not move the lock.
         assert_eq!(lock.state(), LockState::Locked);
+        Ok(())
     }
 
     #[test]
-    fn illegal_command_does_not_spend_an_attempt() {
-        let stored = LockCode::parse("1379").expect("valid");
+    fn illegal_command_does_not_spend_an_attempt() -> TestResult {
+        let stored = LockCode::parse("1379")?;
         let mut cred = CodeCredential::enroll(&stored);
         let mut lock = deadbolt(LockState::Jammed);
-        let attempt = LockCode::parse("1379").expect("valid");
+        let attempt = LockCode::parse("1379")?;
         assert_eq!(
             lock.apply_with_code(LockCommand::Unlock, &mut cred, &attempt),
             Err(TransitionError::IllegalTransition)
@@ -379,5 +384,6 @@ mod tests {
             0,
             "illegal command must not burn the lock-out budget"
         );
+        Ok(())
     }
 }
