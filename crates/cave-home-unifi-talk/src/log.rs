@@ -227,7 +227,7 @@ mod tests {
             1,
             1,
         ));
-        assert!(log.records().is_empty());
+        assert_eq!(log.records(), [] as [CallRecord; 0]);
         assert_eq!(log.latest(), None);
     }
 

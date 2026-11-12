@@ -9,7 +9,7 @@
 //! `cave-home-unifi-talk` — the household intercom / phone call-control brain
 //! for cave-home (ADR-009).
 //!
-//! UniFi Talk is Ubiquiti's VoIP intercom + desk-phone system: a front-door
+//! `UniFi` Talk is Ubiquiti's `VoIP` intercom + desk-phone system: a front-door
 //! intercom, a wall panel, a desk phone in the study. This crate is the
 //! **call-control engine** behind it — the pure-logic core that decides who
 //! rings when a call comes in, walks a single call through its lifecycle
@@ -45,7 +45,7 @@
 //!   (from / to, direction, outcome, duration).
 //! - [`label`] — grandma-friendly EN/DE/TR call lines (Charter §6.3, ADR-007).
 //!
-//! The **transport** (SIP signalling + RTP media + codecs), the **UniFi Talk
+//! The **transport** (SIP signalling + RTP media + codecs), the **`UniFi` Talk
 //! provisioning REST/WS API**, the actual **audio path**, **PSTN / SIP-trunk**
 //! integration, and the **cave-home-doorbell / -core glue** are
 //! network/audio/signalling-bound and deferred to Phase 1b — every one is

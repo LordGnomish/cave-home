@@ -198,8 +198,9 @@ impl CallMachine {
                 self.ringing_since = None;
                 CallState::Connecting
             }
-            // The media join completes.
-            (CallState::Connecting, CallEvent::Connected) => CallState::Active,
+            // The media join completes, or a held call is resumed.
+            (CallState::Connecting, CallEvent::Connected)
+            | (CallState::Held, CallEvent::Resume) => CallState::Active,
             // A ringing call is rejected by the household.
             (CallState::Ringing, CallEvent::Reject) => {
                 self.ringing_since = None;
@@ -212,8 +213,6 @@ impl CallMachine {
             }
             // A talking call is parked on hold.
             (CallState::Active, CallEvent::Hold) => CallState::Held,
-            // A held call is resumed.
-            (CallState::Held, CallEvent::Resume) => CallState::Active,
             // A connected call (talking or held) is transferred away. The
             // transfer hands the call off; from this machine's point of view the
             // local leg ends.
@@ -258,7 +257,7 @@ impl CallMachine {
 /// A three-way / conference membership model.
 ///
 /// Pure bookkeeping over which extensions are joined to a single conference,
-/// capped at a maximum size (UniFi Talk's three-way is the common case, but the
+/// capped at a maximum size (`UniFi` Talk's three-way is the common case, but the
 /// cap is configurable). Joining an already-present member, or joining past the
 /// cap, is rejected so the transport never has to reconcile a bad roster.
 #[derive(Debug, Clone, PartialEq, Eq)]
