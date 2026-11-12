@@ -175,6 +175,8 @@ impl Product {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn rejects_empty_name() {
         assert_eq!(
@@ -206,10 +208,11 @@ mod tests {
     }
 
     #[test]
-    fn below_min_is_strict() {
-        let exactly_at = Product::new("Eggs", QuantityUnit::Piece, 6.0, 6.0, None).unwrap();
+    fn below_min_is_strict() -> TestResult {
+        let exactly_at = Product::new("Eggs", QuantityUnit::Piece, 6.0, 6.0, None)?;
         assert!(!exactly_at.is_below_min(), "at the minimum is not below it");
-        let under = Product::new("Eggs", QuantityUnit::Piece, 5.0, 6.0, None).unwrap();
+        let under = Product::new("Eggs", QuantityUnit::Piece, 5.0, 6.0, None)?;
         assert!(under.is_below_min());
+        Ok(())
     }
 }

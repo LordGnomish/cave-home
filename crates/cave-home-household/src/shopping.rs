@@ -139,43 +139,53 @@ fn trim_amount(v: f64) -> String {
 mod tests {
     use super::*;
 
-    fn p(name: &str, unit: QuantityUnit, stock: f64, min: f64) -> Product {
-        Product::new(name, unit, stock, min, None).expect("valid product")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn p(
+        name: &str,
+        unit: QuantityUnit,
+        stock: f64,
+        min: f64,
+    ) -> Result<Product, crate::product::ProductError> {
+        Product::new(name, unit, stock, min, None)
     }
 
     #[test]
-    fn below_min_lists_only_short_products() {
+    fn below_min_lists_only_short_products() -> TestResult {
         let products = [
             p(
                 "Milk",
                 QuantityUnit::Millilitres { step: 1000.0 },
                 500.0,
                 2000.0,
-            ),
-            p("Eggs", QuantityUnit::Piece, 12.0, 6.0), // plenty
+            )?,
+            p("Eggs", QuantityUnit::Piece, 12.0, 6.0)?, // plenty
         ];
         let list = below_min(&products);
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name(), "Milk");
+        Ok(())
     }
 
     #[test]
-    fn below_min_rounds_up_to_purchase_units() {
+    fn below_min_rounds_up_to_purchase_units() -> TestResult {
         // Short by 1500 ml, sold in 1000 ml cartons -> must buy 2000 ml.
         let products = [p(
             "Milk",
             QuantityUnit::Millilitres { step: 1000.0 },
             500.0,
             2000.0,
-        )];
+        )?];
         assert_eq!(below_min(&products)[0].amount(), 2000.0);
+        Ok(())
     }
 
     #[test]
-    fn below_min_rounds_packs_up() {
+    fn below_min_rounds_packs_up() -> TestResult {
         // Short by 4 cans, sold in six-packs -> one six-pack.
-        let products = [p("Cola", QuantityUnit::Pack(6), 2.0, 6.0)];
+        let products = [p("Cola", QuantityUnit::Pack(6), 2.0, 6.0)?];
         assert_eq!(below_min(&products)[0].amount(), 6.0);
+        Ok(())
     }
 
     #[test]
@@ -198,11 +208,12 @@ mod tests {
     }
 
     #[test]
-    fn merge_keeps_distinct_products_separate() {
-        let auto = below_min(&[p("Eggs", QuantityUnit::Piece, 1.0, 6.0)]);
+    fn merge_keeps_distinct_products_separate() -> TestResult {
+        let auto = below_min(&[p("Eggs", QuantityUnit::Piece, 1.0, 6.0)?]);
         let manual = vec![ShoppingItem::manual("Candles", 10.0, QuantityUnit::Piece)];
         let merged = merge(auto, manual);
         assert_eq!(merged.len(), 2);
+        Ok(())
     }
 
     #[test]

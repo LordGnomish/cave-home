@@ -162,30 +162,30 @@ mod tests {
     use super::*;
     use crate::product::QuantityUnit;
 
-    fn basket() -> Vec<Product> {
-        vec![
-            Product::new("Eggs", QuantityUnit::Piece, 6.0, 0.0, None).unwrap(),
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn basket() -> Result<Vec<Product>, Box<dyn std::error::Error>> {
+        Ok(vec![
+            Product::new("Eggs", QuantityUnit::Piece, 6.0, 0.0, None)?,
             Product::new(
                 "Flour",
                 QuantityUnit::Grams { step: 500.0 },
                 1000.0,
                 0.0,
                 None,
-            )
-            .unwrap(),
+            )?,
             Product::new(
                 "Milk",
                 QuantityUnit::Millilitres { step: 1000.0 },
                 200.0,
                 0.0,
                 None,
-            )
-            .unwrap(),
-        ]
+            )?,
+        ])
     }
 
     #[test]
-    fn can_make_when_everything_is_in_stock() {
+    fn can_make_when_everything_is_in_stock() -> TestResult {
         let pancakes = Recipe::new(
             "Pancakes",
             vec![
@@ -194,13 +194,14 @@ mod tests {
                 Ingredient::new("Milk", 200.0),
             ],
         );
-        let check = can_make(&pancakes, &basket());
+        let check = can_make(&pancakes, &basket()?);
         assert!(check.can_make());
-        assert!(check.shortfall().is_empty());
+        assert_eq!(check.shortfall(), []);
+        Ok(())
     }
 
     #[test]
-    fn shortfall_lists_what_is_missing_rounded_up() {
+    fn shortfall_lists_what_is_missing_rounded_up() -> TestResult {
         let pancakes = Recipe::new(
             "Pancakes",
             vec![
@@ -208,7 +209,7 @@ mod tests {
                 Ingredient::new("Milk", 500.0), // have 200, short 300 -> 1 carton (1000)
             ],
         );
-        let check = can_make(&pancakes, &basket());
+        let check = can_make(&pancakes, &basket()?);
         assert!(!check.can_make());
         assert_eq!(check.shortfall().len(), 2);
         let eggs = &check.shortfall()[0];
@@ -220,24 +221,27 @@ mod tests {
             1000.0,
             "300 ml short rounds up to a 1 L carton"
         );
+        Ok(())
     }
 
     #[test]
-    fn missing_product_entirely_is_a_shortfall() {
+    fn missing_product_entirely_is_a_shortfall() -> TestResult {
         let recipe = Recipe::new("Omelette", vec![Ingredient::new("Cheese", 2.0)]);
-        let check = can_make(&recipe, &basket());
+        let check = can_make(&recipe, &basket()?);
         assert!(!check.can_make());
         assert_eq!(check.shortfall()[0].name(), "Cheese");
         assert_eq!(check.shortfall()[0].amount(), 2.0);
+        Ok(())
     }
 
     #[test]
-    fn summary_is_plain_language() {
+    fn summary_is_plain_language() -> TestResult {
         let recipe = Recipe::new("Pancakes", vec![Ingredient::new("Eggs", 2.0)]);
-        let ok = can_make(&recipe, &basket());
+        let ok = can_make(&recipe, &basket()?);
         assert_eq!(
             ok.summary(&recipe, Lang::En),
             "You have everything for Pancakes"
         );
+        Ok(())
     }
 }

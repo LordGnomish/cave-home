@@ -80,12 +80,14 @@ pub use stock::{StockError, consume, open, purchase};
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     /// Charter §6.3: no implementation jargon may leak into any user-facing
     /// string this crate produces. We exercise every localised surface in all
     /// three languages and assert none contains a banned term. Mirrors the
     /// air-quality crate's `ui_strings_carry_no_implementation_jargon`.
     #[test]
-    fn ui_strings_carry_no_implementation_jargon() {
+    fn ui_strings_carry_no_implementation_jargon() -> TestResult {
         const BANNED: &[&str] = &[
             "Grocy",
             "SKU",
@@ -114,8 +116,7 @@ mod tests {
                 500.0,
                 2000.0,
                 None,
-            )
-            .expect("valid product");
+            )?;
             for item in below_min(&[milk]) {
                 strings.push(item.line(lang));
             }
@@ -123,11 +124,11 @@ mod tests {
 
             // Expiry lines across every freshness state.
             let basket = [
-                Product::new("Yogurt", QuantityUnit::Piece, 1.0, 0.0, Some(101)).unwrap(),
-                Product::new("Cream", QuantityUnit::Piece, 1.0, 0.0, Some(100)).unwrap(),
-                Product::new("Cheese", QuantityUnit::Piece, 1.0, 0.0, Some(50)).unwrap(),
-                Product::new("Honey", QuantityUnit::Piece, 1.0, 0.0, None).unwrap(),
-                Product::new("Ham", QuantityUnit::Piece, 1.0, 0.0, Some(105)).unwrap(),
+                Product::new("Yogurt", QuantityUnit::Piece, 1.0, 0.0, Some(101))?,
+                Product::new("Cream", QuantityUnit::Piece, 1.0, 0.0, Some(100))?,
+                Product::new("Cheese", QuantityUnit::Piece, 1.0, 0.0, Some(50))?,
+                Product::new("Honey", QuantityUnit::Piece, 1.0, 0.0, None)?,
+                Product::new("Ham", QuantityUnit::Piece, 1.0, 0.0, Some(105))?,
             ];
             for entry in report(&basket, 100, 3).entries {
                 strings.push(entry.line(lang));
@@ -146,7 +147,7 @@ mod tests {
                 "Pancakes",
                 vec![Ingredient::new("Eggs", 99.0), Ingredient::new("Flour", 1.0)],
             );
-            let stock = [Product::new("Eggs", QuantityUnit::Piece, 2.0, 0.0, None).unwrap()];
+            let stock = [Product::new("Eggs", QuantityUnit::Piece, 2.0, 0.0, None)?];
             let check = can_make(&recipe, &stock);
             strings.push(check.summary(&recipe, lang));
             for item in check.shortfall() {
@@ -162,12 +163,13 @@ mod tests {
                 );
             }
         }
+        Ok(())
     }
 
     /// An end-to-end sweep: low milk + an expiring item + a due chore + a recipe
     /// we cannot quite make, all flowing through the public surface.
     #[test]
-    fn engine_runs_a_whole_household_day() {
+    fn engine_runs_a_whole_household_day() -> TestResult {
         // Pantry: milk low, yogurt about to turn, eggs plenty.
         let milk = Product::new(
             "Milk",
@@ -175,10 +177,9 @@ mod tests {
             300.0,
             2000.0,
             Some(105),
-        )
-        .unwrap();
-        let yogurt = Product::new("Yogurt", QuantityUnit::Piece, 4.0, 2.0, Some(101)).unwrap();
-        let eggs = Product::new("Eggs", QuantityUnit::Piece, 12.0, 6.0, None).unwrap();
+        )?;
+        let yogurt = Product::new("Yogurt", QuantityUnit::Piece, 4.0, 2.0, Some(101))?;
+        let eggs = Product::new("Eggs", QuantityUnit::Piece, 12.0, 6.0, None)?;
         let pantry = [milk.clone(), yogurt, eggs];
 
         // Shopping list: only milk is low.
@@ -188,7 +189,7 @@ mod tests {
         assert_eq!(auto[0].amount(), 2000.0); // short 1700 -> two 1 L cartons
 
         // We buy it; stock crosses back above the minimum.
-        let restocked = purchase(&milk, 2000.0).unwrap();
+        let restocked = purchase(&milk, 2000.0)?;
         assert_eq!(restocked, 2300.0);
 
         // Expiry: yogurt is the only thing flagged (today = 100, window 3).
@@ -212,5 +213,6 @@ mod tests {
         let check = can_make(&recipe, &pantry);
         assert!(!check.can_make(), "only 300 ml milk on hand");
         assert_eq!(check.shortfall()[0].name(), "Milk");
+        Ok(())
     }
 }
