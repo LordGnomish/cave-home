@@ -83,11 +83,14 @@ impl core::fmt::Display for Topic {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn accepts_plain_names() {
-        assert_eq!(Topic::new("kitchen-leak").unwrap().as_str(), "kitchen-leak");
-        assert_eq!(Topic::new("front_door").unwrap().as_str(), "front_door");
-        assert_eq!(Topic::new("Zone2").unwrap().as_str(), "Zone2");
+    fn accepts_plain_names() -> TestResult {
+        assert_eq!(Topic::new("kitchen-leak")?.as_str(), "kitchen-leak");
+        assert_eq!(Topic::new("front_door")?.as_str(), "front_door");
+        assert_eq!(Topic::new("Zone2")?.as_str(), "Zone2");
+        Ok(())
     }
 
     #[test]
@@ -112,8 +115,9 @@ mod tests {
     }
 
     #[test]
-    fn equal_names_are_equal_topics() {
-        assert_eq!(Topic::new("a").unwrap(), Topic::new("a").unwrap());
-        assert_ne!(Topic::new("a").unwrap(), Topic::new("b").unwrap());
+    fn equal_names_are_equal_topics() -> TestResult {
+        assert_eq!(Topic::new("a")?, Topic::new("a")?);
+        assert_ne!(Topic::new("a")?, Topic::new("b")?);
+        Ok(())
     }
 }

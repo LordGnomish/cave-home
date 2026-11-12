@@ -63,8 +63,10 @@ mod tests {
     use super::*;
     use crate::topic::Topic;
 
-    fn topic(name: &str) -> Topic {
-        Topic::new(name).expect("valid test topic")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn topic(name: &str) -> Result<Topic, crate::topic::TopicError> {
+        Topic::new(name)
     }
 
     #[test]
@@ -87,26 +89,28 @@ mod tests {
     }
 
     #[test]
-    fn render_includes_label_title_and_body() {
-        let n = Notification::new(topic("leak"), "Water leak", "Under the kitchen sink", 0)
+    fn render_includes_label_title_and_body() -> TestResult {
+        let n = Notification::new(topic("leak")?, "Water leak", "Under the kitchen sink", 0)
             .with_priority(Priority::High);
         assert_eq!(
             n.render(Lang::En),
             "Important: Water leak — Under the kitchen sink"
         );
+        Ok(())
     }
 
     #[test]
-    fn render_omits_empty_body() {
-        let n = Notification::new(topic("door"), "Front door opened", "", 0)
+    fn render_omits_empty_body() -> TestResult {
+        let n = Notification::new(topic("door")?, "Front door opened", "", 0)
             .with_priority(Priority::Low);
         assert_eq!(n.render(Lang::En), "FYI: Front door opened");
+        Ok(())
     }
 
     #[test]
-    fn render_localises() {
-        let n =
-            Notification::new(topic("leak"), "Sızıntı", "Mutfakta", 0).with_priority(Priority::Max);
+    fn render_localises() -> TestResult {
+        let n = Notification::new(topic("leak")?, "Sızıntı", "Mutfakta", 0)
+            .with_priority(Priority::Max);
         assert_eq!(
             n.render(Lang::Tr),
             "Acil — lütfen şimdi bakın: Sızıntı — Mutfakta"
@@ -115,6 +119,7 @@ mod tests {
             n.render(Lang::De),
             "Dringend — bitte jetzt nachsehen: Sızıntı — Mutfakta"
         );
+        Ok(())
     }
 
     #[test]

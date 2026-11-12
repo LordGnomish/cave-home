@@ -106,7 +106,7 @@ impl Notification {
     }
 
     #[must_use]
-    pub fn topic(&self) -> &Topic {
+    pub const fn topic(&self) -> &Topic {
         &self.topic
     }
 
@@ -171,26 +171,29 @@ pub struct DedupKey {
 mod tests {
     use super::*;
 
-    fn topic(name: &str) -> Topic {
-        Topic::new(name).expect("valid test topic")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn topic(name: &str) -> Result<Topic, crate::topic::TopicError> {
+        Topic::new(name)
     }
 
     #[test]
-    fn new_defaults_are_sane() {
-        let n = Notification::new(topic("leak"), "Water leak", "Under the sink", 100);
+    fn new_defaults_are_sane() -> TestResult {
+        let n = Notification::new(topic("leak")?, "Water leak", "Under the sink", 100);
         assert_eq!(n.priority(), Priority::Default);
-        assert!(n.tags().is_empty());
+        assert_eq!(n.tags(), [] as [String; 0]);
         assert_eq!(n.click(), None);
         assert_eq!(n.attachment(), None);
         assert_eq!(n.created_at(), 100);
         assert_eq!(n.title(), "Water leak");
         assert_eq!(n.body(), "Under the sink");
         assert_eq!(n.topic().as_str(), "leak");
+        Ok(())
     }
 
     #[test]
-    fn builders_set_optional_fields() {
-        let n = Notification::new(topic("door"), "Front door", "Opened", 5)
+    fn builders_set_optional_fields() -> TestResult {
+        let n = Notification::new(topic("door")?, "Front door", "Opened", 5)
             .with_priority(Priority::High)
             .with_tags(["security".to_owned(), "door".to_owned()])
             .with_click(ClickAction::OpenView("front-door".to_owned()))
@@ -205,24 +208,27 @@ mod tests {
             Some(&ClickAction::OpenView("front-door".to_owned()))
         );
         assert_eq!(n.attachment().map(|a| a.name.as_str()), Some("snap.jpg"));
+        Ok(())
     }
 
     #[test]
-    fn dedup_key_ignores_priority_tags_and_time() {
-        let a = Notification::new(topic("leak"), "Leak", "Kitchen", 10)
+    fn dedup_key_ignores_priority_tags_and_time() -> TestResult {
+        let a = Notification::new(topic("leak")?, "Leak", "Kitchen", 10)
             .with_priority(Priority::Max)
             .with_tags(["x".to_owned()]);
         let b =
-            Notification::new(topic("leak"), "Leak", "Kitchen", 9999).with_priority(Priority::Min);
+            Notification::new(topic("leak")?, "Leak", "Kitchen", 9999).with_priority(Priority::Min);
         assert_eq!(a.dedup_key(), b.dedup_key());
+        Ok(())
     }
 
     #[test]
-    fn dedup_key_separates_different_content() {
-        let a = Notification::new(topic("leak"), "Leak", "Kitchen", 10);
-        let b = Notification::new(topic("leak"), "Leak", "Bathroom", 10);
-        let c = Notification::new(topic("door"), "Leak", "Kitchen", 10);
+    fn dedup_key_separates_different_content() -> TestResult {
+        let a = Notification::new(topic("leak")?, "Leak", "Kitchen", 10);
+        let b = Notification::new(topic("leak")?, "Leak", "Bathroom", 10);
+        let c = Notification::new(topic("door")?, "Leak", "Kitchen", 10);
         assert_ne!(a.dedup_key(), b.dedup_key());
         assert_ne!(a.dedup_key(), c.dedup_key());
+        Ok(())
     }
 }
