@@ -87,8 +87,10 @@ mod tests {
     use super::*;
     use crate::category::Lang;
 
-    fn r(p: Pollutant, v: f64) -> Reading {
-        Reading::new(p, v).expect("valid test reading")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn r(p: Pollutant, v: f64) -> Result<Reading, crate::reading::ReadingError> {
+        Reading::new(p, v)
     }
 
     #[test]
@@ -96,62 +98,68 @@ mod tests {
         let a = assess(&[]);
         assert_eq!(a.overall, AirCategory::Good);
         assert_eq!(a.dominant, None);
-        assert!(a.grades.is_empty());
+        assert_eq!(a.grades, [] as [PollutantGrade; 0]);
     }
 
     #[test]
-    fn clean_room_is_good() {
+    fn clean_room_is_good() -> TestResult {
         let a = assess(&[
-            r(Pollutant::Pm25, 5.0),
-            r(Pollutant::CarbonDioxide, 600.0),
-            r(Pollutant::VocIndex, 90.0),
+            r(Pollutant::Pm25, 5.0)?,
+            r(Pollutant::CarbonDioxide, 600.0)?,
+            r(Pollutant::VocIndex, 90.0)?,
         ]);
         assert_eq!(a.overall, AirCategory::Good);
         assert_eq!(a.dominant, None);
+        Ok(())
     }
 
     #[test]
-    fn worst_of_picks_dominant_pollutant() {
+    fn worst_of_picks_dominant_pollutant() -> TestResult {
         // CO₂ stuffy (Sensitive), everything else Good -> CO₂ dominates.
         let a = assess(&[
-            r(Pollutant::Pm25, 4.0),
-            r(Pollutant::CarbonDioxide, 1300.0),
-            r(Pollutant::VocIndex, 80.0),
+            r(Pollutant::Pm25, 4.0)?,
+            r(Pollutant::CarbonDioxide, 1300.0)?,
+            r(Pollutant::VocIndex, 80.0)?,
         ]);
         assert_eq!(a.overall, AirCategory::Sensitive);
         assert_eq!(a.dominant, Some(Pollutant::CarbonDioxide));
+        Ok(())
     }
 
     #[test]
-    fn aqi_grade_carries_numeric_index() {
-        let g = grade(&r(Pollutant::Pm25, 20.0));
+    fn aqi_grade_carries_numeric_index() -> TestResult {
+        let g = grade(&r(Pollutant::Pm25, 20.0)?);
         assert_eq!(g.aqi, Some(71));
         assert_eq!(g.category, AirCategory::Fair);
+        Ok(())
     }
 
     #[test]
-    fn classifier_grade_has_no_numeric_aqi() {
-        let g = grade(&r(Pollutant::CarbonDioxide, 1300.0));
+    fn classifier_grade_has_no_numeric_aqi() -> TestResult {
+        let g = grade(&r(Pollutant::CarbonDioxide, 1300.0)?);
         assert_eq!(g.aqi, None);
         assert_eq!(g.category, AirCategory::Sensitive);
+        Ok(())
     }
 
     #[test]
-    fn assessment_drives_grandma_friendly_advice() {
-        let a = assess(&[r(Pollutant::CarbonDioxide, 1800.0)]);
+    fn assessment_drives_grandma_friendly_advice() -> TestResult {
+        let a = assess(&[r(Pollutant::CarbonDioxide, 1800.0)?]);
         assert_eq!(a.overall, AirCategory::Poor);
         // The end-user sees plain advice, never the ppm number.
         assert_eq!(
             a.overall.advice(Lang::En),
             "Open a window to let in fresh air."
         );
+        Ok(())
     }
 
     #[test]
-    fn breakdown_preserves_input_order() {
-        let a = assess(&[r(Pollutant::Pm25, 4.0), r(Pollutant::Ozone, 0.04)]);
+    fn breakdown_preserves_input_order() -> TestResult {
+        let a = assess(&[r(Pollutant::Pm25, 4.0)?, r(Pollutant::Ozone, 0.04)?]);
         assert_eq!(a.grades.len(), 2);
         assert_eq!(a.grades[0].pollutant, Pollutant::Pm25);
         assert_eq!(a.grades[1].pollutant, Pollutant::Ozone);
+        Ok(())
     }
 }

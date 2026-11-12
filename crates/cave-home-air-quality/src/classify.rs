@@ -1,6 +1,8 @@
 //! Classifiers for the non-AQI quantities: CO₂, the Sensirion VOC Index, and
-//! radon. These pollutants have no EPA AQI breakpoint table, so each is mapped
-//! to the shared [`AirCategory`] band from its own public reference thresholds.
+//! radon.
+//!
+//! These pollutants have no EPA AQI breakpoint table, so each is mapped to the
+//! shared [`AirCategory`] band from its own public reference thresholds.
 
 use crate::category::AirCategory;
 use crate::reading::Pollutant;
