@@ -1,7 +1,7 @@
 //! Multi-zone sequencing — building the ordered run plan for a watering cycle.
 //!
 //! Home water supply rarely has the pressure to run several zones at once, so —
-//! exactly like OpenSprinkler and the Home Assistant irrigation controllers —
+//! exactly like `OpenSprinkler` and the Home Assistant irrigation controllers —
 //! cave-home runs zones **sequentially**: one finishes before the next begins.
 //! This module takes the per-zone watering decisions ([`crate::decision`]) and
 //! produces the ordered plan plus the total time the cycle will take, so the UI
@@ -15,7 +15,7 @@ use crate::label::Lang;
 use crate::zone::Zone;
 
 /// One step in the run plan: a zone and how long it will run, in order.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunStep {
     pub zone_id: u32,
     pub zone_name: String,
@@ -23,7 +23,7 @@ pub struct RunStep {
 }
 
 /// The ordered plan for one watering cycle.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunPlan {
     /// The zones that will run, in sequence. Skipped zones are not included.
     pub steps: Vec<RunStep>,
@@ -104,15 +104,17 @@ mod tests {
     use crate::decision::{SkipReason, decide};
     use crate::zone::ZoneState;
 
-    fn zone(id: u32, name: &str, secs: u32) -> Zone {
-        Zone::new(id, name, secs, Some(40.0), None).expect("valid zone")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn zone(id: u32, name: &str, secs: u32) -> Result<Zone, crate::zone::ZoneError> {
+        Zone::new(id, name, secs, Some(40.0), None)
     }
 
     #[test]
-    fn plan_preserves_order_and_sums_duration() {
-        let front = zone(1, "Front garden", 600);
-        let beds = zone(2, "Vegetable beds", 900);
-        let terrace = zone(3, "Terrace pots", 300);
+    fn plan_preserves_order_and_sums_duration() -> TestResult {
+        let front = zone(1, "Front garden", 600)?;
+        let beds = zone(2, "Vegetable beds", 900)?;
+        let terrace = zone(3, "Terrace pots", 300)?;
         let dry = Some(10.0);
         let plan = plan_run([
             (
@@ -130,12 +132,13 @@ mod tests {
         assert_eq!(plan.steps[1].zone_id, 2);
         assert_eq!(plan.steps[2].zone_id, 3);
         assert_eq!(plan.total_seconds, 600 + 900 + 300);
+        Ok(())
     }
 
     #[test]
-    fn skipped_zones_are_excluded_from_plan() {
-        let front = zone(1, "Front garden", 600);
-        let beds = zone(2, "Vegetable beds", 900);
+    fn skipped_zones_are_excluded_from_plan() -> TestResult {
+        let front = zone(1, "Front garden", 600)?;
+        let beds = zone(2, "Vegetable beds", 900)?;
         // Beds are already moist -> skipped, so only the front runs.
         let front_d = decide(&front, ZoneState::Idle, Some(10.0), false, 100, true);
         let beds_d = decide(&beds, ZoneState::Idle, Some(80.0), false, 100, true);
@@ -144,31 +147,34 @@ mod tests {
         assert_eq!(plan.steps.len(), 1);
         assert_eq!(plan.steps[0].zone_id, 1);
         assert_eq!(plan.total_seconds, 600);
+        Ok(())
     }
 
     #[test]
-    fn empty_plan_when_all_skipped() {
-        let front = zone(1, "Front garden", 600);
+    fn empty_plan_when_all_skipped() -> TestResult {
+        let front = zone(1, "Front garden", 600)?;
         // Rain delay holds everything off.
         let d = decide(&front, ZoneState::Idle, Some(10.0), true, 100, true);
         let plan = plan_run([(&front, d)]);
         assert!(plan.is_empty());
         assert_eq!(plan.total_seconds, 0);
+        Ok(())
     }
 
     #[test]
-    fn seasonal_adjust_flows_into_total_duration() {
-        let front = zone(1, "Front garden", 600);
+    fn seasonal_adjust_flows_into_total_duration() -> TestResult {
+        let front = zone(1, "Front garden", 600)?;
         // 150 % of 10 min = 15 min = 900 s.
         let d = decide(&front, ZoneState::Idle, Some(10.0), false, 150, true);
         let plan = plan_run([(&front, d)]);
         assert_eq!(plan.total_seconds, 900);
+        Ok(())
     }
 
     #[test]
-    fn summary_reports_minutes_and_spot_count() {
-        let front = zone(1, "Front garden", 600);
-        let beds = zone(2, "Vegetable beds", 900);
+    fn summary_reports_minutes_and_spot_count() -> TestResult {
+        let front = zone(1, "Front garden", 600)?;
+        let beds = zone(2, "Vegetable beds", 900)?;
         let dry = Some(10.0);
         let plan = plan_run([
             (
@@ -181,6 +187,7 @@ mod tests {
         let s = plan.summary(Lang::En);
         assert!(s.contains("2 spots"));
         assert!(s.contains("25 minutes"));
+        Ok(())
     }
 
     #[test]

@@ -20,7 +20,7 @@
 //! - [`schedule`] — sequential multi-zone run planning + total cycle duration.
 //! - [`label`] — the localisation surface (Charter §6.3, ADR-007).
 //!
-//! The **vendor I/O adapters** (OpenSprinkler, Rachio, B-hyve, Zigbee/Z-Wave
+//! The **vendor I/O adapters** (`OpenSprinkler`, Rachio, B-hyve, Zigbee/Z-Wave
 //! valves), the **live weather / evapotranspiration feeds**, the
 //! **cave-home-core entity/state integration** and **real timezone-aware
 //! scheduling triggers** are network / hardware / clock-bound and are deferred
@@ -63,12 +63,14 @@ pub use zone::{Zone, ZoneError, ZoneState};
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     /// Charter §6.3: no implementation jargon may leak into any user-facing
     /// string this crate produces. We exercise every localised surface in all
     /// three languages and assert none contains a banned term. Mirrors the
     /// air-quality crate's `ui_strings_carry_no_implementation_jargon`.
     #[test]
-    fn ui_strings_carry_no_implementation_jargon() {
+    fn ui_strings_carry_no_implementation_jargon() -> TestResult {
         const BANNED: &[&str] = &[
             "valve",
             "GPIO",
@@ -90,7 +92,7 @@ mod tests {
         ];
         let langs = [Lang::En, Lang::De, Lang::Tr];
 
-        let zone = Zone::new(1, "the back garden", 600, Some(40.0), None).expect("valid zone");
+        let zone = Zone::new(1, "the back garden", 600, Some(40.0), None)?;
 
         let mut strings: Vec<String> = Vec::new();
 
@@ -136,14 +138,15 @@ mod tests {
                 );
             }
         }
+        Ok(())
     }
 
     #[test]
-    fn engine_produces_a_complete_morning_plan() {
+    fn engine_produces_a_complete_morning_plan() -> TestResult {
         // A small garden: front lawn (dry), beds (already moist), terrace (dry).
-        let lawn = Zone::new(1, "Front lawn", 600, Some(40.0), Some(10.0)).expect("valid zone");
-        let beds = Zone::new(2, "Vegetable beds", 900, Some(40.0), None).expect("valid zone");
-        let terrace = Zone::new(3, "Terrace pots", 300, None, None).expect("valid zone");
+        let lawn = Zone::new(1, "Front lawn", 600, Some(40.0), Some(10.0))?;
+        let beds = Zone::new(2, "Vegetable beds", 900, Some(40.0), None)?;
+        let terrace = Zone::new(3, "Terrace pots", 300, None, None)?;
 
         let lawn_d = decide(&lawn, ZoneState::Idle, Some(15.0), false, 120, true);
         let beds_d = decide(&beds, ZoneState::Idle, Some(70.0), false, 120, true);
@@ -157,8 +160,9 @@ mod tests {
         assert_eq!(plan.total_seconds, 1080);
 
         // Flow check on the lawn: 10 lpm expected, 0 measured -> stuck valve.
-        let fault = detect(10.0, 0.0, 0.2).expect("judgement possible");
+        let fault = detect(10.0, 0.0, 0.2).ok_or("judgement possible")?;
         assert_eq!(fault, FlowFault::NoFlow);
         assert!(fault.is_fault());
+        Ok(())
     }
 }

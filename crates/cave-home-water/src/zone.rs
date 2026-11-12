@@ -2,7 +2,7 @@
 //!
 //! A zone is one independently-controlled watering circuit: a sprinkler loop in
 //! the front garden, a drip line on the vegetable bed, a hose valve on the
-//! terrace. Zones are vendor-neutral here: an OpenSprinkler, Rachio, B-hyve or
+//! terrace. Zones are vendor-neutral here: an `OpenSprinkler`, Rachio, B-hyve or
 //! Zigbee-valve adapter (all deferred to phase-1b, see the parity manifest)
 //! maps its wire format onto these types, and everything downstream — the
 //! watering decision, flow monitoring, the run sequence — works off this model
@@ -164,6 +164,8 @@ impl Zone {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn rejects_zero_runtime() {
         assert_eq!(
@@ -205,14 +207,15 @@ mod tests {
     }
 
     #[test]
-    fn accepts_valid_zone_with_boundaries() {
-        let z = Zone::new(7, "Back garden", 900, Some(0.0), Some(12.5)).expect("valid zone");
+    fn accepts_valid_zone_with_boundaries() -> TestResult {
+        let z = Zone::new(7, "Back garden", 900, Some(0.0), Some(12.5))?;
         assert_eq!(z.id(), 7);
         assert_eq!(z.name(), "Back garden");
         assert_eq!(z.runtime_seconds(), 900);
         assert_eq!(z.soil_moisture_threshold(), Some(0.0));
         assert_eq!(z.expected_flow_lpm(), Some(12.5));
         assert!(Zone::new(1, "Bed", 1, Some(100.0), None).is_ok());
+        Ok(())
     }
 
     #[test]
@@ -225,10 +228,11 @@ mod tests {
     }
 
     #[test]
-    fn friendly_label_has_zone_name() {
-        let z = Zone::new(2, "vegetable bed", 600, None, None).expect("valid zone");
+    fn friendly_label_has_zone_name() -> TestResult {
+        let z = Zone::new(2, "vegetable bed", 600, None, None)?;
         assert!(z.friendly_label(Lang::En).contains("vegetable bed"));
         assert!(z.friendly_label(Lang::De).contains("vegetable bed"));
         assert!(z.friendly_label(Lang::Tr).contains("vegetable bed"));
+        Ok(())
     }
 }

@@ -74,7 +74,7 @@ impl SkipReason {
 }
 
 /// The result of the watering decision for one zone.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WaterDecision {
     /// Whether the zone should water now.
     pub water: bool,
@@ -109,17 +109,17 @@ impl WaterDecision {
     /// A plain-language line for the UI describing this decision.
     #[must_use]
     pub fn explain(&self, zone: &Zone, lang: Lang) -> String {
-        match self.reason {
-            Some(reason) => reason.explain(lang).to_string(),
-            None => {
+        self.reason.map_or_else(
+            || {
                 let watered = match lang {
                     Lang::En => "Watering",
                     Lang::De => "Bewässere",
                     Lang::Tr => "Sulanıyor:",
                 };
                 format!("{watered} {}", zone.name())
-            }
-        }
+            },
+            |reason| reason.explain(lang).to_string(),
+        )
     }
 }
 
@@ -192,98 +192,111 @@ pub fn decide(
 mod tests {
     use super::*;
 
-    fn zone() -> Zone {
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn zone() -> Result<Zone, crate::zone::ZoneError> {
         // 10-minute base runtime, water below 40 % soil moisture.
-        Zone::new(1, "Front garden", 600, Some(40.0), None).expect("valid zone")
+        Zone::new(1, "Front garden", 600, Some(40.0), None)
     }
 
     #[test]
-    fn waters_when_all_conditions_allow() {
-        let d = decide(&zone(), ZoneState::Idle, Some(20.0), false, 100, true);
+    fn waters_when_all_conditions_allow() -> TestResult {
+        let d = decide(&zone()?, ZoneState::Idle, Some(20.0), false, 100, true);
         assert!(d.water);
         assert_eq!(d.runtime_seconds, 600);
         assert_eq!(d.reason, None);
+        Ok(())
     }
 
     #[test]
-    fn skips_when_disabled() {
-        let d = decide(&zone(), ZoneState::Disabled, Some(10.0), false, 100, true);
+    fn skips_when_disabled() -> TestResult {
+        let d = decide(&zone()?, ZoneState::Disabled, Some(10.0), false, 100, true);
         assert!(!d.water);
         assert_eq!(d.reason, Some(SkipReason::ZoneDisabled));
         assert_eq!(d.runtime_seconds, 0);
+        Ok(())
     }
 
     #[test]
-    fn skips_when_outside_window() {
-        let d = decide(&zone(), ZoneState::Idle, Some(10.0), false, 100, false);
+    fn skips_when_outside_window() -> TestResult {
+        let d = decide(&zone()?, ZoneState::Idle, Some(10.0), false, 100, false);
         assert!(!d.water);
         assert_eq!(d.reason, Some(SkipReason::OutsideWindow));
+        Ok(())
     }
 
     #[test]
-    fn skips_when_state_cannot_start() {
+    fn skips_when_state_cannot_start() -> TestResult {
         // Already watering: not re-started.
-        let d = decide(&zone(), ZoneState::Watering, Some(10.0), false, 100, true);
+        let d = decide(&zone()?, ZoneState::Watering, Some(10.0), false, 100, true);
         assert_eq!(d.reason, Some(SkipReason::OutsideWindow));
+        Ok(())
     }
 
     #[test]
-    fn skips_when_rain_delayed() {
-        let d = decide(&zone(), ZoneState::Idle, Some(10.0), true, 100, true);
+    fn skips_when_rain_delayed() -> TestResult {
+        let d = decide(&zone()?, ZoneState::Idle, Some(10.0), true, 100, true);
         assert!(!d.water);
         assert_eq!(d.reason, Some(SkipReason::RainDelay));
+        Ok(())
     }
 
     #[test]
-    fn skips_when_soil_moist_sufficient() {
+    fn skips_when_soil_moist_sufficient() -> TestResult {
         // 55 % moisture, threshold 40 % -> already wet enough.
-        let d = decide(&zone(), ZoneState::Idle, Some(55.0), false, 100, true);
+        let d = decide(&zone()?, ZoneState::Idle, Some(55.0), false, 100, true);
         assert!(!d.water);
         assert_eq!(d.reason, Some(SkipReason::SoilMoistSufficient));
+        Ok(())
     }
 
     #[test]
-    fn soil_threshold_boundary_is_inclusive_skip() {
+    fn soil_threshold_boundary_is_inclusive_skip() -> TestResult {
         // Exactly at threshold counts as "wet enough" -> skip.
-        let at = decide(&zone(), ZoneState::Idle, Some(40.0), false, 100, true);
+        let at = decide(&zone()?, ZoneState::Idle, Some(40.0), false, 100, true);
         assert_eq!(at.reason, Some(SkipReason::SoilMoistSufficient));
         // Just below threshold -> water.
-        let below = decide(&zone(), ZoneState::Idle, Some(39.999), false, 100, true);
+        let below = decide(&zone()?, ZoneState::Idle, Some(39.999), false, 100, true);
         assert!(below.water);
+        Ok(())
     }
 
     #[test]
-    fn no_sensor_means_moisture_gate_never_fires() {
-        let z = Zone::new(1, "Bed", 600, Some(40.0), None).expect("valid zone");
+    fn no_sensor_means_moisture_gate_never_fires() -> TestResult {
+        let z = Zone::new(1, "Bed", 600, Some(40.0), None)?;
         // No moisture reading -> cannot skip on moisture, so it waters.
         let d = decide(&z, ZoneState::Idle, None, false, 100, true);
         assert!(d.water);
+        Ok(())
     }
 
     #[test]
-    fn zone_without_threshold_ignores_moisture() {
-        let z = Zone::new(1, "Bed", 600, None, None).expect("valid zone");
+    fn zone_without_threshold_ignores_moisture() -> TestResult {
+        let z = Zone::new(1, "Bed", 600, None, None)?;
         // Soaking wet, but no configured threshold -> still waters.
         let d = decide(&z, ZoneState::Idle, Some(99.0), false, 100, true);
         assert!(d.water);
+        Ok(())
     }
 
     #[test]
-    fn skips_when_seasonal_zero() {
-        let d = decide(&zone(), ZoneState::Idle, Some(10.0), false, 0, true);
+    fn skips_when_seasonal_zero() -> TestResult {
+        let d = decide(&zone()?, ZoneState::Idle, Some(10.0), false, 0, true);
         assert!(!d.water);
         assert_eq!(d.reason, Some(SkipReason::SeasonalZero));
+        Ok(())
     }
 
     #[test]
-    fn seasonal_adjust_scales_runtime() {
+    fn seasonal_adjust_scales_runtime() -> TestResult {
         // 200 % of 10 min = 20 min.
-        let d = decide(&zone(), ZoneState::Idle, Some(10.0), false, 200, true);
+        let d = decide(&zone()?, ZoneState::Idle, Some(10.0), false, 200, true);
         assert!(d.water);
         assert_eq!(d.runtime_seconds, 1200);
         // 50 % of 10 min = 5 min.
-        let half = decide(&zone(), ZoneState::Idle, Some(10.0), false, 50, true);
+        let half = decide(&zone()?, ZoneState::Idle, Some(10.0), false, 50, true);
         assert_eq!(half.runtime_seconds, 300);
+        Ok(())
     }
 
     #[test]
@@ -304,15 +317,16 @@ mod tests {
     }
 
     #[test]
-    fn disabled_beats_rain_delay_in_priority() {
+    fn disabled_beats_rain_delay_in_priority() -> TestResult {
         // Both disabled and rain-delayed -> reports the more fundamental cause.
-        let d = decide(&zone(), ZoneState::Disabled, Some(10.0), true, 100, true);
+        let d = decide(&zone()?, ZoneState::Disabled, Some(10.0), true, 100, true);
         assert_eq!(d.reason, Some(SkipReason::ZoneDisabled));
+        Ok(())
     }
 
     #[test]
-    fn decision_explains_itself_in_household_language() {
-        let z = zone();
+    fn decision_explains_itself_in_household_language() -> TestResult {
+        let z = zone()?;
         let watering = decide(&z, ZoneState::Idle, Some(10.0), false, 100, true);
         assert!(watering.explain(&z, Lang::En).contains("Front garden"));
         let skipped = decide(&z, ZoneState::Idle, Some(90.0), false, 100, true);
@@ -320,5 +334,6 @@ mod tests {
             skipped.explain(&z, Lang::En),
             "Skipped watering — soil is still moist."
         );
+        Ok(())
     }
 }
