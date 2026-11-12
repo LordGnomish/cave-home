@@ -98,7 +98,7 @@ pub struct Display {
 impl Display {
     /// A TV that is off, with the given input/app catalog and an initial volume.
     #[must_use]
-    pub fn new(catalog: SourceCatalog, volume: Volume) -> Self {
+    pub const fn new(catalog: SourceCatalog, volume: Volume) -> Self {
         Self {
             power: PowerState::Off,
             playback: PlaybackState::Idle,
@@ -112,7 +112,7 @@ impl Display {
 
     /// A TV that is already on and idle on its home screen.
     #[must_use]
-    pub fn powered_on(catalog: SourceCatalog, volume: Volume) -> Self {
+    pub const fn powered_on(catalog: SourceCatalog, volume: Volume) -> Self {
         let mut d = Self::new(catalog, volume);
         d.power = PowerState::On;
         d.playback = PlaybackState::Idle;
@@ -277,6 +277,8 @@ mod tests {
     use super::*;
     use crate::source::App;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn on_tv() -> Display {
         Display::powered_on(SourceCatalog::typical_smart_tv(), Volume::new(20))
     }
@@ -301,21 +303,23 @@ mod tests {
     }
 
     #[test]
-    fn power_on_lands_idle() {
+    fn power_on_lands_idle() -> TestResult {
         let mut tv = Display::new(SourceCatalog::typical_smart_tv(), Volume::new(20));
-        tv.apply(MediaCommand::PowerOn).unwrap();
+        tv.apply(MediaCommand::PowerOn)?;
         assert_eq!(tv.playback(), PlaybackState::Idle);
+        Ok(())
     }
 
     #[test]
-    fn power_off_clears_app_and_position() {
+    fn power_off_clears_app_and_position() -> TestResult {
         let mut tv = on_tv();
-        tv.apply(MediaCommand::LaunchApp("netflix".into())).unwrap();
-        tv.apply(MediaCommand::SeekRelative(30)).unwrap();
-        tv.apply(MediaCommand::PowerOff).unwrap();
+        tv.apply(MediaCommand::LaunchApp("netflix".into()))?;
+        tv.apply(MediaCommand::SeekRelative(30))?;
+        tv.apply(MediaCommand::PowerOff)?;
         assert_eq!(tv.power(), PowerState::Off);
         assert_eq!(tv.current_app(), None);
         assert_eq!(tv.position_secs(), 0);
+        Ok(())
     }
 
     #[test]
@@ -331,22 +335,22 @@ mod tests {
     }
 
     #[test]
-    fn play_pause_stop_transitions() {
+    fn play_pause_stop_transitions() -> TestResult {
         let mut tv = on_tv();
-        tv.apply(MediaCommand::SelectSource("hdmi1".into()))
-            .unwrap();
-        tv.apply(MediaCommand::Play).unwrap();
+        tv.apply(MediaCommand::SelectSource("hdmi1".into()))?;
+        tv.apply(MediaCommand::Play)?;
         assert_eq!(tv.playback(), PlaybackState::Playing);
-        tv.apply(MediaCommand::Pause).unwrap();
+        tv.apply(MediaCommand::Pause)?;
         assert_eq!(tv.playback(), PlaybackState::Paused);
-        tv.apply(MediaCommand::Play).unwrap();
+        tv.apply(MediaCommand::Play)?;
         assert_eq!(tv.playback(), PlaybackState::Playing);
-        tv.apply(MediaCommand::Stop).unwrap();
+        tv.apply(MediaCommand::Stop)?;
         assert_eq!(tv.playback(), PlaybackState::Stopped);
+        Ok(())
     }
 
     #[test]
-    fn next_previous_need_content() {
+    fn next_previous_need_content() -> TestResult {
         let mut tv = on_tv();
         // Idle home screen: nothing to skip.
         assert_eq!(
@@ -358,10 +362,11 @@ mod tests {
             Err(CommandError::NothingPlaying)
         );
         // Once content is loaded, skipping works.
-        tv.apply(MediaCommand::LaunchApp("netflix".into())).unwrap();
-        tv.apply(MediaCommand::Play).unwrap();
+        tv.apply(MediaCommand::LaunchApp("netflix".into()))?;
+        tv.apply(MediaCommand::Play)?;
         assert_eq!(tv.apply(MediaCommand::Next), Ok(()));
         assert_eq!(tv.playback(), PlaybackState::Playing);
+        Ok(())
     }
 
     #[test]
@@ -400,42 +405,45 @@ mod tests {
     }
 
     #[test]
-    fn set_volume_clamps_to_cap() {
+    fn set_volume_clamps_to_cap() -> TestResult {
         let mut tv =
             Display::powered_on(SourceCatalog::typical_smart_tv(), Volume::with_cap(10, 40));
-        tv.apply(MediaCommand::SetVolume(95)).unwrap();
+        tv.apply(MediaCommand::SetVolume(95))?;
         assert_eq!(tv.volume().level(), 40, "parental cap holds");
+        Ok(())
     }
 
     #[test]
-    fn mute_then_unmute_restores_level() {
+    fn mute_then_unmute_restores_level() -> TestResult {
         let mut tv = Display::powered_on(SourceCatalog::typical_smart_tv(), Volume::new(55));
-        tv.apply(MediaCommand::SetMute(true)).unwrap();
+        tv.apply(MediaCommand::SetMute(true))?;
         assert_eq!(tv.volume().audible_level(), 0);
-        tv.apply(MediaCommand::SetMute(false)).unwrap();
+        tv.apply(MediaCommand::SetMute(false))?;
         assert_eq!(tv.volume().audible_level(), 55);
+        Ok(())
     }
 
     #[test]
-    fn selecting_a_source_clears_app_and_resets_playback() {
+    fn selecting_a_source_clears_app_and_resets_playback() -> TestResult {
         let mut tv = on_tv();
-        tv.apply(MediaCommand::LaunchApp("netflix".into())).unwrap();
+        tv.apply(MediaCommand::LaunchApp("netflix".into()))?;
         assert_eq!(tv.current_app(), Some("netflix"));
-        tv.apply(MediaCommand::SelectSource("hdmi1".into()))
-            .unwrap();
+        tv.apply(MediaCommand::SelectSource("hdmi1".into()))?;
         assert_eq!(tv.current_app(), None);
         assert_eq!(tv.playback(), PlaybackState::Idle);
+        Ok(())
     }
 
     #[test]
-    fn seek_does_not_go_negative() {
+    fn seek_does_not_go_negative() -> TestResult {
         let mut tv = on_tv();
-        tv.apply(MediaCommand::LaunchApp("netflix".into())).unwrap();
-        tv.apply(MediaCommand::Play).unwrap();
-        tv.apply(MediaCommand::SeekRelative(20)).unwrap();
+        tv.apply(MediaCommand::LaunchApp("netflix".into()))?;
+        tv.apply(MediaCommand::Play)?;
+        tv.apply(MediaCommand::SeekRelative(20))?;
         assert_eq!(tv.position_secs(), 20);
-        tv.apply(MediaCommand::SeekRelative(-100)).unwrap();
+        tv.apply(MediaCommand::SeekRelative(-100))?;
         assert_eq!(tv.position_secs(), 0, "seek clamps at the start");
+        Ok(())
     }
 
     #[test]

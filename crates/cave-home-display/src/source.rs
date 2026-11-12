@@ -102,7 +102,7 @@ impl SourceCatalog {
 
     /// Build a catalog from a list of inputs.
     #[must_use]
-    pub fn with_sources(sources: Vec<Source>) -> Self {
+    pub const fn with_sources(sources: Vec<Source>) -> Self {
         Self {
             sources,
             apps: Vec::new(),
