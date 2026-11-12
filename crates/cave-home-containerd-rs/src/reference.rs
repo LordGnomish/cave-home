@@ -281,91 +281,103 @@ fn validate_repository(repo: &str) -> Result<(), ReferenceError> {
 mod tests {
     use super::*;
 
-    fn parse(s: &str) -> Reference {
-        Reference::parse(s).unwrap_or_else(|e| panic!("parse {s:?}: {e}"))
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn parse(s: &str) -> Result<Reference, String> {
+        Reference::parse(s).map_err(|e| format!("parse {s:?}: {e}"))
     }
 
     #[test]
-    fn bare_name_gets_docker_io_library_latest() {
-        let r = parse("nginx");
+    fn bare_name_gets_docker_io_library_latest() -> TestResult {
+        let r = parse("nginx")?;
         assert_eq!(r.registry(), "docker.io");
         assert_eq!(r.repository(), "library/nginx");
         assert_eq!(r.tag(), Some("latest"));
         assert!(r.digest().is_none());
         assert_eq!(r.to_string(), "docker.io/library/nginx:latest");
+        Ok(())
     }
 
     #[test]
-    fn explicit_tag_is_kept() {
-        let r = parse("nginx:1.27");
+    fn explicit_tag_is_kept() -> TestResult {
+        let r = parse("nginx:1.27")?;
         assert_eq!(r.repository(), "library/nginx");
         assert_eq!(r.tag(), Some("1.27"));
+        Ok(())
     }
 
     #[test]
-    fn user_namespace_is_not_library_wrapped() {
-        let r = parse("grafana/grafana");
+    fn user_namespace_is_not_library_wrapped() -> TestResult {
+        let r = parse("grafana/grafana")?;
         assert_eq!(r.registry(), "docker.io");
         assert_eq!(r.repository(), "grafana/grafana");
         assert_eq!(r.tag(), Some("latest"));
+        Ok(())
     }
 
     #[test]
-    fn custom_registry_with_dot_is_detected() {
-        let r = parse("ghcr.io/home-assistant/core:2026.1");
+    fn custom_registry_with_dot_is_detected() -> TestResult {
+        let r = parse("ghcr.io/home-assistant/core:2026.1")?;
         assert_eq!(r.registry(), "ghcr.io");
         assert_eq!(r.repository(), "home-assistant/core");
         assert_eq!(r.tag(), Some("2026.1"));
+        Ok(())
     }
 
     #[test]
-    fn registry_with_port_is_detected_and_tag_still_parsed() {
-        let r = parse("localhost:5000/myimage:dev");
+    fn registry_with_port_is_detected_and_tag_still_parsed() -> TestResult {
+        let r = parse("localhost:5000/myimage:dev")?;
         assert_eq!(r.registry(), "localhost:5000");
         assert_eq!(r.repository(), "myimage");
         assert_eq!(r.tag(), Some("dev"));
+        Ok(())
     }
 
     #[test]
-    fn localhost_is_a_registry_without_a_dot() {
-        let r = parse("localhost/img");
+    fn localhost_is_a_registry_without_a_dot() -> TestResult {
+        let r = parse("localhost/img")?;
         assert_eq!(r.registry(), "localhost");
         assert_eq!(r.repository(), "img");
+        Ok(())
     }
 
     #[test]
-    fn digest_only_reference_has_no_default_tag() {
+    fn digest_only_reference_has_no_default_tag() -> TestResult {
         let dig = format!("sha256:{}", "a".repeat(64));
-        let r = parse(&format!("nginx@{dig}"));
+        let r = parse(&format!("nginx@{dig}"))?;
         assert_eq!(r.repository(), "library/nginx");
         assert!(r.tag().is_none());
         assert!(r.is_canonical());
-        assert_eq!(r.digest().expect("digest").to_string(), dig);
+        assert_eq!(r.digest().ok_or("digest")?.to_string(), dig);
+        Ok(())
     }
 
     #[test]
-    fn tag_and_digest_both_kept() {
+    fn tag_and_digest_both_kept() -> TestResult {
         let dig = format!("sha256:{}", "b".repeat(64));
-        let r = parse(&format!("redis:7@{dig}"));
+        let r = parse(&format!("redis:7@{dig}"))?;
         assert_eq!(r.tag(), Some("7"));
         assert!(r.digest().is_some());
         assert_eq!(r.to_string(), format!("docker.io/library/redis:7@{dig}"));
+        Ok(())
     }
 
     #[test]
-    fn legacy_index_docker_io_normalises() {
-        let r = parse("index.docker.io/library/busybox:latest");
+    fn legacy_index_docker_io_normalises() -> TestResult {
+        let r = parse("index.docker.io/library/busybox:latest")?;
         assert_eq!(r.registry(), "docker.io");
         assert_eq!(r.repository(), "library/busybox");
+        Ok(())
     }
 
     #[test]
-    fn full_form_round_trips() {
+    fn full_form_round_trips() -> TestResult {
         let dig = format!("sha256:{}", "c".repeat(64));
         let s = format!("ghcr.io/ns/app:v1@{dig}");
-        let r = parse(&s);
+        let r = parse(&s)?;
         assert_eq!(r.to_string(), s);
         assert_eq!(Reference::parse(&r.to_string()), Ok(r));
+        Ok(())
     }
 
     #[test]
@@ -375,27 +387,35 @@ mod tests {
     }
 
     #[test]
-    fn malformed_digest_is_rejected() {
-        let err = Reference::parse("nginx@sha256:zz").expect_err("bad digest");
+    fn malformed_digest_is_rejected() -> TestResult {
+        let err = Reference::parse("nginx@sha256:zz")
+            .err()
+            .ok_or("bad digest")?;
         assert!(matches!(err, ReferenceError::InvalidDigest(_)));
+        Ok(())
     }
 
     #[test]
-    fn invalid_tag_is_rejected() {
-        let err = Reference::parse("nginx:.bad").expect_err("bad tag");
+    fn invalid_tag_is_rejected() -> TestResult {
+        let err = Reference::parse("nginx:.bad").err().ok_or("bad tag")?;
         assert!(matches!(err, ReferenceError::InvalidTag(_)));
+        Ok(())
     }
 
     #[test]
-    fn uppercase_repository_is_rejected() {
-        let err = Reference::parse("Nginx").expect_err("upper repo");
+    fn uppercase_repository_is_rejected() -> TestResult {
+        let err = Reference::parse("Nginx").err().ok_or("upper repo")?;
         assert!(matches!(err, ReferenceError::InvalidRepository(_)));
+        Ok(())
     }
 
     #[test]
-    fn empty_path_component_is_rejected() {
-        let err = Reference::parse("ghcr.io//app").expect_err("empty component");
+    fn empty_path_component_is_rejected() -> TestResult {
+        let err = Reference::parse("ghcr.io//app")
+            .err()
+            .ok_or("empty component")?;
         assert!(matches!(err, ReferenceError::InvalidRepository(_)));
+        Ok(())
     }
 
     #[test]

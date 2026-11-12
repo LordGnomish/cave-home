@@ -165,6 +165,8 @@ impl Task {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn new_task_is_created_without_exit_code() {
         let t = Task::new();
@@ -180,43 +182,47 @@ mod tests {
     }
 
     #[test]
-    fn running_pauses_and_resumes() {
+    fn running_pauses_and_resumes() -> TestResult {
         let mut t = Task::new();
-        t.apply(Action::Start).expect("start");
+        t.apply(Action::Start)?;
         assert_eq!(t.apply(Action::Pause), Ok(TaskState::Paused));
         assert_eq!(t.apply(Action::Resume), Ok(TaskState::Running));
+        Ok(())
     }
 
     #[test]
-    fn running_stops_with_exit_code() {
+    fn running_stops_with_exit_code() -> TestResult {
         let mut t = Task::new();
-        t.apply(Action::Start).expect("start");
+        t.apply(Action::Start)?;
         assert_eq!(
             t.apply(Action::Stop { exit_code: 137 }),
             Ok(TaskState::Stopped)
         );
         assert_eq!(t.exit_code(), Some(137));
         assert!(t.state().is_terminal());
+        Ok(())
     }
 
     #[test]
-    fn paused_can_stop_directly() {
+    fn paused_can_stop_directly() -> TestResult {
         let mut t = Task::new();
-        t.apply(Action::Start).expect("start");
-        t.apply(Action::Pause).expect("pause");
+        t.apply(Action::Start)?;
+        t.apply(Action::Pause)?;
         assert_eq!(
             t.apply(Action::Stop { exit_code: 0 }),
             Ok(TaskState::Stopped)
         );
         assert_eq!(t.exit_code(), Some(0));
+        Ok(())
     }
 
     #[test]
-    fn cannot_start_twice() {
+    fn cannot_start_twice() -> TestResult {
         let mut t = Task::new();
-        t.apply(Action::Start).expect("start");
-        let err = t.apply(Action::Start).expect_err("double start");
+        t.apply(Action::Start)?;
+        let err = t.apply(Action::Start).err().ok_or("double start")?;
         assert_eq!(err.from, TaskState::Running);
+        Ok(())
     }
 
     #[test]
@@ -227,23 +233,25 @@ mod tests {
     }
 
     #[test]
-    fn cannot_resume_running() {
+    fn cannot_resume_running() -> TestResult {
         let mut t = Task::new();
-        t.apply(Action::Start).expect("start");
+        t.apply(Action::Start)?;
         assert!(t.apply(Action::Resume).is_err());
+        Ok(())
     }
 
     #[test]
-    fn stopped_is_terminal_and_rejects_all_actions() {
+    fn stopped_is_terminal_and_rejects_all_actions() -> TestResult {
         let mut t = Task::new();
-        t.apply(Action::Start).expect("start");
-        t.apply(Action::Stop { exit_code: 1 }).expect("stop");
+        t.apply(Action::Start)?;
+        t.apply(Action::Stop { exit_code: 1 })?;
         assert!(t.apply(Action::Start).is_err());
         assert!(t.apply(Action::Pause).is_err());
         assert!(t.apply(Action::Resume).is_err());
         assert!(t.apply(Action::Stop { exit_code: 0 }).is_err());
         // Exit code is not clobbered by a rejected action.
         assert_eq!(t.exit_code(), Some(1));
+        Ok(())
     }
 
     #[test]

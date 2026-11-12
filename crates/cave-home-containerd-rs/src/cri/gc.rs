@@ -45,53 +45,65 @@ pub fn select_unused_images<'a, S: BuildHasher>(
 mod tests {
     use super::*;
 
-    fn dig(c: char) -> Digest {
-        Digest::parse(&format!("sha256:{}", String::from(c).repeat(64))).expect("valid")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn dig(c: char) -> Result<Digest, crate::digest::DigestError> {
+        Digest::parse(&format!("sha256:{}", String::from(c).repeat(64)))
     }
 
-    fn img(c: char, pinned: bool) -> ImageRecord {
-        ImageRecord {
-            digest: dig(c),
+    fn img(c: char, pinned: bool) -> Result<ImageRecord, Box<dyn std::error::Error>> {
+        Ok(ImageRecord {
+            digest: dig(c)?,
             pinned,
             size: 100,
-        }
+        })
     }
 
     #[test]
-    fn unreferenced_unpinned_image_is_selected() {
-        let images = vec![img('a', false), img('b', false)];
+    fn unreferenced_unpinned_image_is_selected() -> TestResult {
+        let images = vec![img('a', false)?, img('b', false)?];
         let mut in_use = HashSet::new();
-        in_use.insert(dig('a'));
+        in_use.insert(dig('a')?);
         let unused = select_unused_images(&images, &in_use);
         assert_eq!(unused.len(), 1);
-        assert_eq!(unused[0].digest, dig('b'));
+        assert_eq!(unused[0].digest, dig('b')?);
+        Ok(())
     }
 
     #[test]
-    fn pinned_image_is_never_selected() {
-        let images = vec![img('a', true)];
+    fn pinned_image_is_never_selected() -> TestResult {
+        let images = vec![img('a', true)?];
         let unused = select_unused_images(&images, &HashSet::new());
-        assert!(unused.is_empty());
+        assert_eq!(unused, [] as [&ImageRecord; 0]);
+        Ok(())
     }
 
     #[test]
-    fn referenced_image_is_retained() {
-        let images = vec![img('a', false)];
+    fn referenced_image_is_retained() -> TestResult {
+        let images = vec![img('a', false)?];
         let mut in_use = HashSet::new();
-        in_use.insert(dig('a'));
-        assert!(select_unused_images(&images, &in_use).is_empty());
+        in_use.insert(dig('a')?);
+        assert_eq!(
+            select_unused_images(&images, &in_use),
+            [] as [&ImageRecord; 0]
+        );
+        Ok(())
     }
 
     #[test]
-    fn all_unreferenced_unpinned_are_selected_in_order() {
-        let images = vec![img('a', false), img('b', true), img('c', false)];
+    fn all_unreferenced_unpinned_are_selected_in_order() -> TestResult {
+        let images = vec![img('a', false)?, img('b', true)?, img('c', false)?];
         let unused = select_unused_images(&images, &HashSet::new());
         let digs: Vec<_> = unused.iter().map(|i| i.digest.clone()).collect();
-        assert_eq!(digs, vec![dig('a'), dig('c')]);
+        assert_eq!(digs, vec![dig('a')?, dig('c')?]);
+        Ok(())
     }
 
     #[test]
     fn empty_inputs_select_nothing() {
-        assert!(select_unused_images(&[], &HashSet::new()).is_empty());
+        assert_eq!(
+            select_unused_images(&[], &HashSet::new()),
+            [] as [&ImageRecord; 0]
+        );
     }
 }
