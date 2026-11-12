@@ -72,8 +72,10 @@ mod tests {
     use super::*;
     use std::net::{Ipv4Addr, Ipv6Addr};
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn announces_full_record_set() {
+    fn announces_full_record_set() -> TestResult {
         let rec = announce_self(
             "hub-kitchen",
             "kitchen.local",
@@ -81,8 +83,7 @@ mod tests {
             "1.4.0",
             8123,
             IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10)),
-        )
-        .expect("announces");
+        )?;
 
         assert_eq!(rec.node_id(), "hub-kitchen");
         assert_eq!(rec.port(), 8123);
@@ -101,10 +102,11 @@ mod tests {
         );
         assert_eq!(rec.ttl, DEFAULT_TTL_SECS);
         assert_eq!(rec.addresses().len(), 1);
+        Ok(())
     }
 
     #[test]
-    fn announcement_txt_round_trips() {
+    fn announcement_txt_round_trips() -> TestResult {
         let rec = announce_self(
             "hub-attic",
             "attic.local",
@@ -112,14 +114,14 @@ mod tests {
             "2.0.5",
             8123,
             IpAddr::V4(Ipv4Addr::LOCALHOST),
-        )
-        .expect("announces");
-        let back = TxtRecord::decode(&rec.txt.encode()).expect("round-trips");
+        )?;
+        let back = TxtRecord::decode(&rec.txt.encode())?;
         assert_eq!(back, rec.txt);
+        Ok(())
     }
 
     #[test]
-    fn multi_homed_node_has_one_a_record_per_address() {
+    fn multi_homed_node_has_one_a_record_per_address() -> TestResult {
         let rec = announce_self_multi(
             "hub-rack",
             "rack.local",
@@ -130,11 +132,11 @@ mod tests {
                 IpAddr::V4(Ipv4Addr::new(10, 0, 0, 5)),
                 IpAddr::V6(Ipv6Addr::LOCALHOST),
             ],
-        )
-        .expect("announces");
+        )?;
         assert_eq!(rec.addresses.len(), 2);
         // Each A record points at the same target host.
         assert!(rec.addresses.iter().all(|a| a.host == rec.srv.target));
+        Ok(())
     }
 
     #[test]

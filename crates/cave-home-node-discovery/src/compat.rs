@@ -108,7 +108,7 @@ impl Compatibility {
 
 /// Compare `ours` against a `peer` version and apply the cluster policy.
 #[must_use]
-pub fn compatibility(ours: Version, peer: Version) -> Compatibility {
+pub const fn compatibility(ours: Version, peer: Version) -> Compatibility {
     if ours.major != peer.major {
         return Compatibility::Incompatible;
     }
@@ -122,7 +122,7 @@ pub fn compatibility(ours: Version, peer: Version) -> Compatibility {
 
 /// Convenience: may these two versions interoperate at all?
 #[must_use]
-pub fn version_is_compatible(ours: Version, peer: Version) -> bool {
+pub const fn version_is_compatible(ours: Version, peer: Version) -> bool {
     compatibility(ours, peer).may_interoperate()
 }
 
@@ -130,32 +130,36 @@ pub fn version_is_compatible(ours: Version, peer: Version) -> bool {
 mod tests {
     use super::*;
 
-    fn v(s: &str) -> Version {
-        Version::parse(s).expect("valid test version")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn v(s: &str) -> Result<Version, Box<dyn std::error::Error>> {
+        Ok(Version::parse(s)?)
     }
 
     #[test]
-    fn parses_basic_version() {
+    fn parses_basic_version() -> TestResult {
         assert_eq!(
-            v("1.4.0"),
+            v("1.4.0")?,
             Version {
                 major: 1,
                 minor: 4,
                 patch: 0
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn parses_v_prefix() {
+    fn parses_v_prefix() -> TestResult {
         assert_eq!(
-            v("v2.10.3"),
+            v("v2.10.3")?,
             Version {
                 major: 2,
                 minor: 10,
                 patch: 3
             }
         );
+        Ok(())
     }
 
     #[test]
@@ -185,42 +189,46 @@ mod tests {
     }
 
     #[test]
-    fn same_minor_is_compatible_regardless_of_patch() {
+    fn same_minor_is_compatible_regardless_of_patch() -> TestResult {
         assert_eq!(
-            compatibility(v("1.4.0"), v("1.4.9")),
+            compatibility(v("1.4.0")?, v("1.4.9")?),
             Compatibility::Compatible
         );
-        assert!(version_is_compatible(v("1.4.0"), v("1.4.9")));
+        assert!(version_is_compatible(v("1.4.0")?, v("1.4.9")?));
+        Ok(())
     }
 
     #[test]
-    fn one_minor_gap_is_upgrade_nudge() {
+    fn one_minor_gap_is_upgrade_nudge() -> TestResult {
         assert_eq!(
-            compatibility(v("1.5.0"), v("1.4.2")),
+            compatibility(v("1.5.0")?, v("1.4.2")?),
             Compatibility::Upgrade
         );
         assert_eq!(
-            compatibility(v("1.4.2"), v("1.5.0")),
+            compatibility(v("1.4.2")?, v("1.5.0")?),
             Compatibility::Upgrade
         );
         assert!(Compatibility::Upgrade.may_interoperate());
+        Ok(())
     }
 
     #[test]
-    fn two_minor_gap_is_incompatible() {
+    fn two_minor_gap_is_incompatible() -> TestResult {
         assert_eq!(
-            compatibility(v("1.6.0"), v("1.4.0")),
+            compatibility(v("1.6.0")?, v("1.4.0")?),
             Compatibility::Incompatible
         );
-        assert!(!version_is_compatible(v("1.6.0"), v("1.4.0")));
+        assert!(!version_is_compatible(v("1.6.0")?, v("1.4.0")?));
+        Ok(())
     }
 
     #[test]
-    fn different_major_is_incompatible() {
+    fn different_major_is_incompatible() -> TestResult {
         assert_eq!(
-            compatibility(v("2.0.0"), v("1.99.0")),
+            compatibility(v("2.0.0")?, v("1.99.0")?),
             Compatibility::Incompatible
         );
         assert!(!Compatibility::Incompatible.may_interoperate());
+        Ok(())
     }
 }

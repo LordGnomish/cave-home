@@ -296,6 +296,8 @@ mod tests {
     use super::*;
     use std::net::Ipv4Addr;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn ver() -> Version {
         Version {
             major: 1,
@@ -328,18 +330,20 @@ mod tests {
     }
 
     #[test]
-    fn txt_round_trip() {
+    fn txt_round_trip() -> TestResult {
         let original = txt();
-        let back = TxtRecord::decode(&original.encode()).expect("decodes");
+        let back = TxtRecord::decode(&original.encode())?;
         assert_eq!(back, original);
+        Ok(())
     }
 
     #[test]
-    fn txt_tolerates_unknown_keys() {
+    fn txt_tolerates_unknown_keys() -> TestResult {
         let mut entries = txt().encode();
         entries.push("future=whatever".to_owned());
-        let back = TxtRecord::decode(&entries).expect("decodes ignoring unknown");
+        let back = TxtRecord::decode(&entries)?;
         assert_eq!(back, txt());
+        Ok(())
     }
 
     #[test]
@@ -403,7 +407,7 @@ mod tests {
     }
 
     #[test]
-    fn build_service_record_wires_names() {
+    fn build_service_record_wires_names() -> TestResult {
         let rec = ServiceRecord::build(
             "hub-kitchen",
             "kitchen.local",
@@ -411,8 +415,7 @@ mod tests {
             vec![IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10))],
             8123,
             120,
-        )
-        .expect("builds");
+        )?;
         assert_eq!(rec.ptr.service.to_dotted(), "_cavehome._tcp.local");
         assert_eq!(
             rec.ptr.instance.to_dotted(),
@@ -426,6 +429,7 @@ mod tests {
             rec.addresses(),
             vec![IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10))]
         );
+        Ok(())
     }
 
     #[test]
@@ -445,7 +449,7 @@ mod tests {
     }
 
     #[test]
-    fn ptr_instance_names_encode_to_wire() {
+    fn ptr_instance_names_encode_to_wire() -> TestResult {
         let rec = ServiceRecord::build(
             "hub-kitchen",
             "kitchen.local",
@@ -453,11 +457,11 @@ mod tests {
             vec![IpAddr::V4(Ipv4Addr::LOCALHOST)],
             8123,
             120,
-        )
-        .expect("builds");
+        )?;
         // The instance name survives a wire round-trip via the DnsName codec.
-        let wire = rec.ptr.instance.encode().expect("encodes");
-        let (back, _) = DnsName::decode(&wire, 0).expect("decodes");
+        let wire = rec.ptr.instance.encode()?;
+        let (back, _) = DnsName::decode(&wire, 0)?;
         assert!(back.eq_ignore_case(&rec.ptr.instance));
+        Ok(())
     }
 }
