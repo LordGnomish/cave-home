@@ -7,17 +7,19 @@
 //! of strict TDD. They follow the crate's existing per-DPT module convention
 //! (`dptN` module exposing a value struct plus `encode`/`decode`):
 //!
-//!   dpt10::Time { day: u8, hour: u8, minute: u8, second: u8 }
-//!   dpt10::encode(Time) -> Result<[u8; 3]>
-//!   dpt10::decode(&[u8]) -> Result<Time>
+//!   `dpt10::Time` { day: u8, hour: u8, minute: u8, second: u8 }
+//!   `dpt10::encode(Time)` -> Result<[u8; 3]>
+//!   `dpt10::decode`(&[u8]) -> Result<Time>
 //!
-//!   dpt11::Date { day: u8, month: u8, year: u16 }
-//!   dpt11::encode(Date) -> Result<[u8; 3]>
-//!   dpt11::decode(&[u8]) -> Result<Date>
+//!   `dpt11::Date` { day: u8, month: u8, year: u16 }
+//!   `dpt11::encode(Date)` -> Result<[u8; 3]>
+//!   `dpt11::decode`(&[u8]) -> Result<Date>
 //!
 //! `day` for Time is the day-of-week: 0 = no day, 1 = Mon .. 7 = Sun.
 
 use cave_home_knx::dpt::{dpt10, dpt11};
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 // ---------------------------------------------------------------------------
 // DPT 10.001 — Time-of-day.
@@ -29,7 +31,7 @@ use cave_home_knx::dpt::{dpt10, dpt11};
 // ---------------------------------------------------------------------------
 
 #[test]
-fn dpt10_time_13_45_30_wednesday_encodes_and_round_trips() {
+fn dpt10_time_13_45_30_wednesday_encodes_and_round_trips() -> TestResult {
     // 13:45:30, Wednesday => day-of-week = 3.
     //
     // byte0 = (day << 5) | hour = (3 << 5) | 13
@@ -44,20 +46,21 @@ fn dpt10_time_13_45_30_wednesday_encodes_and_round_trips() {
         minute: 45,
         second: 30,
     };
-    let bytes = dpt10::encode(t).unwrap();
+    let bytes = dpt10::encode(t)?;
     assert_eq!(bytes, [0x6D, 0x2D, 0x1E]);
 
     // Decode round-trip.
-    let back = dpt10::decode(&bytes).unwrap();
+    let back = dpt10::decode(&bytes)?;
     assert_eq!(back, t);
     assert_eq!(back.day, 3);
     assert_eq!(back.hour, 13);
     assert_eq!(back.minute, 45);
     assert_eq!(back.second, 30);
+    Ok(())
 }
 
 #[test]
-fn dpt10_time_midnight_no_day_is_all_zero() {
+fn dpt10_time_midnight_no_day_is_all_zero() -> TestResult {
     // 00:00:00 with no day-of-week (day = 0).
     //
     // byte0 = (0 << 5) | 0 = 0x00
@@ -69,9 +72,10 @@ fn dpt10_time_midnight_no_day_is_all_zero() {
         minute: 0,
         second: 0,
     };
-    let bytes = dpt10::encode(t).unwrap();
+    let bytes = dpt10::encode(t)?;
     assert_eq!(bytes, [0x00, 0x00, 0x00]);
-    assert_eq!(dpt10::decode(&bytes).unwrap(), t);
+    assert_eq!(dpt10::decode(&bytes)?, t);
+    Ok(())
 }
 
 #[test]
@@ -138,7 +142,7 @@ fn dpt10_time_rejects_wrong_payload_length() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn dpt11_date_2024_03_15_encodes_and_round_trips() {
+fn dpt11_date_2024_03_15_encodes_and_round_trips() -> TestResult {
     // 2024-03-15.
     //
     // byte0 = day   = 15 = 0x0F
@@ -149,27 +153,29 @@ fn dpt11_date_2024_03_15_encodes_and_round_trips() {
         month: 3,
         year: 2024,
     };
-    let bytes = dpt11::encode(d).unwrap();
+    let bytes = dpt11::encode(d)?;
     assert_eq!(bytes, [0x0F, 0x03, 0x18]);
 
     // Decode round-trip => year reconstructs as 2024.
-    let back = dpt11::decode(&bytes).unwrap();
+    let back = dpt11::decode(&bytes)?;
     assert_eq!(back, d);
     assert_eq!(back.day, 15);
     assert_eq!(back.month, 3);
     assert_eq!(back.year, 2024);
+    Ok(())
 }
 
 #[test]
-fn dpt11_date_year_code_mapping() {
+fn dpt11_date_year_code_mapping() -> TestResult {
     // byte2 = 95 is in 90..=99 => maps to 1990 + (95 - 90) = 1995.
     // day = 1, month = 1 => byte0 = 0x01, byte1 = 0x01.
-    let d95 = dpt11::decode(&[0x01, 0x01, 95]).unwrap();
+    let d95 = dpt11::decode(&[0x01, 0x01, 95])?;
     assert_eq!(d95.year, 1995);
 
     // byte2 = 0 is in 0..=89 => maps to 2000 + 0 = 2000.
-    let d00 = dpt11::decode(&[0x01, 0x01, 0]).unwrap();
+    let d00 = dpt11::decode(&[0x01, 0x01, 0])?;
     assert_eq!(d00.year, 2000);
+    Ok(())
 }
 
 #[test]

@@ -704,24 +704,27 @@ pub mod dpt16 {
 mod tests {
     use super::*;
 
+    type TestResult = core::result::Result<(), Box<dyn std::error::Error>>;
+
     // ---- DPT 1 ----------------------------------------------------------
     #[test]
-    fn dpt1_roundtrip_and_reject() {
+    fn dpt1_roundtrip_and_reject() -> TestResult {
         assert_eq!(dpt1::encode(true), 1);
         assert_eq!(dpt1::encode(false), 0);
-        assert_eq!(dpt1::decode(1).unwrap(), true);
-        assert_eq!(dpt1::decode(0).unwrap(), false);
+        assert!(dpt1::decode(1)?);
+        assert!(!dpt1::decode(0)?);
         assert!(dpt1::decode(2).is_err());
+        Ok(())
     }
 
     // ---- DPT 2 ----------------------------------------------------------
     #[test]
-    fn dpt2_controlled_roundtrip() {
+    fn dpt2_controlled_roundtrip() -> TestResult {
         for control in [false, true] {
             for value in [false, true] {
                 let c = dpt2::Controlled { control, value };
                 let byte = dpt2::encode(c);
-                assert_eq!(dpt2::decode(byte).unwrap(), c);
+                assert_eq!(dpt2::decode(byte)?, c);
             }
         }
         // priority "on" is 0b11.
@@ -733,28 +736,30 @@ mod tests {
             0b11
         );
         assert!(dpt2::decode(0b100).is_err());
+        Ok(())
     }
 
     // ---- DPT 3 ----------------------------------------------------------
     #[test]
-    fn dpt3_dimming_direction_and_step() {
+    fn dpt3_dimming_direction_and_step() -> TestResult {
         use dpt3::{Control, Direction};
         let up = Control {
             direction: Direction::Up,
             step_code: 1,
         };
-        let byte = dpt3::encode(up).unwrap();
+        let byte = dpt3::encode(up)?;
         assert_eq!(byte, 0b1001); // direction bit set + step 1
-        assert_eq!(dpt3::decode(byte).unwrap(), up);
+        assert_eq!(dpt3::decode(byte)?, up);
 
         let down = Control {
             direction: Direction::Down,
             step_code: 7,
         };
-        assert_eq!(dpt3::encode(down).unwrap(), 0b0111);
+        assert_eq!(dpt3::encode(down)?, 0b0111);
 
-        let stop = dpt3::decode(0b1000).unwrap();
+        let stop = dpt3::decode(0b1000)?;
         assert!(stop.is_stop());
+        Ok(())
     }
 
     #[test]
@@ -772,17 +777,18 @@ mod tests {
 
     // ---- DPT 5 ----------------------------------------------------------
     #[test]
-    fn dpt5_scaling_endpoints_and_rounding() {
-        assert_eq!(dpt5::encode_scaling(0.0).unwrap(), 0);
-        assert_eq!(dpt5::encode_scaling(100.0).unwrap(), 255);
+    fn dpt5_scaling_endpoints_and_rounding() -> TestResult {
+        assert_eq!(dpt5::encode_scaling(0.0)?, 0);
+        assert_eq!(dpt5::encode_scaling(100.0)?, 255);
         // 50% -> 127.5 -> rounds half up to 128.
-        assert_eq!(dpt5::encode_scaling(50.0).unwrap(), 128);
+        assert_eq!(dpt5::encode_scaling(50.0)?, 128);
         // 1% -> 2.55 -> 3 (round, not truncate).
-        assert_eq!(dpt5::encode_scaling(1.0).unwrap(), 3);
+        assert_eq!(dpt5::encode_scaling(1.0)?, 3);
         // round-trip the byte endpoints.
         assert!((dpt5::decode_scaling(0) - 0.0).abs() < 1e-9);
         assert!((dpt5::decode_scaling(255) - 100.0).abs() < 1e-9);
         assert!((dpt5::decode_scaling(128) - 50.196_078).abs() < 1e-3);
+        Ok(())
     }
 
     #[test]
@@ -793,12 +799,13 @@ mod tests {
     }
 
     #[test]
-    fn dpt5_angle_endpoints() {
-        assert_eq!(dpt5::encode_angle(0.0).unwrap(), 0);
-        assert_eq!(dpt5::encode_angle(360.0).unwrap(), 255);
+    fn dpt5_angle_endpoints() -> TestResult {
+        assert_eq!(dpt5::encode_angle(0.0)?, 0);
+        assert_eq!(dpt5::encode_angle(360.0)?, 255);
         // 180 deg -> 127.5 -> 128.
-        assert_eq!(dpt5::encode_angle(180.0).unwrap(), 128);
+        assert_eq!(dpt5::encode_angle(180.0)?, 128);
         assert!(dpt5::encode_angle(361.0).is_err());
+        Ok(())
     }
 
     #[test]
@@ -809,85 +816,94 @@ mod tests {
 
     // ---- DPT 6 ----------------------------------------------------------
     #[test]
-    fn dpt6_signed_roundtrip() {
+    fn dpt6_signed_roundtrip() -> TestResult {
         for v in [-128i8, -1, 0, 1, 127] {
-            assert_eq!(dpt6::decode(&dpt6::encode(v)).unwrap(), v);
+            assert_eq!(dpt6::decode(&dpt6::encode(v))?, v);
         }
         assert_eq!(dpt6::encode(-1), [0xFF]);
         assert!(dpt6::decode(&[1, 2]).is_err());
+        Ok(())
     }
 
     // ---- DPT 7 / 8 ------------------------------------------------------
     #[test]
-    fn dpt7_unsigned16_roundtrip() {
+    fn dpt7_unsigned16_roundtrip() -> TestResult {
         assert_eq!(dpt7::encode(0x1234), [0x12, 0x34]);
-        assert_eq!(dpt7::decode(&[0x12, 0x34]).unwrap(), 0x1234);
-        assert_eq!(dpt7::decode(&dpt7::encode(65535)).unwrap(), 65535);
+        assert_eq!(dpt7::decode(&[0x12, 0x34])?, 0x1234);
+        assert_eq!(dpt7::decode(&dpt7::encode(65535))?, 65535);
         assert!(dpt7::decode(&[0x12]).is_err());
+        Ok(())
     }
 
     #[test]
-    fn dpt8_signed16_roundtrip() {
+    fn dpt8_signed16_roundtrip() -> TestResult {
         for v in [i16::MIN, -1, 0, 1, i16::MAX] {
-            assert_eq!(dpt8::decode(&dpt8::encode(v)).unwrap(), v);
+            assert_eq!(dpt8::decode(&dpt8::encode(v))?, v);
         }
         assert_eq!(dpt8::encode(-1), [0xFF, 0xFF]);
         assert!(dpt8::decode(&[0]).is_err());
+        Ok(())
     }
 
     // ---- DPT 9 (the float) ---------------------------------------------
     #[test]
-    fn dpt9_zero() {
-        assert_eq!(dpt9::encode(0.0).unwrap(), [0x00, 0x00]);
-        assert!((dpt9::decode(&[0x00, 0x00]).unwrap()).abs() < 1e-9);
+    fn dpt9_zero() -> TestResult {
+        assert_eq!(dpt9::encode(0.0)?, [0x00, 0x00]);
+        assert!(dpt9::decode(&[0x00, 0x00])?.abs() < 1e-9);
+        Ok(())
     }
 
     #[test]
-    fn dpt9_known_temperature_21c() {
+    fn dpt9_known_temperature_21c() -> TestResult {
         // 21.0 deg C is the canonical worked example: 0x0C1A.
-        let bytes = dpt9::encode(21.0).unwrap();
+        let bytes = dpt9::encode(21.0)?;
         assert_eq!(bytes, [0x0C, 0x1A], "21.0 C must encode to 0x0C1A");
-        assert!((dpt9::decode(&bytes).unwrap() - 21.0).abs() < 1e-9);
+        assert!((dpt9::decode(&bytes)? - 21.0).abs() < 1e-9);
+        Ok(())
     }
 
     #[test]
-    fn dpt9_known_zero_point_zero_one() {
+    fn dpt9_known_zero_point_zero_one() -> TestResult {
         // smallest step: 0.01 -> mantissa 1, exp 0 -> 0x0001.
-        let bytes = dpt9::encode(0.01).unwrap();
+        let bytes = dpt9::encode(0.01)?;
         assert_eq!(bytes, [0x00, 0x01]);
-        assert!((dpt9::decode(&bytes).unwrap() - 0.01).abs() < 1e-9);
+        assert!((dpt9::decode(&bytes)? - 0.01).abs() < 1e-9);
+        Ok(())
     }
 
     #[test]
-    fn dpt9_negative_values() {
+    fn dpt9_negative_values() -> TestResult {
         // -10.0 deg C, a frost set-point.
-        let bytes = dpt9::encode(-10.0).unwrap();
-        assert!((dpt9::decode(&bytes).unwrap() + 10.0).abs() < 0.01);
+        let bytes = dpt9::encode(-10.0)?;
+        assert!((dpt9::decode(&bytes)? + 10.0).abs() < 0.01);
         // exact negative small value -0.01 -> mantissa -1.
-        let small = dpt9::encode(-0.01).unwrap();
-        assert!((dpt9::decode(&small).unwrap() + 0.01).abs() < 1e-9);
+        let small = dpt9::encode(-0.01)?;
+        assert!((dpt9::decode(&small)? + 0.01).abs() < 1e-9);
+        Ok(())
     }
 
     #[test]
-    fn dpt9_large_value_uses_exponent() {
+    fn dpt9_large_value_uses_exponent() -> TestResult {
         // a high lux reading exercises a non-zero exponent path.
         let v = 50_000.0;
-        let bytes = dpt9::encode(v).unwrap();
-        let back = dpt9::decode(&bytes).unwrap();
+        let bytes = dpt9::encode(v)?;
+        let back = dpt9::decode(&bytes)?;
         // representation is lossy at this magnitude; within one quantum step.
         assert!((back - v).abs() <= 40.96, "got {back}");
+        Ok(())
     }
 
     #[test]
-    fn dpt9_roundtrip_sweep() {
+    fn dpt9_roundtrip_sweep() -> TestResult {
         // The KNX float quantizes by 0.01 * 2^exp, so larger magnitudes carry a
         // coarser step. We tolerate one quantum (a tiny fraction of the value).
         for &v in &[-273.15, -40.0, -0.5, 0.0, 0.5, 21.5, 37.0, 100.0, 1000.0] {
-            let bytes = dpt9::encode(v).unwrap();
-            let back = dpt9::decode(&bytes).unwrap();
+            let bytes = dpt9::encode(v)?;
+            let back = dpt9::decode(&bytes)?;
             let tolerance = (v.abs() * 0.001).max(0.01) + 0.16;
             assert!((back - v).abs() <= tolerance, "v={v} back={back}");
         }
+        Ok(())
     }
 
     #[test]
@@ -901,32 +917,29 @@ mod tests {
 
     // ---- DPT 12 / 13 ----------------------------------------------------
     #[test]
-    fn dpt12_unsigned32_roundtrip() {
-        assert_eq!(
-            dpt12::decode(&dpt12::encode(0xDEAD_BEEF)).unwrap(),
-            0xDEAD_BEEF
-        );
+    fn dpt12_unsigned32_roundtrip() -> TestResult {
+        assert_eq!(dpt12::decode(&dpt12::encode(0xDEAD_BEEF))?, 0xDEAD_BEEF);
         assert!(dpt12::decode(&[1, 2, 3]).is_err());
+        Ok(())
     }
 
     #[test]
-    fn dpt13_signed32_roundtrip() {
+    fn dpt13_signed32_roundtrip() -> TestResult {
         for v in [i32::MIN, -1, 0, 1, i32::MAX] {
-            assert_eq!(dpt13::decode(&dpt13::encode(v)).unwrap(), v);
+            assert_eq!(dpt13::decode(&dpt13::encode(v))?, v);
         }
         assert!(dpt13::decode(&[1, 2, 3, 4, 5]).is_err());
+        Ok(())
     }
 
     // ---- DPT 14 ---------------------------------------------------------
     #[test]
-    fn dpt14_float_roundtrip() {
+    fn dpt14_float_roundtrip() -> TestResult {
         let v = core::f32::consts::PI;
-        let bytes = dpt14::encode(v).unwrap();
-        assert!((dpt14::decode(&bytes).unwrap() - v).abs() < 1e-6);
-        assert_eq!(
-            dpt14::decode(&dpt14::encode(-42.5).unwrap()).unwrap(),
-            -42.5
-        );
+        let bytes = dpt14::encode(v)?;
+        assert!((dpt14::decode(&bytes)? - v).abs() < 1e-6);
+        assert_eq!(dpt14::decode(&dpt14::encode(-42.5)?)?, -42.5);
+        Ok(())
     }
 
     #[test]
@@ -938,33 +951,36 @@ mod tests {
 
     // ---- DPT 16 ---------------------------------------------------------
     #[test]
-    fn dpt16_string_roundtrip_and_padding() {
-        let bytes = dpt16::encode("Kitchen").unwrap();
+    fn dpt16_string_roundtrip_and_padding() -> TestResult {
+        let bytes = dpt16::encode("Kitchen")?;
         assert_eq!(bytes.len(), 14);
         assert_eq!(&bytes[..7], b"Kitchen");
         assert_eq!(bytes[7], 0); // null-padded
-        assert_eq!(dpt16::decode(&bytes).unwrap(), "Kitchen");
+        assert_eq!(dpt16::decode(&bytes)?, "Kitchen");
+        Ok(())
     }
 
     #[test]
-    fn dpt16_rejects_overlong_and_bad_len() {
+    fn dpt16_rejects_overlong_and_bad_len() -> TestResult {
         assert!(dpt16::encode("this is far too long").is_err());
         assert!(dpt16::decode(&[0u8; 13]).is_err());
         // exactly 14 chars is fine.
-        assert_eq!(dpt16::encode("ABCDEFGHIJKLMN").unwrap().len(), 14);
+        assert_eq!(dpt16::encode("ABCDEFGHIJKLMN")?.len(), 14);
+        Ok(())
     }
 
     // ---- DPT 10 ---------------------------------------------------------
     #[test]
-    fn dpt10_time_roundtrip() {
+    fn dpt10_time_roundtrip() -> TestResult {
         let t = dpt10::Time {
             day: 3,
             hour: 13,
             minute: 45,
             second: 30,
         };
-        assert_eq!(dpt10::encode(t).unwrap(), [0x6D, 0x2D, 0x1E]);
-        assert_eq!(dpt10::decode(&[0x6D, 0x2D, 0x1E]).unwrap(), t);
+        assert_eq!(dpt10::encode(t)?, [0x6D, 0x2D, 0x1E]);
+        assert_eq!(dpt10::decode(&[0x6D, 0x2D, 0x1E])?, t);
+        Ok(())
     }
 
     #[test]
@@ -983,26 +999,26 @@ mod tests {
 
     // ---- DPT 11 ---------------------------------------------------------
     #[test]
-    fn dpt11_date_roundtrip() {
+    fn dpt11_date_roundtrip() -> TestResult {
         let d = dpt11::Date {
             day: 15,
             month: 3,
             year: 2024,
         };
-        assert_eq!(dpt11::encode(d).unwrap(), [0x0F, 0x03, 0x18]);
-        assert_eq!(dpt11::decode(&[0x0F, 0x03, 0x18]).unwrap(), d);
+        assert_eq!(dpt11::encode(d)?, [0x0F, 0x03, 0x18]);
+        assert_eq!(dpt11::decode(&[0x0F, 0x03, 0x18])?, d);
         // 90s-era year code maps back to 19xx.
-        assert_eq!(dpt11::decode(&[0x01, 0x01, 95]).unwrap().year, 1995);
+        assert_eq!(dpt11::decode(&[0x01, 0x01, 95])?.year, 1995);
         // round-trip a 1990s year through encode too.
         assert_eq!(
             dpt11::encode(dpt11::Date {
                 day: 1,
                 month: 1,
                 year: 1995
-            })
-            .unwrap(),
+            })?,
             [0x01, 0x01, 95]
         );
+        Ok(())
     }
 
     #[test]
