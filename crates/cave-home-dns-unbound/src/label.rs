@@ -73,11 +73,11 @@ mod tests {
     #[test]
     fn every_phrase_has_all_three_languages() {
         for lang in [Lang::En, Lang::De, Lang::Tr] {
-            assert!(!local_names_on(lang).is_empty());
-            assert!(!outside_lookups_private(lang).is_empty());
-            assert!(!name_not_answered(lang).is_empty());
-            assert!(!device_not_allowed(lang).is_empty());
-            assert!(!name_points_to("printer", lang).is_empty());
+            assert_ne!(local_names_on(lang), "");
+            assert_ne!(outside_lookups_private(lang), "");
+            assert_ne!(name_not_answered(lang), "");
+            assert_ne!(device_not_allowed(lang), "");
+            assert_ne!(name_points_to("printer", lang), "");
         }
     }
 

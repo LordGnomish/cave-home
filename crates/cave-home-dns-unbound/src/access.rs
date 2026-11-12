@@ -190,48 +190,54 @@ mod tests {
     use super::*;
     use crate::record::{v4, v6};
 
+    type TestResult = Result<(), crate::record::RecordError>;
+
     fn ip4(a: u8, b: u8, c: u8, d: u8) -> IpAddr {
         IpAddr::V4(v4(a, b, c, d))
     }
 
     #[test]
-    fn cidr_contains_v4_on_octet_and_partial_boundaries() {
-        let net = Cidr::parse("192.168.1.0/24").expect("cidr");
+    fn cidr_contains_v4_on_octet_and_partial_boundaries() -> TestResult {
+        let net = Cidr::parse("192.168.1.0/24")?;
         assert!(net.contains(ip4(192, 168, 1, 0)));
         assert!(net.contains(ip4(192, 168, 1, 255)));
         assert!(!net.contains(ip4(192, 168, 2, 1)));
 
         // Partial trailing octet: /26 covers .0-.63 only.
-        let small = Cidr::parse("10.0.0.0/26").expect("cidr");
+        let small = Cidr::parse("10.0.0.0/26")?;
         assert!(small.contains(ip4(10, 0, 0, 63)));
         assert!(!small.contains(ip4(10, 0, 0, 64)));
+        Ok(())
     }
 
     #[test]
-    fn cidr_zero_prefix_matches_everything_in_family() {
-        let all = Cidr::parse("0.0.0.0/0").expect("cidr");
+    fn cidr_zero_prefix_matches_everything_in_family() -> TestResult {
+        let all = Cidr::parse("0.0.0.0/0")?;
         assert!(all.contains(ip4(8, 8, 8, 8)));
         assert!(all.contains(ip4(192, 168, 0, 1)));
         // ...but not a v6 client.
         assert!(!all.contains(IpAddr::V6(v6(0, 0, 0, 0, 0, 0, 0, 1))));
+        Ok(())
     }
 
     #[test]
-    fn cidr_contains_v6() {
-        let net = Cidr::parse("2001:db8::/32").expect("cidr");
+    fn cidr_contains_v6() -> TestResult {
+        let net = Cidr::parse("2001:db8::/32")?;
         assert!(net.contains(IpAddr::V6(v6(0x2001, 0x0db8, 0, 0, 0, 0, 0, 1))));
         assert!(net.contains(IpAddr::V6(v6(0x2001, 0x0db8, 0xffff, 0, 0, 0, 0, 0))));
         assert!(!net.contains(IpAddr::V6(v6(0x2001, 0x0db9, 0, 0, 0, 0, 0, 1))));
         // Family mismatch.
         assert!(!net.contains(ip4(192, 168, 1, 1)));
+        Ok(())
     }
 
     #[test]
-    fn host_route_without_slash_is_full_prefix() {
-        let host = Cidr::parse("10.0.0.5").expect("cidr");
+    fn host_route_without_slash_is_full_prefix() -> TestResult {
+        let host = Cidr::parse("10.0.0.5")?;
         assert_eq!(host.prefix(), 32);
         assert!(host.contains(ip4(10, 0, 0, 5)));
         assert!(!host.contains(ip4(10, 0, 0, 6)));
+        Ok(())
     }
 
     #[test]
@@ -242,27 +248,28 @@ mod tests {
     }
 
     #[test]
-    fn access_control_longest_prefix_wins() {
+    fn access_control_longest_prefix_wins() -> TestResult {
         let mut acl = AccessControl::new(AccessAction::Refuse);
         // Broad allow for the LAN…
         acl.add(AccessRule::new(
-            Cidr::parse("192.168.0.0/16").expect("c"),
+            Cidr::parse("192.168.0.0/16")?,
             AccessAction::Allow,
         ));
         // …but a guest subnet within it is refused.
         acl.add(AccessRule::new(
-            Cidr::parse("192.168.50.0/24").expect("c"),
+            Cidr::parse("192.168.50.0/24")?,
             AccessAction::Refuse,
         ));
         // …and the admin host gets snoop.
         acl.add(AccessRule::new(
-            Cidr::parse("192.168.1.10/32").expect("c"),
+            Cidr::parse("192.168.1.10/32")?,
             AccessAction::AllowSnoop,
         ));
 
         assert_eq!(acl.decide(ip4(192, 168, 1, 5)), AccessAction::Allow);
         assert_eq!(acl.decide(ip4(192, 168, 50, 7)), AccessAction::Refuse);
         assert_eq!(acl.decide(ip4(192, 168, 1, 10)), AccessAction::AllowSnoop);
+        Ok(())
     }
 
     #[test]

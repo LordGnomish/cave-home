@@ -171,19 +171,23 @@ impl DnsName {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), NameError>;
+
     #[test]
-    fn parse_normalises_case_and_trailing_dot() {
-        let n = DnsName::parse("WWW.Example.COM.").expect("valid");
+    fn parse_normalises_case_and_trailing_dot() -> TestResult {
+        let n = DnsName::parse("WWW.Example.COM.")?;
         assert_eq!(n.as_str(), "www.example.com");
         assert_eq!(n.to_fqdn(), "www.example.com.");
+        Ok(())
     }
 
     #[test]
-    fn root_in_either_spelling() {
-        assert!(DnsName::parse("").expect("root").is_root());
-        assert!(DnsName::parse(".").expect("root").is_root());
-        assert_eq!(DnsName::parse(".").expect("root").to_fqdn(), ".");
-        assert_eq!(DnsName::parse("").expect("root").label_count(), 0);
+    fn root_in_either_spelling() -> TestResult {
+        assert!(DnsName::parse("")?.is_root());
+        assert!(DnsName::parse(".")?.is_root());
+        assert_eq!(DnsName::parse(".")?.to_fqdn(), ".");
+        assert_eq!(DnsName::parse("")?.label_count(), 0);
+        Ok(())
     }
 
     #[test]
@@ -193,7 +197,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_bad_characters_and_hyphen_edges() {
+    fn rejects_bad_characters_and_hyphen_edges() -> TestResult {
         assert_eq!(DnsName::parse("ex ample.com"), Err(NameError::BadCharacter));
         assert_eq!(
             DnsName::parse("under_score.com"),
@@ -203,9 +207,10 @@ mod tests {
         assert_eq!(DnsName::parse("trail-.com"), Err(NameError::HyphenAtEdge));
         // A hyphen in the middle is fine.
         assert_eq!(
-            DnsName::parse("my-printer.local").expect("ok").as_str(),
+            DnsName::parse("my-printer.local")?.as_str(),
             "my-printer.local"
         );
+        Ok(())
     }
 
     #[test]
@@ -226,20 +231,22 @@ mod tests {
     }
 
     #[test]
-    fn within_is_label_aligned() {
-        let www = DnsName::parse("www.example.com").expect("ok");
-        let zone = DnsName::parse("example.com").expect("ok");
-        let other = DnsName::parse("notexample.com").expect("ok");
-        let root = DnsName::parse(".").expect("ok");
+    fn within_is_label_aligned() -> TestResult {
+        let www = DnsName::parse("www.example.com")?;
+        let zone = DnsName::parse("example.com")?;
+        let other = DnsName::parse("notexample.com")?;
+        let root = DnsName::parse(".")?;
         assert!(www.is_within(&zone));
         assert!(zone.is_within(&zone));
         assert!(!other.is_within(&zone));
         assert!(www.is_within(&root), "root contains every name");
+        Ok(())
     }
 
     #[test]
-    fn label_count_counts_labels() {
-        assert_eq!(DnsName::parse("a").expect("ok").label_count(), 1);
-        assert_eq!(DnsName::parse("a.b.c").expect("ok").label_count(), 3);
+    fn label_count_counts_labels() -> TestResult {
+        assert_eq!(DnsName::parse("a")?.label_count(), 1);
+        assert_eq!(DnsName::parse("a.b.c")?.label_count(), 3);
+        Ok(())
     }
 }

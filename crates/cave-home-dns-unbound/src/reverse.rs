@@ -98,41 +98,45 @@ mod tests {
     use super::*;
     use crate::record::{v4, v6};
 
+    type TestResult = Result<(), crate::name::NameError>;
+
     #[test]
-    fn ipv4_reverses_to_in_addr_arpa() {
-        let n = ptr_name(IpAddr::V4(v4(192, 168, 1, 50))).expect("ptr");
+    fn ipv4_reverses_to_in_addr_arpa() -> TestResult {
+        let n = ptr_name(IpAddr::V4(v4(192, 168, 1, 50)))?;
         assert_eq!(n.as_str(), "50.1.168.192.in-addr.arpa");
+        Ok(())
     }
 
     #[test]
-    fn ipv6_reverses_to_nibble_ip6_arpa() {
+    fn ipv6_reverses_to_nibble_ip6_arpa() -> TestResult {
         // ::1 -> least-significant nibble (the 1) first, then 31 zeros, per
         // RFC 3596 §2.5.
-        let n = ptr_name(IpAddr::V6(v6(0, 0, 0, 0, 0, 0, 0, 1))).expect("ptr");
+        let n = ptr_name(IpAddr::V6(v6(0, 0, 0, 0, 0, 0, 0, 1)))?;
         let expected = format!("1.{}ip6.arpa", "0.".repeat(31));
         assert_eq!(n.as_str(), expected);
         assert!(n.as_str().ends_with("ip6.arpa"));
         // 32 nibble labels + 2 suffix labels.
         assert_eq!(n.label_count(), 34);
+        Ok(())
     }
 
     #[test]
-    fn reverse_zone_round_trips_address_to_name() {
+    fn reverse_zone_round_trips_address_to_name() -> TestResult {
         let mut z = ReverseZone::new();
-        let printer = DnsName::parse("printer.home.arpa").expect("name");
-        z.insert(IpAddr::V4(v4(192, 168, 1, 50)), printer.clone())
-            .expect("insert");
+        let printer = DnsName::parse("printer.home.arpa")?;
+        z.insert(IpAddr::V4(v4(192, 168, 1, 50)), printer.clone())?;
         assert_eq!(z.resolve(IpAddr::V4(v4(192, 168, 1, 50))), Some(&printer));
         assert_eq!(z.resolve(IpAddr::V4(v4(192, 168, 1, 51))), None);
+        Ok(())
     }
 
     #[test]
-    fn reverse_zone_resolves_by_ptr_name() {
+    fn reverse_zone_resolves_by_ptr_name() -> TestResult {
         let mut z = ReverseZone::new();
-        let nas = DnsName::parse("nas.home.arpa").expect("name");
-        z.insert(IpAddr::V4(v4(10, 0, 0, 9)), nas.clone())
-            .expect("insert");
-        let ptr = DnsName::parse("9.0.0.10.in-addr.arpa").expect("ptr");
+        let nas = DnsName::parse("nas.home.arpa")?;
+        z.insert(IpAddr::V4(v4(10, 0, 0, 9)), nas.clone())?;
+        let ptr = DnsName::parse("9.0.0.10.in-addr.arpa")?;
         assert_eq!(z.resolve_name(&ptr), Some(&nas));
+        Ok(())
     }
 }
