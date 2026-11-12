@@ -241,6 +241,8 @@ impl DailyMetrics {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn steps_accepts_zero_and_rejects_glitch() {
         assert_eq!(Steps::new(0).map(Steps::get), Ok(0));
@@ -301,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    fn body_weight_validates_finite_and_range() {
+    fn body_weight_validates_finite_and_range() -> TestResult {
         assert_eq!(BodyWeight::new(f64::NAN), Err(MetricError::NotFinite));
         assert_eq!(BodyWeight::new(f64::INFINITY), Err(MetricError::NotFinite));
         assert_eq!(BodyWeight::new(0.5), Err(MetricError::TooLow));
@@ -309,8 +311,9 @@ mod tests {
             BodyWeight::new(BodyWeight::MAX_KG + 1.0),
             Err(MetricError::TooHigh)
         );
-        let kg = BodyWeight::new(72.5).expect("72.5 kg is in range").kg();
+        let kg = BodyWeight::new(72.5)?.kg();
         assert!((kg - 72.5).abs() < 1e-9);
+        Ok(())
     }
 
     #[test]

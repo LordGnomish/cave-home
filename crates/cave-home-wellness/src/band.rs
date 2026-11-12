@@ -288,8 +288,8 @@ mod tests {
                 RestingHrBand::Elevated,
                 RestingHrBand::High,
             ] {
-                assert!(!b.name(lang).is_empty());
-                assert!(!b.advice(lang).is_empty());
+                assert_ne!(b.name(lang), "");
+                assert_ne!(b.advice(lang), "");
             }
             for b in [
                 SleepBand::Insufficient,
@@ -297,8 +297,8 @@ mod tests {
                 SleepBand::Optimal,
                 SleepBand::Excessive,
             ] {
-                assert!(!b.name(lang).is_empty());
-                assert!(!b.advice(lang).is_empty());
+                assert_ne!(b.name(lang), "");
+                assert_ne!(b.advice(lang), "");
             }
             for b in [
                 ActivityBand::Sedentary,
@@ -306,8 +306,8 @@ mod tests {
                 ActivityBand::Active,
                 ActivityBand::VeryActive,
             ] {
-                assert!(!b.name(lang).is_empty());
-                assert!(!b.advice(lang).is_empty());
+                assert_ne!(b.name(lang), "");
+                assert_ne!(b.advice(lang), "");
             }
         }
     }

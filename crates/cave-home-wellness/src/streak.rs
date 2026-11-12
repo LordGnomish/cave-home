@@ -51,17 +51,19 @@ mod tests {
     use super::*;
     use crate::metric::{ActiveMinutes, HeartRate, SleepDuration, Steps};
 
-    fn day_with_steps(day: u32, steps: u32) -> DailyMetrics {
-        DailyMetrics::new(
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn day_with_steps(day: u32, steps: u32) -> Result<DailyMetrics, Box<dyn std::error::Error>> {
+        Ok(DailyMetrics::new(
             day,
-            Steps::new(steps).expect("test step count in range"),
-            ActiveMinutes::new(0).expect("zero active minutes"),
-            SleepDuration::from_minutes(0).expect("zero sleep"),
-            HeartRate::new(60).expect("test heart rate"),
-        )
+            Steps::new(steps)?,
+            ActiveMinutes::new(0)?,
+            SleepDuration::from_minutes(0)?,
+            HeartRate::new(60)?,
+        ))
     }
 
-    fn series(step_days: &[u32]) -> Vec<DailyMetrics> {
+    fn series(step_days: &[u32]) -> Result<Vec<DailyMetrics>, Box<dyn std::error::Error>> {
         step_days
             .iter()
             .enumerate()
@@ -77,35 +79,39 @@ mod tests {
     }
 
     #[test]
-    fn all_met_is_full_length_streak() {
+    fn all_met_is_full_length_streak() -> TestResult {
         let g = Goal::daily_steps(10_000);
-        let days = series(&[10_000, 11_000, 12_000, 10_500]);
+        let days = series(&[10_000, 11_000, 12_000, 10_500])?;
         assert_eq!(longest_streak(&days, g), 4);
         assert_eq!(current_streak(&days, g), 4);
+        Ok(())
     }
 
     #[test]
-    fn longest_streak_finds_best_run_with_gaps() {
+    fn longest_streak_finds_best_run_with_gaps() -> TestResult {
         let g = Goal::daily_steps(10_000);
         // met, met, MISS, met, met, met, MISS
-        let days = series(&[10_000, 10_000, 3_000, 10_000, 10_000, 10_000, 2_000]);
+        let days = series(&[10_000, 10_000, 3_000, 10_000, 10_000, 10_000, 2_000])?;
         assert_eq!(longest_streak(&days, g), 3);
+        Ok(())
     }
 
     #[test]
-    fn current_streak_counts_back_from_last_day() {
+    fn current_streak_counts_back_from_last_day() -> TestResult {
         let g = Goal::daily_steps(10_000);
         // ends on two met days after a miss
-        let days = series(&[10_000, 3_000, 10_000, 10_000]);
+        let days = series(&[10_000, 3_000, 10_000, 10_000])?;
         assert_eq!(current_streak(&days, g), 2);
         assert_eq!(longest_streak(&days, g), 2);
+        Ok(())
     }
 
     #[test]
-    fn current_streak_zero_when_last_day_misses() {
+    fn current_streak_zero_when_last_day_misses() -> TestResult {
         let g = Goal::daily_steps(10_000);
-        let days = series(&[10_000, 10_000, 4_000]);
+        let days = series(&[10_000, 10_000, 4_000])?;
         assert_eq!(current_streak(&days, g), 0);
         assert_eq!(longest_streak(&days, g), 2);
+        Ok(())
     }
 }

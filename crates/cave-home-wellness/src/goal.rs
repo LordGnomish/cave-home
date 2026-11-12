@@ -117,74 +117,87 @@ mod tests {
     use super::*;
     use crate::metric::{ActiveMinutes, HeartRate, SleepDuration, Steps};
 
-    fn day(steps: u32, active: u16, sleep_min: u16) -> DailyMetrics {
-        DailyMetrics::new(
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn day(
+        steps: u32,
+        active: u16,
+        sleep_min: u16,
+    ) -> Result<DailyMetrics, Box<dyn std::error::Error>> {
+        Ok(DailyMetrics::new(
             1,
-            Steps::new(steps).expect("test step count in range"),
-            ActiveMinutes::new(active).expect("test active minutes in range"),
-            SleepDuration::from_minutes(sleep_min).expect("test sleep minutes in range"),
-            HeartRate::new(60).expect("test heart rate in range"),
-        )
+            Steps::new(steps)?,
+            ActiveMinutes::new(active)?,
+            SleepDuration::from_minutes(sleep_min)?,
+            HeartRate::new(60)?,
+        ))
     }
 
     #[test]
-    fn step_goal_progress_and_met() {
+    fn step_goal_progress_and_met() -> TestResult {
         let g = Goal::daily_steps(10_000);
-        let p = progress(&day(5_000, 0, 0), g);
+        let p = progress(&day(5_000, 0, 0)?, g);
         assert_eq!(p.percent, 50);
         assert!(!p.met);
+        Ok(())
     }
 
     #[test]
-    fn step_goal_met_at_exact_boundary() {
+    fn step_goal_met_at_exact_boundary() -> TestResult {
         let g = Goal::daily_steps(10_000);
-        let p = progress(&day(10_000, 0, 0), g);
+        let p = progress(&day(10_000, 0, 0)?, g);
         assert_eq!(p.percent, 100);
         assert!(p.met);
+        Ok(())
     }
 
     #[test]
-    fn step_goal_just_under_boundary_not_met() {
+    fn step_goal_just_under_boundary_not_met() -> TestResult {
         let g = Goal::daily_steps(10_000);
-        let p = progress(&day(9_999, 0, 0), g);
+        let p = progress(&day(9_999, 0, 0)?, g);
         assert_eq!(p.percent, 99);
         assert!(!p.met);
+        Ok(())
     }
 
     #[test]
-    fn over_target_clamps_percent_but_stays_met() {
+    fn over_target_clamps_percent_but_stays_met() -> TestResult {
         let g = Goal::daily_steps(10_000);
-        let p = progress(&day(25_000, 0, 0), g);
+        let p = progress(&day(25_000, 0, 0)?, g);
         assert_eq!(p.percent, 100);
         assert!(p.met);
+        Ok(())
     }
 
     #[test]
-    fn active_minutes_goal() {
+    fn active_minutes_goal() -> TestResult {
         let g = Goal::daily_active_minutes(30);
-        let p = progress(&day(0, 15, 0), g);
+        let p = progress(&day(0, 15, 0)?, g);
         assert_eq!(p.percent, 50);
         assert!(!p.met);
-        let p2 = progress(&day(0, 30, 0), g);
+        let p2 = progress(&day(0, 30, 0)?, g);
         assert!(p2.met);
+        Ok(())
     }
 
     #[test]
-    fn sleep_goal_in_minutes() {
+    fn sleep_goal_in_minutes() -> TestResult {
         let g = Goal::nightly_sleep_minutes(480);
-        let p = progress(&day(0, 0, 480), g);
+        let p = progress(&day(0, 0, 480)?, g);
         assert!(p.met);
         assert_eq!(p.percent, 100);
-        let short = progress(&day(0, 0, 360), g);
+        let short = progress(&day(0, 0, 360)?, g);
         assert_eq!(short.percent, 75);
         assert!(!short.met);
+        Ok(())
     }
 
     #[test]
-    fn zero_target_is_already_met() {
+    fn zero_target_is_already_met() -> TestResult {
         let g = Goal::daily_steps(0);
-        let p = progress(&day(0, 0, 0), g);
+        let p = progress(&day(0, 0, 0)?, g);
         assert!(p.met);
         assert_eq!(p.percent, 100);
+        Ok(())
     }
 }
