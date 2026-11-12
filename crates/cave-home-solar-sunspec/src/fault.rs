@@ -8,7 +8,7 @@
 //! `unwrap` in shipped code). All variants are recoverable — a caller can
 //! skip the offending model and carry on.
 
-/// Why a SunSpec decode failed.
+/// Why a `SunSpec` decode failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodeError {
     /// A point read past the end of the supplied register slice. Carries the
@@ -24,8 +24,8 @@ pub enum DecodeError {
         declared: u16,
         available: u16,
     },
-    /// The SunSpec `"SunS"` identifier marker was not found at the block base.
-    /// Either the wrong base register was probed or the device is not SunSpec.
+    /// The `SunSpec` `"SunS"` identifier marker was not found at the block base.
+    /// Either the wrong base register was probed or the device is not `SunSpec`.
     MissingMarker,
     /// A model id was asked of a decoder that does not understand it.
     UnsupportedModel { model_id: u16 },

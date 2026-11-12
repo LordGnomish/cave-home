@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //
-//! SunSpec scale-factor (`sunssf`) handling.
+//! `SunSpec` scale-factor (`sunssf`) handling.
 //!
-//! A SunSpec integer point carries its physical value as a raw integer plus a
+//! A `SunSpec` integer point carries its physical value as a raw integer plus a
 //! companion `sunssf` point — a signed power-of-ten exponent. The real value
 //! is `raw * 10^sf`. For example AC power `W = 1234` with `W_SF = -1` is
 //! `123.4` W; a voltage `2301` with `V_SF = -1` is `230.1` V; a large energy
 //! counter might use a positive exponent.
 //!
-//! Source: SunSpec Information Model Specification, "Scale Factors".
+//! Source: `SunSpec` Information Model Specification, "Scale Factors".
 
-/// A SunSpec scale factor: a signed power-of-ten exponent applied to a raw
+/// A `SunSpec` scale factor: a signed power-of-ten exponent applied to a raw
 /// integer point to recover the physical value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScaleFactor(i16);
 
 impl ScaleFactor {
-    /// Build from the decoded `sunssf` exponent. SunSpec constrains the
+    /// Build from the decoded `sunssf` exponent. `SunSpec` constrains the
     /// exponent to roughly `-10..=10`; out-of-range values are clamped so an
     /// arithmetic overflow can never reach the caller.
     #[must_use]

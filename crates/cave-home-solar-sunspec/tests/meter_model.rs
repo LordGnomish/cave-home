@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //
-//! RED-phase test for the NEW SunSpec Model 203 meter decode.
+//! RED-phase test for the NEW `SunSpec` Model 203 meter decode.
 //!
 //! Model 203 is the public-standard three-phase (wye/delta) meter model. Like
 //! the inverter integer models, every measurement is a raw integer paired with
@@ -14,7 +14,7 @@
 //!
 //! Offsets are 0-based within the model's *payload* (i.e. after the 2-word
 //! `id + length` header that `discover`/`walk_chain` already strips). Taken
-//! from the public SunSpec Information Model Specification, meter model 203
+//! from the public `SunSpec` Information Model Specification, meter model 203
 //! ("Wye-Connect Three Phase (Abcn) Meter"):
 //!
 //! ```text
@@ -34,6 +34,8 @@
 
 use cave_home_solar_sunspec::{DecodeError, MeterReading, decode_meter};
 
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
 /// Build a Model 203 payload long enough to reach the energy + event block.
 /// `Evt` ends at offset 165, so 166 registers is the minimum useful payload.
 fn build_meter_203() -> Vec<u16> {
@@ -41,7 +43,7 @@ fn build_meter_203() -> Vec<u16> {
 
     // --- Total AC current: A raw = 250, A_SF = -1  =>  25.0 A ---
     p[0] = 250; // A raw (int16)
-    p[4] = (-1i16) as u16; // A_SF = -1
+    p[4] = 0xFFFF; // A_SF = -1 (int16, two's complement)
 
     // --- Total real power: W raw = 1500, W_SF = 0  =>  1500 W ---
     p[18] = 1500u16; // W raw (int16)
@@ -68,76 +70,84 @@ fn build_meter_203() -> Vec<u16> {
 }
 
 #[test]
-fn decode_model_203_total_real_power_scaled() {
+fn decode_model_203_total_real_power_scaled() -> TestResult {
     let p = build_meter_203();
-    let r: MeterReading = decode_meter(203, &p).expect("model 203 decodes");
+    let r: MeterReading = decode_meter(203, &p)?;
 
     // W raw 1500 * 10^(W_SF=0) = 1500 W
-    assert!((r.total_real_power_w.unwrap() - 1500.0).abs() < 1e-6);
+    assert!((r.total_real_power_w.ok_or("point is implemented")? - 1500.0).abs() < 1e-6);
+    Ok(())
 }
 
 #[test]
-fn decode_model_203_power_scale_factor_applied() {
+fn decode_model_203_power_scale_factor_applied() -> TestResult {
     // W_SF = 1  =>  1500 * 10^1 = 15_000 W
     let mut p = build_meter_203();
     p[18] = 1500u16; // W raw
     p[22] = 1; // W_SF = 1
-    let r = decode_meter(203, &p).expect("decodes");
-    assert!((r.total_real_power_w.unwrap() - 15_000.0).abs() < 1e-6);
+    let r = decode_meter(203, &p)?;
+    assert!((r.total_real_power_w.ok_or("point is implemented")? - 15_000.0).abs() < 1e-6);
+    Ok(())
 }
 
 #[test]
-fn decode_model_203_imported_energy_acc32() {
+fn decode_model_203_imported_energy_acc32() -> TestResult {
     let p = build_meter_203();
-    let r = decode_meter(203, &p).expect("decodes");
+    let r = decode_meter(203, &p)?;
 
     // TotWhImp: hi=0x0001, lo=0x86A0 => 0x000186A0 = 100_000; TotWh_SF=0 => 100_000 Wh
-    assert!((r.total_energy_imported_wh.unwrap() - 100_000.0).abs() < 1e-6);
+    assert!((r.total_energy_imported_wh.ok_or("point is implemented")? - 100_000.0).abs() < 1e-6);
+    Ok(())
 }
 
 #[test]
-fn decode_model_203_exported_energy_acc32() {
+fn decode_model_203_exported_energy_acc32() -> TestResult {
     let p = build_meter_203();
-    let r = decode_meter(203, &p).expect("decodes");
+    let r = decode_meter(203, &p)?;
 
     // TotWhExp: 0x00002710 = 10_000; TotWh_SF=0 => 10_000 Wh
-    assert!((r.total_energy_exported_wh.unwrap() - 10_000.0).abs() < 1e-6);
+    assert!((r.total_energy_exported_wh.ok_or("point is implemented")? - 10_000.0).abs() < 1e-6);
+    Ok(())
 }
 
 #[test]
-fn decode_model_203_no_events_present() {
+fn decode_model_203_no_events_present() -> TestResult {
     let p = build_meter_203();
-    let r = decode_meter(203, &p).expect("decodes");
+    let r = decode_meter(203, &p)?;
     // Evt = 0 => no meter events flagged.
     assert!(!r.has_event);
+    Ok(())
 }
 
 #[test]
-fn decode_model_203_event_flag_present() {
+fn decode_model_203_event_flag_present() -> TestResult {
     let mut p = build_meter_203();
     p[164] = 0x0000;
     p[165] = 0x0004; // some non-zero event bit set
-    let r = decode_meter(203, &p).expect("decodes");
+    let r = decode_meter(203, &p)?;
     assert!(r.has_event);
+    Ok(())
 }
 
 #[test]
-fn never_accumulated_import_energy_is_none() {
+fn never_accumulated_import_energy_is_none() -> TestResult {
     // acc32 == 0 is the SunSpec "not accumulated" sentinel => None, not 0.
     let mut p = build_meter_203();
     p[154] = 0;
     p[155] = 0;
-    let r = decode_meter(203, &p).expect("decodes");
+    let r = decode_meter(203, &p)?;
     assert!(r.total_energy_imported_wh.is_none());
+    Ok(())
 }
 
 #[test]
-fn unimplemented_power_is_none() {
+fn unimplemented_power_is_none() -> TestResult {
     // int16 sentinel 0x8000 => the meter does not implement total real power.
     let mut p = build_meter_203();
     p[18] = 0x8000; // INT16 not-implemented sentinel
-    let r = decode_meter(203, &p).expect("decodes");
+    let r = decode_meter(203, &p)?;
     assert!(r.total_real_power_w.is_none());
+    Ok(())
 }
 
 #[test]
@@ -160,10 +170,11 @@ fn non_meter_model_id_rejected() {
 }
 
 #[test]
-fn meter_reading_decode_integer_associated_fn() {
+fn meter_reading_decode_integer_associated_fn() -> TestResult {
     // Mirror InverterReading::decode_integer — the associated constructor the
     // free `decode_meter` dispatches to.
     let p = build_meter_203();
-    let r = MeterReading::decode_integer(203, &p).expect("decodes");
-    assert!((r.total_real_power_w.unwrap() - 1500.0).abs() < 1e-6);
+    let r = MeterReading::decode_integer(203, &p)?;
+    assert!((r.total_real_power_w.ok_or("point is implemented")? - 1500.0).abs() < 1e-6);
+    Ok(())
 }
