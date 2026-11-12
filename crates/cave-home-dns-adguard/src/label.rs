@@ -122,12 +122,12 @@ mod tests {
     #[test]
     fn every_phrase_has_all_three_languages() {
         for lang in [Lang::En, Lang::De, Lang::Tr] {
-            assert!(!protection_on(lang).is_empty());
-            assert!(!protection_off(lang).is_empty());
-            assert!(!site_allowed(lang).is_empty());
-            assert!(!site_blocked(lang).is_empty());
-            assert!(!site_not_filtered(lang).is_empty());
-            assert!(!blocked_today(7, lang).is_empty());
+            assert_ne!(protection_on(lang), "");
+            assert_ne!(protection_off(lang), "");
+            assert_ne!(site_allowed(lang), "");
+            assert_ne!(site_blocked(lang), "");
+            assert_ne!(site_not_filtered(lang), "");
+            assert_ne!(blocked_today(7, lang), "");
         }
     }
 

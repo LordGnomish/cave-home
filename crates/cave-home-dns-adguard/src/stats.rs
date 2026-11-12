@@ -163,6 +163,6 @@ mod tests {
         assert_eq!(s.total, 0);
         assert_eq!(s.blocked, 0);
         assert!(s.per_domain.is_empty());
-        assert!(s.top_blocked(5).is_empty());
+        assert_eq!(s.top_blocked(5), [] as [(String, u64); 0]);
     }
 }
