@@ -372,8 +372,10 @@ mod tests {
     use super::*;
     use crate::label::Lang;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn flow_sunny_charging_and_exporting() {
+    fn flow_sunny_charging_and_exporting() -> TestResult {
         // 5 kW sun, 1 kW house, charging 1 kW, exporting 3 kW.
         let flow = EnergyFlowView::from_powers(5000.0, 1000.0, -1000.0, -3000.0, 75.0);
         let edges = flow.active_edges();
@@ -398,8 +400,9 @@ mod tests {
         let to_home = edges
             .iter()
             .find(|e| e.from == FlowNode::Solar && e.to == FlowNode::Home)
-            .unwrap();
+            .ok_or("solar to home edge")?;
         assert!((to_home.watts - 1000.0).abs() < f64::EPSILON);
+        Ok(())
     }
 
     #[test]
@@ -426,7 +429,7 @@ mod tests {
             FlowNode::Battery.label(Lang::Tr)
         );
         for n in FlowNode::ALL {
-            assert!(!n.label(Lang::En).is_empty());
+            assert_ne!(n.label(Lang::En), "");
         }
     }
 
@@ -466,16 +469,20 @@ mod tests {
     fn history_graph_empty_is_safe() {
         let g = HistoryGraph::new("Empty", vec![]);
         assert!(g.max_value().abs() < f64::EPSILON);
-        assert!(g.normalized_heights().is_empty());
+        assert_eq!(g.normalized_heights(), [] as [f64; 0]);
     }
 
     #[test]
-    fn mode_selector_marks_current() {
+    fn mode_selector_marks_current() -> TestResult {
         let opts = mode_selector(EnergyMode::Backup, Lang::En);
         assert_eq!(opts.len(), 3);
-        let backup = opts.iter().find(|o| o.key == "backup").unwrap();
+        let backup = opts
+            .iter()
+            .find(|o| o.key == "backup")
+            .ok_or("backup option")?;
         assert!(backup.selected);
         assert_eq!(opts.iter().filter(|o| o.selected).count(), 1);
+        Ok(())
     }
 
     #[test]
@@ -487,8 +494,8 @@ mod tests {
     #[test]
     fn energy_page_assembles_all_widgets() {
         let page = EnergyPage::demo(Lang::En);
-        assert!(!page.title.is_empty());
-        assert!(!page.flow.active_edges().is_empty());
+        assert_ne!(page.title, "");
+        assert_ne!(page.flow.active_edges(), [] as [FlowEdge; 0]);
         assert_eq!(page.modes.len(), 3);
     }
 

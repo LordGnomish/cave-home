@@ -426,7 +426,7 @@ mod tests {
         let e = ent(Domain::Light);
         let t = tile(&e, &EntityState::unavailable(), Lang::En);
         assert_eq!(t.status, "Not responding");
-        assert!(t.actions.is_empty());
+        assert_eq!(t.actions, [] as [Action; 0]);
         assert_eq!(
             tile(&e, &EntityState::unavailable(), Lang::De).status,
             "Keine Antwort"

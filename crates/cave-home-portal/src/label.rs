@@ -244,7 +244,7 @@ mod tests {
         let tags: Vec<_> = Lang::ALL.iter().map(|l| l.tag()).collect();
         assert_eq!(tags, ["en-US", "de-DE", "tr-TR"]);
         for lang in Lang::ALL {
-            assert!(!lang.endonym().is_empty());
+            assert_ne!(lang.endonym(), "");
         }
     }
 

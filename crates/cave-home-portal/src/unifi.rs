@@ -167,6 +167,8 @@ impl UnifiOverviewPage {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn sample() -> UnifiCounts {
         UnifiCounts {
             devices_online: 9,
@@ -198,15 +200,16 @@ mod tests {
     }
 
     #[test]
-    fn unlocked_door_makes_doors_tile_unhealthy() {
+    fn unlocked_door_makes_doors_tile_unhealthy() -> TestResult {
         let mut counts = sample();
         counts.doors_locked = 1; // one door open
         let page = UnifiOverviewPage::new(counts);
         let tiles = page.tiles(Lang::En);
-        let doors = tiles.last().unwrap();
+        let doors = tiles.last().ok_or("doors tile")?;
         assert_eq!(doors.value, "1 / 2");
         assert!(!doors.healthy);
         assert!(!page.all_healthy(Lang::En));
+        Ok(())
     }
 
     #[test]

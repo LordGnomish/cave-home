@@ -162,7 +162,7 @@ mod tests {
         assert_eq!(page.bridge.lights_total, page.lights.len());
         assert_eq!(page.bridge.lights_on, page.lights_on());
         assert_eq!(page.lights_on(), 2); // living room + kitchen
-        assert!(!page.scenes.is_empty());
+        assert_ne!(page.scenes, [] as [HueSceneChip; 0]);
     }
 
     #[test]
