@@ -149,6 +149,8 @@ impl Value {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn bool_decode_round_trip() {
         assert_eq!(Value::decode_bool("0"), Ok(Value::Bool(false)));
@@ -210,19 +212,23 @@ mod tests {
     }
 
     #[test]
-    fn temperature_rejects_non_finite() {
+    fn temperature_rejects_non_finite() -> TestResult {
         assert_eq!(
             Value::temperature(f64::NAN),
             Err(ValueError::TemperatureNotFinite)
         );
         assert_eq!(
-            Value::decode_temperature("nan").map(|_| ()).unwrap_err(),
+            Value::decode_temperature("nan")
+                .map(|_| ())
+                .err()
+                .ok_or("expected an error")?,
             ValueError::TemperatureNotFinite
         );
         assert_eq!(
             Value::decode_temperature("hot"),
             Err(ValueError::NotANumber)
         );
+        Ok(())
     }
 
     #[test]

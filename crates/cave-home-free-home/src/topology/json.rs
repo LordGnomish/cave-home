@@ -263,10 +263,12 @@ impl Parser<'_> {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn parses_nested_object() {
-        let j = Json::parse(r#"{"a":{"b":"c"},"d":[1,2,3]}"#).expect("ok");
-        let o = j.as_object().expect("object");
+    fn parses_nested_object() -> TestResult {
+        let j = Json::parse(r#"{"a":{"b":"c"},"d":[1,2,3]}"#)?;
+        let o = j.as_object().ok_or("object")?;
         assert_eq!(
             o.get("a")
                 .and_then(Json::as_object)
@@ -274,33 +276,37 @@ mod tests {
             Some(&Json::Str("c".into()))
         );
         assert!(matches!(o.get("d"), Some(Json::Array(v)) if v.len() == 3));
+        Ok(())
     }
 
     #[test]
-    fn numbers_kept_as_text() {
-        let j = Json::parse(r#"{"n":256,"f":-1.5e2}"#).expect("ok");
-        let o = j.as_object().expect("object");
+    fn numbers_kept_as_text() -> TestResult {
+        let j = Json::parse(r#"{"n":256,"f":-1.5e2}"#)?;
+        let o = j.as_object().ok_or("object")?;
         assert_eq!(o.get("n").and_then(Json::as_str), Some("256"));
         assert_eq!(o.get("f").and_then(Json::as_str), Some("-1.5e2"));
+        Ok(())
     }
 
     #[test]
-    fn booleans_and_null() {
-        let j = Json::parse(r#"{"t":true,"f":false,"z":null}"#).expect("ok");
-        let o = j.as_object().expect("object");
+    fn booleans_and_null() -> TestResult {
+        let j = Json::parse(r#"{"t":true,"f":false,"z":null}"#)?;
+        let o = j.as_object().ok_or("object")?;
         assert_eq!(o.get("t"), Some(&Json::Bool(true)));
         assert_eq!(o.get("z"), Some(&Json::Null));
+        Ok(())
     }
 
     #[test]
-    fn string_escapes_and_unicode() {
-        let j = Json::parse(r#"{"k":"a\tbç\n"}"#).expect("ok");
+    fn string_escapes_and_unicode() -> TestResult {
+        let j = Json::parse(r#"{"k":"a\tbç\n"}"#)?;
         assert_eq!(
             j.as_object()
                 .and_then(|m| m.get("k"))
                 .and_then(Json::as_str),
             Some("a\tbç\n")
         );
+        Ok(())
     }
 
     #[test]

@@ -131,7 +131,7 @@ mod tests {
         ];
         for a in actions {
             for lang in [Lang::En, Lang::De, Lang::Tr] {
-                assert!(!action_phrase(lang, "Room", a).is_empty());
+                assert_ne!(action_phrase(lang, "Room", a), "");
             }
         }
     }

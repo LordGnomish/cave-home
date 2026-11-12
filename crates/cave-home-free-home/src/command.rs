@@ -140,6 +140,8 @@ impl SetDatapoint {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     const SERIAL: &str = "ABB700C12345";
 
     fn ch() -> ChannelId {
@@ -147,32 +149,34 @@ mod tests {
     }
 
     #[test]
-    fn switch_on_builds() {
-        let cmd = SetDatapoint::boolean(SERIAL, ch(), Pairing::SwitchOnOff, true).expect("valid");
+    fn switch_on_builds() -> TestResult {
+        let cmd = SetDatapoint::boolean(SERIAL, ch(), Pairing::SwitchOnOff, true)?;
         assert_eq!(cmd.wire_value(), "1");
         assert_eq!(cmd.pairing(), Pairing::SwitchOnOff);
         assert_eq!(cmd.channel().index(), 3);
         assert_eq!(cmd.serial().as_str(), SERIAL);
+        Ok(())
     }
 
     #[test]
-    fn dimmer_percent_builds() {
-        let cmd = SetDatapoint::percent(SERIAL, ch(), Pairing::SetBrightness, 50).expect("valid");
+    fn dimmer_percent_builds() -> TestResult {
+        let cmd = SetDatapoint::percent(SERIAL, ch(), Pairing::SetBrightness, 50)?;
         assert_eq!(cmd.wire_value(), "50");
+        Ok(())
     }
 
     #[test]
-    fn blind_position_builds() {
-        let cmd =
-            SetDatapoint::percent(SERIAL, ch(), Pairing::SetBlindPosition, 75).expect("valid");
+    fn blind_position_builds() -> TestResult {
+        let cmd = SetDatapoint::percent(SERIAL, ch(), Pairing::SetBlindPosition, 75)?;
         assert_eq!(cmd.wire_value(), "75");
+        Ok(())
     }
 
     #[test]
-    fn thermostat_target_builds() {
-        let cmd = SetDatapoint::temperature(SERIAL, ch(), Pairing::SetTargetTemperature, 21.5)
-            .expect("valid");
+    fn thermostat_target_builds() -> TestResult {
+        let cmd = SetDatapoint::temperature(SERIAL, ch(), Pairing::SetTargetTemperature, 21.5)?;
         assert_eq!(cmd.wire_value(), "21.5");
+        Ok(())
     }
 
     #[test]

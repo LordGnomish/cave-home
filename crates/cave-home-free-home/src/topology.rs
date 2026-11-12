@@ -283,6 +283,8 @@ fn parse_datapoints(group: Option<&Json>, expected: Direction, out: &mut Vec<Dat
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     const SAMPLE: &str = r#"
     {
       "00000000-0000-0000-0000-000000000000": {
@@ -316,90 +318,96 @@ mod tests {
     "#;
 
     #[test]
-    fn parses_top_level_and_device() {
-        let sysap = SysAp::parse_get_all(SAMPLE).expect("parses");
+    fn parses_top_level_and_device() -> TestResult {
+        let sysap = SysAp::parse_get_all(SAMPLE)?;
         assert_eq!(sysap.id, "00000000-0000-0000-0000-000000000000");
         assert_eq!(sysap.devices.len(), 1);
         let dev = &sysap.devices[0];
         assert_eq!(dev.serial.as_str(), "ABB700C12345");
         assert_eq!(dev.display_name.as_deref(), Some("Wohnzimmer Decke"));
+        Ok(())
     }
 
     #[test]
-    fn skips_unknown_function_channel() {
-        let sysap = SysAp::parse_get_all(SAMPLE).expect("parses");
+    fn skips_unknown_function_channel() -> TestResult {
+        let sysap = SysAp::parse_get_all(SAMPLE)?;
         // ch00ff has functionID 9999 (not curated) and is dropped.
         assert_eq!(sysap.channel_count(), 2);
+        Ok(())
     }
 
     #[test]
-    fn channel_function_and_room_decoded() {
-        let sysap = SysAp::parse_get_all(SAMPLE).expect("parses");
+    fn channel_function_and_room_decoded() -> TestResult {
+        let sysap = SysAp::parse_get_all(SAMPLE)?;
         let dev = &sysap.devices[0];
         let dimmer = dev
             .channels
             .iter()
             .find(|c| c.id() == ChannelId::new(3))
-            .expect("ch0003 present");
+            .ok_or("ch0003 present")?;
         assert_eq!(dimmer.function(), Function::DimmingActuator);
         assert_eq!(dimmer.room(), Some("Wohnzimmer"));
         assert_eq!(dimmer.floor(), Some("EG"));
+        Ok(())
     }
 
     #[test]
-    fn datapoints_split_input_output_and_map_pairing() {
-        let sysap = SysAp::parse_get_all(SAMPLE).expect("parses");
+    fn datapoints_split_input_output_and_map_pairing() -> TestResult {
+        let sysap = SysAp::parse_get_all(SAMPLE)?;
         let dev = &sysap.devices[0];
         let dimmer = dev
             .channels
             .iter()
             .find(|c| c.id() == ChannelId::new(3))
-            .expect("ch0003");
+            .ok_or("ch0003")?;
         // Switch-on input present, mapped to a pairing.
         let on = dimmer
             .datapoint_for(Pairing::SwitchOnOff)
-            .expect("switch on/off input");
+            .ok_or("switch on/off input")?;
         assert!(on.id.is_input());
         assert_eq!(on.value.as_deref(), Some("0"));
         // Brightness setpoint (pairingID 17 = 0x11).
         let bri = dimmer
             .datapoint_for(Pairing::SetBrightness)
-            .expect("brightness input");
+            .ok_or("brightness input")?;
         assert_eq!(bri.value.as_deref(), Some("50"));
         // Reported on/off output (pairingID 256 = 0x100).
         let info = dimmer
             .datapoint_for(Pairing::InfoOnOff)
-            .expect("info output");
+            .ok_or("info output")?;
         assert_eq!(info.id.direction(), Direction::Output);
         assert_eq!(info.value.as_deref(), Some("1"));
+        Ok(())
     }
 
     #[test]
-    fn blind_channel_position_output() {
-        let sysap = SysAp::parse_get_all(SAMPLE).expect("parses");
+    fn blind_channel_position_output() -> TestResult {
+        let sysap = SysAp::parse_get_all(SAMPLE)?;
         let blind = sysap.devices[0]
             .channels
             .iter()
             .find(|c| c.function() == Function::BlindActuator)
-            .expect("blind channel");
+            .ok_or("blind channel")?;
         let pos = blind
             .datapoint_for(Pairing::InfoBlindPosition)
-            .expect("position output");
+            .ok_or("position output")?;
         assert_eq!(pos.value.as_deref(), Some("75"));
+        Ok(())
     }
 
     #[test]
-    fn unknown_pairing_id_kept_as_raw() {
+    fn unknown_pairing_id_kept_as_raw() -> TestResult {
         let json = r#"
         {"sid":{"devices":{"ABB700C12345":{"channels":{"ch0000":{
             "functionID":"0007",
             "outputs":{"odp0009":{"pairingID":40000,"value":"x"}}
         }}}}}}"#;
-        let sysap = SysAp::parse_get_all(json).expect("parses");
+        let sysap = SysAp::parse_get_all(json)?;
         let dp = &sysap.devices[0].channels[0].datapoints()[0];
         assert_eq!(dp.pairing, None);
         assert_eq!(dp.raw_pairing_id, 40000);
         assert_eq!(dp.id.to_string(), "odp0009");
+        Ok(())
     }
 
     #[test]
