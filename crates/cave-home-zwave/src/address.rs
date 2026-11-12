@@ -115,6 +115,8 @@ impl DeviceRole {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn node_zero_is_rejected() {
         assert_eq!(
@@ -127,15 +129,16 @@ mod tests {
     }
 
     #[test]
-    fn root_and_endpoint_addresses() {
-        let root = Address::node(5).expect("node 5 is valid");
+    fn root_and_endpoint_addresses() -> TestResult {
+        let root = Address::node(5)?;
         assert!(root.is_root());
         assert_eq!(root.node_id(), 5);
         assert_eq!(root.endpoint(), 0);
 
-        let ep = Address::at_endpoint(5, 2).expect("endpoint 2 is valid");
+        let ep = Address::at_endpoint(5, 2)?;
         assert!(!ep.is_root());
         assert_eq!(ep.endpoint(), 2);
+        Ok(())
     }
 
     #[test]

@@ -416,22 +416,14 @@ impl Command {
             Self::MultilevelSensorReport {
                 sensor_type,
                 reading,
-            } => {
-                let mut out = vec![0x31, cmd::REPORT, *sensor_type];
-                push_fixed(&mut out, reading);
-                out
-            }
+            } => fixed_payload([0x31, cmd::REPORT, *sensor_type], reading),
 
             // Meter CC.
             Self::MeterGet => vec![0x32, cmd::GET],
             Self::MeterReport {
                 meter_type,
                 reading,
-            } => {
-                let mut out = vec![0x32, cmd::REPORT, *meter_type];
-                push_fixed(&mut out, reading);
-                out
-            }
+            } => fixed_payload([0x32, cmd::REPORT, *meter_type], reading),
 
             // Color Switch CC.
             Self::ColorSwitchSet { component, value } => {
@@ -446,22 +438,14 @@ impl Command {
             Self::ThermostatSetpointSet {
                 setpoint_type,
                 value,
-            } => {
-                let mut out = vec![0x43, cmd::SET, *setpoint_type];
-                push_fixed(&mut out, value);
-                out
-            }
+            } => fixed_payload([0x43, cmd::SET, *setpoint_type], value),
             Self::ThermostatSetpointGet { setpoint_type } => {
                 vec![0x43, cmd::GET, *setpoint_type]
             }
             Self::ThermostatSetpointReport {
                 setpoint_type,
                 value,
-            } => {
-                let mut out = vec![0x43, cmd::REPORT, *setpoint_type];
-                push_fixed(&mut out, value);
-                out
-            }
+            } => fixed_payload([0x43, cmd::REPORT, *setpoint_type], value),
 
             // Thermostat Mode CC.
             Self::ThermostatModeSet(mode) => vec![0x40, cmd::SET, mode.to_u8()],
@@ -897,6 +881,14 @@ const fn temperature_value(fp: &FixedPoint) -> Value {
     }
 }
 
+/// A three-byte Command Class header followed by the re-encoded fixed-point
+/// value.
+fn fixed_payload(header: [u8; 3], fp: &FixedPoint) -> Vec<u8> {
+    let mut out = header.to_vec();
+    push_fixed(&mut out, fp);
+    out
+}
+
 fn push_fixed(out: &mut Vec<u8>, fp: &FixedPoint) {
     // Re-encode using the precision/scale/size the value already carries; this
     // is infallible because a FixedPoint only ever holds legal field values.
@@ -940,13 +932,16 @@ fn read_signed(bytes: &[u8], size: u8) -> ZwaveResult<i32> {
 mod tests {
     use super::*;
 
-    fn roundtrip(cmd: Command) {
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn roundtrip(cmd: Command) -> TestResult {
         let bytes = cmd.encode();
-        let back = Command::decode(&bytes).expect("re-decodes");
+        let back = Command::decode(&bytes)?;
         assert_eq!(
             back, cmd,
             "round-trip mismatch for {cmd:?} via {bytes:02x?}"
         );
+        Ok(())
     }
 
     #[test]
@@ -970,29 +965,31 @@ mod tests {
     }
 
     #[test]
-    fn basic_roundtrips() {
-        roundtrip(Command::BasicSet(0));
-        roundtrip(Command::BasicSet(99));
-        roundtrip(Command::BasicSet(0xFF));
-        roundtrip(Command::BasicGet);
-        roundtrip(Command::BasicReport(50));
+    fn basic_roundtrips() -> TestResult {
+        roundtrip(Command::BasicSet(0))?;
+        roundtrip(Command::BasicSet(99))?;
+        roundtrip(Command::BasicSet(0xFF))?;
+        roundtrip(Command::BasicGet)?;
+        roundtrip(Command::BasicReport(50))?;
+        Ok(())
     }
 
     #[test]
-    fn basic_set_known_bytes() {
+    fn basic_set_known_bytes() -> TestResult {
         assert_eq!(Command::BasicSet(0xFF).encode(), vec![0x20, 0x01, 0xFF]);
         assert_eq!(
-            Command::decode(&[0x20, 0x03, 0x00]).expect("ok"),
+            Command::decode(&[0x20, 0x03, 0x00])?,
             Command::BasicReport(0)
         );
+        Ok(())
     }
 
     #[test]
-    fn binary_switch_roundtrips_and_sentinels() {
-        roundtrip(Command::BinarySwitchSet(true));
-        roundtrip(Command::BinarySwitchSet(false));
-        roundtrip(Command::BinarySwitchGet);
-        roundtrip(Command::BinarySwitchReport(true));
+    fn binary_switch_roundtrips_and_sentinels() -> TestResult {
+        roundtrip(Command::BinarySwitchSet(true))?;
+        roundtrip(Command::BinarySwitchSet(false))?;
+        roundtrip(Command::BinarySwitchGet)?;
+        roundtrip(Command::BinarySwitchReport(true))?;
         // On is 0xFF, off is 0x00 per spec.
         assert_eq!(
             Command::BinarySwitchSet(true).encode(),
@@ -1004,21 +1001,23 @@ mod tests {
         );
         // Any non-zero decodes as "on".
         assert_eq!(
-            Command::decode(&[0x25, 0x03, 0x01]).expect("ok"),
+            Command::decode(&[0x25, 0x03, 0x01])?,
             Command::BinarySwitchReport(true)
         );
+        Ok(())
     }
 
     #[test]
-    fn multilevel_switch_roundtrips() {
-        roundtrip(Command::MultilevelSwitchSet(0));
-        roundtrip(Command::MultilevelSwitchSet(99));
-        roundtrip(Command::MultilevelSwitchSet(0xFF));
-        roundtrip(Command::MultilevelSwitchGet);
-        roundtrip(Command::MultilevelSwitchReport(42));
-        roundtrip(Command::MultilevelSwitchStartLevelChange(LevelChange::Up));
-        roundtrip(Command::MultilevelSwitchStartLevelChange(LevelChange::Down));
-        roundtrip(Command::MultilevelSwitchStopLevelChange);
+    fn multilevel_switch_roundtrips() -> TestResult {
+        roundtrip(Command::MultilevelSwitchSet(0))?;
+        roundtrip(Command::MultilevelSwitchSet(99))?;
+        roundtrip(Command::MultilevelSwitchSet(0xFF))?;
+        roundtrip(Command::MultilevelSwitchGet)?;
+        roundtrip(Command::MultilevelSwitchReport(42))?;
+        roundtrip(Command::MultilevelSwitchStartLevelChange(LevelChange::Up))?;
+        roundtrip(Command::MultilevelSwitchStartLevelChange(LevelChange::Down))?;
+        roundtrip(Command::MultilevelSwitchStopLevelChange)?;
+        Ok(())
     }
 
     #[test]
@@ -1040,17 +1039,18 @@ mod tests {
     }
 
     #[test]
-    fn binary_sensor_roundtrips() {
-        roundtrip(Command::BinarySensorGet);
-        roundtrip(Command::BinarySensorReport(true));
-        roundtrip(Command::BinarySensorReport(false));
+    fn binary_sensor_roundtrips() -> TestResult {
+        roundtrip(Command::BinarySensorGet)?;
+        roundtrip(Command::BinarySensorReport(true))?;
+        roundtrip(Command::BinarySensorReport(false))?;
+        Ok(())
     }
 
     #[test]
-    fn multilevel_sensor_temperature_report() {
+    fn multilevel_sensor_temperature_report() -> TestResult {
         // sensor type 0x01 (air temp), precision 1, scale 0, size 2, 24.4 °C.
         let bytes = [0x31, 0x03, 0x01, 0x22, 0x00, 0xF4];
-        let cmd = Command::decode(&bytes).expect("valid sensor report");
+        let cmd = Command::decode(&bytes)?;
         match cmd {
             Command::MultilevelSensorReport {
                 sensor_type,
@@ -1069,26 +1069,29 @@ mod tests {
                 unit: TemperatureUnit::Celsius
             })
         );
-        roundtrip(cmd);
+        roundtrip(cmd)?;
+        Ok(())
     }
 
     #[test]
-    fn multilevel_sensor_humidity_value_model() {
+    fn multilevel_sensor_humidity_value_model() -> TestResult {
         // sensor type 0x05 (humidity), precision 0, size 1, 42 %.
-        let cmd = Command::decode(&[0x31, 0x03, 0x05, 0x01, 0x2A]).expect("ok");
+        let cmd = Command::decode(&[0x31, 0x03, 0x05, 0x01, 0x2A])?;
         assert_eq!(cmd.to_value(), Some(Value::Humidity(42.0)));
+        Ok(())
     }
 
     #[test]
-    fn multilevel_sensor_get_roundtrips() {
-        roundtrip(Command::MultilevelSensorGet);
+    fn multilevel_sensor_get_roundtrips() -> TestResult {
+        roundtrip(Command::MultilevelSensorGet)?;
+        Ok(())
     }
 
     #[test]
-    fn meter_report_roundtrips_and_value() {
+    fn meter_report_roundtrips_and_value() -> TestResult {
         // meter type 1 (electric), precision 3, scale 0 (kWh), size 4.
         let bytes = [0x32, 0x03, 0x01, 0x64, 0x00, 0x00, 0x27, 0x10];
-        let cmd = Command::decode(&bytes).expect("valid meter report");
+        let cmd = Command::decode(&bytes)?;
         match cmd {
             Command::MeterReport {
                 meter_type,
@@ -1100,20 +1103,21 @@ mod tests {
             }
             other => unreachable_variant(&format!("{other:?}")),
         }
-        roundtrip(cmd);
+        roundtrip(cmd)?;
+        Ok(())
     }
 
     #[test]
-    fn color_switch_roundtrips() {
+    fn color_switch_roundtrips() -> TestResult {
         roundtrip(Command::ColorSwitchSet {
             component: 2,
             value: 200,
-        });
-        roundtrip(Command::ColorSwitchGet { component: 2 });
+        })?;
+        roundtrip(Command::ColorSwitchGet { component: 2 })?;
         roundtrip(Command::ColorSwitchReport {
             component: 4,
             value: 0,
-        });
+        })?;
         assert_eq!(
             Command::ColorSwitchSet {
                 component: 2,
@@ -1125,12 +1129,13 @@ mod tests {
                 intensity: 200
             })
         );
+        Ok(())
     }
 
     #[test]
-    fn thermostat_setpoint_roundtrips() {
+    fn thermostat_setpoint_roundtrips() -> TestResult {
         let bytes = [0x43, 0x03, 0x01, 0x22, 0x00, 0xD2];
-        let cmd = Command::decode(&bytes).expect("valid setpoint report");
+        let cmd = Command::decode(&bytes)?;
         match cmd {
             Command::ThermostatSetpointReport {
                 setpoint_type,
@@ -1142,39 +1147,41 @@ mod tests {
             }
             other => unreachable_variant(&format!("{other:?}")),
         }
-        roundtrip(cmd);
-        roundtrip(Command::ThermostatSetpointGet { setpoint_type: 1 });
+        roundtrip(cmd)?;
+        roundtrip(Command::ThermostatSetpointGet { setpoint_type: 1 })?;
+        Ok(())
     }
 
     #[test]
-    fn configuration_roundtrips_all_sizes() {
+    fn configuration_roundtrips_all_sizes() -> TestResult {
         roundtrip(Command::ConfigurationSet {
             parameter: 3,
             size: 1,
             value: -5,
-        });
+        })?;
         roundtrip(Command::ConfigurationSet {
             parameter: 7,
             size: 2,
             value: 1000,
-        });
+        })?;
         roundtrip(Command::ConfigurationSet {
             parameter: 9,
             size: 4,
             value: -100_000,
-        });
-        roundtrip(Command::ConfigurationGet { parameter: 3 });
+        })?;
+        roundtrip(Command::ConfigurationGet { parameter: 3 })?;
         roundtrip(Command::ConfigurationReport {
             parameter: 3,
             size: 2,
             value: -1,
-        });
+        })?;
+        Ok(())
     }
 
     #[test]
-    fn configuration_signed_byte_decode() {
+    fn configuration_signed_byte_decode() -> TestResult {
         // parameter 3, size 1, value 0xFB = -5.
-        let cmd = Command::decode(&[0x70, 0x03, 0x03, 0x01, 0xFB]).expect("ok");
+        let cmd = Command::decode(&[0x70, 0x03, 0x03, 0x01, 0xFB])?;
         assert_eq!(
             cmd,
             Command::ConfigurationReport {
@@ -1183,16 +1190,17 @@ mod tests {
                 value: -5
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn notification_report_roundtrips() {
+    fn notification_report_roundtrips() -> TestResult {
         // smoke alarm (type 0x01), event "smoke detected" 0x02.
         let cmd = Command::NotificationReport {
             notification_type: 0x01,
             event: 0x02,
         };
-        roundtrip(cmd);
+        roundtrip(cmd)?;
         assert_eq!(
             cmd.to_value(),
             Some(Value::Notification {
@@ -1200,12 +1208,12 @@ mod tests {
                 event: 0x02
             })
         );
+        Ok(())
     }
 
     #[test]
-    fn notification_report_decode_known_bytes() {
-        let cmd = Command::decode(&[0x71, 0x05, 0x00, 0x00, 0x00, 0x07, 0xFF, 0x08])
-            .expect("valid notification");
+    fn notification_report_decode_known_bytes() -> TestResult {
+        let cmd = Command::decode(&[0x71, 0x05, 0x00, 0x00, 0x00, 0x07, 0xFF, 0x08])?;
         assert_eq!(
             cmd,
             Command::NotificationReport {
@@ -1213,14 +1221,15 @@ mod tests {
                 event: 0x08
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn battery_roundtrips_and_low_sentinel() {
-        roundtrip(Command::BatteryGet);
-        roundtrip(Command::BatteryReport(100));
-        roundtrip(Command::BatteryReport(0));
-        roundtrip(Command::BatteryReport(0xFF));
+    fn battery_roundtrips_and_low_sentinel() -> TestResult {
+        roundtrip(Command::BatteryGet)?;
+        roundtrip(Command::BatteryReport(100))?;
+        roundtrip(Command::BatteryReport(0))?;
+        roundtrip(Command::BatteryReport(0xFF))?;
         // 0xFF maps to the BatteryLow value, not a percentage.
         assert_eq!(
             Command::BatteryReport(0xFF).to_value(),
@@ -1230,6 +1239,7 @@ mod tests {
             Command::BatteryReport(80).to_value(),
             Some(Value::BatteryPercent(80))
         );
+        Ok(())
     }
 
     #[test]
