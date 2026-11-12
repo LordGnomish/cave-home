@@ -245,117 +245,126 @@ impl Capabilities {
 mod tests {
     use super::*;
 
-    fn c(v: f64) -> Temperature {
-        Temperature::from_celsius(v).expect("valid test temperature")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn c(v: f64) -> Result<Temperature, crate::temperature::TemperatureError> {
+        Temperature::from_celsius(v)
     }
 
-    fn caps() -> Capabilities {
-        Capabilities::new(
-            c(7.0),
-            c(35.0),
+    fn caps() -> Result<Capabilities, Box<dyn std::error::Error>> {
+        Ok(Capabilities::new(
+            c(7.0)?,
+            c(35.0)?,
             0.5,
             vec![FanMode::Auto, FanMode::Low, FanMode::High],
             vec![PresetMode::None, PresetMode::Eco, PresetMode::Away],
-        )
-        .expect("valid capabilities")
+        )?)
     }
 
     #[test]
-    fn band_requires_low_below_high() {
-        assert!(Setpoint::band(c(18.0), c(24.0)).is_ok());
+    fn band_requires_low_below_high() -> TestResult {
+        assert!(Setpoint::band(c(18.0)?, c(24.0)?).is_ok());
         assert_eq!(
-            Setpoint::band(c(24.0), c(18.0)),
+            Setpoint::band(c(24.0)?, c(18.0)?),
             Err(SetpointError::BandNotOrdered)
         );
         // Equal is not strictly ordered.
         assert_eq!(
-            Setpoint::band(c(21.0), c(21.0)),
+            Setpoint::band(c(21.0)?, c(21.0)?),
             Err(SetpointError::BandNotOrdered)
         );
+        Ok(())
     }
 
     #[test]
-    fn setpoint_shape_matches_mode() {
-        let single = Setpoint::single(c(21.0));
-        let band = Setpoint::band(c(18.0), c(24.0)).expect("ordered band");
+    fn setpoint_shape_matches_mode() -> TestResult {
+        let single = Setpoint::single(c(21.0)?);
+        let band = Setpoint::band(c(18.0)?, c(24.0)?)?;
         assert!(single.matches_mode(HvacMode::Heat));
         assert!(!single.matches_mode(HvacMode::HeatCool));
         assert!(band.matches_mode(HvacMode::HeatCool));
         assert!(!band.matches_mode(HvacMode::Heat));
+        Ok(())
     }
 
     #[test]
-    fn invalid_capabilities_rejected() {
+    fn invalid_capabilities_rejected() -> TestResult {
         assert_eq!(
-            Capabilities::new(c(30.0), c(10.0), 0.5, vec![], vec![]),
+            Capabilities::new(c(30.0)?, c(10.0)?, 0.5, vec![], vec![]),
             Err(CapabilityError::InvalidCapabilities)
         );
         assert_eq!(
-            Capabilities::new(c(10.0), c(30.0), 0.0, vec![], vec![]),
+            Capabilities::new(c(10.0)?, c(30.0)?, 0.0, vec![], vec![]),
             Err(CapabilityError::InvalidCapabilities)
         );
         assert_eq!(
-            Capabilities::new(c(10.0), c(30.0), f64::NAN, vec![], vec![]),
+            Capabilities::new(c(10.0)?, c(30.0)?, f64::NAN, vec![], vec![]),
             Err(CapabilityError::InvalidCapabilities)
         );
+        Ok(())
     }
 
     #[test]
-    fn temperature_range_rejection() {
-        let caps = caps();
+    fn temperature_range_rejection() -> TestResult {
+        let caps = caps()?;
         assert_eq!(
-            caps.check_temperature(c(5.0)),
+            caps.check_temperature(c(5.0)?),
             Err(CapabilityError::TemperatureOutOfRange)
         );
         assert_eq!(
-            caps.check_temperature(c(40.0)),
+            caps.check_temperature(c(40.0)?),
             Err(CapabilityError::TemperatureOutOfRange)
         );
-        assert!(caps.check_temperature(c(7.0)).is_ok());
-        assert!(caps.check_temperature(c(35.0)).is_ok());
+        assert!(caps.check_temperature(c(7.0)?).is_ok());
+        assert!(caps.check_temperature(c(35.0)?).is_ok());
+        Ok(())
     }
 
     #[test]
-    fn temperature_step_rejection() {
-        let caps = caps();
-        assert!(caps.check_temperature(c(21.0)).is_ok());
-        assert!(caps.check_temperature(c(21.5)).is_ok());
+    fn temperature_step_rejection() -> TestResult {
+        let caps = caps()?;
+        assert!(caps.check_temperature(c(21.0)?).is_ok());
+        assert!(caps.check_temperature(c(21.5)?).is_ok());
         assert_eq!(
-            caps.check_temperature(c(21.3)),
+            caps.check_temperature(c(21.3)?),
             Err(CapabilityError::TemperatureOffStep)
         );
+        Ok(())
     }
 
     #[test]
-    fn band_setpoint_validated_on_both_ends() {
-        let caps = caps();
-        let ok = Setpoint::band(c(18.0), c(24.0)).expect("ordered");
+    fn band_setpoint_validated_on_both_ends() -> TestResult {
+        let caps = caps()?;
+        let ok = Setpoint::band(c(18.0)?, c(24.0)?)?;
         assert!(caps.check_setpoint(&ok).is_ok());
-        let high_too_high = Setpoint::band(c(18.0), c(40.0)).expect("ordered");
+        let high_too_high = Setpoint::band(c(18.0)?, c(40.0)?)?;
         assert_eq!(
             caps.check_setpoint(&high_too_high),
             Err(CapabilityError::TemperatureOutOfRange)
         );
+        Ok(())
     }
 
     #[test]
-    fn fan_capability_gating() {
-        let caps = caps();
+    fn fan_capability_gating() -> TestResult {
+        let caps = caps()?;
         assert!(caps.check_fan_mode(FanMode::Auto).is_ok());
         assert!(caps.check_fan_mode(FanMode::Low).is_ok());
         assert_eq!(
             caps.check_fan_mode(FanMode::Medium),
             Err(CapabilityError::UnsupportedFanMode)
         );
+        Ok(())
     }
 
     #[test]
-    fn preset_capability_gating() {
-        let caps = caps();
+    fn preset_capability_gating() -> TestResult {
+        let caps = caps()?;
         assert!(caps.check_preset(PresetMode::Eco).is_ok());
         assert_eq!(
             caps.check_preset(PresetMode::Boost),
             Err(CapabilityError::UnsupportedPreset)
         );
+        Ok(())
     }
 }
