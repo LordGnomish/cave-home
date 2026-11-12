@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
-//! Integration tests (against the public API) for the ESPHome native-API
+//! Integration tests (against the public API) for the `ESPHome` native-API
 //! semantic layer: the `message` type registry (api.proto IDs 1–29), the
 //! `hash::fnv1_hash` entity-key derivation, the `entity` data model, and the
 //! EN/DE/TR `label` descriptions. RED phase — these target items that DO NOT
@@ -14,6 +14,8 @@ use cave_home_esphome::entity::{EntityCategory, EntityInfo, EntityKind};
 use cave_home_esphome::hash::fnv1_hash;
 use cave_home_esphome::label::Lang;
 use cave_home_esphome::message::MessageType;
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 // ---------------------------------------------------------------------------
 // FNV-1 entity-key hash (esphome/core/helpers.cpp::fnv1_hash).
@@ -107,11 +109,12 @@ fn message_from_unknown_id_is_none() {
 }
 
 #[test]
-fn message_id_round_trips_for_whole_known_block() {
+fn message_id_round_trips_for_whole_known_block() -> TestResult {
     for id in 1..=29u32 {
-        let mt = MessageType::from_id(id).expect("1..=29 are all defined");
+        let mt = MessageType::from_id(id).ok_or("1..=29 are all defined")?;
         assert_eq!(mt.id(), id);
     }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
