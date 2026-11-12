@@ -150,7 +150,7 @@ impl ChimePolicy {
     /// the `[start, end)` half-open convention. Windows where `start > end`
     /// wrap past midnight.
     #[must_use]
-    pub fn in_quiet_hours(&self, hour: Hour) -> bool {
+    pub const fn in_quiet_hours(&self, hour: Hour) -> bool {
         match (self.quiet_start, self.quiet_end) {
             (Some(start), Some(end)) => {
                 let (s, e, h) = (start.get(), end.get(), hour.get());
@@ -174,7 +174,7 @@ impl ChimePolicy {
     /// the event is not a chiming event → motion-specific gates (per-event
     /// toggle, then quiet hours) → audible.
     #[must_use]
-    pub fn decide(&self, event: DoorbellEvent, hour: Hour) -> ChimeDecision {
+    pub const fn decide(&self, event: DoorbellEvent, hour: Hour) -> ChimeDecision {
         if !self.enabled {
             return Self::silent(ChimeReason::ChimingDisabled);
         }
@@ -223,8 +223,10 @@ impl ChimePolicy {
 mod tests {
     use super::*;
 
-    fn hr(h: u8) -> Hour {
-        Hour::new(h).expect("valid test hour")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn hr(h: u8) -> Result<Hour, HourError> {
+        Hour::new(h)
     }
 
     #[test]
@@ -236,99 +238,108 @@ mod tests {
     }
 
     #[test]
-    fn press_chimes_ding_dong_by_default() {
+    fn press_chimes_ding_dong_by_default() -> TestResult {
         let p = ChimePolicy::default();
-        let d = p.decide(DoorbellEvent::ButtonPressed, hr(14));
+        let d = p.decide(DoorbellEvent::ButtonPressed, hr(14)?);
         assert!(d.should_chime);
         assert_eq!(d.tone, ChimeTone::DingDong);
         assert_eq!(d.reason, ChimeReason::Audible);
+        Ok(())
     }
 
     #[test]
-    fn motion_chimes_soft_ping_by_default() {
+    fn motion_chimes_soft_ping_by_default() -> TestResult {
         let p = ChimePolicy::default();
-        let d = p.decide(DoorbellEvent::MotionDetected, hr(14));
+        let d = p.decide(DoorbellEvent::MotionDetected, hr(14)?);
         assert!(d.should_chime);
         assert_eq!(d.tone, ChimeTone::SoftPing);
+        Ok(())
     }
 
     #[test]
-    fn master_switch_off_silences_everything() {
+    fn master_switch_off_silences_everything() -> TestResult {
         let p = ChimePolicy::new(false, false, true, None, None);
-        let d = p.decide(DoorbellEvent::ButtonPressed, hr(14));
+        let d = p.decide(DoorbellEvent::ButtonPressed, hr(14)?);
         assert!(!d.should_chime);
         assert_eq!(d.tone, ChimeTone::Silent);
         assert_eq!(d.reason, ChimeReason::ChimingDisabled);
+        Ok(())
     }
 
     #[test]
-    fn do_not_disturb_silences_even_a_press() {
+    fn do_not_disturb_silences_even_a_press() -> TestResult {
         let p = ChimePolicy::new(true, true, true, None, None);
-        let d = p.decide(DoorbellEvent::ButtonPressed, hr(14));
+        let d = p.decide(DoorbellEvent::ButtonPressed, hr(14)?);
         assert!(!d.should_chime);
         assert_eq!(d.reason, ChimeReason::DoNotDisturb);
+        Ok(())
     }
 
     #[test]
-    fn motion_chime_can_be_turned_off_per_event() {
+    fn motion_chime_can_be_turned_off_per_event() -> TestResult {
         let p = ChimePolicy::new(true, false, false, None, None);
-        let motion = p.decide(DoorbellEvent::MotionDetected, hr(14));
+        let motion = p.decide(DoorbellEvent::MotionDetected, hr(14)?);
         assert!(!motion.should_chime);
         assert_eq!(motion.reason, ChimeReason::MotionChimeOff);
         // A press is unaffected by the motion toggle.
-        let press = p.decide(DoorbellEvent::ButtonPressed, hr(14));
+        let press = p.decide(DoorbellEvent::ButtonPressed, hr(14)?);
         assert!(press.should_chime);
+        Ok(())
     }
 
     #[test]
-    fn quiet_hours_same_day_window_hushes_motion_but_not_press() {
+    fn quiet_hours_same_day_window_hushes_motion_but_not_press() -> TestResult {
         // Quiet 1..6 (01:00..05:59).
-        let p = ChimePolicy::new(true, false, true, Some(hr(1)), Some(hr(6)));
-        assert!(p.in_quiet_hours(hr(1)));
-        assert!(p.in_quiet_hours(hr(5)));
-        assert!(!p.in_quiet_hours(hr(6)), "end is exclusive");
-        assert!(!p.in_quiet_hours(hr(0)));
+        let p = ChimePolicy::new(true, false, true, Some(hr(1)?), Some(hr(6)?));
+        assert!(p.in_quiet_hours(hr(1)?));
+        assert!(p.in_quiet_hours(hr(5)?));
+        assert!(!p.in_quiet_hours(hr(6)?), "end is exclusive");
+        assert!(!p.in_quiet_hours(hr(0)?));
 
-        let motion = p.decide(DoorbellEvent::MotionDetected, hr(3));
+        let motion = p.decide(DoorbellEvent::MotionDetected, hr(3)?);
         assert!(!motion.should_chime);
         assert_eq!(motion.reason, ChimeReason::QuietHours);
 
-        let press = p.decide(DoorbellEvent::ButtonPressed, hr(3));
+        let press = p.decide(DoorbellEvent::ButtonPressed, hr(3)?);
         assert!(press.should_chime, "a real visitor still rings at night");
+        Ok(())
     }
 
     #[test]
-    fn quiet_hours_wrapping_midnight() {
+    fn quiet_hours_wrapping_midnight() -> TestResult {
         // Quiet 22..7 (22:00 through 06:59), wrapping midnight.
-        let p = ChimePolicy::new(true, false, true, Some(hr(22)), Some(hr(7)));
-        assert!(p.in_quiet_hours(hr(22)));
-        assert!(p.in_quiet_hours(hr(23)));
-        assert!(p.in_quiet_hours(hr(0)));
-        assert!(p.in_quiet_hours(hr(6)));
-        assert!(!p.in_quiet_hours(hr(7)), "end is exclusive");
-        assert!(!p.in_quiet_hours(hr(12)));
-        assert!(!p.in_quiet_hours(hr(21)));
+        let p = ChimePolicy::new(true, false, true, Some(hr(22)?), Some(hr(7)?));
+        assert!(p.in_quiet_hours(hr(22)?));
+        assert!(p.in_quiet_hours(hr(23)?));
+        assert!(p.in_quiet_hours(hr(0)?));
+        assert!(p.in_quiet_hours(hr(6)?));
+        assert!(!p.in_quiet_hours(hr(7)?), "end is exclusive");
+        assert!(!p.in_quiet_hours(hr(12)?));
+        assert!(!p.in_quiet_hours(hr(21)?));
+        Ok(())
     }
 
     #[test]
-    fn quiet_hours_boundary_just_outside_window_chimes_motion() {
-        let p = ChimePolicy::new(true, false, true, Some(hr(22)), Some(hr(7)));
+    fn quiet_hours_boundary_just_outside_window_chimes_motion() -> TestResult {
+        let p = ChimePolicy::new(true, false, true, Some(hr(22)?), Some(hr(7)?));
         // 07:00 is the first hour back out of quiet hours.
-        let motion = p.decide(DoorbellEvent::MotionDetected, hr(7));
+        let motion = p.decide(DoorbellEvent::MotionDetected, hr(7)?);
         assert!(motion.should_chime);
         assert_eq!(motion.tone, ChimeTone::SoftPing);
+        Ok(())
     }
 
     #[test]
-    fn empty_quiet_window_is_never_quiet() {
+    fn empty_quiet_window_is_never_quiet() -> TestResult {
         // start == end -> empty window.
-        let p = ChimePolicy::new(true, false, true, Some(hr(3)), Some(hr(3)));
-        assert!(!p.in_quiet_hours(hr(3)));
-        assert!(!p.in_quiet_hours(hr(0)));
+        let p = ChimePolicy::new(true, false, true, Some(hr(3)?), Some(hr(3)?));
+        assert!(!p.in_quiet_hours(hr(3)?));
+        assert!(!p.in_quiet_hours(hr(0)?));
+        Ok(())
     }
 
     #[test]
-    fn household_actions_never_chime() {
+    fn household_actions_never_chime() -> TestResult {
         let p = ChimePolicy::default();
         for ev in [
             DoorbellEvent::CallAnswered,
@@ -336,9 +347,10 @@ mod tests {
             DoorbellEvent::CallEnded,
             DoorbellEvent::VisitorTimeout,
         ] {
-            let d = p.decide(ev, hr(14));
+            let d = p.decide(ev, hr(14)?);
             assert!(!d.should_chime);
             assert_eq!(d.reason, ChimeReason::NotAChimingEvent);
         }
+        Ok(())
     }
 }

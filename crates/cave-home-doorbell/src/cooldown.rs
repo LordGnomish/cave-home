@@ -45,7 +45,7 @@ impl Dedup {
 /// caller handing back a non-monotonic clock) is treated as "no time elapsed"
 /// and suppressed rather than panicking.
 #[must_use]
-pub fn dedup(last_accepted: Option<Tick>, now: Tick, cooldown: Tick) -> Dedup {
+pub const fn dedup(last_accepted: Option<Tick>, now: Tick, cooldown: Tick) -> Dedup {
     match last_accepted {
         None => Dedup::Accept(now),
         Some(prev) => {
@@ -83,7 +83,7 @@ impl CooldownGate {
 
     /// Offer a signal at `now`; advance the anchor and return `true` if it is
     /// accepted, `false` if suppressed.
-    pub fn offer(&mut self, now: Tick, cooldown: Tick) -> bool {
+    pub const fn offer(&mut self, now: Tick, cooldown: Tick) -> bool {
         match dedup(self.last_accepted, now, cooldown) {
             Dedup::Accept(t) => {
                 self.last_accepted = Some(t);
