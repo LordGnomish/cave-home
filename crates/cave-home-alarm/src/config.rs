@@ -73,7 +73,7 @@ impl PanelConfig {
     /// Returns [`ConfigError::ZeroTriggerTime`] if `trigger_time` is zero (a
     /// safety guard against a silent alarm) and [`ConfigError::DelayTooLong`]
     /// if any of the three durations exceeds [`PanelConfig::MAX_DELAY`].
-    pub fn new(
+    pub const fn new(
         exit_delay: Seconds,
         entry_delay: Seconds,
         trigger_time: Seconds,
@@ -169,6 +169,8 @@ impl PanelConfig {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn rejects_zero_trigger_time() {
         assert_eq!(
@@ -218,12 +220,12 @@ mod tests {
     }
 
     #[test]
-    fn accepts_zero_exit_and_entry_delay() {
+    fn accepts_zero_exit_and_entry_delay() -> TestResult {
         // A 0-second exit/entry delay (arm/trip is instant) is legitimate.
-        let cfg = PanelConfig::new(0, 0, 240, false, false, false, false)
-            .expect("zero exit/entry with positive trigger is valid");
+        let cfg = PanelConfig::new(0, 0, 240, false, false, false, false)?;
         assert_eq!(cfg.exit_delay(), 0);
         assert_eq!(cfg.entry_delay(), 0);
+        Ok(())
     }
 
     #[test]
@@ -237,8 +239,8 @@ mod tests {
     }
 
     #[test]
-    fn instant_zone_predicate() {
-        let cfg = PanelConfig::new(60, 30, 240, true, true, false, false).expect("valid");
+    fn instant_zone_predicate() -> TestResult {
+        let cfg = PanelConfig::new(60, 30, 240, true, true, false, false)?;
         assert!(
             cfg.is_instant_for(true, false),
             "home instant zone fires instantly"
@@ -248,5 +250,6 @@ mod tests {
             "night instant disabled here"
         );
         assert!(!cfg.is_instant_for(false, false));
+        Ok(())
     }
 }

@@ -244,7 +244,7 @@ impl CodeCredential {
 
     /// Clear a lock-out and reset the failure counter (e.g. after an
     /// administrator override or a cool-down timer elapses).
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.failures = 0;
     }
 }
@@ -252,6 +252,8 @@ impl CodeCredential {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[test]
     fn rejects_empty_and_short() {
@@ -261,10 +263,11 @@ mod tests {
     }
 
     #[test]
-    fn accepts_minimum_length() {
-        let c = UserCode::parse("1234").expect("4 digits is valid");
+    fn accepts_minimum_length() -> TestResult {
+        let c = UserCode::parse("1234")?;
         assert_eq!(c.len(), 4);
         assert!(!c.is_empty());
+        Ok(())
     }
 
     #[test]
@@ -287,85 +290,93 @@ mod tests {
     }
 
     #[test]
-    fn debug_never_reveals_digits() {
-        let c = UserCode::parse("4242").expect("valid");
+    fn debug_never_reveals_digits() -> TestResult {
+        let c = UserCode::parse("4242")?;
         let rendered = format!("{c:?}");
         assert!(
             !rendered.contains("4242"),
             "code leaked into Debug: {rendered}"
         );
         assert!(rendered.contains("len"));
+        Ok(())
     }
 
     #[test]
-    fn matching_codes_digest_equal() {
-        let a = UserCode::parse("9182").expect("valid").digest();
-        let b = UserCode::parse("9182").expect("valid").digest();
+    fn matching_codes_digest_equal() -> TestResult {
+        let a = UserCode::parse("9182")?.digest();
+        let b = UserCode::parse("9182")?.digest();
         assert!(a.ct_eq(&b));
+        Ok(())
     }
 
     #[test]
-    fn different_codes_digest_differ() {
-        let a = UserCode::parse("9182").expect("valid").digest();
-        let b = UserCode::parse("9183").expect("valid").digest();
+    fn different_codes_digest_differ() -> TestResult {
+        let a = UserCode::parse("9182")?.digest();
+        let b = UserCode::parse("9183")?.digest();
         assert!(!a.ct_eq(&b));
+        Ok(())
     }
 
     #[test]
-    fn order_sensitive_digest() {
-        let a = UserCode::parse("1234").expect("valid").digest();
-        let b = UserCode::parse("4321").expect("valid").digest();
+    fn order_sensitive_digest() -> TestResult {
+        let a = UserCode::parse("1234")?.digest();
+        let b = UserCode::parse("4321")?.digest();
         assert!(!a.ct_eq(&b), "digit order must matter");
+        Ok(())
     }
 
     #[test]
-    fn correct_code_accepted() {
-        let stored = UserCode::parse("2468").expect("valid");
+    fn correct_code_accepted() -> TestResult {
+        let stored = UserCode::parse("2468")?;
         let mut cred = CodeCredential::enroll(&stored);
-        let attempt = UserCode::parse("2468").expect("valid");
+        let attempt = UserCode::parse("2468")?;
         assert_eq!(cred.verify(&attempt), CodeVerdict::Accepted);
+        Ok(())
     }
 
     #[test]
-    fn wrong_code_rejected() {
-        let stored = UserCode::parse("2468").expect("valid");
+    fn wrong_code_rejected() -> TestResult {
+        let stored = UserCode::parse("2468")?;
         let mut cred = CodeCredential::enroll(&stored);
-        let attempt = UserCode::parse("0000").expect("valid");
+        let attempt = UserCode::parse("0000")?;
         assert_eq!(cred.verify(&attempt), CodeVerdict::Rejected);
         assert_eq!(cred.failure_count(), 1);
+        Ok(())
     }
 
     #[test]
-    fn correct_code_resets_failures() {
-        let stored = UserCode::parse("2468").expect("valid");
+    fn correct_code_resets_failures() -> TestResult {
+        let stored = UserCode::parse("2468")?;
         let mut cred = CodeCredential::enroll(&stored);
-        let wrong = UserCode::parse("0000").expect("valid");
-        let right = UserCode::parse("2468").expect("valid");
+        let wrong = UserCode::parse("0000")?;
+        let right = UserCode::parse("2468")?;
         assert_eq!(cred.verify(&wrong), CodeVerdict::Rejected);
         assert_eq!(cred.verify(&wrong), CodeVerdict::Rejected);
         assert_eq!(cred.failure_count(), 2);
         assert_eq!(cred.verify(&right), CodeVerdict::Accepted);
         assert_eq!(cred.failure_count(), 0);
+        Ok(())
     }
 
     #[test]
-    fn locks_out_after_threshold() {
-        let stored = UserCode::parse("2468").expect("valid");
+    fn locks_out_after_threshold() -> TestResult {
+        let stored = UserCode::parse("2468")?;
         let mut cred = CodeCredential::enroll_with_limit(&stored, 3);
-        let wrong = UserCode::parse("0000").expect("valid");
+        let wrong = UserCode::parse("0000")?;
         assert_eq!(cred.verify(&wrong), CodeVerdict::Rejected);
         assert_eq!(cred.verify(&wrong), CodeVerdict::Rejected);
         // Third failure crosses the threshold.
         assert_eq!(cred.verify(&wrong), CodeVerdict::LockedOut);
         assert!(cred.is_locked_out());
+        Ok(())
     }
 
     #[test]
-    fn locked_out_refuses_even_correct_code() {
-        let stored = UserCode::parse("2468").expect("valid");
+    fn locked_out_refuses_even_correct_code() -> TestResult {
+        let stored = UserCode::parse("2468")?;
         let mut cred = CodeCredential::enroll_with_limit(&stored, 2);
-        let wrong = UserCode::parse("0000").expect("valid");
-        let right = UserCode::parse("2468").expect("valid");
+        let wrong = UserCode::parse("0000")?;
+        let right = UserCode::parse("2468")?;
         cred.verify(&wrong);
         cred.verify(&wrong); // now locked out
         assert_eq!(
@@ -373,18 +384,20 @@ mod tests {
             CodeVerdict::LockedOut,
             "a brute-force lock-out must not be bypassed by guessing right after"
         );
+        Ok(())
     }
 
     #[test]
-    fn reset_clears_lockout() {
-        let stored = UserCode::parse("2468").expect("valid");
+    fn reset_clears_lockout() -> TestResult {
+        let stored = UserCode::parse("2468")?;
         let mut cred = CodeCredential::enroll_with_limit(&stored, 1);
-        let wrong = UserCode::parse("0000").expect("valid");
-        let right = UserCode::parse("2468").expect("valid");
+        let wrong = UserCode::parse("0000")?;
+        let right = UserCode::parse("2468")?;
         cred.verify(&wrong); // locked out
         assert!(cred.is_locked_out());
         cred.reset();
         assert!(!cred.is_locked_out());
         assert_eq!(cred.verify(&right), CodeVerdict::Accepted);
+        Ok(())
     }
 }
