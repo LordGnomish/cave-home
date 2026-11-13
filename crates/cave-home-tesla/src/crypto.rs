@@ -217,9 +217,12 @@ mod tests {
     // --- SHA-256: FIPS 180-4 / NIST published vectors ----------------------
 
     fn hex(bytes: &[u8]) -> String {
+        use std::fmt::Write as _;
+
         let mut s = String::with_capacity(bytes.len() * 2);
         for b in bytes {
-            s.push_str(&format!("{b:02x}"));
+            // Writing to a `String` cannot fail.
+            let _ = write!(s, "{b:02x}");
         }
         s
     }

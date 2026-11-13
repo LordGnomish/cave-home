@@ -271,6 +271,8 @@ mod tests {
     use crate::fleet_api::client::{FleetClient, ManualClock, MockTransport};
     use crate::models::OpMode;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     const LIVE: &str = r#"{"response":{"solar_power":3000,"battery_power":-1000,"load_power":2000,
         "grid_power":0,"percentage_charged":80,"energy_left":10800,"total_pack_energy":13500,
         "grid_status":"Active","island_status":"on_grid","storm_mode_active":false}}"#;
@@ -284,32 +286,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_power_flow_parses_and_caches() {
+    async fn get_power_flow_parses_and_caches() -> TestResult {
         let clock = Arc::new(ManualClock::new(0));
         let p = provider(MockTransport::new().route("/live_status", 200, LIVE), clock);
-        let f = p.get_power_flow().await.unwrap();
+        let f = p.get_power_flow().await?;
         assert!((f.pv_watts - 3000.0).abs() < f64::EPSILON);
         assert!(f.battery_charging());
         assert!((f.soc_percent - 80.0).abs() < f64::EPSILON);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn get_power_flow_served_from_cache_on_failure() {
+    async fn get_power_flow_served_from_cache_on_failure() -> TestResult {
         let clock = Arc::new(ManualClock::new(0));
         let t = MockTransport::new().route("/live_status", 200, LIVE);
         let p = provider(t, clock.clone());
         // Prime the cache.
-        let _ = p.get_power_flow().await.unwrap();
+        let _ = p.get_power_flow().await?;
         // Now the API goes dark; advance past the rate-limit but within TTL.
         p.client()
             .transport()
             .set_failure(Some("network down".into()));
         clock.advance(60_000);
-        let f = p.get_power_flow().await.unwrap();
+        let f = p.get_power_flow().await?;
         assert!(
             (f.pv_watts - 3000.0).abs() < f64::EPSILON,
             "served stale snapshot"
         );
+        Ok(())
     }
 
     #[tokio::test]
@@ -322,76 +326,87 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_power_flow_errors_when_cache_is_stale() {
+    async fn get_power_flow_errors_when_cache_is_stale() -> TestResult {
         let clock = Arc::new(ManualClock::new(0));
         let t = MockTransport::new().route("/live_status", 200, LIVE);
         let p = provider(t, clock.clone()).with_cache_ttl_secs(300);
-        let _ = p.get_power_flow().await.unwrap();
+        let _ = p.get_power_flow().await?;
         p.client().transport().set_failure(Some("down".into()));
         // Past both the rate limit and the 5-minute TTL.
         clock.advance(301_000);
         assert!(p.get_power_flow().await.is_err());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn get_status_merges_live_and_info() {
+    async fn get_status_merges_live_and_info() -> TestResult {
         let clock = Arc::new(ManualClock::new(0));
         let t =
             MockTransport::new()
                 .route("/live_status", 200, LIVE)
                 .route("/site_info", 200, INFO);
         let p = provider(t, clock);
-        let s = p.get_status().await.unwrap();
+        let s = p.get_status().await?;
         assert_eq!(s.name.as_deref(), Some("Cave"));
         assert!(s.grid_connected);
         assert_eq!(s.op_mode, Some(OpMode::SelfConsumption));
         assert_eq!(s.backup_reserve_percent, Some(20));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn set_backup_reserve_rejects_over_100() {
+    async fn set_backup_reserve_rejects_over_100() -> TestResult {
         let clock = Arc::new(ManualClock::new(0));
         let p = provider(MockTransport::new(), clock);
-        let err = p.set_backup_reserve(150).await.unwrap_err();
+        let err = p
+            .set_backup_reserve(150)
+            .await
+            .err()
+            .ok_or("expected an error")?;
         assert!(matches!(err, TeslaError::Validation(_)));
         // No request should have been attempted.
         assert_eq!(p.client().transport().request_count(), 0);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn set_backup_reserve_posts_command() {
+    async fn set_backup_reserve_posts_command() -> TestResult {
         let clock = Arc::new(ManualClock::new(0));
         let t = MockTransport::new().route("/backup", 200, r#"{"response":{"result":true}}"#);
         let p = provider(t, clock);
-        p.set_backup_reserve(25).await.unwrap();
+        p.set_backup_reserve(25).await?;
         let reqs = p.client().transport().requests.lock();
         assert!(
             reqs[0]
                 .body
                 .as_deref()
-                .unwrap()
+                .ok_or("request has no body")?
                 .contains("\"backup_reserve_percent\":25")
         );
+        drop(reqs);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn set_operation_mode_posts_wire_value() {
+    async fn set_operation_mode_posts_wire_value() -> TestResult {
         let clock = Arc::new(ManualClock::new(0));
         let t = MockTransport::new().route("/operation", 200, r#"{"response":{"result":true}}"#);
         let p = provider(t, clock);
-        p.set_operation_mode(OpMode::Backup).await.unwrap();
+        p.set_operation_mode(OpMode::Backup).await?;
         let reqs = p.client().transport().requests.lock();
         assert!(
             reqs[0]
                 .body
                 .as_deref()
-                .unwrap()
+                .ok_or("request has no body")?
                 .contains("\"default_real_mode\":\"backup\"")
         );
+        drop(reqs);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn get_history_maps_series() {
+    async fn get_history_maps_series() -> TestResult {
         let clock = Arc::new(ManualClock::new(0));
         let hist = r#"{"response":{"period":"day","time_series":[
             {"timestamp":"t0","solar_power":0,"battery_power":0,"grid_power":0},
@@ -399,8 +414,9 @@ mod tests {
         let t = MockTransport::new().route("/calendar_history", 200, hist);
         let p = provider(t, clock);
         let range = DateRange::last_hours(1_000_000, 24);
-        let h = p.get_history(range).await.unwrap();
+        let h = p.get_history(range).await?;
         assert_eq!(h.samples.len(), 2);
         assert!((h.peak_pv_watts() - 4200.0).abs() < f64::EPSILON);
+        Ok(())
     }
 }

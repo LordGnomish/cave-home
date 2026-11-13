@@ -276,25 +276,29 @@ fn encode_form(params: &[(&str, &str)]) -> String {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     // RFC 7636 Appendix B worked example.
     const RFC_VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
     const RFC_CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 
     #[test]
-    fn pkce_matches_rfc7636_vector() {
-        let pair = PkcePair::from_verifier(RFC_VERIFIER).unwrap();
+    fn pkce_matches_rfc7636_vector() -> TestResult {
+        let pair = PkcePair::from_verifier(RFC_VERIFIER)?;
         assert_eq!(pair.challenge(), RFC_CHALLENGE);
         assert_eq!(pair.method(), "S256");
+        Ok(())
     }
 
     #[test]
-    fn pkce_generate_from_entropy_is_valid_and_deterministic() {
-        let a = PkcePair::generate(&[0u8; 32]).unwrap();
-        let b = PkcePair::generate(&[0u8; 32]).unwrap();
+    fn pkce_generate_from_entropy_is_valid_and_deterministic() -> TestResult {
+        let a = PkcePair::generate(&[0u8; 32])?;
+        let b = PkcePair::generate(&[0u8; 32])?;
         assert_eq!(a.verifier(), b.verifier(), "same entropy -> same verifier");
         // 32 bytes of base64url(no pad) is 43 chars — the RFC minimum.
         assert_eq!(a.verifier().len(), 43);
-        assert!(!a.challenge().is_empty());
+        assert_ne!(a.challenge(), "");
+        Ok(())
     }
 
     #[test]
@@ -310,9 +314,9 @@ mod tests {
     }
 
     #[test]
-    fn authorize_url_carries_all_required_params() {
+    fn authorize_url_carries_all_required_params() -> TestResult {
         let cfg = AuthConfig::new("cave-home-client", "https://localhost:8443/callback");
-        let pkce = PkcePair::from_verifier(RFC_VERIFIER).unwrap();
+        let pkce = PkcePair::from_verifier(RFC_VERIFIER)?;
         let url = authorize_url(&cfg, "xyz-state", &pkce);
         assert!(url.starts_with("https://auth.tesla.com/oauth2/v3/authorize?"));
         assert!(url.contains("response_type=code"));
@@ -326,6 +330,7 @@ mod tests {
         assert!(url.contains("scope="));
         assert!(url.contains("energy_device_data"));
         assert!(url.contains("offline_access"));
+        Ok(())
     }
 
     #[test]
@@ -373,31 +378,32 @@ mod tests {
     }
 
     #[test]
-    fn parse_token_response_reads_fields() {
+    fn parse_token_response_reads_fields() -> TestResult {
         let json = r#"{
             "access_token": "AT-abc",
             "refresh_token": "RT-xyz",
             "expires_in": 28800,
             "token_type": "Bearer"
         }"#;
-        let resp = parse_token_response(json).unwrap();
+        let resp = parse_token_response(json)?;
         assert_eq!(resp.access_token, "AT-abc");
         assert_eq!(resp.refresh_token.as_deref(), Some("RT-xyz"));
         assert_eq!(resp.expires_in, 28800);
+        Ok(())
     }
 
     #[test]
-    fn token_set_tracks_expiry_against_supplied_clock() {
+    fn token_set_tracks_expiry_against_supplied_clock() -> TestResult {
         let resp = parse_token_response(
             r#"{"access_token":"AT","refresh_token":"RT","expires_in":3600,"token_type":"Bearer"}"#,
-        )
-        .unwrap();
+        )?;
         let set = TokenSet::from_response(&resp, 1_000);
         assert_eq!(set.expires_at_unix(), 4_600);
         assert!(!set.is_expired(2_000, 60));
         // Within the skew window it is treated as expired.
         assert!(set.is_expired(4_560, 60));
         assert!(set.is_expired(5_000, 0));
+        Ok(())
     }
 
     #[test]

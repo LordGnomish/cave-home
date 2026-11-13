@@ -400,6 +400,8 @@ mod tests {
     use super::super::endpoints::{EnergyEndpoint, HttpMethod};
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn rate_limiter_first_request_is_ready() {
         let rl = RateLimiter::with_interval_secs(30);
@@ -448,74 +450,72 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mock_transport_routes_and_logs_requests() {
+    async fn mock_transport_routes_and_logs_requests() -> TestResult {
         let t = MockTransport::new().route("/live_status", 200, r#"{"ok":true}"#);
         let resp = t
             .send(HttpRequest::get(
                 "https://x/api/1/energy_sites/1/live_status",
             ))
-            .await
-            .unwrap();
+            .await?;
         assert_eq!(resp.status, 200);
         assert_eq!(t.request_count(), 1);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn client_call_returns_ok_body() {
+    async fn client_call_returns_ok_body() -> TestResult {
         let t = MockTransport::new().route("/live_status", 200, r#"{"response":{}}"#);
         let client = FleetClient::new(t, Region::Europe).with_token("AT-123");
-        let resp = client
-            .call(&EnergyEndpoint::LiveStatus(1), 0)
-            .await
-            .unwrap();
+        let resp = client.call(&EnergyEndpoint::LiveStatus(1), 0).await?;
         assert_eq!(resp.status, 200);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn client_call_injects_bearer_header() {
+    async fn client_call_injects_bearer_header() -> TestResult {
         let t = MockTransport::new().route("/live_status", 200, "{}");
         let client = FleetClient::new(t, Region::Europe).with_token("AT-123");
-        client
-            .call(&EnergyEndpoint::LiveStatus(1), 0)
-            .await
-            .unwrap();
+        client.call(&EnergyEndpoint::LiveStatus(1), 0).await?;
         let reqs = client.transport().requests.lock();
         let auth = reqs[0]
             .headers
             .iter()
             .find(|(k, _)| k.eq_ignore_ascii_case("authorization"));
         assert_eq!(auth.map(|(_, v)| v.as_str()), Some("Bearer AT-123"));
+        drop(reqs);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn client_call_maps_non_2xx_to_error() {
+    async fn client_call_maps_non_2xx_to_error() -> TestResult {
         let t = MockTransport::new().route("/live_status", 500, "boom");
         let client = FleetClient::new(t, Region::Europe).with_token("AT");
         let err = client
             .call(&EnergyEndpoint::LiveStatus(1), 0)
             .await
-            .unwrap_err();
+            .err()
+            .ok_or("expected an error")?;
         assert!(matches!(err, TeslaError::Http { status: 500, .. }));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn client_call_enforces_rate_limit() {
+    async fn client_call_enforces_rate_limit() -> TestResult {
         let t = MockTransport::new().route("/live_status", 200, "{}");
         let client = FleetClient::new(t, Region::Europe).with_token("AT");
-        client
-            .call(&EnergyEndpoint::LiveStatus(1), 0)
-            .await
-            .unwrap();
+        client.call(&EnergyEndpoint::LiveStatus(1), 0).await?;
         // Second call to the same endpoint 1s later is throttled.
         let err = client
             .call(&EnergyEndpoint::LiveStatus(1), 1_000)
             .await
-            .unwrap_err();
+            .err()
+            .ok_or("expected an error")?;
         assert!(matches!(err, TeslaError::RateLimited { .. }));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn client_post_sets_method_and_body() {
+    async fn client_post_sets_method_and_body() -> TestResult {
         let t = MockTransport::new().route("/backup", 200, "{}");
         let client = FleetClient::new(t, Region::Europe).with_token("AT");
         client
@@ -526,21 +526,22 @@ mod tests {
                 },
                 0,
             )
-            .await
-            .unwrap();
+            .await?;
         let reqs = client.transport().requests.lock();
         assert_eq!(reqs[0].method, HttpMethod::Post);
         assert!(
             reqs[0]
                 .body
                 .as_deref()
-                .unwrap()
+                .ok_or("request has no body")?
                 .contains("backup_reserve_percent")
         );
+        drop(reqs);
+        Ok(())
     }
 
     #[tokio::test(start_paused = true)]
-    async fn send_with_retry_recovers_from_429() {
+    async fn send_with_retry_recovers_from_429() -> TestResult {
         // First response 429, then 200. Rate limit disabled (interval 0) so the
         // retry exercises the back-off path, not the limiter.
         let t = MockTransport::new();
@@ -555,14 +556,14 @@ mod tests {
             Backoff::new(10, 1_000),
             3,
         )
-        .await
-        .unwrap();
+        .await?;
         assert_eq!(resp.status, 200);
         assert_eq!(client.transport().request_count(), 2);
+        Ok(())
     }
 
     #[tokio::test(start_paused = true)]
-    async fn send_with_retry_gives_up_after_max() {
+    async fn send_with_retry_gives_up_after_max() -> TestResult {
         let t = MockTransport::new().route("/live_status", 503, "down");
         let client = FleetClient::with_rate_interval(t, Region::Europe, 0).with_token("AT");
         let clock = ManualClock::new(0);
@@ -574,9 +575,11 @@ mod tests {
             2,
         )
         .await
-        .unwrap_err();
+        .err()
+        .ok_or("expected an error")?;
         assert!(matches!(err, TeslaError::Http { status: 503, .. }));
         // initial try + 2 retries
         assert_eq!(client.transport().request_count(), 3);
+        Ok(())
     }
 }

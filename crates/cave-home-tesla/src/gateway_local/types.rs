@@ -58,6 +58,8 @@ pub struct SystemSoe {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     const AGGREGATES: &str = r#"{
       "site":    {"instant_power": 1200.0, "frequency": 50.0},
       "battery": {"instant_power": -1000.0, "energy_charged": 5000.0},
@@ -66,23 +68,25 @@ mod tests {
     }"#;
 
     #[test]
-    fn parse_aggregates() {
-        let a: MetersAggregates = serde_json::from_str(AGGREGATES).unwrap();
+    fn parse_aggregates() -> TestResult {
+        let a: MetersAggregates = serde_json::from_str(AGGREGATES)?;
         assert!((a.solar.instant_power - 2000.0).abs() < f64::EPSILON);
         assert!((a.battery.instant_power - -1000.0).abs() < f64::EPSILON);
         assert!((a.load.instant_power - 2200.0).abs() < f64::EPSILON);
         assert!((a.site.instant_power - 1200.0).abs() < f64::EPSILON);
+        Ok(())
     }
 
     #[test]
-    fn parse_soe() {
-        let s: SystemSoe = serde_json::from_str(r#"{"percentage": 56.5}"#).unwrap();
+    fn parse_soe() -> TestResult {
+        let s: SystemSoe = serde_json::from_str(r#"{"percentage": 56.5}"#)?;
         assert!((s.percentage - 56.5).abs() < f64::EPSILON);
+        Ok(())
     }
 
     #[test]
-    fn aggregates_map_to_power_flow_with_soc() {
-        let a: MetersAggregates = serde_json::from_str(AGGREGATES).unwrap();
+    fn aggregates_map_to_power_flow_with_soc() -> TestResult {
+        let a: MetersAggregates = serde_json::from_str(AGGREGATES)?;
         let f = a.power_flow(56.5);
         assert!((f.pv_watts - 2000.0).abs() < f64::EPSILON);
         assert!((f.grid_watts - 1200.0).abs() < f64::EPSILON);
@@ -91,5 +95,6 @@ mod tests {
         assert!((f.soc_percent - 56.5).abs() < f64::EPSILON);
         assert!(f.battery_charging());
         assert!(f.grid_importing());
+        Ok(())
     }
 }

@@ -137,16 +137,19 @@ mod tests {
     use super::*;
     use crate::fleet_api::client::MockTransport;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn login_body_carries_credentials() {
+    fn login_body_carries_credentials() -> TestResult {
         let body = login_body(&LoginRequest::installer_default("secret"));
-        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&body)?;
         assert_eq!(v["username"], "customer");
         assert_eq!(v["password"], "secret");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn get_power_flow_combines_aggregates_and_soe() {
+    async fn get_power_flow_combines_aggregates_and_soe() -> TestResult {
         let t = MockTransport::new()
             .route(
                 "/api/meters/aggregates",
@@ -156,10 +159,11 @@ mod tests {
             )
             .route("/api/system_status/soe", 200, r#"{"percentage":56.5}"#);
         let gw = GatewayClient::new(t, "https://192.168.1.10").with_token("tok");
-        let f = gw.get_power_flow().await.unwrap();
+        let f = gw.get_power_flow().await?;
         assert!((f.pv_watts - 2000.0).abs() < f64::EPSILON);
         assert!((f.soc_percent - 56.5).abs() < f64::EPSILON);
         assert!(f.battery_charging());
+        Ok(())
     }
 
     #[tokio::test]
@@ -172,17 +176,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn requests_target_the_gateway_base() {
+    async fn requests_target_the_gateway_base() -> TestResult {
         let t = MockTransport::new()
             .route("/api/meters/aggregates", 200, r#"{"site":{"instant_power":0},
                 "battery":{"instant_power":0},"load":{"instant_power":0},"solar":{"instant_power":0}}"#)
             .route("/api/system_status/soe", 200, r#"{"percentage":0}"#);
         let gw = GatewayClient::new(t, "https://powerwall.local").with_token("tok");
-        gw.get_power_flow().await.unwrap();
+        gw.get_power_flow().await?;
         let reqs = gw.transport().requests.lock();
         assert!(
             reqs.iter()
                 .all(|r| r.url.starts_with("https://powerwall.local"))
         );
+        drop(reqs);
+        Ok(())
     }
 }
