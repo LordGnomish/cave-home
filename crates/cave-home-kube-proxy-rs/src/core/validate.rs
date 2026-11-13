@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Validation of Services / EndpointSlices before they enter the decision core.
+//! Validation of Services / `EndpointSlices` before they enter the decision core.
 //!
 //! kube-proxy is tolerant of malformed objects (it logs and skips rather than
 //! crashing), so the core rejects bad input with a typed error instead of
@@ -10,7 +10,7 @@ use thiserror::Error;
 
 use crate::core::model::{Endpoint, EndpointSlice, Service, ServicePort, ServiceType};
 
-/// Why a Service / EndpointSlice was rejected by the decision core.
+/// Why a Service / `EndpointSlice` was rejected by the decision core.
 #[derive(Debug, Error, Clone, Eq, PartialEq)]
 pub enum ValidationError {
     #[error("service namespace/name must be non-empty")]
@@ -89,7 +89,7 @@ fn validate_port(key: &str, p: &ServicePort, ty: ServiceType) -> Result<(), Vali
 }
 
 /// Validate a Service. `Ok(())` means it is structurally sound enough to
-/// program (a *skipped* Service — headless / ExternalName — still validates
+/// program (a *skipped* Service — headless / `ExternalName` — still validates
 /// fine; skipping is a separate decision in the rule builder).
 ///
 /// # Errors

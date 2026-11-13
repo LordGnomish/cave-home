@@ -15,6 +15,8 @@ use cave_home_kube_proxy_rs::iptables::executor::MockExecutor;
 use cave_home_kube_proxy_rs::proxier::proxier::{Proxier, ProxierConfig};
 use cave_home_kube_proxy_rs::proxier::reconciler::BoundedFrequencyConfig;
 
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
 fn svc1() -> Service {
     Service {
         metadata: NamespacedName::new("ns1", "svc1"),
@@ -60,14 +62,14 @@ fn cfg() -> ProxierConfig {
 }
 
 #[tokio::test]
-async fn one_shot_sync_writes_expected_rules_to_executor() {
+async fn one_shot_sync_writes_expected_rules_to_executor() -> TestResult {
     let src = MockEventSource::new();
     src.push(WatchEvent::ServiceAdded(svc1()));
     src.push(WatchEvent::EndpointSliceAdded(slice1()));
     let exec = Arc::new(MockExecutor::new());
-    let proxier = Proxier::new(cfg(), Arc::new(src), exec.clone());
+    let proxier = Proxier::new(cfg(), &src, exec.clone());
 
-    proxier.sync_once().await.expect("sync ok");
+    proxier.sync_once().await?;
     let inputs = exec.recorded_inputs();
     assert!(!inputs.is_empty(), "executor should have been called");
     let rules = &inputs[0];
@@ -77,24 +79,26 @@ async fn one_shot_sync_writes_expected_rules_to_executor() {
         rules.contains("--to-destination 10.180.0.1:80"),
         "got:\n{rules}"
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn sync_with_no_services_emits_skeleton_only() {
+async fn sync_with_no_services_emits_skeleton_only() -> TestResult {
     let src = MockEventSource::new();
     let exec = Arc::new(MockExecutor::new());
-    let proxier = Proxier::new(cfg(), Arc::new(src), exec.clone());
+    let proxier = Proxier::new(cfg(), &src, exec.clone());
 
-    proxier.sync_once().await.expect("sync ok");
+    proxier.sync_once().await?;
     let rules = &exec.recorded_inputs()[0];
     assert!(rules.contains(":KUBE-SERVICES"));
     assert!(rules.contains("KUBE-MARK-MASQ"));
     // No KUBE-SVC- chain decl when no services.
     assert!(!rules.contains(":KUBE-SVC-"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn sync_propagates_executor_errors() {
+async fn sync_propagates_executor_errors() -> TestResult {
     let src = MockEventSource::new();
     let exec = Arc::new(MockExecutor::new());
     exec.set_next_error(
@@ -103,61 +107,62 @@ async fn sync_propagates_executor_errors() {
             stderr: "rule mismatch".into(),
         },
     );
-    let proxier = Proxier::new(cfg(), Arc::new(src), exec.clone());
+    let proxier = Proxier::new(cfg(), &src, exec.clone());
 
-    let err = proxier.sync_once().await.expect_err("must fail");
+    let err = proxier.sync_once().await.err().ok_or("must fail")?;
     assert!(matches!(
         err,
         cave_home_kube_proxy_rs::iptables::errors::ProxierError::IptablesRestoreFailed { .. }
     ));
+    Ok(())
 }
 
 #[tokio::test]
-async fn sync_after_service_delete_removes_service_chain() {
+async fn sync_after_service_delete_removes_service_chain() -> TestResult {
     let src = MockEventSource::new();
     src.push(WatchEvent::ServiceAdded(svc1()));
     src.push(WatchEvent::EndpointSliceAdded(slice1()));
     let exec = Arc::new(MockExecutor::new());
-    let proxier = Proxier::new(cfg(), Arc::new(src.clone()), exec.clone());
+    let proxier = Proxier::new(cfg(), &src, exec.clone());
 
-    proxier.sync_once().await.expect("ok");
+    proxier.sync_once().await?;
     src.push(WatchEvent::ServiceDeleted(svc1()));
-    proxier.sync_once().await.expect("ok");
+    proxier.sync_once().await?;
 
     let inputs = exec.recorded_inputs();
-    assert!(!inputs[0].is_empty());
+    assert_ne!(inputs[0], "");
     assert!(
         !inputs[1].contains("KUBE-SVC-XPGD46QRK7WJZT7O"),
         "second sync (after delete) should not declare svc1 chain:\n{}",
         inputs[1]
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn sync_is_deterministic_between_runs() {
+async fn sync_is_deterministic_between_runs() -> TestResult {
     let src1 = MockEventSource::new();
     src1.push(WatchEvent::ServiceAdded(svc1()));
     src1.push(WatchEvent::EndpointSliceAdded(slice1()));
     let exec1 = Arc::new(MockExecutor::new());
-    Proxier::new(cfg(), Arc::new(src1), exec1.clone())
+    Proxier::new(cfg(), &src1, exec1.clone())
         .sync_once()
-        .await
-        .expect("ok");
+        .await?;
 
     let src2 = MockEventSource::new();
     src2.push(WatchEvent::ServiceAdded(svc1()));
     src2.push(WatchEvent::EndpointSliceAdded(slice1()));
     let exec2 = Arc::new(MockExecutor::new());
-    Proxier::new(cfg(), Arc::new(src2), exec2.clone())
+    Proxier::new(cfg(), &src2, exec2.clone())
         .sync_once()
-        .await
-        .expect("ok");
+        .await?;
 
     assert_eq!(exec1.recorded_inputs()[0], exec2.recorded_inputs()[0]);
+    Ok(())
 }
 
 #[tokio::test]
-async fn sync_excludes_services_with_clusterip_none() {
+async fn sync_excludes_services_with_clusterip_none() -> TestResult {
     let src = MockEventSource::new();
     let mut headless = svc1();
     headless.metadata.name = "headless".into();
@@ -166,22 +171,23 @@ async fn sync_excludes_services_with_clusterip_none() {
     src.push(WatchEvent::ServiceAdded(svc1()));
     src.push(WatchEvent::EndpointSliceAdded(slice1()));
     let exec = Arc::new(MockExecutor::new());
-    let proxier = Proxier::new(cfg(), Arc::new(src), exec.clone());
+    let proxier = Proxier::new(cfg(), &src, exec.clone());
 
-    proxier.sync_once().await.expect("ok");
+    proxier.sync_once().await?;
     let rules = &exec.recorded_inputs()[0];
     assert!(rules.contains("KUBE-SVC-XPGD46QRK7WJZT7O"));
     assert!(!rules.contains("ns1/headless"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn reconciler_run_loop_processes_initial_events_and_calls_executor() {
+async fn reconciler_run_loop_processes_initial_events_and_calls_executor() -> TestResult {
     let src = MockEventSource::new();
     src.push(WatchEvent::ServiceAdded(svc1()));
     src.push(WatchEvent::EndpointSliceAdded(slice1()));
     src.close();
     let exec = Arc::new(MockExecutor::new());
-    let proxier = Proxier::new(cfg(), Arc::new(src), exec.clone());
+    let proxier = Proxier::new(cfg(), &src, exec.clone());
 
     // Run the loop with a short deadline — once the source is closed and
     // the deadline expires, the loop returns Ok(()).
@@ -189,15 +195,21 @@ async fn reconciler_run_loop_processes_initial_events_and_calls_executor() {
         let p = proxier.clone();
         async move { p.run_until(Duration::from_millis(150)).await }
     });
-    h.await.expect("join").expect("loop ok");
+    h.await??;
 
     let inputs = exec.recorded_inputs();
     assert!(!inputs.is_empty(), "expected at least one sync");
-    assert!(inputs.last().unwrap().contains("KUBE-SVC-XPGD46QRK7WJZT7O"));
+    assert!(
+        inputs
+            .last()
+            .ok_or("expected at least one sync")?
+            .contains("KUBE-SVC-XPGD46QRK7WJZT7O")
+    );
+    Ok(())
 }
 
 #[tokio::test]
-async fn reconciler_periodic_resync_fires_even_without_events() {
+async fn reconciler_periodic_resync_fires_even_without_events() -> TestResult {
     let src = MockEventSource::new();
     src.push(WatchEvent::ServiceAdded(svc1()));
     src.push(WatchEvent::EndpointSliceAdded(slice1()));
@@ -206,12 +218,9 @@ async fn reconciler_periodic_resync_fires_even_without_events() {
 
     let mut c = cfg();
     c.frequency.resync_period = Duration::from_millis(40);
-    let proxier = Proxier::new(c, Arc::new(src), exec.clone());
+    let proxier = Proxier::new(c, &src, exec.clone());
 
-    proxier
-        .run_until(Duration::from_millis(200))
-        .await
-        .expect("ok");
+    proxier.run_until(Duration::from_millis(200)).await?;
     // We expect ≥ 2 syncs over 200ms with a 40ms resync interval —
     // initial event-driven sync + at least one periodic resync.
     assert!(
@@ -219,4 +228,5 @@ async fn reconciler_periodic_resync_fires_even_without_events() {
         "expected ≥2 syncs, got {}",
         exec.recorded_inputs().len()
     );
+    Ok(())
 }

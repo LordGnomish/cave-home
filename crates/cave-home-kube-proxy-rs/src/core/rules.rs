@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Backend-agnostic proxy-rule IR + generation + incremental diff.
 //!
-//! kube-proxy's job is to turn (Services + EndpointSlices) into packet-
+//! kube-proxy's job is to turn (Services + `EndpointSlices`) into packet-
 //! forwarding rules, then keep the kernel in sync by applying only the *delta*
 //! on each change. We model that backend-independently:
 //!
-//! * [`ProxyRule`] — one frontend (VIP / NodePort / LB ingress + port) and the
+//! * [`ProxyRule`] — one frontend (VIP / `NodePort` / LB ingress + port) and the
 //!   set of backend targets it load-balances over, plus the selected
 //!   [`LoadBalanceMode`] and a [`RuleAction`] (forward vs. reject).
 //! * [`build_rules`] — the pure generator: Services + slices in, deterministic
@@ -32,7 +32,7 @@ pub enum Frontend {
     ClusterIp { ip: IpAddr, port: u16 },
     /// Per-node port (`0.0.0.0:nodePort`).
     NodePort { port: u16 },
-    /// LoadBalancer ingress IP (`ingressIP:port`).
+    /// `LoadBalancer` ingress IP (`ingressIP:port`).
     LoadBalancer { ip: IpAddr, port: u16 },
 }
 
@@ -170,7 +170,7 @@ pub struct ServiceInput<'a> {
 }
 
 /// Generate the full deterministic set of [`ProxyRule`]s for the given
-/// Services. Skipped Services (headless / ExternalName) produce no rules.
+/// Services. Skipped Services (headless / `ExternalName`) produce no rules.
 /// Output is sorted by [`ProxyRule::frontend_key`] for stable diffing.
 #[must_use]
 pub fn build_rules(inputs: &[ServiceInput<'_>], node: &NodeContext) -> Vec<ProxyRule> {

@@ -5,7 +5,7 @@
 //!         staging/src/k8s.io/api/core/v1/types.go
 //!
 //! Only the fields touched by the Phase 2 default plugin set are modelled.
-//! Larger surface (TopologySpread keys, preferred affinity, claims, resize
+//! Larger surface (`TopologySpread` keys, preferred affinity, claims, resize
 //! status, …) is deliberately deferred — see `parity.manifest.toml`.
 
 use std::collections::BTreeMap;
@@ -65,17 +65,12 @@ pub struct ResourceRequirements {
 // ---------- Container --------------------------------------------------------
 
 /// Upstream: `k8s.io/api/core/v1.Protocol`.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub enum Protocol {
+    #[default]
     Tcp,
     Udp,
     Sctp,
-}
-
-impl Default for Protocol {
-    fn default() -> Self {
-        Self::Tcp
-    }
 }
 
 /// Upstream: `k8s.io/api/core/v1.ContainerPort`.
@@ -223,16 +218,11 @@ pub struct Taint {
 }
 
 /// Upstream: `k8s.io/api/core/v1.TolerationOperator`.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub enum TolerationOperator {
+    #[default]
     Equal,
     Exists,
-}
-
-impl Default for TolerationOperator {
-    fn default() -> Self {
-        Self::Equal
-    }
 }
 
 /// Upstream: `k8s.io/api/core/v1.Toleration`.
@@ -287,19 +277,14 @@ pub struct PodSpec {
 }
 
 /// Upstream: `k8s.io/api/core/v1.PodPhase`.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub enum PodPhase {
+    #[default]
     Pending,
     Running,
     Succeeded,
     Failed,
     Unknown,
-}
-
-impl Default for PodPhase {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 /// Upstream: `k8s.io/api/core/v1.PodStatus` (subset).
@@ -328,7 +313,7 @@ impl Pod {
     /// Sum of `requests` across all containers for a single resource.
     ///
     /// Upstream: `pkg/scheduler/framework/types.go::calculateResource`
-    /// (single-resource fast path). Init-container max() is deferred.
+    /// (single-resource fast path). Init-container `max()` is deferred.
     #[must_use]
     pub fn sum_requests(&self, name: ResourceName) -> Quantity {
         let mut total = 0i64;
@@ -483,7 +468,7 @@ mod tests {
 
         let wrong_val = Toleration {
             value: "other".into(),
-            ..tol.clone()
+            ..tol
         };
         assert!(!wrong_val.tolerates(&taint));
     }

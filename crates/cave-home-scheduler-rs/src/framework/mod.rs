@@ -50,7 +50,7 @@ pub struct Status {
 
 impl Status {
     #[must_use]
-    pub fn success() -> Self {
+    pub const fn success() -> Self {
         Self {
             code: Code::Success,
             plugin: String::new(),
@@ -114,7 +114,7 @@ impl Status {
     }
 
     #[must_use]
-    pub fn is_success(&self) -> bool {
+    pub const fn is_success(&self) -> bool {
         matches!(self.code, Code::Success | Code::Skip)
     }
 
@@ -159,9 +159,9 @@ impl NodeScore {
 
 /// Upstream: `pkg/scheduler/framework/interface.go::PreFilterResult`.
 ///
-/// An optional restriction of the candidate node set produced by a PreFilter
+/// An optional restriction of the candidate node set produced by a `PreFilter`
 /// plugin. `node_names == None` means "no opinion — keep all nodes"; multiple
-/// PreFilter results are intersected.
+/// `PreFilter` results are intersected.
 #[derive(Debug, Clone, Default)]
 pub struct PreFilterResult {
     pub node_names: Option<std::collections::BTreeSet<String>>,
@@ -170,7 +170,7 @@ pub struct PreFilterResult {
 /// Upstream: `pkg/scheduler/framework/interface.go::PreEnqueuePlugin`.
 ///
 /// Runs before a pod is admitted to the active scheduling queue. Every
-/// registered PreEnqueue plugin must return [`Code::Success`] for the pod to
+/// registered `PreEnqueue` plugin must return [`Code::Success`] for the pod to
 /// become schedulable; if any returns a non-success status the pod is held out
 /// of the active queue (parked, gated) until a cluster event re-evaluates it.
 /// This is purely a gate — it never narrows nodes and runs entirely off the
@@ -184,7 +184,7 @@ pub trait PreEnqueuePlugin: Send + Sync {
 ///
 /// Provides the strict-weak ordering the active queue pops in: `less(a, b)`
 /// returns `true` when `a` should be scheduled before `b`. Exactly one
-/// QueueSort plugin is enabled per profile (upstream enforces this); the
+/// `QueueSort` plugin is enabled per profile (upstream enforces this); the
 /// built-in [`PrioritySort`](crate::plugins::PrioritySort) orders by descending
 /// `Pod.Spec.Priority`, ties broken by admission order (handled by the queue's
 /// sequence number, not the plugin).
@@ -196,7 +196,7 @@ pub trait QueueSortPlugin: Send + Sync {
 
 /// Upstream: `pkg/scheduler/framework/interface.go::PreFilterExtensions`.
 ///
-/// The optional incremental-update hook a PreFilter plugin exposes so the
+/// The optional incremental-update hook a `PreFilter` plugin exposes so the
 /// preemption machinery can evaluate a node *as if* a victim pod were removed
 /// (`remove_pod`) or an additional pod were added (`add_pod`) without recomputing
 /// the whole pod-level state from scratch. The plugin mutates its own slice of
@@ -290,10 +290,10 @@ pub trait ScorePlugin: Send + Sync {
 /// Upstream: `pkg/scheduler/framework/interface.go::PostFilterPlugin`.
 /// Used by Phase 2 only for preemption.
 ///
-/// The plugin receives the active [`PluginRegistry`] — upstream a PostFilter
+/// The plugin receives the active [`PluginRegistry`] — upstream a `PostFilter`
 /// plugin holds a `framework.Handle` it uses to re-run PreFilter/Filter while
 /// evaluating hypothetical evictions. Here that handle is the registry, so the
-/// preemptor can drive the real PreFilter (+ `PreFilterExtensions`) and Filter
+/// preemptor can drive the real `PreFilter` (+ `PreFilterExtensions`) and Filter
 /// plugins of the profile rather than a hardcoded list.
 pub trait PostFilterPlugin: Send + Sync {
     fn name(&self) -> &'static str;
@@ -313,7 +313,7 @@ pub trait PostFilterPlugin: Send + Sync {
 ///
 /// Runs in the binding cycle after a node is chosen: `reserve` claims runtime
 /// resources for the pod on that node; `unreserve` rolls the claim back if any
-/// later stage (Permit, PreBind, Bind) fails. Every Reserve that ran must be
+/// later stage (Permit, `PreBind`, Bind) fails. Every Reserve that ran must be
 /// Unreserved on failure, in reverse order.
 pub trait ReservePlugin: Send + Sync {
     fn name(&self) -> &'static str;

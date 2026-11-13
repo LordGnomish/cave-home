@@ -195,6 +195,8 @@ mod tests {
     use super::super::Region;
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn region_base_urls() {
         assert_eq!(
@@ -265,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn backup_reserve_is_a_post_with_body() {
+    fn backup_reserve_is_a_post_with_body() -> TestResult {
         let r = EnergyEndpoint::SetBackupReserve {
             site_id: 3,
             percent: 25,
@@ -273,13 +275,14 @@ mod tests {
         .request();
         assert_eq!(r.method, HttpMethod::Post);
         assert_eq!(r.path, "/api/1/energy_sites/3/backup");
-        let body = r.body.unwrap();
-        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let body = r.body.ok_or("request has no body")?;
+        let v: serde_json::Value = serde_json::from_str(&body)?;
         assert_eq!(v["backup_reserve_percent"], 25);
+        Ok(())
     }
 
     #[test]
-    fn operation_mode_post_body() {
+    fn operation_mode_post_body() -> TestResult {
         let r = EnergyEndpoint::SetOperationMode {
             site_id: 3,
             mode: "self_consumption",
@@ -287,20 +290,22 @@ mod tests {
         .request();
         assert_eq!(r.method, HttpMethod::Post);
         assert_eq!(r.path, "/api/1/energy_sites/3/operation");
-        let v: serde_json::Value = serde_json::from_str(&r.body.unwrap()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&r.body.ok_or("request has no body")?)?;
         assert_eq!(v["default_real_mode"], "self_consumption");
+        Ok(())
     }
 
     #[test]
-    fn storm_mode_post_body() {
+    fn storm_mode_post_body() -> TestResult {
         let r = EnergyEndpoint::SetStormMode {
             site_id: 3,
             enabled: true,
         }
         .request();
-        let v: serde_json::Value = serde_json::from_str(&r.body.unwrap()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&r.body.ok_or("request has no body")?)?;
         assert_eq!(v["enabled"], true);
         assert_eq!(r.path, "/api/1/energy_sites/3/storm_mode");
+        Ok(())
     }
 
     #[test]

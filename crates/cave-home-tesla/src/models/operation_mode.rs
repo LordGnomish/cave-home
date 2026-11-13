@@ -104,7 +104,7 @@ mod tests {
     #[test]
     fn friendly_labels_localised_and_jargon_free() {
         let label = OpMode::Backup.label(Lang::En);
-        assert!(!label.is_empty());
+        assert_ne!(label, "");
         // Different languages render differently.
         assert_ne!(
             OpMode::Backup.label(Lang::En),

@@ -3,7 +3,7 @@
 //! utilisation ratios are balanced.
 //!
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
-//!         pkg/scheduler/framework/plugins/noderesources/balanced_allocation.go
+//!         `pkg/scheduler/framework/plugins/noderesources/balanced_allocation.go`
 
 use crate::cache::NodeInfo;
 use crate::framework::{CycleState, MAX_NODE_SCORE, ScorePlugin, Status};
@@ -17,9 +17,9 @@ impl ScorePlugin for NodeResourcesBalancedAllocation {
     }
 
     /// Upstream formula (`balanced_allocation.go::computeScore`):
-    ///     fraction_i = (used_i + requested_i) / capacity_i
-    ///     mean       = avg(fraction_i)
-    ///     variance   = avg((fraction_i - mean)^2)
+    ///     `fraction_i` = (`used_i` + `requested_i`) / `capacity_i`
+    ///     mean       = `avg(fraction_i)`
+    ///     variance   = `avg((fraction_i` - mean)^2)
     ///     score      = (1 - variance) * 100
     ///
     /// Phase 2 considers only CPU and memory (matching `BalancedResources`
@@ -44,7 +44,9 @@ impl ScorePlugin for NodeResourcesBalancedAllocation {
         if fractions.is_empty() {
             return (0, Status::success());
         }
-        let mean: i64 = fractions.iter().sum::<i64>() / fractions.len() as i64;
+        // At most one fraction per scored resource, so the count fits an `i64`.
+        let count = i64::try_from(fractions.len()).unwrap_or(i64::MAX);
+        let mean: i64 = fractions.iter().sum::<i64>() / count;
         let var: i64 = fractions
             .iter()
             .map(|f| {
@@ -52,7 +54,7 @@ impl ScorePlugin for NodeResourcesBalancedAllocation {
                 d.saturating_mul(d) / 10_000
             })
             .sum::<i64>()
-            / fractions.len() as i64;
+            / count;
         // variance is in [0, 10_000]; map to score = (10_000 - variance) * 100 / 10_000.
         let score = ((10_000_i64 - var) * MAX_NODE_SCORE) / 10_000;
         (score.clamp(0, MAX_NODE_SCORE), Status::success())

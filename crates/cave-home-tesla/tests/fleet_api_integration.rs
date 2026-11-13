@@ -12,6 +12,8 @@ use cave_home_tesla::fleet_api::client::{FleetClient, ManualClock, MockTransport
 use cave_home_tesla::metrics::Metrics;
 use cave_home_tesla::{DateRange, EnergyProvider, OpMode, TeslaProvider};
 
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
 const LIVE: &str = r#"{"response":{"solar_power":4200,"battery_power":-1500,"load_power":1800,
     "grid_power":-900,"percentage_charged":88,"energy_left":11880,"total_pack_energy":13500,
     "grid_status":"Active","island_status":"on_grid","storm_mode_active":false,
@@ -39,9 +41,9 @@ fn provider() -> (TeslaProvider<MockTransport>, Arc<ManualClock>) {
 }
 
 #[tokio::test]
-async fn reads_power_flow_and_feeds_metrics() {
+async fn reads_power_flow_and_feeds_metrics() -> TestResult {
     let (p, _clock) = provider();
-    let flow = p.get_power_flow().await.unwrap();
+    let flow = p.get_power_flow().await?;
     assert!((flow.pv_watts - 4200.0).abs() < f64::EPSILON);
     assert!(flow.grid_exporting());
     assert!((flow.grid_export_watts() - 900.0).abs() < f64::EPSILON);
@@ -52,49 +54,55 @@ async fn reads_power_flow_and_feeds_metrics() {
     assert!(exposition.contains("tesla_pv_power_watts 4200"));
     assert!(exposition.contains("tesla_grid_export_watts 900"));
     assert!(exposition.contains("tesla_battery_soc_percent 88"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn reads_full_status() {
+async fn reads_full_status() -> TestResult {
     let (p, _clock) = provider();
-    let s = p.get_status().await.unwrap();
+    let s = p.get_status().await?;
     assert_eq!(s.name.as_deref(), Some("Cave"));
     assert!(s.grid_connected);
     assert_eq!(s.op_mode, Some(OpMode::Autonomous));
     assert_eq!(s.backup_reserve_percent, Some(20));
+    Ok(())
 }
 
 #[tokio::test]
-async fn commands_backup_reserve_and_mode() {
+async fn commands_backup_reserve_and_mode() -> TestResult {
     let (p, _clock) = provider();
-    p.set_backup_reserve(30).await.unwrap();
-    p.set_operation_mode(OpMode::SelfConsumption).await.unwrap();
+    p.set_backup_reserve(30).await?;
+    p.set_operation_mode(OpMode::SelfConsumption).await?;
     let reqs = p.client().transport().requests.lock();
     assert!(reqs.iter().any(|r| r.url.ends_with("/backup")));
     assert!(
         reqs.iter()
             .any(|r| r.body.as_deref().unwrap_or("").contains("self_consumption"))
     );
+    drop(reqs);
+    Ok(())
 }
 
 #[tokio::test]
-async fn reads_history_over_24h() {
+async fn reads_history_over_24h() -> TestResult {
     let (p, _clock) = provider();
     let range = DateRange::last_hours(1_000_000, 24);
-    let h = p.get_history(range).await.unwrap();
+    let h = p.get_history(range).await?;
     assert_eq!(h.samples.len(), 2);
     assert!((h.peak_pv_watts() - 6800.0).abs() < f64::EPSILON);
+    Ok(())
 }
 
 #[tokio::test]
-async fn serves_cache_through_a_cloud_blip() {
+async fn serves_cache_through_a_cloud_blip() -> TestResult {
     let (p, clock) = provider();
     // Prime, then knock the cloud over within the cache TTL.
-    let _ = p.get_power_flow().await.unwrap();
+    let _ = p.get_power_flow().await?;
     p.client()
         .transport()
         .set_failure(Some("cloud down".into()));
     clock.advance(60_000);
-    let flow = p.get_power_flow().await.unwrap();
+    let flow = p.get_power_flow().await?;
     assert!((flow.pv_watts - 4200.0).abs() < f64::EPSILON);
+    Ok(())
 }

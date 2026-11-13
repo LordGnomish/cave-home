@@ -10,6 +10,7 @@
 //! Empty buckets (gaps) produce **no** point; the downsampled series simply
 //! skips them. Detecting those gaps explicitly is [`crate::stats::find_gaps`].
 
+use crate::num::{f64_to_usize, usize_to_f64};
 use crate::sample::{Sample, Series};
 
 /// How to collapse the samples in one bucket to a single value.
@@ -48,7 +49,7 @@ impl Aggregator {
         let value = match self {
             Self::Mean => {
                 let sum: f64 = bucket.iter().map(Sample::value).sum();
-                sum / bucket.len() as f64
+                sum / usize_to_f64(bucket.len())
             }
             Self::Min => bucket
                 .iter()
@@ -59,7 +60,7 @@ impl Aggregator {
                 .map(Sample::value)
                 .fold(f64::NEG_INFINITY, f64::max),
             Self::Sum => bucket.iter().map(Sample::value).sum(),
-            Self::Count => bucket.len() as f64,
+            Self::Count => usize_to_f64(bucket.len()),
             Self::First => bucket.first().map_or(0.0, Sample::value),
             Self::Last => bucket.last().map_or(0.0, Sample::value),
             Self::Median => percentile(bucket, 50.0),
@@ -82,14 +83,16 @@ fn percentile(bucket: &[Sample], p: f64) -> f64 {
     }
     // Rank within [0, n-1] using the common "linear interpolation between
     // closest ranks" definition.
-    let rank = (p / 100.0) * (n - 1) as f64;
-    let lo = rank.floor() as usize;
-    let hi = rank.ceil() as usize;
+    let rank = (p / 100.0) * usize_to_f64(n - 1);
+    let lo = f64_to_usize(rank.floor());
+    let hi = f64_to_usize(rank.ceil());
     if lo == hi {
         return vals[lo];
     }
-    let frac = rank - lo as f64;
-    vals[lo] + (vals[hi] - vals[lo]) * frac
+    let frac = rank - usize_to_f64(lo);
+    // Plain multiply-then-add (not a fused `mul_add`), as before.
+    let step = (vals[hi] - vals[lo]) * frac;
+    vals[lo] + step
 }
 
 /// Downsample a series into fixed-width buckets, collapsing each non-empty
@@ -138,7 +141,7 @@ fn flush(out: &mut Vec<Sample>, bucket: &[Sample], start: Option<i64>, agg: Aggr
 /// The start timestamp of the half-open bucket `[k·w, (k+1)·w)` containing `t`,
 /// anchored at epoch 0 and correct for negative timestamps (floor division).
 #[must_use]
-pub fn bucket_start(t: i64, window: i64) -> i64 {
+pub const fn bucket_start(t: i64, window: i64) -> i64 {
     if window <= 0 {
         return t;
     }
@@ -149,16 +152,17 @@ pub fn bucket_start(t: i64, window: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sample::SampleError;
 
-    fn s(t: i64, v: f64) -> Sample {
-        Sample::new(t, v).expect("finite test sample")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn s(t: i64, v: f64) -> Result<Sample, SampleError> {
+        Sample::new(t, v)
     }
 
-    fn bucket(vals: &[f64]) -> Vec<Sample> {
-        vals.iter()
-            .enumerate()
-            .map(|(i, &v)| s(i as i64, v))
-            .collect()
+    fn bucket(vals: &[f64]) -> Result<Vec<Sample>, SampleError> {
+        // Ascending timestamps 0, 1, 2, … in input order.
+        (0_i64..).zip(vals).map(|(t, &v)| s(t, v)).collect()
     }
 
     #[test]
@@ -178,57 +182,67 @@ mod tests {
     }
 
     #[test]
-    fn mean_aggregator() {
-        assert_eq!(Aggregator::Mean.apply(&bucket(&[2.0, 4.0, 6.0])), Some(4.0));
+    fn mean_aggregator() -> TestResult {
+        assert_eq!(
+            Aggregator::Mean.apply(&bucket(&[2.0, 4.0, 6.0])?),
+            Some(4.0)
+        );
+        Ok(())
     }
 
     #[test]
-    fn min_max_aggregators() {
-        let b = bucket(&[3.0, -1.0, 7.0, 2.0]);
+    fn min_max_aggregators() -> TestResult {
+        let b = bucket(&[3.0, -1.0, 7.0, 2.0])?;
         assert_eq!(Aggregator::Min.apply(&b), Some(-1.0));
         assert_eq!(Aggregator::Max.apply(&b), Some(7.0));
+        Ok(())
     }
 
     #[test]
-    fn sum_and_count_aggregators() {
-        let b = bucket(&[1.0, 2.0, 3.0, 4.0]);
+    fn sum_and_count_aggregators() -> TestResult {
+        let b = bucket(&[1.0, 2.0, 3.0, 4.0])?;
         assert_eq!(Aggregator::Sum.apply(&b), Some(10.0));
         assert_eq!(Aggregator::Count.apply(&b), Some(4.0));
+        Ok(())
     }
 
     #[test]
-    fn first_and_last_aggregators() {
+    fn first_and_last_aggregators() -> TestResult {
         // bucket() stamps ascending timestamps, so first/last are by time.
-        let b = bucket(&[10.0, 20.0, 30.0]);
+        let b = bucket(&[10.0, 20.0, 30.0])?;
         assert_eq!(Aggregator::First.apply(&b), Some(10.0));
         assert_eq!(Aggregator::Last.apply(&b), Some(30.0));
+        Ok(())
     }
 
     #[test]
-    fn median_odd_and_even() {
+    fn median_odd_and_even() -> TestResult {
         assert_eq!(
-            Aggregator::Median.apply(&bucket(&[5.0, 1.0, 3.0])),
+            Aggregator::Median.apply(&bucket(&[5.0, 1.0, 3.0])?),
             Some(3.0)
         );
         // Even count: mean of the two middle (sorted: 1,3,5,7 -> (3+5)/2).
         assert_eq!(
-            Aggregator::Median.apply(&bucket(&[7.0, 1.0, 5.0, 3.0])),
+            Aggregator::Median.apply(&bucket(&[7.0, 1.0, 5.0, 3.0])?),
             Some(4.0)
         );
+        Ok(())
     }
 
     #[test]
-    fn p95_interpolates_between_ranks() {
+    fn p95_interpolates_between_ranks() -> TestResult {
         // 0..=100 step 1, n=101: rank = 0.95*100 = 95 exactly -> value 95.
-        let vals: Vec<f64> = (0..=100).map(|i| i as f64).collect();
-        assert_eq!(Aggregator::P95.apply(&bucket(&vals)), Some(95.0));
+        let vals: Vec<f64> = (0..=100).map(f64::from).collect();
+        assert_eq!(Aggregator::P95.apply(&bucket(&vals)?), Some(95.0));
+        Ok(())
     }
 
     #[test]
-    fn single_sample_percentiles_are_that_sample() {
-        let b = bucket(&[42.0]);
+    fn single_sample_percentiles_are_that_sample() -> TestResult {
+        let b = bucket(&[42.0])?;
         assert_eq!(Aggregator::Median.apply(&b), Some(42.0));
         assert_eq!(Aggregator::P95.apply(&b), Some(42.0));
+        Ok(())
     }
 
     #[test]
@@ -239,24 +253,26 @@ mod tests {
     }
 
     #[test]
-    fn downsample_buckets_by_window() {
+    fn downsample_buckets_by_window() -> TestResult {
         // Window 60. Bucket [0,60): 10,20 -> mean 15. Bucket [60,120): 40.
-        let series = Series::sorted(vec![s(0, 10.0), s(30, 20.0), s(70, 40.0)]);
+        let series = Series::sorted(vec![s(0, 10.0)?, s(30, 20.0)?, s(70, 40.0)?]);
         let down = downsample(&series, 60, Aggregator::Mean);
         assert_eq!(down.len(), 2);
-        assert_eq!(down.samples()[0], s(0, 15.0));
-        assert_eq!(down.samples()[1], s(60, 40.0));
+        assert_eq!(down.samples()[0], s(0, 15.0)?);
+        assert_eq!(down.samples()[1], s(60, 40.0)?);
+        Ok(())
     }
 
     #[test]
-    fn downsample_skips_empty_buckets_no_fabricated_points() {
+    fn downsample_skips_empty_buckets_no_fabricated_points() -> TestResult {
         // Samples at t=0 and t=180 with window 60: buckets [60,120) and
         // [120,180) are empty and MUST NOT appear in the output.
-        let series = Series::sorted(vec![s(0, 1.0), s(180, 9.0)]);
+        let series = Series::sorted(vec![s(0, 1.0)?, s(180, 9.0)?]);
         let down = downsample(&series, 60, Aggregator::Mean);
         assert_eq!(down.len(), 2);
         let starts: Vec<i64> = down.samples().iter().map(Sample::timestamp).collect();
         assert_eq!(starts, vec![0, 180]);
+        Ok(())
     }
 
     #[test]
@@ -266,17 +282,19 @@ mod tests {
     }
 
     #[test]
-    fn downsample_nonpositive_window_returns_input() {
-        let series = Series::sorted(vec![s(0, 1.0), s(5, 2.0)]);
+    fn downsample_nonpositive_window_returns_input() -> TestResult {
+        let series = Series::sorted(vec![s(0, 1.0)?, s(5, 2.0)?]);
         assert_eq!(downsample(&series, 0, Aggregator::Mean), series);
         assert_eq!(downsample(&series, -10, Aggregator::Mean), series);
+        Ok(())
     }
 
     #[test]
-    fn downsample_last_picks_latest_in_each_bucket() {
-        let series = Series::sorted(vec![s(0, 1.0), s(10, 2.0), s(70, 3.0)]);
+    fn downsample_last_picks_latest_in_each_bucket() -> TestResult {
+        let series = Series::sorted(vec![s(0, 1.0)?, s(10, 2.0)?, s(70, 3.0)?]);
         let down = downsample(&series, 60, Aggregator::Last);
         assert_eq!(down.samples()[0].value(), 2.0);
         assert_eq!(down.samples()[1].value(), 3.0);
+        Ok(())
     }
 }

@@ -2,7 +2,7 @@
 //! `TaintToleration` — reject nodes whose `NoSchedule` taints lack a toleration.
 //!
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
-//!         pkg/scheduler/framework/plugins/tainttoleration/taint_toleration.go
+//!         `pkg/scheduler/framework/plugins/tainttoleration/taint_toleration.go`
 
 use crate::cache::NodeInfo;
 use crate::framework::{CycleState, FilterPlugin, Status};

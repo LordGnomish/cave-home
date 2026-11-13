@@ -131,6 +131,8 @@ impl TeslaConfig {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn default_is_disabled_with_placeholders() {
         let c = TeslaConfig::default();
@@ -156,9 +158,11 @@ mod tests {
 
     #[test]
     fn enabled_requires_site_id() {
-        let mut c = TeslaConfig::default();
-        c.enabled = true;
-        c.client_id = "real-client".into();
+        let mut c = TeslaConfig {
+            enabled: true,
+            client_id: "real-client".into(),
+            ..Default::default()
+        };
         assert!(c.validate().is_err());
         c.site_id = Some(123);
         assert!(c.validate().is_ok());
@@ -166,14 +170,16 @@ mod tests {
 
     #[test]
     fn validate_rejects_unknown_region() {
-        let mut c = TeslaConfig::default();
-        c.region = "mars".into();
+        let c = TeslaConfig {
+            region: "mars".into(),
+            ..Default::default()
+        };
         assert!(c.validate().is_err());
         assert_eq!(c.region(), None);
     }
 
     #[test]
-    fn deserialises_from_json() {
+    fn deserialises_from_json() -> TestResult {
         let json = r#"{
             "enabled": true,
             "region": "eu",
@@ -182,19 +188,24 @@ mod tests {
             "redirect_uri": "https://localhost:8443/callback",
             "rate_limit_secs": 30
         }"#;
-        let c: TeslaConfig = serde_json::from_str(json).unwrap();
+        let c: TeslaConfig = serde_json::from_str(json)?;
         assert!(c.enabled);
         assert_eq!(c.site_id, Some(987_654_321));
         assert_eq!(c.region(), Some(Region::Europe));
         assert!(c.validate().is_ok());
+        Ok(())
     }
 
     #[test]
-    fn gateway_config_optional() {
+    fn gateway_config_optional() -> TestResult {
         let c = TeslaConfig::default();
         assert!(c.gateway.is_none());
         let json = r#"{"gateway":{"host":"https://192.168.1.10"}}"#;
-        let c: TeslaConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(c.gateway.unwrap().host, "https://192.168.1.10");
+        let c: TeslaConfig = serde_json::from_str(json)?;
+        assert_eq!(
+            c.gateway.ok_or("gateway config missing")?.host,
+            "https://192.168.1.10"
+        );
+        Ok(())
     }
 }

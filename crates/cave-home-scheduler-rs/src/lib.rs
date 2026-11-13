@@ -12,13 +12,13 @@
 //!   `NodePorts`, `VolumeRestrictions`, `TaintToleration`, `NodeAffinity`.
 //! * Score plugins  — `NodeResourcesBalancedAllocation`, `LeastRequested`,
 //!   `ImageLocality`.
-//! * `DefaultPreemption` PostFilter plugin (priority-based).
+//! * `DefaultPreemption` `PostFilter` plugin (priority-based).
 //! * Priority `SchedulingQueue` with active + backoff sub-queues, an
 //!   `unschedulablePods` set, event-driven `MoveAllToActiveOrBackoffQueue`
 //!   (driven by `ClusterEvent`s), leftover flush, and a blocking `pop_wait`.
 //! * `SchedulerCache` + `NodeInfo` aggregation + assumed-pod tracking.
 //! * The full framework extension chain (all 9 points) — `PreFilter → Filter →
-//!   PostFilter → PreScore → Score(+`NormalizeScore`)` (scheduling) and
+//!   PostFilter → PreScore → Score(+``NormalizeScore``)` (scheduling) and
 //!   `Reserve → Permit → PreBind → Bind → PostBind` with `Unreserve` rollback
 //!   (binding). `Bind` is a real extension point: registered `BindPlugin`s run
 //!   in order, the first non-`Skip` owns the bind, else the built-in

@@ -103,6 +103,8 @@ mod tests {
 
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn secret_debug_is_redacted() {
         let s = Secret::new("super-secret-token");
@@ -123,26 +125,28 @@ mod tests {
     }
 
     #[test]
-    fn secret_serialises_transparently() {
+    fn secret_serialises_transparently() -> TestResult {
         let s = Secret::new("tok");
-        assert_eq!(serde_json::to_string(&s).unwrap(), "\"tok\"");
-        let back: Secret = serde_json::from_str("\"tok\"").unwrap();
+        assert_eq!(serde_json::to_string(&s)?, "\"tok\"");
+        let back: Secret = serde_json::from_str("\"tok\"")?;
         assert_eq!(back.expose(), "tok");
+        Ok(())
     }
 
     #[test]
-    fn credentials_roundtrip_json() {
+    fn credentials_roundtrip_json() -> TestResult {
         let c = Credentials {
             access_token: Secret::new("AT"),
             refresh_token: Secret::new("RT"),
             expires_at_unix: 4_600,
             region: "eu".into(),
         };
-        let json = c.to_json().unwrap();
-        let back = Credentials::from_json(&json).unwrap();
+        let json = c.to_json()?;
+        let back = Credentials::from_json(&json)?;
         assert_eq!(back.access_token.expose(), "AT");
         assert_eq!(back.expires_at_unix, 4_600);
         assert_eq!(back.region, "eu");
+        Ok(())
     }
 
     #[test]

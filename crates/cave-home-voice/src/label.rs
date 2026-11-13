@@ -19,22 +19,22 @@ pub enum Lang {
 
 impl Lang {
     /// Every language the engine ships with, in a stable order.
-    pub const ALL: [Lang; 3] = [Lang::En, Lang::De, Lang::Tr];
+    pub const ALL: [Self; 3] = [Self::En, Self::De, Self::Tr];
 
     /// The lower-case BCP-47 primary subtag (`"en"`, `"de"`, `"tr"`).
     #[must_use]
     pub const fn code(self) -> &'static str {
         match self {
-            Lang::En => "en",
-            Lang::De => "de",
-            Lang::Tr => "tr",
+            Self::En => "en",
+            Self::De => "de",
+            Self::Tr => "tr",
         }
     }
 
     /// Parse a BCP-47-ish tag (`"en"`, `"EN"`, `"de-DE"`, `"tr_TR"`) into a
     /// [`Lang`]. Returns [`None`] for anything cave-home does not speak yet.
     #[must_use]
-    pub fn parse(tag: &str) -> Option<Lang> {
+    pub fn parse(tag: &str) -> Option<Self> {
         let primary = tag
             .trim()
             .split(['-', '_'])
@@ -42,9 +42,9 @@ impl Lang {
             .unwrap_or("")
             .to_ascii_lowercase();
         match primary.as_str() {
-            "en" => Some(Lang::En),
-            "de" => Some(Lang::De),
-            "tr" => Some(Lang::Tr),
+            "en" => Some(Self::En),
+            "de" => Some(Self::De),
+            "tr" => Some(Self::Tr),
             _ => None,
         }
     }

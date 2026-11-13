@@ -55,14 +55,14 @@ pub enum Decision {
 impl Decision {
     /// Whether the command may proceed without any further checks.
     #[must_use]
-    pub fn is_allowed(self) -> bool {
-        matches!(self, Decision::Allow)
+    pub const fn is_allowed(self) -> bool {
+        matches!(self, Self::Allow)
     }
 }
 
 /// Classify an action by how risky it is to perform.
 #[must_use]
-pub fn sensitivity(action: &IntentAction) -> Sensitivity {
+pub const fn sensitivity(action: &IntentAction) -> Sensitivity {
     match action {
         IntentAction::SetLight { .. }
         | IntentAction::SetBrightness { .. }
@@ -85,7 +85,7 @@ pub fn sensitivity(action: &IntentAction) -> Sensitivity {
 /// | Child               | Allow   | Confirm   | Deny       |
 /// | Guest               | Allow   | Deny      | Deny       |
 #[must_use]
-pub fn authorize(action: &IntentAction, level: PermissionLevel) -> Decision {
+pub const fn authorize(action: &IntentAction, level: PermissionLevel) -> Decision {
     use Decision::{Allow, Confirm, Deny};
     use PermissionLevel::{Admin, Child, Guest, Member};
     use Sensitivity::{Restricted, Routine, Sensitive};

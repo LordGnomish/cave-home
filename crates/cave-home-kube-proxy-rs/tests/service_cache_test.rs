@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! ServiceCache tests — upstream `pkg/proxy/serviceconfig.go` +
+//! `ServiceCache` tests — upstream `pkg/proxy/serviceconfig.go` +
 //! `pkg/proxy/servicechangetracker.go` event-driven semantics.
 
 use cave_home_kube_proxy_rs::api::{NamespacedName, Protocol, Service, ServicePort, ServiceType};
 use cave_home_kube_proxy_rs::cache::service_cache::ServiceCache;
+use cave_home_kube_proxy_rs::iptables::types::ServicePortInfo;
 
 fn make_svc(ns: &str, name: &str, ip: &str) -> Service {
     Service {
@@ -22,14 +23,14 @@ fn make_svc(ns: &str, name: &str, ip: &str) -> Service {
 fn empty_cache_yields_empty_snapshot() {
     let cache = ServiceCache::new();
     let snap = cache.snapshot();
-    assert!(snap.is_empty());
+    assert_eq!(snap, [] as [ServicePortInfo; 0]);
 }
 
 #[test]
 fn add_inserts_service_into_snapshot() {
     let cache = ServiceCache::new();
     let svc = make_svc("ns1", "svc1", "10.20.30.41");
-    cache.add(svc.clone());
+    cache.add(svc);
     let snap = cache.snapshot();
     assert_eq!(snap.len(), 1);
     assert_eq!(snap[0].name.namespaced_name.to_string(), "ns1/svc1");
@@ -52,7 +53,7 @@ fn delete_removes_entry() {
     let svc = make_svc("ns1", "svc1", "10.0.0.1");
     cache.add(svc.clone());
     cache.delete(&svc);
-    assert!(cache.snapshot().is_empty());
+    assert_eq!(cache.snapshot(), [] as [ServicePortInfo; 0]);
 }
 
 #[test]

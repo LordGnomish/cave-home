@@ -147,6 +147,7 @@ struct QueueSignal {
     closed: AtomicBool,
 }
 
+#[derive(Default)]
 struct PriorityQueueInner {
     active: BinaryHeap<HeapEntry>,
     backoff: Vec<QueuedPodInfo>,
@@ -161,19 +162,6 @@ struct PriorityQueueInner {
     /// `MoveAllToActiveOrBackoffQueue` ran. `None` means "never" (upstream's
     /// `-1` sentinel).
     move_request_cycle: Option<u64>,
-}
-
-impl Default for PriorityQueueInner {
-    fn default() -> Self {
-        Self {
-            active: BinaryHeap::new(),
-            backoff: Vec::new(),
-            unschedulable: HashMap::new(),
-            seq: 0,
-            scheduling_cycle: 0,
-            move_request_cycle: None,
-        }
-    }
 }
 
 /// Upstream: `pkg/scheduler/backend/queue/scheduling_queue.go::
@@ -402,7 +390,7 @@ impl SchedulingQueue for PriorityQueue {
                 if info.ready_at_ms() <= now_ms {
                     Some(info)
                 } else {
-                    still.push(info.clone());
+                    still.push(info);
                     None
                 }
             })
@@ -430,10 +418,12 @@ mod tests {
     use crate::types::{ObjectMeta, Pod};
 
     fn pod(name: &str, priority: i32) -> Pod {
-        let mut p = Pod::default();
-        p.metadata = ObjectMeta {
-            name: name.into(),
-            uid: name.into(),
+        let mut p = Pod {
+            metadata: ObjectMeta {
+                name: name.into(),
+                uid: name.into(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         p.spec.priority = priority;
@@ -441,41 +431,44 @@ mod tests {
     }
 
     #[test]
-    fn pop_returns_higher_priority_first() {
+    fn pop_returns_higher_priority_first() -> TestResult {
         let q = PriorityQueue::new();
         q.add(pod("low", 1));
         q.add(pod("high", 100));
         q.add(pod("mid", 50));
 
-        assert_eq!(q.pop().unwrap().pod.metadata.name, "high");
-        assert_eq!(q.pop().unwrap().pod.metadata.name, "mid");
-        assert_eq!(q.pop().unwrap().pod.metadata.name, "low");
+        assert_eq!(q.pop().ok_or("queue is empty")?.pod.metadata.name, "high");
+        assert_eq!(q.pop().ok_or("queue is empty")?.pod.metadata.name, "mid");
+        assert_eq!(q.pop().ok_or("queue is empty")?.pod.metadata.name, "low");
         assert!(q.pop().is_none());
+        Ok(())
     }
 
     #[test]
-    fn ties_broken_by_admission_order() {
+    fn ties_broken_by_admission_order() -> TestResult {
         let q = PriorityQueue::new();
         q.add(pod("first", 5));
         q.add(pod("second", 5));
-        assert_eq!(q.pop().unwrap().pod.metadata.name, "first");
-        assert_eq!(q.pop().unwrap().pod.metadata.name, "second");
+        assert_eq!(q.pop().ok_or("queue is empty")?.pod.metadata.name, "first");
+        assert_eq!(q.pop().ok_or("queue is empty")?.pod.metadata.name, "second");
+        Ok(())
     }
 
     #[test]
-    fn len_counts_active_and_backoff() {
+    fn len_counts_active_and_backoff() -> TestResult {
         let q = PriorityQueue::new();
         q.add(pod("a", 0));
         q.add(pod("b", 0));
         assert_eq!(q.len(), 2);
 
-        let info = q.pop().unwrap();
+        let info = q.pop().ok_or("queue is empty")?;
         q.add_unschedulable(info);
         assert_eq!(q.len(), 2);
+        Ok(())
     }
 
     #[test]
-    fn flush_backoff_promotes_due_pods() {
+    fn flush_backoff_promotes_due_pods() -> TestResult {
         let q = PriorityQueue::new();
         let mut info = QueuedPodInfo::new(pod("retry", 0));
         info.last_attempt_ms = 0;
@@ -485,21 +478,31 @@ mod tests {
         q.flush_backoff(0);
         assert!(q.pop().is_none()); // not yet
         q.flush_backoff(2_000);
-        assert_eq!(q.pop().unwrap().pod.metadata.name, "retry");
+        assert_eq!(q.pop().ok_or("queue is empty")?.pod.metadata.name, "retry");
+        Ok(())
     }
 
     use crate::framework::{ActionType, ClusterEvent, Gvk};
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[tokio::test]
-    async fn pop_wait_resolves_when_pod_added_later() {
+    async fn pop_wait_resolves_when_pod_added_later() -> TestResult {
         let q = PriorityQueue::new();
         let q2 = q.clone();
         let handle = tokio::spawn(async move { q2.pop_wait().await });
         // Let the spawned task park inside pop_wait before we add.
         tokio::task::yield_now().await;
         q.add(pod("late", 0));
-        let got = handle.await.unwrap();
-        assert_eq!(got.unwrap().pod.metadata.name, "late");
+        let got = handle.await?;
+        assert_eq!(
+            got.ok_or("queue closed before a pod arrived")?
+                .pod
+                .metadata
+                .name,
+            "late"
+        );
+        Ok(())
     }
 
     #[tokio::test]
@@ -510,16 +513,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pop_wait_drains_remaining_pods_after_close() {
+    async fn pop_wait_drains_remaining_pods_after_close() -> TestResult {
         let q = PriorityQueue::new();
         q.add(pod("a", 0));
         q.close();
-        assert_eq!(q.pop_wait().await.unwrap().pod.metadata.name, "a");
+        assert_eq!(
+            q.pop_wait()
+                .await
+                .ok_or("queue closed before a pod arrived")?
+                .pod
+                .metadata
+                .name,
+            "a"
+        );
         assert!(q.pop_wait().await.is_none());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn pop_wait_wakes_on_backoff_flush() {
+    async fn pop_wait_wakes_on_backoff_flush() -> TestResult {
         let q = PriorityQueue::new();
         let cycle = q.scheduling_cycle();
         // Park a pod in backoff (1s window).
@@ -530,7 +542,16 @@ mod tests {
         let handle = tokio::spawn(async move { q2.pop_wait().await });
         tokio::task::yield_now().await;
         q.flush_backoff(2_000); // backoff elapsed -> active + wake
-        assert_eq!(handle.await.unwrap().unwrap().pod.metadata.name, "retry");
+        assert_eq!(
+            handle
+                .await?
+                .ok_or("queue closed before a pod arrived")?
+                .pod
+                .metadata
+                .name,
+            "retry"
+        );
+        Ok(())
     }
 
     #[test]
@@ -546,7 +567,7 @@ mod tests {
     }
 
     #[test]
-    fn move_all_reactivates_matching_unschedulable_pod() {
+    fn move_all_reactivates_matching_unschedulable_pod() -> TestResult {
         let q = PriorityQueue::new();
         let cycle = q.scheduling_cycle();
         q.add_unschedulable_if_not_present(QueuedPodInfo::new(pod("p", 0)), cycle, 0);
@@ -554,15 +575,16 @@ mod tests {
         let ev = ClusterEvent::new(Gvk::Node, ActionType::ADD);
         q.move_all_to_active_or_backoff_queue(&ev, 2_000);
         assert_eq!(q.unschedulable_count(), 0);
-        assert_eq!(q.pop().unwrap().pod.metadata.name, "p");
+        assert_eq!(q.pop().ok_or("queue is empty")?.pod.metadata.name, "p");
+        Ok(())
     }
 
     #[test]
-    fn add_after_concurrent_move_routes_to_backoff_not_unschedulable() {
+    fn add_after_concurrent_move_routes_to_backoff_not_unschedulable() -> TestResult {
         let q = PriorityQueue::new();
         q.add(pod("p", 0));
         // Pop captures the scheduling cycle this pod is being scheduled in.
-        let popped = q.pop().unwrap();
+        let popped = q.pop().ok_or("queue is empty")?;
         let pod_cycle = q.scheduling_cycle();
         // A cluster event arrives WHILE the pod is mid-flight.
         let ev = ClusterEvent::new(Gvk::Node, ActionType::ADD);
@@ -572,6 +594,7 @@ mod tests {
         q.add_unschedulable_if_not_present(popped, pod_cycle, 0);
         assert_eq!(q.unschedulable_count(), 0);
         assert_eq!(q.backoff_count(), 1);
+        Ok(())
     }
 
     #[test]
@@ -588,7 +611,7 @@ mod tests {
     }
 
     #[test]
-    fn move_all_to_backoff_when_pod_is_backing_off() {
+    fn move_all_to_backoff_when_pod_is_backing_off() -> TestResult {
         let q = PriorityQueue::new();
         let cycle = q.scheduling_cycle();
         // First failed attempt at t=0 → attempts=1, backoff window = 1s.
@@ -601,7 +624,8 @@ mod tests {
         assert_eq!(q.backoff_count(), 1);
         // After its backoff elapses it surfaces to active.
         q.flush_backoff(2_000);
-        assert_eq!(q.pop().unwrap().pod.metadata.name, "p");
+        assert_eq!(q.pop().ok_or("queue is empty")?.pod.metadata.name, "p");
+        Ok(())
     }
 
     #[test]
@@ -628,7 +652,7 @@ mod tests {
         assert_eq!(info3.ready_at_ms(), 10_000); // capped at 10s
     }
 
-    /// A QueueSort plugin that ignores priority and orders by pod name
+    /// A `QueueSort` plugin that ignores priority and orders by pod name
     /// (lexicographically ascending → the earliest name pops first). Used to
     /// prove the heap ordering really routes through the plugin, not the old
     /// hardcoded priority field.
@@ -643,26 +667,31 @@ mod tests {
     }
 
     #[test]
-    fn custom_queue_sort_overrides_priority_ordering() {
+    fn custom_queue_sort_overrides_priority_ordering() -> TestResult {
         let q = PriorityQueue::with_queue_sort(Arc::new(ByName));
         // Highest priority is "zeta", but ByName pops alphabetically.
         q.add(pod("zeta", 100));
         q.add(pod("alpha", 1));
         q.add(pod("mu", 50));
-        assert_eq!(q.pop().unwrap().pod.metadata.name, "alpha");
-        assert_eq!(q.pop().unwrap().pod.metadata.name, "mu");
-        assert_eq!(q.pop().unwrap().pod.metadata.name, "zeta");
+        assert_eq!(q.pop().ok_or("queue is empty")?.pod.metadata.name, "alpha");
+        assert_eq!(q.pop().ok_or("queue is empty")?.pod.metadata.name, "mu");
+        assert_eq!(q.pop().ok_or("queue is empty")?.pod.metadata.name, "zeta");
+        Ok(())
     }
 
     #[test]
-    fn default_queue_sort_is_priority_then_admission_order() {
+    fn default_queue_sort_is_priority_then_admission_order() -> TestResult {
         // Default PrioritySort: priority desc, then FIFO among equals.
         let q = PriorityQueue::new();
         q.add(pod("first5", 5));
         q.add(pod("high", 9));
         q.add(pod("second5", 5));
-        assert_eq!(q.pop().unwrap().pod.metadata.name, "high");
-        assert_eq!(q.pop().unwrap().pod.metadata.name, "first5");
-        assert_eq!(q.pop().unwrap().pod.metadata.name, "second5");
+        assert_eq!(q.pop().ok_or("queue is empty")?.pod.metadata.name, "high");
+        assert_eq!(q.pop().ok_or("queue is empty")?.pod.metadata.name, "first5");
+        assert_eq!(
+            q.pop().ok_or("queue is empty")?.pod.metadata.name,
+            "second5"
+        );
+        Ok(())
     }
 }

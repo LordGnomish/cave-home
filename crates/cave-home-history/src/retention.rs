@@ -13,7 +13,7 @@
 //! engine (Phase 1b, ADR-023). No clock here — "now" is supplied by the caller.
 
 use crate::aggregate::Aggregator;
-use crate::sample::{Sample, Series};
+use crate::sample::Series;
 
 /// One rung of a retention ladder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -162,9 +162,12 @@ impl Partitioned {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sample::{Sample, SampleError};
 
-    fn s(t: i64, v: f64) -> Sample {
-        Sample::new(t, v).expect("finite test sample")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn s(t: i64, v: f64) -> Result<Sample, SampleError> {
+        Sample::new(t, v)
     }
 
     // A realistic ladder, in seconds: raw 7d, 1-min for 30d, 1-hr for 1y.
@@ -249,34 +252,36 @@ mod tests {
     }
 
     #[test]
-    fn partition_splits_a_series_three_ways() {
+    fn partition_splits_a_series_three_ways() -> TestResult {
         let now = 1_000_000_000;
         let series = Series::sorted(vec![
-            s(now - DAY, 1.0),       // raw
-            s(now - 14 * DAY, 2.0),  // 1-min rollup
-            s(now - 100 * DAY, 3.0), // 1-hr rollup
-            s(now - 730 * DAY, 4.0), // evict
+            s(now - DAY, 1.0)?,       // raw
+            s(now - 14 * DAY, 2.0)?,  // 1-min rollup
+            s(now - 100 * DAY, 3.0)?, // 1-hr rollup
+            s(now - 730 * DAY, 4.0)?, // evict
         ]);
         let parts = ladder().partition(&series, now);
         assert_eq!(parts.keep_raw.len(), 1);
         assert_eq!(parts.roll_up.len(), 2);
         assert_eq!(parts.evict.len(), 1);
         assert_eq!(parts.evict.samples()[0].value(), 4.0);
+        Ok(())
     }
 
     #[test]
-    fn partition_then_roll_up_downsamples() {
+    fn partition_then_roll_up_downsamples() -> TestResult {
         let now = 1_000_000_000;
         // Two old samples 30s apart in the same minute-bucket, both inside the
         // 1-min rollup tier (~20 days old). now - 20*DAY is a multiple of 60,
         // so both land in bucket [now-20*DAY, now-20*DAY+60).
         let base = crate::aggregate::bucket_start(now - 20 * DAY, 60);
-        let series = Series::sorted(vec![s(base, 10.0), s(base + 30, 20.0)]);
+        let series = Series::sorted(vec![s(base, 10.0)?, s(base + 30, 20.0)?]);
         let parts = ladder().partition(&series, now);
         assert_eq!(parts.roll_up.len(), 2);
         let rolled = parts.rolled(60, Aggregator::Mean);
         assert_eq!(rolled.len(), 1);
         assert_eq!(rolled.samples()[0].value(), 15.0);
+        Ok(())
     }
 
     fn p_classify(ts: i64, now: i64) -> Disposition {

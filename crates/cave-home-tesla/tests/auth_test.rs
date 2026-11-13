@@ -8,13 +8,15 @@ use cave_home_tesla::fleet_api::auth::{
     refresh_body, token_exchange_body,
 };
 
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
 // RFC 7636 Appendix B worked example.
 const RFC_VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
 const RFC_CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 
 #[test]
-fn full_pkce_authorize_then_exchange() {
-    let pkce = PkcePair::from_verifier(RFC_VERIFIER).unwrap();
+fn full_pkce_authorize_then_exchange() -> TestResult {
+    let pkce = PkcePair::from_verifier(RFC_VERIFIER)?;
     assert_eq!(pkce.challenge(), RFC_CHALLENGE);
 
     let cfg = AuthConfig::new("cave-home-energy", "https://localhost:8443/callback");
@@ -36,11 +38,11 @@ fn full_pkce_authorize_then_exchange() {
 
     let resp = parse_token_response(
         r#"{"access_token":"AT","refresh_token":"RT","expires_in":28800,"token_type":"Bearer"}"#,
-    )
-    .unwrap();
+    )?;
     let set = TokenSet::from_response(&resp, 1_000);
     assert_eq!(set.expires_at_unix(), 29_800);
     assert!(!set.is_expired(2_000, 60));
+    Ok(())
 }
 
 #[test]
@@ -51,8 +53,9 @@ fn refresh_round_uses_stored_refresh_token() {
 }
 
 #[test]
-fn generated_pkce_is_rfc_compliant() {
-    let pair = PkcePair::generate(&[7u8; 48]).unwrap();
+fn generated_pkce_is_rfc_compliant() -> TestResult {
+    let pair = PkcePair::generate(&[7u8; 48])?;
     assert!(pair.verifier().len() >= 43);
-    assert!(!pair.challenge().is_empty());
+    assert_ne!(pair.challenge(), "");
+    Ok(())
 }

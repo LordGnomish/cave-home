@@ -101,12 +101,15 @@ mod tests {
     use super::*;
     use crate::fleet_api::types::{Envelope, HistorySeries};
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn daterange_validates_order() {
+    fn daterange_validates_order() -> TestResult {
         assert!(DateRange::new(100, 200).is_ok());
         assert!(DateRange::new(200, 100).is_err());
-        let r = DateRange::new(100, 250).unwrap();
+        let r = DateRange::new(100, 250)?;
         assert_eq!(r.duration_secs(), 150);
+        Ok(())
     }
 
     #[test]
@@ -124,33 +127,31 @@ mod tests {
     }
 
     #[test]
-    fn maps_from_history_series() {
+    fn maps_from_history_series() -> TestResult {
         let json = r#"{"response":{"period":"day","time_series":[
             {"timestamp":"t0","solar_power":0,"battery_power":500,"grid_power":-500},
             {"timestamp":"t1","solar_power":4000,"battery_power":-1500,"grid_power":0}
         ]}}"#;
-        let wire = serde_json::from_str::<Envelope<HistorySeries>>(json)
-            .unwrap()
-            .response;
+        let wire = serde_json::from_str::<Envelope<HistorySeries>>(json)?.response;
         let h = HistoryData::from(&wire);
         assert_eq!(h.period, "day");
         assert_eq!(h.samples.len(), 2);
         assert_eq!(h.samples[1].timestamp, "t1");
         assert!((h.samples[1].pv_watts - 4000.0).abs() < f64::EPSILON);
         assert!((h.samples[0].grid_watts - -500.0).abs() < f64::EPSILON);
+        Ok(())
     }
 
     #[test]
-    fn peak_pv_finds_the_max() {
+    fn peak_pv_finds_the_max() -> TestResult {
         let json = r#"{"response":{"period":"day","time_series":[
             {"timestamp":"t0","solar_power":1000,"battery_power":0,"grid_power":0},
             {"timestamp":"t1","solar_power":4200,"battery_power":0,"grid_power":0}
         ]}}"#;
-        let wire = serde_json::from_str::<Envelope<HistorySeries>>(json)
-            .unwrap()
-            .response;
+        let wire = serde_json::from_str::<Envelope<HistorySeries>>(json)?.response;
         let h = HistoryData::from(&wire);
         assert!((h.peak_pv_watts() - 4200.0).abs() < f64::EPSILON);
+        Ok(())
     }
 
     #[test]

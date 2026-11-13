@@ -2,11 +2,11 @@
 //! End-to-end scheduler integration tests.
 //!
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
-//!         pkg/scheduler/scheduler_test.go (slice covered by Phase 2).
+//!         `pkg/scheduler/scheduler_test.go` (slice covered by Phase 2).
 
 use std::sync::Arc;
 
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::time::Duration;
 
 use tokio::sync::Notify;
@@ -18,6 +18,8 @@ use cave_home_scheduler_rs::{
     PostBindPlugin, Quantity, ReservePlugin, ResourceName, Scheduler, SchedulingQueue, Status,
     Taint, TaintEffect, Toleration, TolerationOperator,
 };
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 fn node(name: &str, cpu_m: i64, mem_b: i64) -> Node {
     let mut n = Node::default();
@@ -54,23 +56,24 @@ fn pod(name: &str, cpu_m: i64, mem_b: i64) -> Pod {
 }
 
 #[tokio::test]
-async fn end_to_end_single_pod_single_node_binds() {
+async fn end_to_end_single_pod_single_node_binds() -> TestResult {
     let src = Arc::new(InMemorySource::new());
     let sink = Arc::new(InMemorySink::new());
     src.add_node(node("n1", 1000, 4096));
     src.add_pod(pod("hello", 100, 256));
 
     let sched = Scheduler::new(src.clone(), sink.clone());
-    sched.sync().await.unwrap();
-    sched.run_once().await.unwrap();
+    sched.sync().await?;
+    sched.run_once().await?;
 
     assert_eq!(sink.binds(), vec![("default/hello".into(), "n1".into())]);
     let events = sink.events();
     assert!(events.iter().any(|(_, r, _)| r == "Scheduled"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn end_to_end_node_selector_routes_pod() {
+async fn end_to_end_node_selector_routes_pod() -> TestResult {
     let src = Arc::new(InMemorySource::new());
     let sink = Arc::new(InMemorySink::new());
 
@@ -86,16 +89,17 @@ async fn end_to_end_node_selector_routes_pod() {
     src.add_pod(p);
 
     let sched = Scheduler::new(src.clone(), sink.clone());
-    sched.sync().await.unwrap();
-    sched.run_once().await.unwrap();
+    sched.sync().await?;
+    sched.run_once().await?;
     assert_eq!(
         sink.binds(),
         vec![("default/zone-a-only".into(), "zone-b".into())]
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn end_to_end_required_node_affinity_routes_pod() {
+async fn end_to_end_required_node_affinity_routes_pod() -> TestResult {
     let src = Arc::new(InMemorySource::new());
     let sink = Arc::new(InMemorySink::new());
 
@@ -123,13 +127,14 @@ async fn end_to_end_required_node_affinity_routes_pod() {
     src.add_pod(p);
 
     let sched = Scheduler::new(src.clone(), sink.clone());
-    sched.sync().await.unwrap();
-    sched.run_once().await.unwrap();
+    sched.sync().await?;
+    sched.run_once().await?;
     assert_eq!(sink.binds(), vec![("default/edge".into(), "a".into())]);
+    Ok(())
 }
 
 #[tokio::test]
-async fn end_to_end_taint_blocks_untolerated_pod() {
+async fn end_to_end_taint_blocks_untolerated_pod() -> TestResult {
     let src = Arc::new(InMemorySource::new());
     let sink = Arc::new(InMemorySink::new());
 
@@ -143,13 +148,17 @@ async fn end_to_end_taint_blocks_untolerated_pod() {
     src.add_pod(pod("a", 100, 256));
 
     let sched = Scheduler::new(src.clone(), sink.clone());
-    sched.sync().await.unwrap();
-    sched.run_once().await.unwrap();
-    assert!(sink.binds().is_empty());
+    sched.sync().await?;
+    sched.run_once().await?;
+    assert_eq!(
+        sink.binds(),
+        [] as [(std::string::String, std::string::String); 0]
+    );
+    Ok(())
 }
 
 #[tokio::test]
-async fn end_to_end_tolerated_taint_allows_bind() {
+async fn end_to_end_tolerated_taint_allows_bind() -> TestResult {
     let src = Arc::new(InMemorySource::new());
     let sink = Arc::new(InMemorySink::new());
 
@@ -170,16 +179,17 @@ async fn end_to_end_tolerated_taint_allows_bind() {
     src.add_pod(p);
 
     let sched = Scheduler::new(src.clone(), sink.clone());
-    sched.sync().await.unwrap();
-    sched.run_once().await.unwrap();
+    sched.sync().await?;
+    sched.run_once().await?;
     assert_eq!(
         sink.binds(),
         vec![("default/workload".into(), "gpu".into())]
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn end_to_end_preemption_nominates_node_when_only_lower_priority_pods_block() {
+async fn end_to_end_preemption_nominates_node_when_only_lower_priority_pods_block() -> TestResult {
     // A node already saturated by a low-priority pod cannot fit a new
     // high-priority pod on the Filter pass; PostFilter (DefaultPreemption)
     // must nominate the node by evicting the lower-priority occupant, and the
@@ -205,10 +215,10 @@ async fn end_to_end_preemption_nominates_node_when_only_lower_priority_pods_bloc
     sched.cache.add_node(node("n1", 1000, 4096));
     let mut bound = pod("occupant", 800, 256);
     bound.spec.node_name = "n1".into();
-    sched.cache.add_pod(bound).unwrap();
+    sched.cache.add_pod(bound)?;
 
-    sched.sync().await.unwrap();
-    sched.run_once().await.unwrap();
+    sched.sync().await?;
+    sched.run_once().await?;
 
     // No bind for the important pod yet — it was nominated via preemption.
     assert!(
@@ -224,10 +234,11 @@ async fn end_to_end_preemption_nominates_node_when_only_lower_priority_pods_bloc
         "expected a Preempted event, got {:?}",
         sink.events()
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn end_to_end_backoff_flush_requeues_unschedulable_pod() {
+async fn end_to_end_backoff_flush_requeues_unschedulable_pod() -> TestResult {
     // An unschedulable pod is moved to the backoff sub-queue; flushing the
     // backoff after its ready time promotes it back to active so a later
     // cycle can retry. This exercises the queue's exponential-backoff
@@ -238,21 +249,28 @@ async fn end_to_end_backoff_flush_requeues_unschedulable_pod() {
     src.add_pod(pod("huge", 5_000, 1));
 
     let sched = Scheduler::new(src.clone(), sink.clone());
-    sched.sync().await.unwrap();
+    sched.sync().await?;
     // First attempt fails -> pod lands in backoff (queue len stays 1).
-    sched.run_once().await.unwrap();
-    assert!(sink.binds().is_empty());
+    sched.run_once().await?;
+    assert_eq!(
+        sink.binds(),
+        [] as [(std::string::String, std::string::String); 0]
+    );
     assert_eq!(sched.queue.len(), 1);
     // Nothing is active yet, so a second run_once finds an empty active queue.
-    assert!(sched.run_once().await.unwrap().is_none());
+    assert!(sched.run_once().await?.is_none());
     // Flush backoff well past the 1s initial window -> pod returns to active.
     sched.queue.flush_backoff(60_000);
-    let outcome = sched.run_once().await.unwrap();
+    let outcome = sched.run_once().await?;
     assert!(
         outcome.is_some(),
         "flushed pod should be popped and retried"
     );
-    assert_eq!(outcome.unwrap().pod_full_name, "default/huge");
+    assert_eq!(
+        outcome.ok_or("no scheduling cycle ran")?.pod_full_name,
+        "default/huge"
+    );
+    Ok(())
 }
 
 // ---------- Event-driven Scheduler::run loop (informer-driven e2e) ----------
@@ -279,7 +297,6 @@ impl ReservePlugin for RecReserve {
     fn reserve(&self, _: &mut CycleState, pod: &Pod, node: &str) -> Status {
         self.0
             .lock()
-            .unwrap()
             .push(format!("reserve:{}:{node}", pod.metadata.name));
         Status::success()
     }
@@ -295,13 +312,12 @@ impl PostBindPlugin for RecPostBind {
     fn post_bind(&self, _: &mut CycleState, pod: &Pod, node: &str) {
         self.0
             .lock()
-            .unwrap()
             .push(format!("postbind:{}:{node}", pod.metadata.name));
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn run_loop_binds_pod_via_pod_informer_and_full_binding_cycle() {
+async fn run_loop_binds_pod_via_pod_informer_and_full_binding_cycle() -> TestResult {
     // Drive the *real* event loop end to end: a pod arrives purely through the
     // pod-watch stream, is popped by the run() loop, scheduled, and driven all
     // the way through Reserve → … → Bind → PostBind onto a preloaded node.
@@ -327,7 +343,7 @@ async fn run_loop_binds_pod_via_pod_informer_and_full_binding_cycle() {
 
     assert!(bound, "pod was not bound through the run() loop");
     assert_eq!(sink.binds(), vec![("default/live".into(), "n1".into())]);
-    let log = log.lock().unwrap().clone();
+    let log = log.lock().clone();
     assert!(
         log.contains(&"reserve:live:n1".to_string()),
         "Reserve must run in the live binding cycle: {log:?}"
@@ -336,6 +352,7 @@ async fn run_loop_binds_pod_via_pod_informer_and_full_binding_cycle() {
         log.contains(&"postbind:live:n1".to_string()),
         "PostBind must run after the live bind: {log:?}"
     );
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -372,7 +389,7 @@ async fn run_loop_node_informer_unblocks_pending_pod() {
 }
 
 #[tokio::test]
-async fn end_to_end_three_pods_drain_in_priority_order() {
+async fn end_to_end_three_pods_drain_in_priority_order() -> TestResult {
     let src = Arc::new(InMemorySource::new());
     let sink = Arc::new(InMemorySink::new());
     src.add_node(node("n", 100_000, 1_000_000));
@@ -382,12 +399,13 @@ async fn end_to_end_three_pods_drain_in_priority_order() {
         src.add_pod(p);
     }
     let sched = Scheduler::new(src.clone(), sink.clone());
-    sched.sync().await.unwrap();
-    let outcomes = sched.drain_active().await.unwrap();
+    sched.sync().await?;
+    let outcomes = sched.drain_active().await?;
     let bound_names: Vec<String> = sink.binds().into_iter().map(|(name, _)| name).collect();
     assert_eq!(bound_names.len(), 3);
     assert_eq!(bound_names[0], "default/p2"); // prio 50
     assert_eq!(bound_names[1], "default/p1"); // prio 10
     assert_eq!(bound_names[2], "default/p3"); // prio 5
     assert_eq!(outcomes.len(), 3);
+    Ok(())
 }

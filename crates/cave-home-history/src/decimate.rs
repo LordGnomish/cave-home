@@ -12,6 +12,7 @@
 //! sample of each bucket. It guarantees no spike is ever clipped, at the cost
 //! of up to twice as many points.
 
+use crate::num::{f64_to_usize, i64_to_f64, usize_to_f64};
 use crate::sample::{Sample, Series};
 
 /// Largest-Triangle-Three-Buckets downsampling to about `target` points.
@@ -34,18 +35,18 @@ pub fn lttb(series: &Series, target: usize) -> Series {
     out.push(data[0]);
 
     // Interior buckets divide the points between the fixed endpoints.
-    let bucket_size = (n - 2) as f64 / (target - 2) as f64;
+    let bucket_size = usize_to_f64(n - 2) / usize_to_f64(target - 2);
     let mut a = 0usize; // index of the last chosen point
 
     for i in 0..(target - 2) {
         // Range of the *next* bucket, used to compute its average point.
-        let next_lo = ((i + 1) as f64 * bucket_size).floor() as usize + 1;
-        let next_hi = (((i + 2) as f64 * bucket_size).floor() as usize + 1).min(n);
+        let next_lo = f64_to_usize((usize_to_f64(i + 1) * bucket_size).floor()) + 1;
+        let next_hi = (f64_to_usize((usize_to_f64(i + 2) * bucket_size).floor()) + 1).min(n);
         let (avg_t, avg_v) = average_point(&data[next_lo.min(n)..next_hi.max(next_lo.min(n))]);
 
         // Range of the current bucket we are choosing a representative from.
-        let cur_lo = (i as f64 * bucket_size).floor() as usize + 1;
-        let cur_hi = (((i + 1) as f64 * bucket_size).floor() as usize + 1).min(n);
+        let cur_lo = f64_to_usize((usize_to_f64(i) * bucket_size).floor()) + 1;
+        let cur_hi = (f64_to_usize((usize_to_f64(i + 1) * bucket_size).floor()) + 1).min(n);
 
         let point_a = data[a];
         let mut best_area = -1.0;
@@ -72,8 +73,8 @@ fn average_point(slice: &[Sample]) -> (f64, f64) {
     if slice.is_empty() {
         return (0.0, 0.0);
     }
-    let n = slice.len() as f64;
-    let t: f64 = slice.iter().map(|s| s.timestamp() as f64).sum::<f64>() / n;
+    let n = usize_to_f64(slice.len());
+    let t: f64 = slice.iter().map(|s| i64_to_f64(s.timestamp())).sum::<f64>() / n;
     let v: f64 = slice.iter().map(Sample::value).sum::<f64>() / n;
     (t, v)
 }
@@ -82,11 +83,14 @@ fn average_point(slice: &[Sample]) -> (f64, f64) {
 /// next bucket's average point. (The factor of two and the absolute value do
 /// not change which triangle is largest.)
 fn triangle_area(a: Sample, candidate: Sample, avg_t: f64, avg_v: f64) -> f64 {
-    let ax = a.timestamp() as f64;
+    let ax = i64_to_f64(a.timestamp());
     let ay = a.value();
-    let bx = candidate.timestamp() as f64;
+    let bx = i64_to_f64(candidate.timestamp());
     let by = candidate.value();
-    ((ax - avg_t) * (by - ay) - (ax - bx) * (avg_v - ay)).abs()
+    // Two plain products and a subtraction (not a fused `mul_add`), as before.
+    let towards_average = (ax - avg_t) * (by - ay);
+    let towards_candidate = (ax - bx) * (avg_v - ay);
+    (towards_average - towards_candidate).abs()
 }
 
 /// Simpler decimation: split the time range into `buckets` equal windows and
@@ -102,7 +106,7 @@ pub fn min_max(series: &Series, buckets: usize) -> Series {
     if buckets == 0 || n <= 2 {
         return series.clone();
     }
-    let bucket_size = (n as f64 / buckets as f64).ceil() as usize;
+    let bucket_size = f64_to_usize((usize_to_f64(n) / usize_to_f64(buckets)).ceil());
     let bucket_size = bucket_size.max(1);
 
     let mut out: Vec<Sample> = Vec::new();
@@ -141,13 +145,20 @@ pub fn min_max(series: &Series, buckets: usize) -> Series {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sample::SampleError;
 
-    fn s(t: i64, v: f64) -> Sample {
-        Sample::new(t, v).expect("finite test sample")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn s(t: i64, v: f64) -> Result<Sample, SampleError> {
+        Sample::new(t, v)
     }
 
-    fn ramp(n: usize) -> Series {
-        Series::from_sorted((0..n).map(|i| s(i as i64, i as f64)).collect())
+    fn ramp(n: usize) -> Result<Series, SampleError> {
+        let samples = (0_u32..)
+            .take(n)
+            .map(|i| s(i64::from(i), f64::from(i)))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Series::from_sorted(samples))
     }
 
     fn is_monotonic(series: &Series) -> bool {
@@ -158,45 +169,52 @@ mod tests {
     }
 
     #[test]
-    fn lttb_hits_target_count() {
-        let down = lttb(&ramp(100), 10);
+    fn lttb_hits_target_count() -> TestResult {
+        let down = lttb(&ramp(100)?, 10);
         assert_eq!(down.len(), 10);
+        Ok(())
     }
 
     #[test]
-    fn lttb_preserves_endpoints() {
-        let series = ramp(100);
+    fn lttb_preserves_endpoints() -> TestResult {
+        let series = ramp(100)?;
         let down = lttb(&series, 12);
         assert_eq!(down.samples().first(), series.samples().first());
         assert_eq!(down.samples().last(), series.samples().last());
+        Ok(())
     }
 
     #[test]
-    fn lttb_output_is_time_ordered() {
-        let down = lttb(&ramp(500), 50);
+    fn lttb_output_is_time_ordered() -> TestResult {
+        let down = lttb(&ramp(500)?, 50);
         assert!(is_monotonic(&down), "LTTB output must keep time order");
+        Ok(())
     }
 
     #[test]
-    fn lttb_returns_input_when_already_small() {
-        let series = ramp(5);
+    fn lttb_returns_input_when_already_small() -> TestResult {
+        let series = ramp(5)?;
         assert_eq!(lttb(&series, 10), series);
         assert_eq!(lttb(&series, 5), series);
+        Ok(())
     }
 
     #[test]
-    fn lttb_target_below_three_returns_input() {
-        let series = ramp(50);
+    fn lttb_target_below_three_returns_input() -> TestResult {
+        let series = ramp(50)?;
         assert_eq!(lttb(&series, 2), series);
         assert_eq!(lttb(&series, 0), series);
+        Ok(())
     }
 
     #[test]
-    fn lttb_keeps_a_spike() {
+    fn lttb_keeps_a_spike() -> TestResult {
         // Flat line with one tall spike in the middle; LTTB to a few points
         // must retain the spike value, which naive sampling could miss.
-        let mut pts: Vec<Sample> = (0..100).map(|i| s(i as i64, 0.0)).collect();
-        pts[50] = s(50, 1000.0);
+        let mut pts: Vec<Sample> = (0..100)
+            .map(|i| s(i64::from(i), 0.0))
+            .collect::<Result<_, _>>()?;
+        pts[50] = s(50, 1000.0)?;
         let series = Series::from_sorted(pts);
         let down = lttb(&series, 8);
         let kept_spike = down
@@ -204,13 +222,16 @@ mod tests {
             .iter()
             .any(|p| (p.value() - 1000.0).abs() < 1e-9);
         assert!(kept_spike, "LTTB dropped the only meaningful feature");
+        Ok(())
     }
 
     #[test]
-    fn min_max_keeps_extremes_and_is_monotonic() {
-        let mut pts: Vec<Sample> = (0..40).map(|i| s(i as i64, (i % 5) as f64)).collect();
-        pts[20] = s(20, -100.0);
-        pts[21] = s(21, 100.0);
+    fn min_max_keeps_extremes_and_is_monotonic() -> TestResult {
+        let mut pts: Vec<Sample> = (0..40)
+            .map(|i| s(i64::from(i), f64::from(i % 5)))
+            .collect::<Result<_, _>>()?;
+        pts[20] = s(20, -100.0)?;
+        pts[21] = s(21, 100.0)?;
         let series = Series::from_sorted(pts);
         let down = min_max(&series, 4);
         assert!(is_monotonic(&down));
@@ -226,12 +247,14 @@ mod tests {
             .fold(f64::NEG_INFINITY, f64::max);
         assert_eq!(lo, -100.0, "min spike must survive");
         assert_eq!(hi, 100.0, "max spike must survive");
+        Ok(())
     }
 
     #[test]
-    fn min_max_returns_input_for_tiny_series() {
-        let series = ramp(2);
+    fn min_max_returns_input_for_tiny_series() -> TestResult {
+        let series = ramp(2)?;
         assert_eq!(min_max(&series, 4), series);
-        assert_eq!(min_max(&ramp(50), 0), ramp(50));
+        assert_eq!(min_max(&ramp(50)?, 0), ramp(50)?);
+        Ok(())
     }
 }

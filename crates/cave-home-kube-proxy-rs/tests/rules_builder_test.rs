@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Snapshot tests for `build_proxy_rules`. Each fixture is harvested from
 //! upstream `pkg/proxy/iptables/proxier_test.go` *exact* expected output
-//! lines (only the ClusterIP-relevant subset is asserted — NodePort,
-//! LoadBalancer, ExternalIP, conntrack-cleanup, mark-masq postrouting are
+//! lines (only the ClusterIP-relevant subset is asserted — `NodePort`,
+//! `LoadBalancer`, `ExternalIP`, conntrack-cleanup, mark-masq postrouting are
 //! Phase 1b and intentionally skipped).
 //!
 //! The tests assert the lines our builder emits are a SUBSET of the
@@ -253,8 +253,7 @@ fn three_endpoints_emit_two_probability_rules_then_unconditional() {
     // The last endpoint dispatch line MUST NOT carry --probability.
     let last_line = nat
         .lines()
-        .filter(|l| l.contains("-A KUBE-SVC-") && l.contains("-j KUBE-SEP-"))
-        .last()
+        .rfind(|l| l.contains("-A KUBE-SVC-") && l.contains("-j KUBE-SEP-"))
         .unwrap_or("");
     assert!(
         !last_line.contains("--probability"),

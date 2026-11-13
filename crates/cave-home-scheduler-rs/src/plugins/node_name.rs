@@ -2,7 +2,7 @@
 //! `NodeName` — `Pod.Spec.NodeName` must equal `Node.Name`.
 //!
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
-//!         pkg/scheduler/framework/plugins/nodename/node_name.go::Filter
+//!         `pkg/scheduler/framework/plugins/nodename/node_name.go::Filter`
 
 use crate::cache::NodeInfo;
 use crate::framework::{CycleState, FilterPlugin, Status};

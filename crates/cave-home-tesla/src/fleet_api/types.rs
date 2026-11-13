@@ -146,6 +146,8 @@ impl Product {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     const LIVE_STATUS: &str = r#"{
       "response": {
         "solar_power": 3450,
@@ -165,8 +167,8 @@ mod tests {
     }"#;
 
     #[test]
-    fn parse_live_status_envelope() {
-        let env: Envelope<LiveStatus> = serde_json::from_str(LIVE_STATUS).unwrap();
+    fn parse_live_status_envelope() -> TestResult {
+        let env: Envelope<LiveStatus> = serde_json::from_str(LIVE_STATUS)?;
         let s = env.response;
         assert!((s.solar_power - 3450.0).abs() < f64::EPSILON);
         assert!((s.battery_power - -1000.0).abs() < f64::EPSILON);
@@ -176,56 +178,61 @@ mod tests {
         assert_eq!(s.island_status.as_deref(), Some("on_grid"));
         assert_eq!(s.storm_mode_active, Some(false));
         assert_eq!(s.backup_capable, Some(true));
+        Ok(())
     }
 
     #[test]
-    fn live_status_tolerates_missing_optionals() {
+    fn live_status_tolerates_missing_optionals() -> TestResult {
         let minimal = r#"{"response":{"solar_power":100,"battery_power":0,"load_power":100,
             "grid_power":0,"percentage_charged":50,"energy_left":0,"total_pack_energy":0,
             "grid_status":"Active"}}"#;
-        let env: Envelope<LiveStatus> = serde_json::from_str(minimal).unwrap();
+        let env: Envelope<LiveStatus> = serde_json::from_str(minimal)?;
         assert!(env.response.island_status.is_none());
         assert!(env.response.storm_mode_active.is_none());
+        Ok(())
     }
 
     #[test]
-    fn parse_site_info() {
+    fn parse_site_info() -> TestResult {
         let json = r#"{"response":{
             "id":"STE123","site_name":"Cave","backup_reserve_percent":20,
             "default_real_mode":"self_consumption","battery_count":2,
             "nameplate_power":10000,"nameplate_energy":27000}}"#;
-        let env: Envelope<SiteInfo> = serde_json::from_str(json).unwrap();
+        let env: Envelope<SiteInfo> = serde_json::from_str(json)?;
         let info = env.response;
         assert_eq!(info.site_name.as_deref(), Some("Cave"));
         assert_eq!(info.backup_reserve_percent, 20);
         assert_eq!(info.default_real_mode, "self_consumption");
         assert_eq!(info.battery_count, 2);
+        Ok(())
     }
 
     #[test]
-    fn parse_calendar_history_power_series() {
+    fn parse_calendar_history_power_series() -> TestResult {
         let json = r#"{"response":{"period":"day","time_series":[
             {"timestamp":"2026-06-07T00:00:00-07:00","solar_power":0,"battery_power":500,"grid_power":-500},
             {"timestamp":"2026-06-07T12:00:00-07:00","solar_power":4000,"battery_power":-1500,"grid_power":0}
         ]}}"#;
-        let env: Envelope<HistorySeries> = serde_json::from_str(json).unwrap();
+        let env: Envelope<HistorySeries> = serde_json::from_str(json)?;
         assert_eq!(env.response.period, "day");
         assert_eq!(env.response.time_series.len(), 2);
         assert!((env.response.time_series[1].solar_power - 4000.0).abs() < f64::EPSILON);
+        Ok(())
     }
 
     #[test]
-    fn parse_products_picks_energy_sites() {
+    fn parse_products_picks_energy_sites() -> TestResult {
         let json = r#"{"response":[
             {"vin":"5YJ...","display_name":"Car"},
             {"energy_site_id":1234567890,"site_name":"Home","resource_type":"battery"}
         ],"count":2}"#;
-        let env: Envelope<Vec<Product>> = serde_json::from_str(json).unwrap();
+        let env: Envelope<Vec<Product>> = serde_json::from_str(json)?;
         let sites: Vec<_> = env
             .response
             .iter()
             .filter_map(Product::energy_site_id)
             .collect();
         assert_eq!(sites, vec![1_234_567_890]);
+        Ok(())
     }
 }

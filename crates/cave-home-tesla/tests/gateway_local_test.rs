@@ -6,17 +6,20 @@
 use cave_home_tesla::fleet_api::client::MockTransport;
 use cave_home_tesla::gateway_local::{GatewayClient, LoginRequest, login_body};
 
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
 #[test]
-fn login_body_is_well_formed() {
+fn login_body_is_well_formed() -> TestResult {
     let body = login_body(&LoginRequest::installer_default("ABC12"));
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&body)?;
     assert_eq!(v["username"], "customer");
     assert_eq!(v["password"], "ABC12");
     assert_eq!(v["force_sm_off"], false);
+    Ok(())
 }
 
 #[tokio::test]
-async fn reads_power_flow_from_lan() {
+async fn reads_power_flow_from_lan() -> TestResult {
     let t = MockTransport::new()
         .route(
             "/api/meters/aggregates",
@@ -27,11 +30,12 @@ async fn reads_power_flow_from_lan() {
         .route("/api/system_status/soe", 200, r#"{"percentage":42.0}"#);
     let gw = GatewayClient::new(t, "https://192.168.1.10").with_token("gw-token");
 
-    let flow = gw.get_power_flow().await.unwrap();
+    let flow = gw.get_power_flow().await?;
     assert!((flow.soc_percent - 42.0).abs() < f64::EPSILON);
     assert!(flow.battery_discharging());
     assert!(flow.grid_exporting());
     assert!((flow.load_watts - 1000.0).abs() < f64::EPSILON);
+    Ok(())
 }
 
 #[tokio::test]

@@ -2,7 +2,7 @@
 //! `ImageLocality` — prefer nodes that already have the pod's images cached.
 //!
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
-//!         pkg/scheduler/framework/plugins/imagelocality/image_locality.go
+//!         `pkg/scheduler/framework/plugins/imagelocality/image_locality.go`
 
 use crate::cache::NodeInfo;
 use crate::framework::{CycleState, MAX_NODE_SCORE, ScorePlugin, Status};
@@ -32,7 +32,10 @@ impl ScorePlugin for ImageLocality {
             .iter()
             .filter(|c| !c.image.is_empty() && node.node().has_image(&c.image))
             .count();
-        let score = (present as i64).saturating_mul(MAX_NODE_SCORE) / total as i64;
+        // Container counts always fit an `i64`.
+        let present = i64::try_from(present).unwrap_or(i64::MAX);
+        let total = i64::try_from(total).unwrap_or(i64::MAX);
+        let score = present.saturating_mul(MAX_NODE_SCORE) / total;
         (score.clamp(0, MAX_NODE_SCORE), Status::success())
     }
 
@@ -57,9 +60,10 @@ mod tests {
     fn pod_with_images(imgs: &[&str]) -> Pod {
         let mut p = Pod::default();
         for img in imgs {
-            let mut c = Container::default();
-            c.image = (*img).into();
-            p.spec.containers.push(c);
+            p.spec.containers.push(Container {
+                image: (*img).into(),
+                ..Default::default()
+            });
         }
         p
     }

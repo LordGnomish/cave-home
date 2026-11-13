@@ -103,6 +103,8 @@ impl TeslaError {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn display_is_human_readable() {
         let e = TeslaError::RateLimited {
@@ -157,11 +159,13 @@ mod tests {
     }
 
     #[test]
-    fn json_error_maps_to_decode() {
+    fn json_error_maps_to_decode() -> TestResult {
         let err: TeslaError = serde_json::from_str::<serde_json::Value>("{not json")
-            .unwrap_err()
+            .err()
+            .ok_or("expected an error")?
             .into();
         assert!(matches!(err, TeslaError::Decode(_)));
+        Ok(())
     }
 
     #[test]

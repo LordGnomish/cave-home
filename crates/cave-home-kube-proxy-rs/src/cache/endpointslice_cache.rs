@@ -53,12 +53,13 @@ impl EndpointSliceCache {
     pub fn delete(&self, slice: &EndpointSlice) {
         let svc_nn = slice.service_namespaced_name();
         let mut st = self.state.lock();
-        let (removed, empty) = if let Some(slices) = st.by_service.get_mut(&svc_nn) {
-            let r = slices.remove(&slice.metadata.name).is_some();
-            (r, slices.is_empty())
-        } else {
-            (false, false)
-        };
+        let (removed, empty) = st
+            .by_service
+            .get_mut(&svc_nn)
+            .map_or((false, false), |slices| {
+                let r = slices.remove(&slice.metadata.name).is_some();
+                (r, slices.is_empty())
+            });
         if removed {
             st.dirty = true;
         }
@@ -107,6 +108,8 @@ impl EndpointSliceCache {
                 }
             }
         }
+        // Everything below works on the owned copy only.
+        drop(st);
 
         // Dedup + sort each bucket for determinism.
         for bucket in out.values_mut() {

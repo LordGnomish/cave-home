@@ -63,7 +63,7 @@ impl ServiceCache {
     }
 
     /// Snapshot all proxiable services as `ServicePortInfo` rows
-    /// (one per Service x ServicePort), filtering with `ShouldSkipService`
+    /// (one per Service x `ServicePort`), filtering with `ShouldSkipService`
     /// and sorting deterministically.
     #[must_use]
     pub fn snapshot(&self) -> Vec<ServicePortInfo> {
@@ -86,6 +86,8 @@ impl ServiceCache {
                 });
             }
         }
+        // The rows are owned copies; sorting does not need the lock.
+        drop(st);
         out.sort_by(|a, b| a.name.cmp(&b.name));
         out
     }

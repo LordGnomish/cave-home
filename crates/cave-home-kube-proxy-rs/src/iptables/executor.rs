@@ -73,6 +73,7 @@ impl IptablesExecutor for MockExecutor {
             return Err(err);
         }
         st.inputs.push(rules.to_owned());
+        drop(st);
         Ok(())
     }
 }
@@ -110,12 +111,18 @@ impl LinuxExecutor {
 }
 
 #[cfg(target_os = "linux")]
-#[async_trait]
-impl IptablesExecutor for LinuxExecutor {
-    async fn restore(&self, rules: &str) -> Result<(), ProxierError> {
-        use nix::fcntl::{FlockArg, flock};
+impl LinuxExecutor {
+    /// Body of [`IptablesExecutor::restore`] with the advisory-lock path as a
+    /// parameter, so the locking behaviour can be pinned by tests against an
+    /// unprivileged path. Production callers always pass
+    /// [`XTABLES_LOCK_PATH`].
+    async fn restore_holding_lock(
+        &self,
+        rules: &str,
+        lock_path: &std::path::Path,
+    ) -> Result<(), ProxierError> {
+        use nix::fcntl::{Flock, FlockArg};
         use std::io::Write as _;
-        use std::os::fd::AsRawFd as _;
         use tokio::io::AsyncWriteExt as _;
         use tokio::process::Command;
 
@@ -128,10 +135,14 @@ impl IptablesExecutor for LinuxExecutor {
             .create(true)
             .truncate(false)
             .write(true)
-            .open(XTABLES_LOCK_PATH)
+            .open(lock_path)
             .map_err(|e| ProxierError::LockFailed(e.to_string()))?;
-        flock(lock_file.as_raw_fd(), FlockArg::LockExclusive)
-            .map_err(|e| ProxierError::LockFailed(e.to_string()))?;
+        // `Flock` takes ownership of the file. If locking fails the file comes
+        // back in the error tuple and is closed right there; otherwise the
+        // guard lives until this function returns (on every path), where it
+        // unlocks and then closes the descriptor exactly once.
+        let xtables_lock = Flock::lock(lock_file, FlockArg::LockExclusive)
+            .map_err(|(_lock_file, errno)| ProxierError::LockFailed(errno.to_string()))?;
 
         // -- Spawn iptables-restore --noflush --counters ---------------------
         let mut child = Command::new(bin)
@@ -146,8 +157,8 @@ impl IptablesExecutor for LinuxExecutor {
             stdin.shutdown().await?;
         }
         let output = child.wait_with_output().await?;
-        // Drop lock when `lock_file` goes out of scope.
-        let _ = lock_file;
+        // The lock is released when `xtables_lock` goes out of scope.
+        let _ = &xtables_lock;
         let _ = std::io::sink().write_all(b""); // keep std::io::Write import live
 
         if output.status.success() {
@@ -161,10 +172,147 @@ impl IptablesExecutor for LinuxExecutor {
     }
 }
 
+#[cfg(target_os = "linux")]
+#[async_trait]
+impl IptablesExecutor for LinuxExecutor {
+    async fn restore(&self, rules: &str) -> Result<(), ProxierError> {
+        self.restore_holding_lock(rules, std::path::Path::new(XTABLES_LOCK_PATH))
+            .await
+    }
+}
+
 #[cfg(not(target_os = "linux"))]
 #[async_trait]
 impl IptablesExecutor for LinuxExecutor {
     async fn restore(&self, _rules: &str) -> Result<(), ProxierError> {
         Err(ProxierError::UnsupportedPlatform)
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+    use nix::errno::Errno;
+    use nix::fcntl::{Flock, FlockArg};
+    use std::path::{Path, PathBuf};
+    use std::time::Duration;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    /// Fresh scratch directory for one test (no privileges needed).
+    fn scratch_dir(tag: &str) -> std::io::Result<PathBuf> {
+        let dir =
+            std::env::temp_dir().join(format!("cave-home-kube-proxy-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir)?;
+        Ok(dir)
+    }
+
+    /// Non-blocking probe through a second open file description: `true`
+    /// when nobody holds the exclusive lock on `path`.
+    fn lock_is_free(path: &Path) -> Result<bool, Box<dyn std::error::Error>> {
+        let file = std::fs::OpenOptions::new().write(true).open(path)?;
+        match Flock::lock(file, FlockArg::LockExclusiveNonblock) {
+            Ok(_probe) => Ok(true),
+            Err((_file, errno)) if errno == Errno::EWOULDBLOCK => Ok(false),
+            Err((_file, errno)) => Err(errno.into()),
+        }
+    }
+
+    #[tokio::test]
+    async fn unopenable_lock_file_is_a_lock_failure() -> TestResult {
+        let dir = scratch_dir("nolock")?;
+        let lock_path = dir.join("missing-dir").join("xtables.lock");
+        let exec = LinuxExecutor::with_binary("/nonexistent/iptables-restore");
+        let err = exec
+            .restore_holding_lock("*nat\nCOMMIT\n", &lock_path)
+            .await
+            .err()
+            .ok_or("restore must fail without a lock file")?;
+        assert!(matches!(err, ProxierError::LockFailed(_)), "got {err:?}");
+        std::fs::remove_dir_all(&dir)?;
+        Ok(())
+    }
+
+    // One test drives both subprocess scenarios so that nothing else in this
+    // test binary forks while the stand-in script is being written.
+    #[tokio::test]
+    async fn restore_holds_the_lock_for_the_whole_call_and_releases_it() -> TestResult {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let dir = scratch_dir("lock")?;
+        let lock_path = dir.join("xtables.lock");
+
+        // -- Early return after the lock was taken: spawning fails ----------
+        let missing = LinuxExecutor::with_binary(dir.join("no-such-binary").to_string_lossy());
+        let err = missing
+            .restore_holding_lock("*nat\nCOMMIT\n", &lock_path)
+            .await
+            .err()
+            .ok_or("spawning a missing binary must fail")?;
+        assert!(matches!(err, ProxierError::Io(_)), "got {err:?}");
+        assert!(lock_path.exists(), "lock file is created on demand");
+        assert!(
+            lock_is_free(&lock_path)?,
+            "lock must be released on the error path"
+        );
+
+        // -- Lock is held while the child runs ------------------------------
+        // Stand-in for iptables-restore: record stdin, announce itself, then
+        // stay alive until the test allows it to exit (bounded wait).
+        let script = dir.join("fake-iptables-restore");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\n\
+             dir=$(dirname \"$0\")\n\
+             cat > \"$dir/stdin\"\n\
+             : > \"$dir/started\"\n\
+             i=0\n\
+             while [ ! -e \"$dir/release\" ] && [ \"$i\" -lt 200 ]; do\n\
+             \x20 sleep 0.05 2>/dev/null || sleep 1\n\
+             \x20 i=$((i + 1))\n\
+             done\n",
+        )?;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))?;
+
+        let exec = LinuxExecutor::with_binary(script.to_string_lossy());
+        let task = tokio::spawn({
+            let lock_path = lock_path.clone();
+            async move {
+                exec.restore_holding_lock("*nat\nCOMMIT\n", &lock_path)
+                    .await
+            }
+        });
+
+        let started = dir.join("started");
+        for _ in 0..400 {
+            if started.exists() || task.is_finished() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        if !started.exists() {
+            if task.is_finished() {
+                task.await??;
+            }
+            return Err("stand-in iptables-restore never started".into());
+        }
+        assert!(
+            !lock_is_free(&lock_path)?,
+            "lock must be held while iptables-restore runs"
+        );
+
+        std::fs::write(dir.join("release"), b"")?;
+        task.await??;
+
+        assert!(
+            lock_is_free(&lock_path)?,
+            "lock must be released once restore returns"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("stdin"))?,
+            "*nat\nCOMMIT\n"
+        );
+        std::fs::remove_dir_all(&dir)?;
+        Ok(())
     }
 }
