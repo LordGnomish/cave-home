@@ -4,7 +4,7 @@
 //! These types describe Services + their backing endpoints richly enough to
 //! drive the proxy *decision core* (endpoint selection + rule generation)
 //! independently of any wire backend (iptables / ipvs / nftables). They follow
-//! the *documented* Kubernetes Service / EndpointSlice API shapes
+//! the *documented* Kubernetes Service / `EndpointSlice` API shapes
 //! (`k8s.io/api/core/v1`, `k8s.io/api/discovery/v1`) — see the crate-level
 //! `port_method` note: this is a behavioural reimplementation of the public
 //! Kubernetes/kube-proxy data-model and algorithm, not a verbatim source port.
@@ -40,9 +40,9 @@ impl Protocol {
 pub enum ServiceType {
     /// In-cluster virtual IP only.
     ClusterIp,
-    /// ClusterIP + a port on every node.
+    /// `ClusterIP` + a port on every node.
     NodePort,
-    /// NodePort + an external load-balancer ingress IP.
+    /// `NodePort` + an external load-balancer ingress IP.
     LoadBalancer,
     /// CNAME alias; never proxied (no cluster IP, no endpoints programmed).
     ExternalName,
@@ -63,7 +63,7 @@ pub enum SessionAffinity {
 
 /// `k8s.io/api/core/v1.ServiceExternalTrafficPolicy`.
 ///
-/// Governs which endpoints receive *external* (NodePort / LoadBalancer)
+/// Governs which endpoints receive *external* (`NodePort` / `LoadBalancer`)
 /// traffic — `Cluster` spreads to all ready endpoints (extra hop, source IP
 /// rewritten); `Local` keeps traffic on the receiving node (preserves source
 /// IP, no second hop) and drops external traffic on nodes with no local
@@ -85,11 +85,11 @@ pub struct ServicePort {
     /// The Service's virtual port (`port`).
     pub port: u16,
     /// The backing pod port this maps to (`targetPort`). When the slice exposes
-    /// a named port this is resolved by the EndpointSlice port entry instead;
+    /// a named port this is resolved by the `EndpointSlice` port entry instead;
     /// numeric `target_port` is the fallback.
     pub target_port: u16,
-    /// External node port (`nodePort`), only meaningful for NodePort /
-    /// LoadBalancer. `None` for ClusterIP.
+    /// External node port (`nodePort`), only meaningful for `NodePort` /
+    /// `LoadBalancer`. `None` for `ClusterIP`.
     pub node_port: Option<u16>,
 }
 
@@ -104,7 +104,7 @@ pub struct Service {
     pub ports: Vec<ServicePort>,
     pub session_affinity: SessionAffinity,
     pub external_traffic_policy: ExternalTrafficPolicy,
-    /// LoadBalancer ingress IPs (`status.loadBalancer.ingress[*].ip`).
+    /// `LoadBalancer` ingress IPs (`status.loadBalancer.ingress[*].ip`).
     pub load_balancer_ips: Vec<IpAddr>,
 }
 
@@ -116,7 +116,7 @@ impl Service {
     }
 
     /// `pkg/proxy/util.ShouldSkipService` semantics: headless (no cluster IP)
-    /// and ExternalName Services are never programmed into proxy rules.
+    /// and `ExternalName` Services are never programmed into proxy rules.
     #[must_use]
     pub const fn should_skip(&self) -> bool {
         matches!(self.service_type, ServiceType::ExternalName) || self.cluster_ip.is_none()

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! EndpointSliceCache tests — upstream `pkg/proxy/endpointslicecache.go`.
+//! `EndpointSliceCache` tests — upstream `pkg/proxy/endpointslicecache.go`.
 //! Multiple slices may belong to the same service; the cache merges them
-//! into one endpoint set per ServicePortName.
+//! into one endpoint set per `ServicePortName`.
 
 use cave_home_kube_proxy_rs::api::WatchEvent;
 use cave_home_kube_proxy_rs::api::{
@@ -10,6 +10,8 @@ use cave_home_kube_proxy_rs::api::{
 };
 use cave_home_kube_proxy_rs::cache::endpointslice_cache::EndpointSliceCache;
 use cave_home_kube_proxy_rs::cache::source::{EventSource, MockEventSource};
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 fn ready_ep(ip: &str) -> Endpoint {
     Endpoint {
@@ -62,7 +64,7 @@ fn empty_cache_yields_empty_snapshot() {
 }
 
 #[test]
-fn add_slice_makes_endpoints_visible_under_service_port_name() {
+fn add_slice_makes_endpoints_visible_under_service_port_name() -> TestResult {
     let cache = EndpointSliceCache::new();
     cache.add(slice(
         "ns1",
@@ -72,14 +74,15 @@ fn add_slice_makes_endpoints_visible_under_service_port_name() {
     ));
     let snap = cache.snapshot();
     let key = spn("ns1", "svc1", "p80");
-    let eps = snap.get(&key).expect("svc1:p80 must be present");
+    let eps = snap.get(&key).ok_or("svc1:p80 must be present")?;
     assert_eq!(eps.len(), 1);
     assert_eq!(eps[0].ip, "10.180.0.1");
     assert_eq!(eps[0].port, 80);
+    Ok(())
 }
 
 #[test]
-fn merges_multiple_slices_for_same_service() {
+fn merges_multiple_slices_for_same_service() -> TestResult {
     let cache = EndpointSliceCache::new();
     cache.add(slice(
         "ns1",
@@ -94,12 +97,15 @@ fn merges_multiple_slices_for_same_service() {
         vec![ready_ep("10.180.0.2")],
     ));
     let snap = cache.snapshot();
-    let eps = snap.get(&spn("ns1", "svc1", "p80")).unwrap();
+    let eps = snap
+        .get(&spn("ns1", "svc1", "p80"))
+        .ok_or("svc1:p80 must be present")?;
     assert_eq!(eps.len(), 2);
+    Ok(())
 }
 
 #[test]
-fn unready_endpoints_excluded() {
+fn unready_endpoints_excluded() -> TestResult {
     let cache = EndpointSliceCache::new();
     cache.add(slice(
         "ns1",
@@ -108,9 +114,12 @@ fn unready_endpoints_excluded() {
         vec![ready_ep("10.180.0.1"), unready_ep("10.180.0.2")],
     ));
     let snap = cache.snapshot();
-    let eps = snap.get(&spn("ns1", "svc1", "p80")).unwrap();
+    let eps = snap
+        .get(&spn("ns1", "svc1", "p80"))
+        .ok_or("svc1:p80 must be present")?;
     assert_eq!(eps.len(), 1);
     assert_eq!(eps[0].ip, "10.180.0.1");
+    Ok(())
 }
 
 #[test]

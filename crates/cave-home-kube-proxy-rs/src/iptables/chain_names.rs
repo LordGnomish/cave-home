@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Chain-naming helpers — a behavioural reimplementation of the *documented*
 //! kube-proxy iptables chain-naming scheme (`KUBE-SVC-`/`KUBE-SEP-`/… +
-//! truncated base32(SHA-256) hash). The expected chain literals used in
-//! `tests/chain_names_test.rs` are the well-known published values for the
+//! truncated base32(SHA-256) hash).
+//!
+//! The expected chain literals used in `tests/chain_names_test.rs` are the well-known published values for the
 //! canonical `ns1/svc1:p80` fixtures; this is verified against those documented
 //! values, not against any specific unread upstream source revision.
 //!

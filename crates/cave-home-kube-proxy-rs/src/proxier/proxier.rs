@@ -21,19 +21,10 @@ use crate::iptables::types::Table;
 use crate::proxier::reconciler::BoundedFrequencyConfig;
 
 /// Configurable knobs for a `Proxier` instance.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ProxierConfig {
     pub cluster_cidr: Option<String>,
     pub frequency: BoundedFrequencyConfig,
-}
-
-impl Default for ProxierConfig {
-    fn default() -> Self {
-        Self {
-            cluster_cidr: None,
-            frequency: BoundedFrequencyConfig::default(),
-        }
-    }
 }
 
 /// The Phase-1 Proxier — shareable (Arc inside) so the reconciler loop
@@ -55,11 +46,7 @@ struct ProxierInner {
 
 impl Proxier {
     #[must_use]
-    pub fn new(
-        cfg: ProxierConfig,
-        src: Arc<dyn EventSource>,
-        exec: Arc<dyn IptablesExecutor>,
-    ) -> Self {
+    pub fn new(cfg: ProxierConfig, src: &dyn EventSource, exec: Arc<dyn IptablesExecutor>) -> Self {
         let rx = src.stream();
         Self {
             inner: Arc::new(ProxierInner {

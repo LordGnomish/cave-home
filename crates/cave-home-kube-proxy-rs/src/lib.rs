@@ -17,7 +17,7 @@
 //! # Layout
 //!
 //! * [`core`] — backend-agnostic decision core:
-//!   * [`core::model`] — Service / EndpointSlice data model,
+//!   * [`core::model`] — Service / `EndpointSlice` data model,
 //!   * [`core::validate`] — structural validation,
 //!   * [`core::select`] — endpoint selection (readiness, topology hints,
 //!     `externalTrafficPolicy`, session affinity),
@@ -30,7 +30,7 @@
 //!
 //! # Example
 //!
-//! Build forwarding rules for a one-port ClusterIP Service with one ready
+//! Build forwarding rules for a one-port `ClusterIP` Service with one ready
 //! endpoint:
 //!
 //! ```

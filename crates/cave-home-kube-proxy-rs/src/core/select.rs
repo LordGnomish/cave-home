@@ -7,7 +7,7 @@
 //!
 //! * **cluster traffic** — packets that already hit the cluster VIP. Spread
 //!   over every ready+serving, non-terminating endpoint.
-//! * **external traffic** — packets that entered via a NodePort / LoadBalancer.
+//! * **external traffic** — packets that entered via a `NodePort` / `LoadBalancer`.
 //!   When `externalTrafficPolicy: Local`, only endpoints *on this node* are
 //!   eligible (preserving client source IP and avoiding a second hop);
 //!   otherwise the cluster set is reused.
@@ -136,7 +136,7 @@ fn apply_topology_hints(
 pub struct SelectedEndpoints {
     /// Targets for in-cluster (VIP) traffic.
     pub cluster: Vec<EndpointTarget>,
-    /// Targets for external (NodePort / LoadBalancer) traffic. Under
+    /// Targets for external (`NodePort` / `LoadBalancer`) traffic. Under
     /// `Local` policy these are the local-node subset; under `Cluster` they
     /// equal `cluster`.
     pub external: Vec<EndpointTarget>,

@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Pure iptables rule generator — a behavioural reimplementation of the
-//! documented ClusterIP `syncProxyRules` rule shape (the
-//! `KUBE-SERVICES`/`KUBE-SVC-`/`KUBE-SEP-` chain layout), not a verbatim port
-//! of a specific unread upstream source revision.
+//! Pure iptables rule generator.
 //!
-//! Phase 1 emits ONLY the ClusterIP / KUBE-SERVICES → KUBE-SVC- → KUBE-SEP-
+//! A behavioural reimplementation of the documented `ClusterIP`
+//! `syncProxyRules` rule shape (the `KUBE-SERVICES`/`KUBE-SVC-`/`KUBE-SEP-`
+//! chain layout), not a verbatim port of a specific unread upstream source
+//! revision.
+//!
+//! Phase 1 emits ONLY the `ClusterIP` / KUBE-SERVICES → KUBE-SVC- → KUBE-SEP-
 //! dispatch chain, plus the static KUBE-POSTROUTING / KUBE-MARK-MASQ
-//! skeleton. NodePort / LoadBalancer / ExternalIP / ExternalTrafficPolicy
-//! / InternalTrafficPolicy / IPVS / nftables / IPv6 / topology hints are
+//! skeleton. `NodePort` / `LoadBalancer` / `ExternalIP` / `ExternalTrafficPolicy`
+//! / `InternalTrafficPolicy` / IPVS / nftables / IPv6 / topology hints are
 //! deferred to Phase 1b — see `parity.manifest.toml`.
 
 use std::collections::BTreeMap;

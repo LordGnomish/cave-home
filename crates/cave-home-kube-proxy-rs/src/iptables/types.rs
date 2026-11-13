@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Internal data structures consumed by the rules builder. These mirror
 //! upstream `pkg/proxy/iptables/proxier.go` `servicePortInfo` /
-//! `endpointInfo` structs but trimmed to Phase 1 ClusterIP scope.
+//! `endpointInfo` structs but trimmed to Phase 1 `ClusterIP` scope.
 
 use crate::api::{Protocol, ServicePortName};
 

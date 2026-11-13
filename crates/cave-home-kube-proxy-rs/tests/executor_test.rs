@@ -7,46 +7,51 @@
 use cave_home_kube_proxy_rs::iptables::errors::ProxierError;
 use cave_home_kube_proxy_rs::iptables::executor::{IptablesExecutor, MockExecutor};
 
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
 #[tokio::test]
-async fn mock_executor_records_restore_input() {
+async fn mock_executor_records_restore_input() -> TestResult {
     let mock = MockExecutor::new();
     mock.restore("*nat\n:KUBE-SERVICES - [0:0]\nCOMMIT\n")
-        .await
-        .expect("ok");
+        .await?;
     let inputs = mock.recorded_inputs();
     assert_eq!(inputs.len(), 1);
     assert!(inputs[0].contains("KUBE-SERVICES"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn mock_executor_records_multiple_calls() {
+async fn mock_executor_records_multiple_calls() -> TestResult {
     let mock = MockExecutor::new();
-    mock.restore("first").await.expect("ok");
-    mock.restore("second").await.expect("ok");
-    mock.restore("third").await.expect("ok");
+    mock.restore("first").await?;
+    mock.restore("second").await?;
+    mock.restore("third").await?;
     assert_eq!(mock.recorded_inputs().len(), 3);
     assert_eq!(mock.recorded_inputs()[1], "second");
+    Ok(())
 }
 
 #[tokio::test]
-async fn mock_executor_can_be_primed_to_fail() {
+async fn mock_executor_can_be_primed_to_fail() -> TestResult {
     let mock = MockExecutor::new();
     mock.set_next_error(ProxierError::IptablesRestoreFailed {
         exit_code: Some(2),
         stderr: "boom".into(),
     });
-    let err = mock.restore("anything").await.expect_err("must fail");
+    let err = mock.restore("anything").await.err().ok_or("must fail")?;
     assert!(matches!(err, ProxierError::IptablesRestoreFailed { .. }));
     // Subsequent calls succeed (primed error consumed once).
-    mock.restore("ok").await.expect("ok");
+    mock.restore("ok").await?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn mock_executor_clears_recorded_inputs() {
+async fn mock_executor_clears_recorded_inputs() -> TestResult {
     let mock = MockExecutor::new();
-    mock.restore("a").await.expect("ok");
+    mock.restore("a").await?;
     mock.clear();
-    assert!(mock.recorded_inputs().is_empty());
+    assert_eq!(mock.recorded_inputs(), [] as [String; 0]);
+    Ok(())
 }
 
 // Linux subprocess smoke test — verifies the executor exists and constructs.
