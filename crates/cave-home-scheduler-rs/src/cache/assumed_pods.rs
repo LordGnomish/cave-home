@@ -3,7 +3,7 @@
 //! but not yet observed via the informer reflection.
 //!
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
-//!         pkg/scheduler/backend/cache/cache.go::Cache.assumePod
+//!         `pkg/scheduler/backend/cache/cache.go::Cache.assumePod`
 
 use std::collections::HashMap;
 
@@ -50,6 +50,8 @@ mod tests {
     use super::*;
     use crate::types::{ObjectMeta, Pod};
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn pod(uid: &str) -> Pod {
         Pod {
             metadata: ObjectMeta {
@@ -76,11 +78,12 @@ mod tests {
     }
 
     #[test]
-    fn remove_returns_the_pod() {
+    fn remove_returns_the_pod() -> TestResult {
         let mut t = AssumedPodTracker::new();
         t.insert("alpha".into(), pod("alpha"));
-        let p = t.remove("alpha").unwrap();
+        let p = t.remove("alpha").ok_or("alpha was not assumed")?;
         assert_eq!(p.metadata.uid, "alpha");
         assert!(t.is_empty());
+        Ok(())
     }
 }

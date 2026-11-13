@@ -2,7 +2,7 @@
 //! Per-scheduling-cycle state bag passed between plugin extension points.
 //!
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
-//!         pkg/scheduler/framework/cycle_state.go
+//!         `pkg/scheduler/framework/cycle_state.go`
 
 use std::any::Any;
 use std::collections::HashMap;

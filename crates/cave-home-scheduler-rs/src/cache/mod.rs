@@ -55,6 +55,7 @@ impl SchedulerCache {
             .entry(node.metadata.name.clone())
             .or_insert_with(|| NodeInfo::new(node.clone()));
         info.set_node(node);
+        drop(g);
     }
 
     /// Upstream: `Cache.RemoveNode`.
@@ -69,6 +70,10 @@ impl SchedulerCache {
 
     /// Upstream: `Cache.AddPod`. Records that a real bound pod resides on
     /// `pod.spec.node_name` and updates aggregated request totals.
+    ///
+    /// # Errors
+    /// Returns [`CacheError::NodeNotFound`] when the pod's node is not in the
+    /// cache.
     pub fn add_pod(&self, pod: Pod) -> Result<()> {
         if pod.spec.node_name.is_empty() {
             // Not actually placed yet — nothing to fold into a NodeInfo.
@@ -80,10 +85,15 @@ impl SchedulerCache {
             .get_mut(&pod.spec.node_name)
             .ok_or_else(|| CacheError::NodeNotFound(pod.spec.node_name.clone()))?;
         info.add_pod(pod);
+        drop(g);
         Ok(())
     }
 
     /// Upstream: `Cache.RemovePod`.
+    ///
+    /// # Errors
+    /// Returns [`CacheError::NodeNotFound`] when the pod's node is not in the
+    /// cache.
     pub fn remove_pod(&self, pod: &Pod) -> Result<()> {
         if pod.spec.node_name.is_empty() {
             return Ok(());
@@ -94,12 +104,18 @@ impl SchedulerCache {
             .get_mut(&pod.spec.node_name)
             .ok_or_else(|| CacheError::NodeNotFound(pod.spec.node_name.clone()))?;
         info.remove_pod(pod);
+        drop(g);
         Ok(())
     }
 
     /// Upstream: `Cache.AssumePod`. Records a tentative placement before
     /// the bind RPC; cleared by `forget_pod` on bind failure or by
     /// `add_pod` on bind success.
+    ///
+    /// # Errors
+    /// Returns [`CacheError::PodAlreadyAssumed`] when the pod is already
+    /// assumed, or [`CacheError::NodeNotFound`] when `node_name` is not in the
+    /// cache.
     pub fn assume_pod(&self, pod: Pod, node_name: &str) -> Result<()> {
         let key = pod.metadata.uid.clone();
         let mut g = self.inner.write();
@@ -110,10 +126,11 @@ impl SchedulerCache {
             .nodes
             .get_mut(node_name)
             .ok_or_else(|| CacheError::NodeNotFound(node_name.into()))?;
-        let mut assumed_pod = pod.clone();
+        let mut assumed_pod = pod;
         assumed_pod.spec.node_name = node_name.into();
         info.add_pod(assumed_pod.clone());
         g.assumed.insert(key, assumed_pod);
+        drop(g);
         Ok(())
     }
 
@@ -159,6 +176,8 @@ mod tests {
     use super::*;
     use crate::types::{Node, ObjectMeta, Pod, Quantity, ResourceName};
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     fn node(name: &str, cpu_m: i64, mem_b: i64) -> Node {
         let mut n = Node::default();
         n.metadata.name = name.into();
@@ -172,11 +191,13 @@ mod tests {
     }
 
     fn pod(name: &str, cpu_m: i64, mem_b: i64) -> Pod {
-        let mut p = Pod::default();
-        p.metadata = ObjectMeta {
-            name: name.into(),
-            namespace: "default".into(),
-            uid: name.into(),
+        let mut p = Pod {
+            metadata: ObjectMeta {
+                name: name.into(),
+                namespace: "default".into(),
+                uid: name.into(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let mut c = crate::types::Container::default();
@@ -198,67 +219,83 @@ mod tests {
     }
 
     #[test]
-    fn add_node_and_query_node_info() {
+    fn add_node_and_query_node_info() -> TestResult {
         let c = SchedulerCache::new();
         c.add_node(node("n1", 1000, 1024));
         assert_eq!(c.node_count(), 1);
-        let info = c.node_info("n1").unwrap();
+        let info = c.node_info("n1").ok_or("node is not in the cache")?;
         assert_eq!(info.node().metadata.name, "n1");
+        Ok(())
     }
 
     #[test]
-    fn add_pod_updates_requested_resources() {
+    fn add_pod_updates_requested_resources() -> TestResult {
         let c = SchedulerCache::new();
         c.add_node(node("n1", 2000, 4096));
         let mut p = pod("alpha", 500, 1024);
         p.spec.node_name = "n1".into();
-        c.add_pod(p).unwrap();
-        let info = c.node_info("n1").unwrap();
+        c.add_pod(p)?;
+        let info = c.node_info("n1").ok_or("node is not in the cache")?;
         assert_eq!(info.requested(ResourceName::Cpu), 500);
         assert_eq!(info.requested(ResourceName::Memory), 1024);
+        Ok(())
     }
 
     #[test]
-    fn remove_pod_reduces_requested() {
+    fn remove_pod_reduces_requested() -> TestResult {
         let c = SchedulerCache::new();
         c.add_node(node("n1", 2000, 4096));
         let mut p = pod("alpha", 500, 1024);
         p.spec.node_name = "n1".into();
-        c.add_pod(p.clone()).unwrap();
-        c.remove_pod(&p).unwrap();
-        let info = c.node_info("n1").unwrap();
+        c.add_pod(p.clone())?;
+        c.remove_pod(&p)?;
+        let info = c.node_info("n1").ok_or("node is not in the cache")?;
         assert_eq!(info.requested(ResourceName::Cpu), 0);
+        Ok(())
     }
 
     #[test]
-    fn assume_pod_marks_as_assumed_and_increments_requested() {
+    fn assume_pod_marks_as_assumed_and_increments_requested() -> TestResult {
         let c = SchedulerCache::new();
         c.add_node(node("n1", 2000, 4096));
         let p = pod("alpha", 500, 1024);
-        c.assume_pod(p.clone(), "n1").unwrap();
+        c.assume_pod(p, "n1")?;
         assert!(c.is_assumed("alpha"));
-        assert_eq!(c.node_info("n1").unwrap().requested(ResourceName::Cpu), 500);
+        assert_eq!(
+            c.node_info("n1")
+                .ok_or("node is not in the cache")?
+                .requested(ResourceName::Cpu),
+            500
+        );
+        Ok(())
     }
 
     #[test]
-    fn assume_pod_twice_errors() {
+    fn assume_pod_twice_errors() -> TestResult {
         let c = SchedulerCache::new();
         c.add_node(node("n1", 2000, 4096));
         let p = pod("alpha", 500, 1024);
-        c.assume_pod(p.clone(), "n1").unwrap();
-        let err = c.assume_pod(p, "n1").unwrap_err();
+        c.assume_pod(p.clone(), "n1")?;
+        let err = c.assume_pod(p, "n1").err().ok_or("expected an error")?;
         assert!(matches!(err, CacheError::PodAlreadyAssumed(_)));
+        Ok(())
     }
 
     #[test]
-    fn forget_pod_releases_resources() {
+    fn forget_pod_releases_resources() -> TestResult {
         let c = SchedulerCache::new();
         c.add_node(node("n1", 2000, 4096));
         let p = pod("alpha", 500, 1024);
-        c.assume_pod(p, "n1").unwrap();
+        c.assume_pod(p, "n1")?;
         c.forget_pod("alpha");
         assert!(!c.is_assumed("alpha"));
-        assert_eq!(c.node_info("n1").unwrap().requested(ResourceName::Cpu), 0);
+        assert_eq!(
+            c.node_info("n1")
+                .ok_or("node is not in the cache")?
+                .requested(ResourceName::Cpu),
+            0
+        );
+        Ok(())
     }
 
     #[test]

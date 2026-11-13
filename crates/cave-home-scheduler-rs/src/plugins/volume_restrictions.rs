@@ -2,7 +2,7 @@
 //! `VolumeRestrictions` — basic PV / single-writer PVC rules.
 //!
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
-//!         pkg/scheduler/framework/plugins/volumerestrictions/volume_restrictions.go
+//!         `pkg/scheduler/framework/plugins/volumerestrictions/volume_restrictions.go`
 //!
 //! Phase 2 enforces only the upstream "single-writer PVC" rule —
 //! two pods on the same node cannot both mount the same RWO PVC.
@@ -72,11 +72,13 @@ mod tests {
     }
 
     fn pvc_pod(name: &str, claim: &str, ro: bool) -> Pod {
-        let mut p = Pod::default();
-        p.metadata = ObjectMeta {
-            namespace: "default".into(),
-            name: name.into(),
-            uid: name.into(),
+        let mut p = Pod {
+            metadata: ObjectMeta {
+                namespace: "default".into(),
+                name: name.into(),
+                uid: name.into(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         p.spec.volumes.push(Volume {

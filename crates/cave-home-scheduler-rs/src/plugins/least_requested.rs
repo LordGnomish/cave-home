@@ -2,7 +2,7 @@
 //! `LeastRequested` — prefer the node with the most free CPU/memory.
 //!
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
-//!         pkg/scheduler/framework/plugins/noderesources/least_allocated.go
+//!         `pkg/scheduler/framework/plugins/noderesources/least_allocated.go`
 
 use crate::cache::NodeInfo;
 use crate::framework::{CycleState, MAX_NODE_SCORE, ScorePlugin, Status};

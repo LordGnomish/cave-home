@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Priority-based preemption — `DefaultPreemption` PostFilter plugin.
+//! Priority-based preemption — `DefaultPreemption` `PostFilter` plugin.
 //!
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
-//!         pkg/scheduler/framework/plugins/defaultpreemption/default_preemption.go
+//!         `pkg/scheduler/framework/plugins/defaultpreemption/default_preemption.go`
 //!
 //! Phase 2 scope: find any node whose lower-priority pods, if all removed,
 //! would let the incoming pod fit. Lower-priority-pod *minimisation*
@@ -19,7 +19,7 @@ pub struct DefaultPreemption;
 
 impl DefaultPreemption {
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self
     }
 
@@ -215,7 +215,7 @@ mod tests {
             &FilterFailureMap::new(),
             &reg,
         );
-        assert!(status.is_success(), "{:?}", status);
+        assert!(status.is_success(), "{status:?}");
         assert_eq!(nominee.as_deref(), Some("n1"));
     }
 
@@ -245,11 +245,11 @@ mod tests {
     };
     use std::sync::Arc;
 
-    /// A PreFilter plugin that caches, in cycle state, how many *blocking* pods
+    /// A `PreFilter` plugin that caches, in cycle state, how many *blocking* pods
     /// sit on each node (here: pods named "victim"). Its Filter rejects any node
     /// whose cached blocking-count is non-zero. The count is only ever brought
-    /// down by the RemovePod extension — so the node becomes feasible *only* if
-    /// preemption drives RemovePod for the victim. A naive re-filter that
+    /// down by the `RemovePod` extension — so the node becomes feasible *only* if
+    /// preemption drives `RemovePod` for the victim. A naive re-filter that
     /// rebuilt state from scratch would never consult this hook and would keep
     /// the node infeasible, so this isolates the extension path.
     #[derive(Default)]

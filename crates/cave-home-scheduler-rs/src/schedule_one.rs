@@ -2,7 +2,7 @@
 //! Single-pod scheduling cycle (`scheduleOne`).
 //!
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
-//!         pkg/scheduler/schedule_one.go
+//!         `pkg/scheduler/schedule_one.go`
 
 use std::collections::BTreeSet;
 
@@ -26,7 +26,7 @@ pub struct ScheduleResult {
 
 impl ScheduleResult {
     #[must_use]
-    pub fn unschedulable(failures: FilterFailureMap, total: usize) -> Self {
+    pub const fn unschedulable(failures: FilterFailureMap, total: usize) -> Self {
         Self {
             suggested_host: None,
             evaluated_nodes: total,
@@ -268,11 +268,13 @@ mod tests {
     }
 
     fn pod(name: &str, cpu: i64, mem: i64) -> Pod {
-        let mut p = Pod::default();
-        p.metadata = ObjectMeta {
-            namespace: "default".into(),
-            name: name.into(),
-            uid: name.into(),
+        let mut p = Pod {
+            metadata: ObjectMeta {
+                namespace: "default".into(),
+                name: name.into(),
+                uid: name.into(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let mut c = Container::default();
@@ -334,7 +336,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::sync::Arc;
 
-    /// PreFilter that restricts scheduling to an explicit node-name set.
+    /// `PreFilter` that restricts scheduling to an explicit node-name set.
     struct OnlyNodes(BTreeSet<String>);
     impl PreFilterPlugin for OnlyNodes {
         fn name(&self) -> &'static str {
@@ -350,7 +352,7 @@ mod tests {
         }
     }
 
-    /// PreFilter that declares the pod globally unschedulable.
+    /// `PreFilter` that declares the pod globally unschedulable.
     struct RejectAll;
     impl PreFilterPlugin for RejectAll {
         fn name(&self) -> &'static str {
@@ -364,7 +366,7 @@ mod tests {
         }
     }
 
-    /// PreScore writes a per-node bonus into the cycle state...
+    /// `PreScore` writes a per-node bonus into the cycle state...
     struct FavourPreScore;
     impl PreScorePlugin for FavourPreScore {
         fn name(&self) -> &'static str {
@@ -401,7 +403,7 @@ mod tests {
         let cache = SchedulerCache::new();
         cache.add_node(node("n1", 1000, 1024));
         cache.add_node(node("n2", 1000, 1024));
-        let only: BTreeSet<String> = ["n2".to_string()].into_iter().collect();
+        let only: BTreeSet<String> = std::iter::once("n2".to_string()).collect();
         let reg = crate::framework::PluginRegistry::builder()
             .with_pre_filter(Arc::new(OnlyNodes(only)))
             .build();
@@ -435,7 +437,7 @@ mod tests {
         assert!(result.suggested_host.is_some());
     }
 
-    /// Raw score 10 for every node except "n2" (which gets 90); NormalizeScore
+    /// Raw score 10 for every node except "n2" (which gets 90); `NormalizeScore`
     /// then inverts the set (`new = max - raw`). Without the normalize step the
     /// high-raw node "n2" would win; with it, the inversion makes "n1" win — so
     /// this proves `schedule_one` ranks on the *normalized* scores, not the raw.

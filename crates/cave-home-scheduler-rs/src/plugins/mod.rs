@@ -56,7 +56,7 @@ pub fn default_registry() -> PluginRegistry {
         .build()
 }
 
-/// Synthetic helper: NodeAffinity required-during-scheduling filter.
+/// Synthetic helper: `NodeAffinity` required-during-scheduling filter.
 fn node_affinity_required_filter() -> impl crate::framework::FilterPlugin {
     NodeAffinityFilter
 }
@@ -81,8 +81,9 @@ impl crate::framework::QueueSortPlugin for PrioritySort {
 }
 
 /// Upstream: `pkg/scheduler/framework/plugins/nodeaffinity/node_affinity.go::Filter`.
+///
 /// Phase 2 only honours `RequiredDuringSchedulingIgnoredDuringExecution` and
-/// `Pod.Spec.NodeSelector` (PreferredDuringScheduling is deferred).
+/// `Pod.Spec.NodeSelector` (`PreferredDuringScheduling` is deferred).
 pub struct NodeAffinityFilter;
 
 impl crate::framework::FilterPlugin for NodeAffinityFilter {

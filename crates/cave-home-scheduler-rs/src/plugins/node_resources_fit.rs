@@ -2,7 +2,7 @@
 //! `NodeResourcesFit` — reject nodes whose allocatable - requested < pod request.
 //!
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
-//!         pkg/scheduler/framework/plugins/noderesources/fit.go::Filter
+//!         `pkg/scheduler/framework/plugins/noderesources/fit.go::Filter`
 
 use crate::cache::NodeInfo;
 use crate::framework::{CycleState, FilterPlugin, PreFilterPlugin, PreFilterResult, Status};
@@ -85,6 +85,8 @@ mod tests {
     use crate::cache::NodeInfo;
     use crate::types::{Container, Node, Pod, Quantity, ResourceName};
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn node(cpu_m: i64, mem_b: i64) -> Node {
         let mut n = Node::default();
         n.metadata.name = "n".into();
@@ -151,7 +153,7 @@ mod tests {
     }
 
     #[test]
-    fn prefilter_precomputes_pod_requests_into_state() {
+    fn prefilter_precomputes_pod_requests_into_state() -> TestResult {
         use crate::framework::PreFilterPlugin;
         let p = pod(500, 1024);
         let mut s = CycleState::new();
@@ -162,9 +164,10 @@ mod tests {
         // The aggregated request is cached for the Filter phase to reuse.
         let cached = s
             .read::<PreFilterFitState>(PRE_FILTER_FIT_KEY)
-            .expect("pre-filter state recorded");
+            .ok_or("pre-filter state recorded")?;
         assert_eq!(cached.cpu, 500);
         assert_eq!(cached.memory, 1024);
+        Ok(())
     }
 
     #[test]

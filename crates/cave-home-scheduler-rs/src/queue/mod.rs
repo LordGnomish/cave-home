@@ -2,7 +2,7 @@
 //! Scheduling queue — drives the ordering of pods through `scheduleOne`.
 //!
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
-//!         pkg/scheduler/backend/queue/scheduling_queue.go
+//!         `pkg/scheduler/backend/queue/scheduling_queue.go`
 
 pub mod priority_queue;
 

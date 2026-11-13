@@ -2,7 +2,7 @@
 //! Decoupling boundary between the scheduler and the apiserver.
 //!
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
-//!         pkg/scheduler/scheduler.go::Scheduler {Client, Informers}
+//!         `pkg/scheduler/scheduler.go::Scheduler` {Client, Informers}
 //!
 //! Upstream goes through the typed client-go informers; here we expose
 //! two narrow traits that the scheduler depends on. The apiserver crate
@@ -22,11 +22,16 @@ use crate::types::{Node, Pod};
 #[derive(Debug, Clone)]
 pub enum PodEvent {
     Add(Pod),
-    Update { old: Pod, new: Pod },
+    /// `old` is boxed so the variant is not twice the size of the others.
+    Update {
+        old: Box<Pod>,
+        new: Pod,
+    },
     Delete(Pod),
 }
 
 /// Concrete stream type used by [`SchedulerSource::watch_pods`].
+///
 /// A tokio mpsc receiver suffices — upstream uses a watch loop that
 /// invokes the queue's `Add/Update/Delete` callbacks; the receiver
 /// here serialises the same callbacks for a single subscriber.
@@ -37,7 +42,11 @@ pub type EventStream = mpsc::UnboundedReceiver<PodEvent>;
 #[derive(Debug, Clone)]
 pub enum NodeEvent {
     Add(Node),
-    Update { old: Node, new: Node },
+    /// `old` is boxed so the variant is not twice the size of the others.
+    Update {
+        old: Box<Node>,
+        new: Node,
+    },
     Delete(Node),
 }
 
@@ -145,7 +154,10 @@ impl InMemorySource {
         {
             let old = slot.clone();
             *slot = new.clone();
-            let ev = PodEvent::Update { old, new };
+            let ev = PodEvent::Update {
+                old: Box::new(old),
+                new,
+            };
             g.pending.push_back(ev.clone());
             g.subscribers.retain(|s| s.send(ev.clone()).is_ok());
         }
@@ -163,6 +175,7 @@ impl InMemorySource {
 
     /// Drain any pending events emitted since the last call.
     /// Used by the in-process `Scheduler::run_once` driver in tests.
+    #[must_use]
     pub fn drain_pending(&self) -> Vec<PodEvent> {
         self.inner.lock().pending.drain(..).collect()
     }
@@ -266,6 +279,8 @@ mod tests {
     use super::*;
     use crate::types::{Node, ObjectMeta, Pod};
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     fn pending_pod(ns: &str, n: &str) -> Pod {
         Pod {
             metadata: ObjectMeta {
@@ -279,35 +294,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn in_memory_source_filters_pending_pods() {
+    async fn in_memory_source_filters_pending_pods() -> TestResult {
         let src = InMemorySource::new();
         src.add_pod(pending_pod("default", "alpha"));
         let mut bound = pending_pod("default", "beta");
         bound.spec.node_name = "n1".into();
         src.add_pod(bound);
 
-        let pending = src.list_pending_pods().await.unwrap();
+        let pending = src.list_pending_pods().await?;
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].metadata.name, "alpha");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn in_memory_source_lists_nodes() {
+    async fn in_memory_source_lists_nodes() -> TestResult {
         let src = InMemorySource::new();
         let mut n = Node::default();
         n.metadata.name = "n1".into();
         src.add_node(n);
-        assert_eq!(src.list_nodes().await.unwrap().len(), 1);
+        assert_eq!(src.list_nodes().await?.len(), 1);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn in_memory_sink_records_binds_and_events() {
+    async fn in_memory_sink_records_binds_and_events() -> TestResult {
         let sink = InMemorySink::new();
         let p = pending_pod("default", "alpha");
-        sink.bind(&p, "n1").await.unwrap();
-        sink.record_event(&p, "Scheduled", "Placed on n1")
-            .await
-            .unwrap();
+        sink.bind(&p, "n1").await?;
+        sink.record_event(&p, "Scheduled", "Placed on n1").await?;
         assert_eq!(sink.binds(), vec![("default/alpha".into(), "n1".into())]);
         assert_eq!(
             sink.events(),
@@ -317,26 +332,29 @@ mod tests {
                 "Placed on n1".into()
             )]
         );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn in_memory_source_emits_events_on_add() {
+    async fn in_memory_source_emits_events_on_add() -> TestResult {
         let src = InMemorySource::new();
-        let mut stream = src.watch_pods().await.unwrap();
+        let mut stream = src.watch_pods().await?;
         src.add_pod(pending_pod("default", "alpha"));
         let ev = stream.recv().await;
         assert!(matches!(ev, Some(PodEvent::Add(_))));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn in_memory_source_emits_delete_event() {
+    async fn in_memory_source_emits_delete_event() -> TestResult {
         let src = InMemorySource::new();
         src.add_pod(pending_pod("default", "alpha"));
-        let mut stream = src.watch_pods().await.unwrap();
+        let mut stream = src.watch_pods().await?;
         // Drain the backlogged Add.
         let _ = stream.recv().await;
         src.delete_pod("default-alpha");
         let ev = stream.recv().await;
         assert!(matches!(ev, Some(PodEvent::Delete(_))));
+        Ok(())
     }
 }

@@ -221,6 +221,8 @@ mod tests {
     use crate::framework::{CycleState, Status};
     use crate::types::Pod;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     struct PassFilter;
     impl FilterPlugin for PassFilter {
         fn name(&self) -> &'static str {
@@ -310,7 +312,7 @@ mod tests {
     }
 
     #[test]
-    fn registry_records_pre_enqueue_and_queue_sort_plugins() {
+    fn registry_records_pre_enqueue_and_queue_sort_plugins() -> TestResult {
         let reg = PluginRegistry::builder()
             .with_pre_enqueue(Arc::new(AdmitPreEnqueue))
             .with_queue_sort(Arc::new(PrioritySort))
@@ -318,6 +320,12 @@ mod tests {
         assert_eq!(reg.pre_enqueues().len(), 1);
         assert_eq!(reg.pre_enqueues()[0].name(), "AdmitPreEnqueue");
         assert!(reg.queue_sort().is_some());
-        assert_eq!(reg.queue_sort().unwrap().name(), "PrioritySort");
+        assert_eq!(
+            reg.queue_sort()
+                .ok_or("no queue-sort plugin registered")?
+                .name(),
+            "PrioritySort"
+        );
+        Ok(())
     }
 }

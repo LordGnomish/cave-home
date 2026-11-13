@@ -72,7 +72,7 @@ impl Scheduler {
     /// Replace the scheduler configuration.
     #[must_use]
     pub fn with_config(mut self, config: SchedulerConfig) -> Self {
-        self.profile_name = config.profile_name.clone();
+        self.profile_name.clone_from(&config.profile_name);
         self.config = config;
         self
     }
@@ -81,7 +81,7 @@ impl Scheduler {
     ///
     /// If the registry declares a `QueueSort` plugin, the scheduling queue is
     /// rebuilt to order through it (upstream: the queue is constructed from the
-    /// profile's QueueSort plugin). A registry without one keeps the default
+    /// profile's `QueueSort` plugin). A registry without one keeps the default
     /// [`PrioritySort`](crate::plugins::PrioritySort)-ordered queue.
     #[must_use]
     pub fn with_registry(mut self, reg: PluginRegistry) -> Self {
@@ -95,6 +95,9 @@ impl Scheduler {
     /// Synchronise cache + queue from the source (idempotent).
     /// Upstream: the informer event handlers call into the cache;
     /// here a single `sync` poll suffices for the in-memory binding.
+    ///
+    /// # Errors
+    /// Propagates the source's error when listing nodes or pending pods fails.
     pub async fn sync(&self) -> Result<()> {
         for n in self.source.list_nodes().await? {
             self.cache.add_node(n);
@@ -110,7 +113,7 @@ impl Scheduler {
     }
 
     /// Upstream: `pkg/scheduler/eventhandlers.go::addPodToSchedulingQueue` →
-    /// `PriorityQueue.Add`, which first runs the profile's PreEnqueue plugins.
+    /// `PriorityQueue.Add`, which first runs the profile's `PreEnqueue` plugins.
     ///
     /// Every registered [`PreEnqueuePlugin`](crate::framework::PreEnqueuePlugin)
     /// must return success for the pod to enter the active queue. If any gates
@@ -133,6 +136,10 @@ impl Scheduler {
 
     /// Drain a single pod from the queue and attempt to schedule it.
     /// Upstream: `scheduler.scheduleOne`.
+    ///
+    /// # Errors
+    /// Currently never returns `Err`: bind and event failures are folded into
+    /// the cycle (the pod is re-queued as unschedulable).
     pub async fn run_once(&self) -> Result<Option<CycleOutcome>> {
         let Some(info) = self.queue.pop() else {
             return Ok(None);
@@ -206,6 +213,9 @@ impl Scheduler {
     }
 
     /// Run cycles until the active queue is empty.
+    ///
+    /// # Errors
+    /// Stops at and returns the first error from [`Self::run_once`].
     pub async fn drain_active(&self) -> Result<Vec<CycleOutcome>> {
         let mut out = Vec::new();
         while let Some(c) = self.run_once().await? {
@@ -566,11 +576,13 @@ mod tests {
     }
 
     fn pod(name: &str, cpu: i64, mem: i64) -> Pod {
-        let mut p = Pod::default();
-        p.metadata = ObjectMeta {
-            namespace: "default".into(),
-            name: name.into(),
-            uid: name.into(),
+        let mut p = Pod {
+            metadata: ObjectMeta {
+                namespace: "default".into(),
+                name: name.into(),
+                uid: name.into(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let mut c = Container::default();
@@ -585,30 +597,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn end_to_end_schedule_and_bind() {
+    async fn end_to_end_schedule_and_bind() -> TestResult {
         let src = Arc::new(InMemorySource::new());
         let sink = Arc::new(InMemorySink::new());
         src.add_node(node("n1", 1000, 1024));
         src.add_pod(pod("alpha", 100, 256));
 
         let sched = Scheduler::new(src.clone(), sink.clone());
-        sched.sync().await.unwrap();
-        let cycle = sched.run_once().await.unwrap().unwrap();
+        sched.sync().await?;
+        let cycle = sched.run_once().await?.ok_or("no pod was queued")?;
         assert_eq!(cycle.pod_full_name, "default/alpha");
         assert_eq!(sink.binds(), vec![("default/alpha".into(), "n1".into())]);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn unschedulable_pod_is_requeued() {
+    async fn unschedulable_pod_is_requeued() -> TestResult {
         let src = Arc::new(InMemorySource::new());
         let sink = Arc::new(InMemorySink::new());
         src.add_node(node("tiny", 100, 256));
         src.add_pod(pod("huge", 5_000, 1));
 
         let sched = Scheduler::new(src.clone(), sink.clone());
-        sched.sync().await.unwrap();
-        let _ = sched.run_once().await.unwrap();
-        assert!(sink.binds().is_empty());
+        sched.sync().await?;
+        let _ = sched.run_once().await?;
+        assert_eq!(
+            sink.binds(),
+            [] as [(std::string::String, std::string::String); 0]
+        );
         assert!(
             sink.events()
                 .iter()
@@ -616,10 +632,11 @@ mod tests {
         );
         // Queue length includes the backoff slot.
         assert_eq!(sched.queue.len(), 1);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn higher_priority_pod_pops_first() {
+    async fn higher_priority_pod_pops_first() -> TestResult {
         let src = Arc::new(InMemorySource::new());
         let sink = Arc::new(InMemorySink::new());
         src.add_node(node("n1", 10_000, 100_000));
@@ -631,14 +648,15 @@ mod tests {
         src.add_pod(high);
 
         let sched = Scheduler::new(src.clone(), sink.clone());
-        sched.sync().await.unwrap();
-        let outcomes = sched.drain_active().await.unwrap();
+        sched.sync().await?;
+        let outcomes = sched.drain_active().await?;
         assert_eq!(outcomes[0].pod_full_name, "default/high");
         assert_eq!(outcomes[1].pod_full_name, "default/low");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn binds_only_to_node_passing_taint() {
+    async fn binds_only_to_node_passing_taint() -> TestResult {
         let src = Arc::new(InMemorySource::new());
         let sink = Arc::new(InMemorySink::new());
 
@@ -654,9 +672,10 @@ mod tests {
         src.add_pod(pod("a", 100, 100));
 
         let sched = Scheduler::new(src.clone(), sink.clone());
-        sched.sync().await.unwrap();
-        sched.run_once().await.unwrap();
+        sched.sync().await?;
+        sched.run_once().await?;
         assert_eq!(sink.binds(), vec![("default/a".into(), "clean".into())]);
+        Ok(())
     }
 
     // ---------- Binding cycle (Reserve / Permit / PreBind) ----------
@@ -666,14 +685,14 @@ mod tests {
 
     #[derive(Default)]
     struct Calls {
-        log: std::sync::Mutex<Vec<String>>,
+        log: parking_lot::Mutex<Vec<String>>,
     }
     impl Calls {
         fn push(&self, s: String) {
-            self.log.lock().unwrap().push(s);
+            self.log.lock().push(s);
         }
         fn snapshot(&self) -> Vec<String> {
-            self.log.lock().unwrap().clone()
+            self.log.lock().clone()
         }
     }
 
@@ -723,7 +742,7 @@ mod tests {
         assert!(!log.iter().any(|s| s.starts_with("unreserve")));
     }
 
-    use crate::framework::{BindPlugin, Code, PostBindPlugin};
+    use crate::framework::{BindPlugin, PostBindPlugin};
 
     struct RecordingBind(Arc<Calls>);
     #[async_trait::async_trait]
@@ -767,7 +786,10 @@ mod tests {
         // The custom bind plugin owned the bind; the DefaultBinder (sink) was
         // never consulted.
         assert!(calls.snapshot().contains(&"bind:gamma:n1".to_string()));
-        assert!(sink.binds().is_empty());
+        assert_eq!(
+            sink.binds(),
+            [] as [(std::string::String, std::string::String); 0]
+        );
         // Success still surfaces a Scheduled event.
         assert!(sink.events().iter().any(|(_, r, _)| r == "Scheduled"));
     }
@@ -838,13 +860,18 @@ mod tests {
         let info = QueuedPodInfo::new(pod("zeta", 100, 256));
         sched.schedule_and_bind(info, 0).await;
 
-        assert!(sink.binds().is_empty());
+        assert_eq!(
+            sink.binds(),
+            [] as [(std::string::String, std::string::String); 0]
+        );
         assert!(!calls.snapshot().iter().any(|s| s.starts_with("postbind")));
     }
 
     // ---------- PreEnqueue (queue-admission gate) ----------
 
     use crate::framework::PreEnqueuePlugin;
+
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
 
     /// Gates out any pod whose label `gate=open` is absent.
     struct LabelGate;
@@ -862,7 +889,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pre_enqueue_gate_holds_pod_out_of_active_queue() {
+    async fn pre_enqueue_gate_holds_pod_out_of_active_queue() -> TestResult {
         let src = Arc::new(InMemorySource::new());
         let sink = Arc::new(InMemorySink::new());
         let reg = PluginRegistry::builder()
@@ -873,15 +900,19 @@ mod tests {
 
         // Gated pod (no label) is parked, not scheduled.
         src.add_pod(pod("gated", 100, 256));
-        sched.sync().await.unwrap();
-        assert!(sched.run_once().await.unwrap().is_none());
-        assert!(sink.binds().is_empty());
+        sched.sync().await?;
+        assert!(sched.run_once().await?.is_none());
+        assert_eq!(
+            sink.binds(),
+            [] as [(std::string::String, std::string::String); 0]
+        );
         // It lives in the unschedulable set, not the active queue.
         assert_eq!(sched.queue.unschedulable_count(), 1);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn pre_enqueue_admits_pod_when_gate_open() {
+    async fn pre_enqueue_admits_pod_when_gate_open() -> TestResult {
         let src = Arc::new(InMemorySource::new());
         let sink = Arc::new(InMemorySink::new());
         let reg = PluginRegistry::builder()
@@ -893,9 +924,10 @@ mod tests {
         let mut p = pod("open", 100, 256);
         p.metadata.labels.insert("gate".into(), "open".into());
         src.add_pod(p);
-        sched.sync().await.unwrap();
-        sched.run_once().await.unwrap();
+        sched.sync().await?;
+        sched.run_once().await?;
         assert_eq!(sink.binds(), vec![("default/open".into(), "n1".into())]);
+        Ok(())
     }
 
     #[tokio::test]
@@ -914,7 +946,10 @@ mod tests {
         sched.schedule_and_bind(info, 0).await;
 
         // Permit denied -> no bind happened.
-        assert!(sink.binds().is_empty());
+        assert_eq!(
+            sink.binds(),
+            [] as [(std::string::String, std::string::String); 0]
+        );
         // Reserve must have been rolled back via Unreserve.
         let log = calls.snapshot();
         assert!(log.contains(&"reserve:beta:n1".to_string()));
@@ -943,7 +978,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn permit_wait_then_allow_proceeds_to_bind() {
+    async fn permit_wait_then_allow_proceeds_to_bind() -> TestResult {
         let src = Arc::new(InMemorySource::new());
         let sink = Arc::new(InMemorySink::new());
         let calls = Arc::new(Calls::default());
@@ -968,16 +1003,17 @@ mod tests {
         assert_eq!(wp.pod_uid(), "waiter");
         assert!(wp.allow());
 
-        handle.await.unwrap();
+        handle.await?;
         assert_eq!(sink.binds(), vec![("default/waiter".into(), "n1".into())]);
         // Reserve held, never rolled back.
         assert!(!calls.snapshot().iter().any(|s| s.starts_with("unreserve")));
         // The gate is deregistered once resolved.
         assert!(sched.get_waiting_pod("waiter").is_none());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn permit_wait_then_reject_unreserves_and_requeues() {
+    async fn permit_wait_then_reject_unreserves_and_requeues() -> TestResult {
         let src = Arc::new(InMemorySource::new());
         let sink = Arc::new(InMemorySink::new());
         let calls = Arc::new(Calls::default());
@@ -1000,13 +1036,17 @@ mod tests {
         };
         assert!(wp.reject("no longer wanted"));
 
-        handle.await.unwrap();
-        assert!(sink.binds().is_empty());
+        handle.await?;
+        assert_eq!(
+            sink.binds(),
+            [] as [(std::string::String, std::string::String); 0]
+        );
         let log = calls.snapshot();
         assert!(log.contains(&"reserve:rejectee:n1".to_string()));
         assert!(log.contains(&"unreserve:rejectee:n1".to_string()));
         assert!(!sched.cache.is_assumed("rejectee"));
         assert!(sched.queue.unschedulable_count() + sched.queue.backoff_count() >= 1);
+        Ok(())
     }
 
     #[tokio::test]
@@ -1025,7 +1065,10 @@ mod tests {
         let info = QueuedPodInfo::new(pod("timeouter", 100, 256));
         sched.schedule_and_bind(info, 0).await;
 
-        assert!(sink.binds().is_empty());
+        assert_eq!(
+            sink.binds(),
+            [] as [(std::string::String, std::string::String); 0]
+        );
         let log = calls.snapshot();
         assert!(log.contains(&"reserve:timeouter:n1".to_string()));
         assert!(log.contains(&"unreserve:timeouter:n1".to_string()));

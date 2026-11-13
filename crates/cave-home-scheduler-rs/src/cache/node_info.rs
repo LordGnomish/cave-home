@@ -2,7 +2,7 @@
 //! Per-node aggregated state visible to filter / score plugins.
 //!
 //! Source: kubernetes/kubernetes@756939600b9a7180fc2df6550a4585b638875e67
-//!         pkg/scheduler/framework/types.go::NodeInfo
+//!         `pkg/scheduler/framework/types.go::NodeInfo`
 
 use std::collections::BTreeMap;
 
@@ -46,7 +46,7 @@ impl NodeInfo {
     }
 
     #[must_use]
-    pub fn node(&self) -> &Node {
+    pub const fn node(&self) -> &Node {
         &self.node
     }
 
@@ -143,10 +143,12 @@ mod tests {
     }
 
     fn pod_with_ports(name: &str, hp: i32) -> Pod {
-        let mut p = Pod::default();
-        p.metadata = ObjectMeta {
-            name: name.into(),
-            uid: name.into(),
+        let mut p = Pod {
+            metadata: ObjectMeta {
+                name: name.into(),
+                uid: name.into(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         p.spec = PodSpec::default();
@@ -188,6 +190,6 @@ mod tests {
         let p = pod_with_ports("a", 8080);
         info.add_pod(p.clone());
         info.remove_pod(&p);
-        assert!(info.used_host_ports().is_empty());
+        assert_eq!(info.used_host_ports(), []);
     }
 }
