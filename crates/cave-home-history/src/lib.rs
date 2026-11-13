@@ -59,6 +59,7 @@
 pub mod aggregate;
 pub mod decimate;
 pub mod label;
+mod num;
 pub mod retention;
 pub mod sample;
 pub mod state_history;

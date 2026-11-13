@@ -99,7 +99,7 @@ impl Sample {
     ///
     /// # Errors
     /// Returns [`SampleError::NotFinite`] if `value` is `NaN` or infinite.
-    pub fn new(timestamp: i64, value: f64) -> Result<Self, SampleError> {
+    pub const fn new(timestamp: i64, value: f64) -> Result<Self, SampleError> {
         if !value.is_finite() {
             return Err(SampleError::NotFinite);
         }
@@ -200,8 +200,10 @@ impl Series {
 mod tests {
     use super::*;
 
-    fn s(t: i64, v: f64) -> Sample {
-        Sample::new(t, v).expect("finite test sample")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn s(t: i64, v: f64) -> Result<Sample, SampleError> {
+        Sample::new(t, v)
     }
 
     #[test]
@@ -215,38 +217,42 @@ mod tests {
     }
 
     #[test]
-    fn accepts_finite_including_negative_and_zero() {
+    fn accepts_finite_including_negative_and_zero() -> TestResult {
         // Unlike a concentration, a time-series value may be negative
         // (temperature below zero, net power export, …).
         assert!(Sample::new(10, -5.0).is_ok());
         assert!(Sample::new(10, 0.0).is_ok());
-        assert_eq!(s(10, 21.5).value(), 21.5);
-        assert_eq!(s(10, 21.5).timestamp(), 10);
+        assert_eq!(s(10, 21.5)?.value(), 21.5);
+        assert_eq!(s(10, 21.5)?.timestamp(), 10);
+        Ok(())
     }
 
     #[test]
-    fn sorted_orders_by_timestamp_stably() {
-        let series = Series::sorted(vec![s(30, 3.0), s(10, 1.0), s(20, 2.0)]);
+    fn sorted_orders_by_timestamp_stably() -> TestResult {
+        let series = Series::sorted(vec![s(30, 3.0)?, s(10, 1.0)?, s(20, 2.0)?]);
         let ts: Vec<i64> = series.samples().iter().map(Sample::timestamp).collect();
         assert_eq!(ts, vec![10, 20, 30]);
+        Ok(())
     }
 
     #[test]
-    fn equal_timestamps_keep_input_order() {
+    fn equal_timestamps_keep_input_order() -> TestResult {
         // Two samples at t=10: "a" came first, so a "last" aggregate is "b".
-        let series = Series::sorted(vec![s(10, 1.0), s(10, 2.0), s(5, 0.0)]);
+        let series = Series::sorted(vec![s(10, 1.0)?, s(10, 2.0)?, s(5, 0.0)?]);
         let vals: Vec<f64> = series.samples().iter().map(Sample::value).collect();
         assert_eq!(vals, vec![0.0, 1.0, 2.0]);
+        Ok(())
     }
 
     #[test]
-    fn span_and_endpoints() {
-        let series = Series::sorted(vec![s(100, 1.0), s(160, 2.0), s(220, 3.0)]);
+    fn span_and_endpoints() -> TestResult {
+        let series = Series::sorted(vec![s(100, 1.0)?, s(160, 2.0)?, s(220, 3.0)?]);
         assert_eq!(series.first_timestamp(), Some(100));
         assert_eq!(series.last_timestamp(), Some(220));
         assert_eq!(series.span(), 120);
         assert_eq!(series.len(), 3);
         assert!(!series.is_empty());
+        Ok(())
     }
 
     #[test]

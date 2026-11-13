@@ -6,6 +6,7 @@
 //! bucket"*, *"WAL segment"* or any storage/protocol term. This module turns a
 //! computed value (or its absence) into that sentence.
 
+use crate::num::f64_to_i64;
 use crate::sample::TimeUnit;
 
 /// A UI language. Charter §6.3 requires EN + DE + TR from M1.
@@ -35,7 +36,7 @@ pub const fn no_data(lang: Lang) -> &'static str {
 /// glance tile.
 #[must_use]
 pub fn average(lang: Lang, period: &str, value: f64, unit: &str) -> String {
-    let rounded = value.round() as i64;
+    let rounded = f64_to_i64(value.round());
     match lang {
         Lang::En => format!("Average {period}: {rounded}{unit}"),
         Lang::De => format!("Durchschnitt {period}: {rounded}{unit}"),
@@ -126,6 +127,24 @@ mod tests {
             "Durchschnitt heute: 21°"
         );
         assert_eq!(average(Lang::Tr, "bugün", 21.0, "°"), "bugün ortalama: 21°");
+    }
+
+    #[test]
+    fn average_keeps_the_saturating_whole_number_conversion() {
+        // Ties round away from zero; a small negative reads "0", not "-0".
+        assert_eq!(average(Lang::En, "today", 21.5, ""), "Average today: 22");
+        assert_eq!(average(Lang::En, "today", -21.5, ""), "Average today: -22");
+        assert_eq!(average(Lang::En, "today", -0.4, ""), "Average today: 0");
+        // Out-of-range values clamp to the i64 bounds; NaN reads as 0.
+        assert_eq!(
+            average(Lang::En, "today", 1e300, ""),
+            "Average today: 9223372036854775807"
+        );
+        assert_eq!(
+            average(Lang::En, "today", f64::NEG_INFINITY, ""),
+            "Average today: -9223372036854775808"
+        );
+        assert_eq!(average(Lang::En, "today", f64::NAN, ""), "Average today: 0");
     }
 
     #[test]
