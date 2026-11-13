@@ -146,9 +146,11 @@ pub fn understand(utterance: &str, intents: &[CompiledIntent], lang: Lang) -> Un
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn understand_acts_on_a_command() {
-        let intents = intents::builtin_intents().expect("c");
+    fn understand_acts_on_a_command() -> TestResult {
+        let intents = intents::builtin_intents()?;
         match understand("turn the kitchen light on", &intents, Lang::En) {
             Understanding::Acted {
                 action,
@@ -165,51 +167,53 @@ mod tests {
                 assert_eq!(reply, "Turning on the kitchen light.");
                 assert!(confidence > 0.5);
             }
-            other => panic!("{other:?}"),
+            other => return Err(format!("{other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]
-    fn understand_falls_back_on_gibberish() {
-        let intents = intents::builtin_intents().expect("c");
+    fn understand_falls_back_on_gibberish() -> TestResult {
+        let intents = intents::builtin_intents()?;
         match understand("wibble wobble", &intents, Lang::De) {
-            Understanding::NotUnderstood { reply } => assert!(!reply.is_empty()),
-            other => panic!("{other:?}"),
+            Understanding::NotUnderstood { reply } => assert_ne!(reply, ""),
+            other => return Err(format!("{other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]
-    fn understand_replies_in_requested_language() {
-        let intents = intents::builtin_intents().expect("c");
+    fn understand_replies_in_requested_language() -> TestResult {
+        let intents = intents::builtin_intents()?;
         match understand("mutfak ışığını aç", &intents, Lang::Tr) {
             Understanding::Acted { reply, .. } => assert!(reply.contains("açıyorum")),
-            other => panic!("{other:?}"),
+            other => return Err(format!("{other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]
-    fn understand_reports_ambiguity() {
+    fn understand_reports_ambiguity() -> TestResult {
         // Two distinct intents that both match the same bare phrase.
         let a = CompiledIntent::new(
             "alpha",
             Lang::En,
             "{x}",
             std::iter::once(("x".to_string(), SlotKind::Open)).collect(),
-        )
-        .expect("t");
+        )?;
         let b = CompiledIntent::new(
             "beta",
             Lang::En,
             "{y}",
             std::iter::once(("y".to_string(), SlotKind::Open)).collect(),
-        )
-        .expect("t");
+        )?;
         match understand("hello", &[a, b], Lang::En) {
             Understanding::NeedsClarification { candidates, reply } => {
                 assert_eq!(candidates.len(), 2);
-                assert!(!reply.is_empty());
+                assert_ne!(reply, "");
             }
-            other => panic!("{other:?}"),
+            other => return Err(format!("{other:?}").into()),
         }
+        Ok(())
     }
 }

@@ -45,9 +45,9 @@ pub enum Element {
     /// A `{slot}` capture; the inner string is the slot name.
     Slot(String),
     /// An `[optional]` group — the inner sequence may be absent.
-    Optional(Vec<Element>),
+    Optional(Vec<Self>),
     /// An `(a|b|c)` group — exactly one branch is spoken.
-    Alternatives(Vec<Vec<Element>>),
+    Alternatives(Vec<Vec<Self>>),
 }
 
 /// Why a template string could not be compiled.
@@ -66,10 +66,10 @@ pub enum TemplateError {
 impl fmt::Display for TemplateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TemplateError::Unclosed(c) => write!(f, "unclosed `{c}` group in template"),
-            TemplateError::Unexpected(c) => write!(f, "unexpected `{c}` in template"),
-            TemplateError::EmptySlotName => write!(f, "a {{slot}} had no name"),
-            TemplateError::Empty => write!(f, "template is empty"),
+            Self::Unclosed(c) => write!(f, "unclosed `{c}` group in template"),
+            Self::Unexpected(c) => write!(f, "unexpected `{c}` in template"),
+            Self::EmptySlotName => write!(f, "a {{slot}} had no name"),
+            Self::Empty => write!(f, "template is empty"),
         }
     }
 }
@@ -83,7 +83,7 @@ impl Template {
     ///
     /// Returns [`TemplateError`] when brackets are unbalanced, a slot name is
     /// empty, or the template compiles to nothing.
-    pub fn parse(src: &str) -> Result<Template, TemplateError> {
+    pub fn parse(src: &str) -> Result<Self, TemplateError> {
         let chars: Vec<char> = src.chars().collect();
         let mut cursor = 0;
         let elements = parse_seq(&chars, &mut cursor, None)?;
@@ -94,7 +94,7 @@ impl Template {
         if elements.is_empty() {
             return Err(TemplateError::Empty);
         }
-        Ok(Template { elements })
+        Ok(Self { elements })
     }
 
     /// The compiled elements, in order.
@@ -317,7 +317,7 @@ fn parse_slot_name(chars: &[char], cursor: &mut usize) -> Result<String, Templat
 }
 
 /// Verify the char at the cursor is `close`, then step past it.
-fn expect_close(
+const fn expect_close(
     chars: &[char],
     cursor: &mut usize,
     close: char,
@@ -337,25 +337,29 @@ fn expect_close(
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn word(w: &str) -> Element {
         Element::Word(w.to_string())
     }
 
     #[test]
-    fn parses_plain_words_normalised() {
-        let t = Template::parse("Turn On").expect("valid");
+    fn parses_plain_words_normalised() -> TestResult {
+        let t = Template::parse("Turn On")?;
         assert_eq!(t.elements(), &[word("turn"), word("on")]);
+        Ok(())
     }
 
     #[test]
-    fn collapses_extra_whitespace_and_strips_punctuation() {
-        let t = Template::parse("  what's   the   weather?  ").expect("valid");
+    fn collapses_extra_whitespace_and_strips_punctuation() -> TestResult {
+        let t = Template::parse("  what's   the   weather?  ")?;
         assert_eq!(t.elements(), &[word("whats"), word("the"), word("weather")]);
+        Ok(())
     }
 
     #[test]
-    fn parses_optional_group() {
-        let t = Template::parse("turn [the] light on").expect("valid");
+    fn parses_optional_group() -> TestResult {
+        let t = Template::parse("turn [the] light on")?;
         assert_eq!(
             t.elements(),
             &[
@@ -365,11 +369,12 @@ mod tests {
                 word("on"),
             ]
         );
+        Ok(())
     }
 
     #[test]
-    fn parses_alternatives() {
-        let t = Template::parse("(what is|whats) it").expect("valid");
+    fn parses_alternatives() -> TestResult {
+        let t = Template::parse("(what is|whats) it")?;
         assert_eq!(
             t.elements(),
             &[
@@ -377,32 +382,36 @@ mod tests {
                 word("it"),
             ]
         );
+        Ok(())
     }
 
     #[test]
-    fn parses_slot() {
-        let t = Template::parse("turn {name} on").expect("valid");
+    fn parses_slot() -> TestResult {
+        let t = Template::parse("turn {name} on")?;
         assert_eq!(
             t.elements(),
             &[word("turn"), Element::Slot("name".to_string()), word("on")]
         );
+        Ok(())
     }
 
     #[test]
-    fn slot_names_are_collected_uniquely_in_order() {
-        let t = Template::parse("set {name} to {brightness} [for {name}]").expect("valid");
+    fn slot_names_are_collected_uniquely_in_order() -> TestResult {
+        let t = Template::parse("set {name} to {brightness} [for {name}]")?;
         assert_eq!(
             t.slot_names(),
             vec!["name".to_string(), "brightness".to_string()]
         );
+        Ok(())
     }
 
     #[test]
-    fn nests_groups() {
-        let t = Template::parse("turn [(the|a)] {name} on").expect("valid");
+    fn nests_groups() -> TestResult {
+        let t = Template::parse("turn [(the|a)] {name} on")?;
         // Just assert it compiled and has the slot.
         assert_eq!(t.slot_names(), vec!["name".to_string()]);
         assert!(matches!(t.elements()[1], Element::Optional(_)));
+        Ok(())
     }
 
     #[test]

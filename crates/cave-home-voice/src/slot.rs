@@ -40,7 +40,7 @@ pub struct ValueList {
 impl ValueList {
     /// Build a value list from canonical values.
     #[must_use]
-    pub fn new<I, S>(canonical: I) -> ValueList
+    pub fn new<I, S>(canonical: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: Into<String>,
@@ -51,18 +51,18 @@ impl ValueList {
             let key = normalize(&c);
             map.insert(key, c);
         }
-        ValueList { map }
+        Self { map }
     }
 
     /// Add a synonym (`spoken`) that resolves to an existing canonical value.
     /// If the canonical value is not already present it is added too, so a
     /// list can be built fluently.
     #[must_use]
-    pub fn with_synonym(mut self, spoken: &str, canonical: &str) -> ValueList {
+    pub fn with_synonym(mut self, spoken: &str, canonical: &str) -> Self {
         let canon_key = normalize(canonical);
-        if !self.map.contains_key(&canon_key) {
-            self.map.insert(canon_key, canonical.to_string());
-        }
+        self.map
+            .entry(canon_key)
+            .or_insert_with(|| canonical.to_string());
         self.map.insert(normalize(spoken), canonical.to_string());
         self
     }
@@ -99,8 +99,8 @@ impl SlotValue {
     #[must_use]
     pub fn as_text(&self) -> String {
         match self {
-            SlotValue::Text(t) => t.clone(),
-            SlotValue::Number(n) => n.to_string(),
+            Self::Text(t) => t.clone(),
+            Self::Number(n) => n.to_string(),
         }
     }
 
@@ -108,8 +108,8 @@ impl SlotValue {
     #[must_use]
     pub const fn as_number(&self) -> Option<u32> {
         match self {
-            SlotValue::Number(n) => Some(*n),
-            SlotValue::Text(_) => None,
+            Self::Number(n) => Some(*n),
+            Self::Text(_) => None,
         }
     }
 }
@@ -151,11 +151,9 @@ fn normalize(s: &str) -> String {
                 out.push(lc);
             }
             last_space = false;
-        } else if c.is_whitespace() {
-            if !last_space {
-                out.push(' ');
-                last_space = true;
-            }
+        } else if c.is_whitespace() && !last_space {
+            out.push(' ');
+            last_space = true;
         }
         // punctuation dropped
     }

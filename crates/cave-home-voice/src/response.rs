@@ -88,14 +88,14 @@ fn scene_reply(name: &str, lang: Lang) -> String {
 
 fn query_reply(target: &str, what: QueryKind, lang: Lang, answer: Answer) -> String {
     match what {
-        QueryKind::Temperature => match answer.temperature_c {
-            Some(c) => match lang {
+        QueryKind::Temperature => answer.temperature_c.map_or_else(
+            || unknown_reply(lang),
+            |c| match lang {
                 Lang::En => format!("The {target} is {c} degrees."),
                 Lang::De => format!("Im {target} sind es {c} Grad."),
                 Lang::Tr => format!("{target} {c} derece."),
             },
-            None => unknown_reply(lang),
-        },
+        ),
         QueryKind::OnState => match answer.is_on {
             Some(true) => match lang {
                 Lang::En => format!("The {target} light is on."),
@@ -274,8 +274,8 @@ mod tests {
     #[test]
     fn fallback_replies_exist_in_all_languages() {
         for lang in Lang::ALL {
-            assert!(!not_understood(lang).is_empty());
-            assert!(!please_clarify(lang).is_empty());
+            assert_ne!(not_understood(lang), "");
+            assert_ne!(please_clarify(lang), "");
         }
     }
 

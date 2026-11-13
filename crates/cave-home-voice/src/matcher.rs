@@ -39,8 +39,8 @@ impl CompiledIntent {
         lang: Lang,
         template_src: &str,
         slots: BTreeMap<String, SlotKind>,
-    ) -> Result<CompiledIntent, crate::template::TemplateError> {
-        Ok(CompiledIntent {
+    ) -> Result<Self, crate::template::TemplateError> {
+        Ok(Self {
             id: id.into(),
             lang,
             template: Template::parse(template_src)?,
@@ -114,28 +114,25 @@ pub fn match_intent(utterance: &str, intents: &[CompiledIntent]) -> MatchOutcome
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    match best.first() {
-        None => MatchOutcome::NoMatch,
-        Some(top) => {
-            let top_conf = top.confidence;
-            // Collect distinct intent ids tied at the top score.
-            let mut tied_ids: Vec<String> = Vec::new();
-            for m in &best {
-                if (m.confidence - top_conf).abs() < f32::EPSILON {
-                    if !tied_ids.contains(&m.intent) {
-                        tied_ids.push(m.intent.clone());
-                    }
-                } else {
-                    break;
+    best.first().map_or(MatchOutcome::NoMatch, |top| {
+        let top_conf = top.confidence;
+        // Collect distinct intent ids tied at the top score.
+        let mut tied_ids: Vec<String> = Vec::new();
+        for m in &best {
+            if (m.confidence - top_conf).abs() < f32::EPSILON {
+                if !tied_ids.contains(&m.intent) {
+                    tied_ids.push(m.intent.clone());
                 }
-            }
-            if tied_ids.len() > 1 {
-                MatchOutcome::Ambiguous(tied_ids)
             } else {
-                MatchOutcome::Matched(top.clone())
+                break;
             }
         }
-    }
+        if tied_ids.len() > 1 {
+            MatchOutcome::Ambiguous(tied_ids)
+        } else {
+            MatchOutcome::Matched(top.clone())
+        }
+    })
 }
 
 /// Attempt to match one intent against the token stream. Returns the resolved
@@ -266,8 +263,39 @@ fn confidence_of(elements: &[Element], token_count: usize) -> f32 {
     if token_count == 0 {
         return 1.0;
     }
-    let ratio = required as f32 / token_count as f32;
-    0.5 + 0.5 * ratio.min(1.0)
+    let ratio = usize_to_f32(required) / usize_to_f32(token_count);
+    // Plain multiply-then-add (not a fused `mul_add`), as before.
+    let share = 0.5 * ratio.min(1.0);
+    0.5 + share
+}
+
+/// `n as f32` — the nearest `f32`, ties to even (exact up to 2^24) — spelled
+/// out with integer arithmetic instead of a cast.
+fn usize_to_f32(n: usize) -> f32 {
+    const MANTISSA_BITS: u32 = 23;
+    const EXPONENT_BIAS: u32 = 127;
+
+    let n = n as u64;
+    if n == 0 {
+        return 0.0;
+    }
+    // Index of the highest set bit: the unbiased binary exponent.
+    let exponent = n.ilog2();
+    // `kept` holds the 24 leading bits (implicit 1 at bit 23); whatever is
+    // shifted out decides the rounding, half-way cases going to even.
+    let (kept, round_up) = if exponent <= MANTISSA_BITS {
+        (n << (MANTISSA_BITS - exponent), false)
+    } else {
+        let dropped_bits = exponent - MANTISSA_BITS;
+        let kept = n >> dropped_bits;
+        let dropped = n & ((1 << dropped_bits) - 1);
+        let half = 1 << (dropped_bits - 1);
+        (kept, dropped > half || (dropped == half && kept & 1 == 1))
+    };
+    let [.., b2, b1, b0] = kept.to_be_bytes();
+    let fraction = u32::from_be_bytes([0, b2 & 0x7f, b1, b0]);
+    // A round-up that overflows the fraction carries into the exponent.
+    f32::from_bits(((EXPONENT_BIAS + exponent) << MANTISSA_BITS) + fraction + u32::from(round_up))
 }
 
 fn count_required_words(elements: &[Element]) -> usize {
@@ -296,6 +324,34 @@ mod tests {
     use super::*;
     use crate::slot::ValueList;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    #[test]
+    fn usize_to_f32_rounds_like_the_cast() {
+        assert_eq!(usize_to_f32(0).to_bits(), 0.0_f32.to_bits());
+        assert_eq!(usize_to_f32(1).to_bits(), 1.0_f32.to_bits());
+        assert_eq!(usize_to_f32(7).to_bits(), 7.0_f32.to_bits());
+        // 2^24 is the last point where every integer is representable.
+        assert_eq!(
+            usize_to_f32(16_777_216).to_bits(),
+            16_777_216.0_f32.to_bits()
+        );
+        // Half-way cases go to the even neighbour …
+        assert_eq!(
+            usize_to_f32(16_777_217).to_bits(),
+            16_777_216.0_f32.to_bits()
+        );
+        assert_eq!(
+            usize_to_f32(16_777_219).to_bits(),
+            16_777_220.0_f32.to_bits()
+        );
+        // … and a round-up out of the mantissa bumps the exponent.
+        assert_eq!(
+            usize_to_f32(4_294_967_295).to_bits(),
+            4_294_967_296.0_f32.to_bits()
+        );
+    }
+
     fn rooms() -> SlotKind {
         SlotKind::List(
             ValueList::new(["living room", "kitchen"]).with_synonym("lounge", "living room"),
@@ -318,25 +374,25 @@ mod tests {
     }
 
     #[test]
-    fn matches_literal_intent() {
+    fn matches_literal_intent() -> TestResult {
         let i = CompiledIntent::new(
             "lights.all_off",
             Lang::En,
             "turn everything off",
             BTreeMap::new(),
-        )
-        .expect("template");
+        )?;
         match match_intent("Turn everything off.", &[i]) {
             MatchOutcome::Matched(m) => {
                 assert_eq!(m.intent, "lights.all_off");
                 assert!((m.confidence - 1.0).abs() < f32::EPSILON);
             }
-            other => panic!("expected match, got {other:?}"),
+            other => return Err(format!("expected match, got {other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]
-    fn matches_with_optional_present_or_absent() {
+    fn matches_with_optional_present_or_absent() -> TestResult {
         let mk = || {
             CompiledIntent::new(
                 "light.on",
@@ -344,37 +400,37 @@ mod tests {
                 "turn [the] {name} on",
                 slots(&[("name", rooms())]),
             )
-            .expect("template")
         };
         for utt in ["turn the kitchen on", "turn kitchen on"] {
-            match match_intent(utt, &[mk()]) {
+            match match_intent(utt, &[mk()?]) {
                 MatchOutcome::Matched(m) => {
                     assert_eq!(m.slots["name"], SlotValue::Text("kitchen".into()));
                 }
-                other => panic!("{utt:?} -> {other:?}"),
+                other => return Err(format!("{utt:?} -> {other:?}").into()),
             }
         }
+        Ok(())
     }
 
     #[test]
-    fn extracts_and_canonicalises_slot_via_synonym() {
+    fn extracts_and_canonicalises_slot_via_synonym() -> TestResult {
         let i = CompiledIntent::new(
             "light.on",
             Lang::En,
             "turn [the] {name} on",
             slots(&[("name", rooms())]),
-        )
-        .expect("template");
+        )?;
         match match_intent("turn the lounge on", &[i]) {
             MatchOutcome::Matched(m) => {
                 assert_eq!(m.slots["name"], SlotValue::Text("living room".into()));
             }
-            other => panic!("{other:?}"),
+            other => return Err(format!("{other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]
-    fn extracts_number_slot() {
+    fn extracts_number_slot() -> TestResult {
         let i = CompiledIntent::new(
             "light.brightness",
             Lang::En,
@@ -383,43 +439,44 @@ mod tests {
                 ("name", rooms()),
                 ("level", SlotKind::Number { min: 0, max: 100 }),
             ]),
-        )
-        .expect("template");
+        )?;
         match match_intent("set the kitchen to fifty percent", &[i]) {
             MatchOutcome::Matched(m) => {
                 assert_eq!(m.slots["name"], SlotValue::Text("kitchen".into()));
                 assert_eq!(m.slots["level"], SlotValue::Number(50));
             }
-            other => panic!("{other:?}"),
+            other => return Err(format!("{other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]
-    fn rejects_unknown_slot_value() {
+    fn rejects_unknown_slot_value() -> TestResult {
         let i = CompiledIntent::new(
             "light.on",
             Lang::En,
             "turn [the] {name} on",
             slots(&[("name", rooms())]),
-        )
-        .expect("template");
+        )?;
         assert_eq!(
             match_intent("turn the garage on", &[i]),
             MatchOutcome::NoMatch
         );
+        Ok(())
     }
 
     #[test]
-    fn no_match_when_template_does_not_consume_all_tokens() {
-        let i = CompiledIntent::new("x", Lang::En, "turn it off", BTreeMap::new()).expect("t");
+    fn no_match_when_template_does_not_consume_all_tokens() -> TestResult {
+        let i = CompiledIntent::new("x", Lang::En, "turn it off", BTreeMap::new())?;
         assert_eq!(
             match_intent("turn it off now please", &[i]),
             MatchOutcome::NoMatch
         );
+        Ok(())
     }
 
     #[test]
-    fn alternatives_match_either_branch() {
+    fn alternatives_match_either_branch() -> TestResult {
         let mk = || {
             CompiledIntent::new(
                 "query.temp",
@@ -427,71 +484,68 @@ mod tests {
                 "(what is|whats) the {name} temperature",
                 slots(&[("name", rooms())]),
             )
-            .expect("t")
         };
         for utt in [
             "what is the kitchen temperature",
             "whats the kitchen temperature",
         ] {
             assert!(matches!(
-                match_intent(utt, &[mk()]),
+                match_intent(utt, &[mk()?]),
                 MatchOutcome::Matched(_)
             ));
         }
+        Ok(())
     }
 
     #[test]
-    fn more_specific_intent_outscores_generic() {
+    fn more_specific_intent_outscores_generic() -> TestResult {
         // Generic catch-all (slot-only) vs specific literal command.
         let generic = CompiledIntent::new(
             "scene.activate",
             Lang::En,
             "{name}",
             slots(&[("name", SlotKind::Open)]),
-        )
-        .expect("t");
+        )?;
         let specific =
-            CompiledIntent::new("lights.all_off", Lang::En, "lights off", BTreeMap::new())
-                .expect("t");
+            CompiledIntent::new("lights.all_off", Lang::En, "lights off", BTreeMap::new())?;
         match match_intent("lights off", &[generic, specific]) {
             MatchOutcome::Matched(m) => assert_eq!(m.intent, "lights.all_off"),
-            other => panic!("{other:?}"),
+            other => return Err(format!("{other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]
-    fn ties_between_different_intents_are_ambiguous() {
-        let a = CompiledIntent::new("a", Lang::En, "{name}", slots(&[("name", SlotKind::Open)]))
-            .expect("t");
+    fn ties_between_different_intents_are_ambiguous() -> TestResult {
+        let a = CompiledIntent::new("a", Lang::En, "{name}", slots(&[("name", SlotKind::Open)]))?;
         let b = CompiledIntent::new(
             "b",
             Lang::En,
             "{thing}",
             slots(&[("thing", SlotKind::Open)]),
-        )
-        .expect("t");
+        )?;
         match match_intent("hello", &[a, b]) {
             MatchOutcome::Ambiguous(ids) => {
                 assert_eq!(ids.len(), 2);
                 assert!(ids.contains(&"a".to_string()));
             }
-            other => panic!("expected ambiguous, got {other:?}"),
+            other => return Err(format!("expected ambiguous, got {other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]
-    fn same_intent_two_variants_is_not_ambiguous() {
-        let v1 =
-            CompiledIntent::new("light.on", Lang::En, "lights on", BTreeMap::new()).expect("t");
-        let v2 = CompiledIntent::new("light.on", Lang::En, "turn lights on", BTreeMap::new())
-            .expect("t");
+    fn same_intent_two_variants_is_not_ambiguous() -> TestResult {
+        let v1 = CompiledIntent::new("light.on", Lang::En, "lights on", BTreeMap::new())?;
+        let v2 = CompiledIntent::new("light.on", Lang::En, "turn lights on", BTreeMap::new())?;
         // "lights on" only matches v1, but make both id-equal to show same-id
         // ties collapse. Use an utterance only v1 matches; confidence equal is
         // moot — the real same-id tie is exercised by intents.rs sets.
         match match_intent("lights on", &[v1, v2]) {
             MatchOutcome::Matched(m) => assert_eq!(m.intent, "light.on"),
-            other => panic!("{other:?}"),
+            other => return Err(format!("{other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]

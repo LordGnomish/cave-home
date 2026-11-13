@@ -190,7 +190,7 @@ fn ten_tr(word: &str) -> Option<u32> {
 fn parse_words_tr(text: &str) -> Option<u32> {
     let words: Vec<&str> = text.split_whitespace().collect();
     match words.as_slice() {
-        ["yüz"] | ["yuz"] => Some(100),
+        ["yüz" | "yuz"] => Some(100),
         [w] => ten_tr(w).or_else(|| unit_tr(w)),
         // Turkish is fully analytic: "kırk iki" = forty two = 42.
         [tens, units] => {

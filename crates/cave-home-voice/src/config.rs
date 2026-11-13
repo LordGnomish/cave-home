@@ -23,8 +23,8 @@ pub struct WakeWord {
 impl WakeWord {
     /// An enabled wake word from a phrase.
     #[must_use]
-    pub fn enabled(phrase: impl Into<String>) -> WakeWord {
-        WakeWord {
+    pub fn enabled(phrase: impl Into<String>) -> Self {
+        Self {
             phrase: phrase.into(),
             enabled: true,
         }
@@ -57,8 +57,8 @@ pub enum ConfigError {
 impl AssistantConfig {
     /// A sensible default: "Hey cave-home", the given language, a default voice.
     #[must_use]
-    pub fn default_for(language: Lang) -> AssistantConfig {
-        AssistantConfig {
+    pub fn default_for(language: Lang) -> Self {
+        Self {
             language,
             voice: "default".to_string(),
             wake_words: vec![WakeWord::enabled("Hey cave-home")],

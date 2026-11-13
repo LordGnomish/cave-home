@@ -49,7 +49,11 @@ pub fn example_scenes() -> ValueList {
 }
 
 /// Slot kinds keyed by slot name, shared across all built-in templates.
-fn slot_defs(name_list: ValueList, scene_list: ValueList, cover_list: ValueList) -> SlotTable {
+const fn slot_defs(
+    name_list: ValueList,
+    scene_list: ValueList,
+    cover_list: ValueList,
+) -> SlotTable {
     SlotTable {
         rooms: name_list,
         scenes: scene_list,
@@ -64,7 +68,7 @@ struct SlotTable {
 }
 
 impl SlotTable {
-    fn name(&self, list: &ValueList) -> BTreeMap<String, SlotKind> {
+    fn name(list: &ValueList) -> BTreeMap<String, SlotKind> {
         let mut m = BTreeMap::new();
         m.insert("name".to_string(), SlotKind::List(list.clone()));
         m
@@ -216,11 +220,11 @@ pub fn builtin_intents_with(
     for spec in SPECS {
         for (lang, src) in spec.sentences {
             let slots = match spec.slots {
-                SlotSelector::Room => table.name(&table.rooms),
+                SlotSelector::Room => SlotTable::name(&table.rooms),
                 SlotSelector::RoomAndPercent => table.name_and_level(100),
                 SlotSelector::RoomAndDegrees => table.name_and_level(35),
-                SlotSelector::Cover => table.name(&table.covers),
-                SlotSelector::Scene => table.name(&table.scenes),
+                SlotSelector::Cover => SlotTable::name(&table.covers),
+                SlotSelector::Scene => SlotTable::name(&table.scenes),
             };
             out.push(CompiledIntent::new(spec.id, *lang, src, slots)?);
         }
@@ -234,120 +238,137 @@ mod tests {
     use crate::matcher::{MatchOutcome, match_intent};
     use crate::slot::SlotValue;
 
-    fn matched(utt: &str) -> (String, BTreeMap<String, SlotValue>) {
-        let intents = builtin_intents().expect("built-ins compile");
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn matched(
+        utt: &str,
+    ) -> Result<(String, BTreeMap<String, SlotValue>), Box<dyn std::error::Error>> {
+        let intents = builtin_intents()?;
         match match_intent(utt, &intents) {
-            MatchOutcome::Matched(m) => (m.intent, m.slots),
-            other => panic!("{utt:?} -> {other:?}"),
+            MatchOutcome::Matched(m) => Ok((m.intent, m.slots)),
+            other => Err(format!("{utt:?} -> {other:?}").into()),
         }
     }
 
     #[test]
-    fn all_builtins_compile() {
-        let intents = builtin_intents().expect("compile");
+    fn all_builtins_compile() -> TestResult {
+        let intents = builtin_intents()?;
         assert!(
             intents.len() >= 25,
             "expected a full set, got {}",
             intents.len()
         );
+        Ok(())
     }
 
     #[test]
-    fn english_light_on_off() {
-        let (id, slots) = matched("turn the kitchen light on");
+    fn english_light_on_off() -> TestResult {
+        let (id, slots) = matched("turn the kitchen light on")?;
         assert_eq!(id, "light.on");
         assert_eq!(slots["name"], SlotValue::Text("kitchen".into()));
-        let (id, _) = matched("switch the bedroom off");
+        let (id, _) = matched("switch the bedroom off")?;
         assert_eq!(id, "light.off");
+        Ok(())
     }
 
     #[test]
-    fn german_light_command() {
-        let (id, slots) = matched("schalte das licht im wohnzimmer ein");
+    fn german_light_command() -> TestResult {
+        let (id, slots) = matched("schalte das licht im wohnzimmer ein")?;
         assert_eq!(id, "light.on");
         assert_eq!(slots["name"], SlotValue::Text("living room".into()));
+        Ok(())
     }
 
     #[test]
-    fn turkish_light_command() {
-        let (id, slots) = matched("mutfak ışığını aç");
+    fn turkish_light_command() -> TestResult {
+        let (id, slots) = matched("mutfak ışığını aç")?;
         assert_eq!(id, "light.on");
         assert_eq!(slots["name"], SlotValue::Text("kitchen".into()));
+        Ok(())
     }
 
     #[test]
-    fn english_brightness_with_number_word() {
-        let (id, slots) = matched("dim the bedroom light to fifty percent");
+    fn english_brightness_with_number_word() -> TestResult {
+        let (id, slots) = matched("dim the bedroom light to fifty percent")?;
         assert_eq!(id, "light.brightness");
         assert_eq!(slots["level"], SlotValue::Number(50));
+        Ok(())
     }
 
     #[test]
-    fn turkish_brightness_with_number_word() {
-        let (id, slots) = matched("yatak odası ışığını yüzde elli yap");
+    fn turkish_brightness_with_number_word() -> TestResult {
+        let (id, slots) = matched("yatak odası ışığını yüzde elli yap")?;
         assert_eq!(id, "light.brightness");
         assert_eq!(slots["level"], SlotValue::Number(50));
         assert_eq!(slots["name"], SlotValue::Text("bedroom".into()));
+        Ok(())
     }
 
     #[test]
-    fn climate_set_clamps_to_household_range() {
-        let (id, slots) = matched("set the living room to 21 degrees");
+    fn climate_set_clamps_to_household_range() -> TestResult {
+        let (id, slots) = matched("set the living room to 21 degrees")?;
         assert_eq!(id, "climate.set");
         assert_eq!(slots["level"], SlotValue::Number(21));
         // 50 degrees is outside the household range (max 35) -> no match.
-        let intents = builtin_intents().expect("c");
+        let intents = builtin_intents()?;
         assert_eq!(
             match_intent("set the living room to 50 degrees", &intents),
             MatchOutcome::NoMatch
         );
+        Ok(())
     }
 
     #[test]
-    fn cover_open_close_three_languages() {
-        assert_eq!(matched("open the blinds").0, "cover.open");
-        assert_eq!(matched("öffne die rollladen").0, "cover.open");
-        assert_eq!(matched("perde kapat").0, "cover.close");
+    fn cover_open_close_three_languages() -> TestResult {
+        assert_eq!(matched("open the blinds")?.0, "cover.open");
+        assert_eq!(matched("öffne die rollladen")?.0, "cover.open");
+        assert_eq!(matched("perde kapat")?.0, "cover.close");
+        Ok(())
     }
 
     #[test]
-    fn scene_activation() {
-        assert_eq!(matched("start the movie night scene").0, "scene.activate");
-        assert_eq!(matched("filmabend").1.len(), 1); // captured the name slot
+    fn scene_activation() -> TestResult {
+        assert_eq!(matched("start the movie night scene")?.0, "scene.activate");
+        assert_eq!(matched("filmabend")?.1.len(), 1); // captured the name slot
+        Ok(())
     }
 
     #[test]
-    fn query_temperature_english_and_german() {
-        let (id, slots) = matched("what's the bedroom temperature");
+    fn query_temperature_english_and_german() -> TestResult {
+        let (id, slots) = matched("what's the bedroom temperature")?;
         assert_eq!(id, "query.temperature");
         assert_eq!(slots["name"], SlotValue::Text("bedroom".into()));
         assert_eq!(
-            matched("wie warm ist es im wohnzimmer").0,
+            matched("wie warm ist es im wohnzimmer")?.0,
             "query.temperature"
         );
+        Ok(())
     }
 
     #[test]
-    fn query_on_state() {
-        assert_eq!(matched("is the kitchen light on").0, "query.on_state");
-        assert_eq!(matched("mutfak ışığı açık mı").0, "query.on_state");
+    fn query_on_state() -> TestResult {
+        assert_eq!(matched("is the kitchen light on")?.0, "query.on_state");
+        assert_eq!(matched("mutfak ışığı açık mı")?.0, "query.on_state");
+        Ok(())
     }
 
     #[test]
-    fn unknown_room_rejected_across_set() {
-        let intents = builtin_intents().expect("c");
+    fn unknown_room_rejected_across_set() -> TestResult {
+        let intents = builtin_intents()?;
         assert_eq!(
             match_intent("turn the garage light on", &intents),
             MatchOutcome::NoMatch
         );
+        Ok(())
     }
 
     #[test]
-    fn gibberish_is_no_match() {
-        let intents = builtin_intents().expect("c");
+    fn gibberish_is_no_match() -> TestResult {
+        let intents = builtin_intents()?;
         assert_eq!(
             match_intent("flibber the wobbledygook", &intents),
             MatchOutcome::NoMatch
         );
+        Ok(())
     }
 }
