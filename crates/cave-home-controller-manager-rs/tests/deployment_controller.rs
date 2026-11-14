@@ -12,6 +12,8 @@ use cave_home_controller_manager_rs::controllers::deployment::{
 use cave_home_controller_manager_rs::reconcile::Outcome;
 use cave_home_controller_manager_rs::types::{Object, ObjectMeta, OwnerReference};
 
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
 fn sel(app: &str) -> std::collections::BTreeMap<String, String> {
     let mut m = std::collections::BTreeMap::new();
     m.insert("app".to_owned(), app.to_owned());
@@ -117,7 +119,7 @@ fn seed_old_rs(c: &mut Cluster, d: &Deployment, replicas: i32, available: i32) -
 }
 
 #[test]
-fn rolling_update_surges_new_rs_before_cutting_old() {
+fn rolling_update_surges_new_rs_before_cutting_old() -> TestResult {
     let mut c = Cluster::new();
     let d = c.deployments.create(deploy(
         "web",
@@ -137,20 +139,21 @@ fn rolling_update_surges_new_rs_before_cutting_old() {
     let new_rs = c
         .replicasets
         .get(&format!("prod/web-{hash}"))
-        .expect("new RS created");
+        .ok_or("new RS created")?;
     assert_eq!(
         new_rs.spec.replicas, 1,
         "surge up new by maxSurge (3+1 total cap, old still 3)"
     );
-    let old_now = c.replicasets.get(&old.key()).expect("old RS present");
+    let old_now = c.replicasets.get(&old.key()).ok_or("old RS present")?;
     assert_eq!(
         old_now.spec.replicas, 3,
         "old not yet cut — new pods not available yet"
     );
+    Ok(())
 }
 
 #[test]
-fn rolling_update_cuts_old_once_new_is_available() {
+fn rolling_update_cuts_old_once_new_is_available() -> TestResult {
     let mut c = Cluster::new();
     let d = c.deployments.create(deploy(
         "web",
@@ -167,7 +170,10 @@ fn rolling_update_cuts_old_once_new_is_available() {
 
     // Simulate the new RS's pod becoming available.
     let hash = template_hash(&d.spec.template);
-    let mut new_rs = c.replicasets.get(&format!("prod/web-{hash}")).unwrap();
+    let mut new_rs = c
+        .replicasets
+        .get(&format!("prod/web-{hash}"))
+        .ok_or("expected Some, got None")?;
     new_rs.status.replicas = 1;
     new_rs.status.ready_replicas = 1;
     new_rs.status.available_replicas = 1;
@@ -175,15 +181,16 @@ fn rolling_update_cuts_old_once_new_is_available() {
 
     ctrl.reconcile("prod/web", &mut c, 1); // now old can be cut
 
-    let old_now = c.replicasets.get(&old.key()).expect("old present");
+    let old_now = c.replicasets.get(&old.key()).ok_or("old present")?;
     assert!(
         old_now.spec.replicas < 3,
         "old scaled down once surge capacity is available"
     );
+    Ok(())
 }
 
 #[test]
-fn recreate_scales_old_to_zero_then_brings_up_new() {
+fn recreate_scales_old_to_zero_then_brings_up_new() -> TestResult {
     let mut c = Cluster::new();
     let d = c
         .deployments
@@ -196,50 +203,74 @@ fn recreate_scales_old_to_zero_then_brings_up_new() {
     let new_rs = c
         .replicasets
         .get(&format!("prod/web-{hash}"))
-        .expect("new RS exists");
+        .ok_or("new RS exists")?;
     assert_eq!(
         new_rs.spec.replicas, 0,
         "new held at 0 while old pods remain"
     );
     assert_eq!(
-        c.replicasets.get(&old.key()).unwrap().spec.replicas,
+        c.replicasets
+            .get(&old.key())
+            .ok_or("expected Some, got None")?
+            .spec
+            .replicas,
         0,
         "old scaled to 0 first"
     );
 
     // Old pods drain.
-    let mut drained = c.replicasets.get(&old.key()).unwrap();
+    let mut drained = c
+        .replicasets
+        .get(&old.key())
+        .ok_or("expected Some, got None")?;
     drained.status.replicas = 0;
     c.replicasets.update(drained);
 
     ctrl.reconcile("prod/web", &mut c, 1);
-    let new_rs = c.replicasets.get(&format!("prod/web-{hash}")).unwrap();
+    let new_rs = c
+        .replicasets
+        .get(&format!("prod/web-{hash}"))
+        .ok_or("expected Some, got None")?;
     assert_eq!(
         new_rs.spec.replicas, 3,
         "new scaled to desired once old is gone"
     );
+    Ok(())
 }
 
 #[test]
-fn status_aggregates_owned_replicasets() {
+fn status_aggregates_owned_replicasets() -> TestResult {
     let mut c = Cluster::new();
     c.deployments
         .create(deploy("web", 2, "v1", DeploymentStrategy::default()));
     let mut ctrl = DeploymentController::new();
     ctrl.reconcile("prod/web", &mut c, 0);
     // Give the new RS some observed status, reconcile to roll it up.
-    let hash = template_hash(&c.deployments.get("prod/web").unwrap().spec.template);
-    let mut rs = c.replicasets.get(&format!("prod/web-{hash}")).unwrap();
+    let hash = template_hash(
+        &c.deployments
+            .get("prod/web")
+            .ok_or("expected Some, got None")?
+            .spec
+            .template,
+    );
+    let mut rs = c
+        .replicasets
+        .get(&format!("prod/web-{hash}"))
+        .ok_or("expected Some, got None")?;
     rs.status.replicas = 2;
     rs.status.ready_replicas = 2;
     rs.status.available_replicas = 2;
     c.replicasets.update(rs);
     ctrl.reconcile("prod/web", &mut c, 1);
 
-    let d = c.deployments.get("prod/web").unwrap();
+    let d = c
+        .deployments
+        .get("prod/web")
+        .ok_or("expected Some, got None")?;
     assert_eq!(d.status.replicas, 2);
     assert_eq!(d.status.ready_replicas, 2);
     assert_eq!(d.status.available_replicas, 2);
+    Ok(())
 }
 
 #[test]

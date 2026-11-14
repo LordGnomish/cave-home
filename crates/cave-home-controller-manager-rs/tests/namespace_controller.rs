@@ -8,6 +8,8 @@ use cave_home_controller_manager_rs::controllers::namespace::NamespaceController
 use cave_home_controller_manager_rs::reconcile::Outcome;
 use cave_home_controller_manager_rs::types::ObjectMeta;
 
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
 fn terminating_ns(name: &str) -> Namespace {
     let mut ns = Namespace::new(name, "");
     ns.meta.finalizers.push(NAMESPACE_FINALIZER.to_owned());
@@ -16,7 +18,7 @@ fn terminating_ns(name: &str) -> Namespace {
 }
 
 #[test]
-fn active_namespace_is_left_alone() {
+fn active_namespace_is_left_alone() -> TestResult {
     let mut c = Cluster::new();
     let mut ns = Namespace::new("live", "");
     ns.meta.finalizers.push(NAMESPACE_FINALIZER.to_owned());
@@ -29,15 +31,16 @@ fn active_namespace_is_left_alone() {
     assert!(
         c.namespaces
             .get("live")
-            .unwrap()
+            .ok_or("expected Some, got None")?
             .meta
             .finalizers
             .contains(&NAMESPACE_FINALIZER.to_owned())
     );
+    Ok(())
 }
 
 #[test]
-fn terminating_namespace_deletes_its_content_first() {
+fn terminating_namespace_deletes_its_content_first() -> TestResult {
     let mut c = Cluster::new();
     c.namespaces.create(terminating_ns("doomed"));
     c.pods.create(Pod::new(ObjectMeta::new("p1", "doomed", "")));
@@ -62,28 +65,36 @@ fn terminating_namespace_deletes_its_content_first() {
         "other namespace untouched"
     );
     // Finalizer not yet removed in the same pass that still saw content.
-    let ns = c.namespaces.get("doomed").unwrap();
+    let ns = c
+        .namespaces
+        .get("doomed")
+        .ok_or("expected Some, got None")?;
     assert!(
         ns.meta.finalizers.contains(&NAMESPACE_FINALIZER.to_owned()),
         "finalizer waits for empty"
     );
+    Ok(())
 }
 
 #[test]
-fn empty_terminating_namespace_drops_the_finalizer() {
+fn empty_terminating_namespace_drops_the_finalizer() -> TestResult {
     let mut c = Cluster::new();
     c.namespaces.create(terminating_ns("doomed"));
     let mut ctrl = NamespaceController::new();
     ctrl.reconcile("doomed", &mut c, 200);
-    let ns = c.namespaces.get("doomed").unwrap();
+    let ns = c
+        .namespaces
+        .get("doomed")
+        .ok_or("expected Some, got None")?;
     assert!(
         !ns.meta.finalizers.contains(&NAMESPACE_FINALIZER.to_owned()),
         "finalizer removed when empty"
     );
+    Ok(())
 }
 
 #[test]
-fn drains_then_finalizes_over_two_reconciles() {
+fn drains_then_finalizes_over_two_reconciles() -> TestResult {
     let mut c = Cluster::new();
     c.namespaces.create(terminating_ns("doomed"));
     c.pods.create(Pod::new(ObjectMeta::new("p", "doomed", "")));
@@ -92,20 +103,21 @@ fn drains_then_finalizes_over_two_reconciles() {
     assert!(
         c.namespaces
             .get("doomed")
-            .unwrap()
+            .ok_or("expected Some, got None")?
             .meta
             .finalizers
             .contains(&NAMESPACE_FINALIZER.to_owned())
     );
     ctrl.reconcile("doomed", &mut c, 201); // now empty -> finalize
-    assert!(
+    assert_eq!(
         c.namespaces
             .get("doomed")
-            .unwrap()
+            .ok_or("expected Some, got None")?
             .meta
-            .finalizers
-            .is_empty()
+            .finalizers,
+        [] as [String; 0]
     );
+    Ok(())
 }
 
 #[test]

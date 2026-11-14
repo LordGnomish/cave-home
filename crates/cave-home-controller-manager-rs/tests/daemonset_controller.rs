@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Integration tests for the DaemonSet controller — one pod per node
+//! Integration tests for the `DaemonSet` controller — one pod per node
 //! (`pkg/controller/daemonset` contract).
 
 use cave_home_controller_manager_rs::apis::{
@@ -8,6 +8,8 @@ use cave_home_controller_manager_rs::apis::{
 use cave_home_controller_manager_rs::controllers::daemonset::{DS_NODE_LABEL, DaemonSetController};
 use cave_home_controller_manager_rs::reconcile::Outcome;
 use cave_home_controller_manager_rs::types::{Object, ObjectMeta};
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 fn sel() -> std::collections::BTreeMap<String, String> {
     let mut m = std::collections::BTreeMap::new();
@@ -170,7 +172,7 @@ fn only_nodes_matching_the_node_selector_get_a_pod() {
 }
 
 #[test]
-fn a_pod_is_removed_when_its_node_stops_matching_the_selector() {
+fn a_pod_is_removed_when_its_node_stops_matching_the_selector() -> TestResult {
     let mut c = Cluster::new();
     c.nodes.create(labeled_node("n1", "gpu", "true"));
     let d = c.daemonsets.create(ds_with_node_selector("gpu", "true"));
@@ -179,7 +181,7 @@ fn a_pod_is_removed_when_its_node_stops_matching_the_selector() {
     assert_eq!(nodes_covered(&c, &d.meta().uid), vec!["n1"]);
 
     // The node loses its gpu label: it is no longer eligible.
-    let mut n1 = c.nodes.get("n1").unwrap();
+    let mut n1 = c.nodes.get("n1").ok_or("expected Some, got None")?;
     n1.meta.labels.clear();
     c.nodes.update(n1);
     ctrl.reconcile("kube-system/agent", &mut c, 1);
@@ -187,12 +189,13 @@ fn a_pod_is_removed_when_its_node_stops_matching_the_selector() {
         nodes_covered(&c, &d.meta().uid).is_empty(),
         "pod removed from the now-ineligible node"
     );
+    Ok(())
 }
 
 // --- status -------------------------------------------------------------
 
 #[test]
-fn status_counts_desired_current_ready_and_misscheduled() {
+fn status_counts_desired_current_ready_and_misscheduled() -> TestResult {
     let mut c = Cluster::new();
     for n in ["n1", "n2"] {
         c.nodes.create(Node::new(n, "", 0));
@@ -216,9 +219,14 @@ fn status_counts_desired_current_ready_and_misscheduled() {
     c.pods.update(p);
 
     ctrl.reconcile("kube-system/agent", &mut c, 1);
-    let st = c.daemonsets.get("kube-system/agent").unwrap().status;
+    let st = c
+        .daemonsets
+        .get("kube-system/agent")
+        .ok_or("expected Some, got None")?
+        .status;
     assert_eq!(st.desired_number_scheduled, 2, "two eligible nodes");
     assert_eq!(st.current_number_scheduled, 2, "both have a pod");
     assert_eq!(st.number_ready, 1, "one pod ready");
     assert_eq!(st.number_misscheduled, 0);
+    Ok(())
 }

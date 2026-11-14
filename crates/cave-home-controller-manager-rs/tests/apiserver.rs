@@ -102,7 +102,7 @@ fn cluster_bundles_typed_apis() {
             template: PodTemplateSpec::with_labels(&[("app", "web")]),
         },
     ));
-    assert!(!rs.meta().uid.is_empty());
+    assert_ne!(rs.meta().uid, "");
     assert_eq!(
         c.replicasets.get("prod/web").map(|r| r.spec.replicas),
         Some(3)
