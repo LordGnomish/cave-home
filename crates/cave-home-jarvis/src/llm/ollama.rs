@@ -87,6 +87,8 @@ mod tests {
     use crate::llm::{ChatMessage, ToolSpec};
     use serde_json::json;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     fn gateway(t: MockTransport) -> OllamaGateway<MockTransport> {
         OllamaGateway::new(t, "http://127.0.0.1:11434/", "llama3.1")
     }
@@ -98,25 +100,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn posts_request_body_and_parses_reply() {
+    async fn posts_request_body_and_parses_reply() -> TestResult {
         let reply = r#"{"model":"llama3.1","message":{"role":"assistant",
             "content":"Hello!"},"done":true}"#;
         let g = gateway(MockTransport::new().route("/api/chat", 200, reply));
         let resp = g
             .chat(ChatRequest::new("", vec![ChatMessage::user("hi")]))
-            .await
-            .unwrap();
+            .await?;
         assert_eq!(resp.content(), "Hello!");
         // The request actually carried the model + the user message.
-        let sent = g.transport().nth_body(0).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&sent).unwrap();
+        let sent = g.transport().nth_body(0).ok_or("no request recorded")?;
+        let v: serde_json::Value = serde_json::from_str(&sent)?;
         assert_eq!(v["model"], "llama3.1"); // defaulted from the gateway
         assert_eq!(v["stream"], false);
         assert_eq!(v["messages"][0]["content"], "hi");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn forwards_tool_specs_and_decodes_tool_call() {
+    async fn forwards_tool_specs_and_decodes_tool_call() -> TestResult {
         let reply = r#"{"model":"llama3.1","message":{"role":"assistant","content":"",
             "tool_calls":[{"function":{"name":"set_light",
                 "arguments":{"room":"kitchen","on":true}}}]},"done":false}"#;
@@ -125,27 +127,31 @@ mod tests {
             ChatRequest::new("llama3.1", vec![ChatMessage::user("kitchen on")]).with_tools(vec![
                 ToolSpec::function("set_light", "switch a light", json!({"type":"object"})),
             ]);
-        let resp = g.chat(req).await.unwrap();
+        let resp = g.chat(req).await?;
         assert!(resp.wants_tools());
         assert_eq!(resp.tool_calls()[0].name(), "set_light");
         // The tools array reached the server.
         let sent: serde_json::Value =
-            serde_json::from_str(&g.transport().nth_body(0).unwrap()).unwrap();
+            serde_json::from_str(&g.transport().nth_body(0).ok_or("no request recorded")?)?;
         assert_eq!(sent["tools"][0]["function"]["name"], "set_light");
+        Ok(())
     }
 
     #[tokio::test]
     async fn non_2xx_maps_to_llm_http_error() {
         let g = gateway(MockTransport::new().route("/api/chat", 500, "model overloaded"));
-        let err = g.chat(ChatRequest::new("m", vec![])).await.unwrap_err();
-        assert!(matches!(err, JarvisError::LlmHttp { status: 500, .. }));
+        let result = g.chat(ChatRequest::new("m", vec![])).await;
+        assert!(matches!(
+            result,
+            Err(JarvisError::LlmHttp { status: 500, .. })
+        ));
     }
 
     #[tokio::test]
     async fn malformed_body_maps_to_decode_error() {
         let g = gateway(MockTransport::new().route("/api/chat", 200, "not json"));
-        let err = g.chat(ChatRequest::new("m", vec![])).await.unwrap_err();
-        assert!(matches!(err, JarvisError::LlmDecode(_)));
+        let result = g.chat(ChatRequest::new("m", vec![])).await;
+        assert!(matches!(result, Err(JarvisError::LlmDecode(_))));
     }
 
     #[tokio::test]
@@ -154,8 +160,8 @@ mod tests {
         t.set_failure(Some("refused".into()));
         let g = gateway(t);
         assert!(matches!(
-            g.chat(ChatRequest::new("m", vec![])).await.unwrap_err(),
-            JarvisError::Transport(_)
+            g.chat(ChatRequest::new("m", vec![])).await,
+            Err(JarvisError::Transport(_))
         ));
     }
 }

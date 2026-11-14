@@ -172,6 +172,8 @@ mod tests {
 
     const SR: u32 = 16_000;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     /// A tone burst of `freq` Hz for `n` samples at amplitude `amp`.
     fn tone(freq: f32, n: usize, amp: f32) -> Vec<f32> {
         #[allow(clippy::cast_precision_loss)]
@@ -224,16 +226,17 @@ mod tests {
     }
 
     #[test]
-    fn detector_fires_on_enrolled_keyword() {
+    fn detector_fires_on_enrolled_keyword() -> TestResult {
         let mut det = WakeWordDetector::new(WakeConfig::default());
         det.enroll("jarvis", &keyword_signal(0.8));
         assert_eq!(det.keyword_count(), 1);
         // The same word, spoken more quietly, should still fire.
         let hit = det.detect(&keyword_signal(0.3));
         assert!(hit.is_some(), "expected a wake detection");
-        let d = hit.unwrap();
+        let d = hit.ok_or("expected a wake detection")?;
         assert_eq!(d.keyword, "jarvis");
         assert!(d.confidence > 0.0 && d.confidence <= 1.0);
+        Ok(())
     }
 
     #[test]
@@ -244,11 +247,12 @@ mod tests {
     }
 
     #[test]
-    fn detector_picks_closest_of_several_keywords() {
+    fn detector_picks_closest_of_several_keywords() -> TestResult {
         let mut det = WakeWordDetector::new(WakeConfig::default());
         det.enroll("jarvis", &keyword_signal(0.8));
         det.enroll("computer", &other_signal(0.8));
-        let hit = det.detect(&other_signal(0.5)).expect("a match");
+        let hit = det.detect(&other_signal(0.5)).ok_or("a match")?;
         assert_eq!(hit.keyword, "computer");
+        Ok(())
     }
 }

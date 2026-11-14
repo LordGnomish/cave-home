@@ -138,7 +138,9 @@ impl MelFilterBank {
             .map(|i| {
                 #[allow(clippy::cast_precision_loss)]
                 let frac = i as f32 / (n_mels + 1) as f32;
-                let mel = mel_min + frac * (mel_max - mel_min);
+                // Bound to a name (not `mul_add`) so the result stays bit-identical.
+                let offset = frac * (mel_max - mel_min);
+                let mel = mel_min + offset;
                 mel_to_hz(mel)
             })
             .collect();
@@ -294,6 +296,8 @@ mod tests {
             .collect()
     }
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn mel_round_trips() {
         for hz in [100.0, 1000.0, 4000.0] {
@@ -311,13 +315,13 @@ mod tests {
         for i in 1..8 {
             assert!((w[i] - w[8 - i]).abs() < 1e-5, "w[{i}] != w[{}]", 8 - i);
         }
-        let max = w.iter().cloned().fold(0.0_f32, f32::max);
+        let max = w.iter().copied().fold(0.0_f32, f32::max);
         assert!(max > 0.9);
     }
 
     #[test]
     fn framing_overlaps_correctly() {
-        let sig: Vec<f32> = (0..10).map(|i| i as f32).collect();
+        let sig: Vec<f32> = (0..10_u8).map(f32::from).collect();
         let frames = frame_signal(&sig, 4, 2);
         assert_eq!(frames.len(), 4); // starts at 0,2,4,6
         assert_eq!(frames[0], vec![0.0, 1.0, 2.0, 3.0]);
@@ -326,11 +330,11 @@ mod tests {
 
     #[test]
     fn framing_too_short_is_empty() {
-        assert!(frame_signal(&[1.0, 2.0], 4, 2).is_empty());
+        assert_eq!(frame_signal(&[1.0, 2.0], 4, 2), [] as [Vec<f32>; 0]);
     }
 
     #[test]
-    fn power_spectrum_peaks_at_input_frequency() {
+    fn power_spectrum_peaks_at_input_frequency() -> TestResult {
         let n = 256;
         let sr = 16_000;
         // A pure tone at bin 20 -> freq = 20*sr/n.
@@ -338,12 +342,22 @@ mod tests {
         let freq = 20.0 * sr as f32 / n as f32;
         let frame = sine(freq, sr, n, 1.0);
         let ps = power_spectrum(&frame);
-        let (peak_bin, _) = ps
-            .iter()
-            .enumerate()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-            .unwrap();
-        assert!((peak_bin as i32 - 20).abs() <= 1, "peak at {peak_bin}");
+        // The last maximal bin, exactly as `max_by` picks it; a NaN fails the test.
+        let mut peak: Option<(usize, f32)> = None;
+        for (bin, &power) in ps.iter().enumerate() {
+            let ordering = match peak {
+                Some((_, best)) => power
+                    .partial_cmp(&best)
+                    .ok_or("power spectrum contains NaN")?,
+                None => std::cmp::Ordering::Greater,
+            };
+            if ordering != std::cmp::Ordering::Less {
+                peak = Some((bin, power));
+            }
+        }
+        let (peak_bin, _) = peak.ok_or("empty power spectrum")?;
+        assert!(peak_bin.abs_diff(20) <= 1, "peak at {peak_bin}");
+        Ok(())
     }
 
     #[test]
@@ -374,6 +388,6 @@ mod tests {
         assert_eq!(feats.len(), 7);
         assert_eq!(feats[0].len(), cfg.n_mels);
         // Real speech-band energy => some band is non-trivially positive.
-        assert!(feats[0].iter().cloned().fold(0.0_f32, f32::max) > 0.0);
+        assert!(feats[0].iter().copied().fold(0.0_f32, f32::max) > 0.0);
     }
 }

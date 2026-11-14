@@ -290,70 +290,79 @@ mod tests {
             .map(|i| {
                 #[allow(clippy::cast_precision_loss)]
                 let phase = (i as f32 % period) / period;
+                let scaled = 4.0 * phase;
                 let tri = if phase < 0.5 {
-                    4.0 * phase - 1.0
+                    scaled - 1.0
                 } else {
-                    3.0 - 4.0 * phase
+                    3.0 - scaled
                 };
                 tri * 0.6
             })
             .collect()
     }
 
-    fn dispatcher(llm: MockLlm, exec: MockToolExecutor) -> Dispatcher<MockLlm, MockToolExecutor> {
-        Dispatcher::new(
-            cave_home_voice::intents::builtin_intents().unwrap(),
+    type TestError = Box<dyn std::error::Error>;
+    type TestResult = std::result::Result<(), TestError>;
+    type TestPipeline = JarvisPipeline<MockStt, MockLlm, MockToolExecutor, MockTts>;
+
+    fn dispatcher(
+        llm: MockLlm,
+        exec: MockToolExecutor,
+    ) -> std::result::Result<Dispatcher<MockLlm, MockToolExecutor>, TestError> {
+        Ok(Dispatcher::new(
+            cave_home_voice::intents::builtin_intents()?,
             llm,
             exec,
             ToolRegistry::default(),
             DispatchConfig::default(),
-        )
+        ))
     }
 
     fn pipeline(
         stt: MockStt,
         llm: MockLlm,
         exec: MockToolExecutor,
-    ) -> JarvisPipeline<MockStt, MockLlm, MockToolExecutor, MockTts> {
+    ) -> std::result::Result<TestPipeline, TestError> {
         let mut wake = WakeWordDetector::new(WakeConfig::default());
         wake.enroll("jarvis", &keyword(0.8));
         let mut speakers = SpeakerBook::with_defaults();
         speakers.enroll("Burak", &tone(150.0, 8192, 0.8));
         let rooms = RoomRegistry::new().with_device("mic-kitchen", "kitchen");
-        JarvisPipeline::new(
+        Ok(JarvisPipeline::new(
             wake,
             speakers,
             rooms,
             stt,
-            dispatcher(llm, exec),
+            dispatcher(llm, exec)?,
             MockTts::new(),
-        )
+        ))
     }
 
     #[tokio::test]
-    async fn handle_command_runs_full_chain_nlu() {
+    async fn handle_command_runs_full_chain_nlu() -> TestResult {
         // mock STT -> intent extraction -> service call -> spoken reply.
         let stt = MockStt::new().say("turn the kitchen light on");
-        let p = pipeline(stt, MockLlm::new(), MockToolExecutor::new());
+        let p = pipeline(stt, MockLlm::new(), MockToolExecutor::new())?;
         let cmd = vec![AudioFrame::new("mic-kitchen", voiced(4096))];
-        let turn = p.handle_command("mic-kitchen", &cmd).await.unwrap();
+        let turn = p.handle_command("mic-kitchen", &cmd).await?;
 
         assert_eq!(turn.transcript, "turn the kitchen light on");
         assert_eq!(turn.room.as_deref(), Some("kitchen"));
         assert_eq!(turn.outcome.path, DispatchPath::Nlu);
         assert_eq!(turn.outcome.executed_tools(), vec!["set_light".to_string()]);
-        assert!(!turn.reply.samples.is_empty());
+        assert_ne!(turn.reply.samples, [] as [f32; 0]);
         // Metrics recorded the transcript + dispatch + tool.
         let m = p.metrics().render();
         assert!(m.contains("jarvis_transcripts_total 1"));
         assert!(m.contains("jarvis_dispatch_total{path=\"nlu\"} 1"));
         assert!(m.contains("jarvis_tool_calls_total{tool=\"set_light\"} 1"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn run_wakes_then_handles_a_command() {
+    async fn run_wakes_then_handles_a_command() -> TestResult {
         let stt = MockStt::new().say("turn the kitchen light on");
-        let p = pipeline(stt, MockLlm::new(), MockToolExecutor::new()).with_wake_window(4096);
+        let p = pipeline(stt, MockLlm::new(), MockToolExecutor::new())?.with_wake_window(4096);
 
         // Wake clip, a pause, the voiced command, then trailing silence to end it.
         let frames = vec![
@@ -368,7 +377,7 @@ mod tests {
             AudioFrame::new("mic-kitchen", vec![0.0; 512]),
         ];
         let source = MockAudioSource::from_frames(frames);
-        let events = p.run(&source).await.unwrap();
+        let events = p.run(&source).await?;
 
         let woke = events
             .iter()
@@ -378,7 +387,7 @@ mod tests {
             PipelineEvent::Handled(t) => Some(t),
             PipelineEvent::Woke { .. } => None,
         });
-        let turn = handled.expect("a handled command");
+        let turn = handled.ok_or("a handled command")?;
         assert_eq!(turn.transcript, "turn the kitchen light on");
         assert_eq!(turn.outcome.executed_tools(), vec!["set_light".to_string()]);
         assert!(
@@ -386,25 +395,28 @@ mod tests {
                 .render()
                 .contains("jarvis_wake_total{keyword=\"jarvis\"} 1")
         );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn unknown_device_yields_no_room_but_still_handles() {
+    async fn unknown_device_yields_no_room_but_still_handles() -> TestResult {
         let stt = MockStt::new().say("turn the kitchen light on");
-        let p = pipeline(stt, MockLlm::new(), MockToolExecutor::new());
+        let p = pipeline(stt, MockLlm::new(), MockToolExecutor::new())?;
         let cmd = vec![AudioFrame::new("mic-attic", voiced(4096))];
-        let turn = p.handle_command("mic-attic", &cmd).await.unwrap();
+        let turn = p.handle_command("mic-attic", &cmd).await?;
         assert_eq!(turn.room, None);
         assert_eq!(turn.outcome.executed_tools(), vec!["set_light".to_string()]);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn lang_is_carried_into_tts() {
+    async fn lang_is_carried_into_tts() -> TestResult {
         let _ = Lang::En; // language plumbing is asserted via the reply below.
         let stt = MockStt::new().say("turn the kitchen light on");
-        let p = pipeline(stt, MockLlm::new(), MockToolExecutor::new());
+        let p = pipeline(stt, MockLlm::new(), MockToolExecutor::new())?;
         let cmd = vec![AudioFrame::new("mic-kitchen", voiced(4096))];
-        let turn = p.handle_command("mic-kitchen", &cmd).await.unwrap();
+        let turn = p.handle_command("mic-kitchen", &cmd).await?;
         assert_eq!(turn.reply.language, Lang::En);
+        Ok(())
     }
 }

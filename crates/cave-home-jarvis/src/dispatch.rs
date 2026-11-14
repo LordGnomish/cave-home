@@ -244,8 +244,10 @@ mod tests {
     use crate::tools::MockToolExecutor;
     use serde_json::json;
 
-    fn intents() -> Vec<CompiledIntent> {
-        cave_home_voice::intents::builtin_intents().expect("built-ins")
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
+    fn intents() -> std::result::Result<Vec<CompiledIntent>, Box<dyn std::error::Error>> {
+        Ok(cave_home_voice::intents::builtin_intents()?)
     }
 
     fn transcript(text: &str) -> Transcript {
@@ -253,12 +255,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn nlu_path_executes_matched_intent() {
+    async fn nlu_path_executes_matched_intent() -> TestResult {
         // Acceptance #2: STT transcript -> intent extraction -> service call.
         let llm = MockLlm::new(); // must NOT be consulted
         let exec = MockToolExecutor::new();
         let d = Dispatcher::new(
-            intents(),
+            intents()?,
             llm,
             exec,
             ToolRegistry::default(),
@@ -269,8 +271,7 @@ mod tests {
                 &transcript("turn the kitchen light on"),
                 &DispatchContext::default(),
             )
-            .await
-            .unwrap();
+            .await?;
         assert_eq!(out.path, DispatchPath::Nlu);
         assert_eq!(out.executed_tools(), vec!["set_light".to_string()]);
         assert_eq!(out.executed[0].0.arguments()["target"], "kitchen");
@@ -281,10 +282,11 @@ mod tests {
             0,
             "LLM should not be called on an NLU hit"
         );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn llm_path_round_trips_tool_call_then_answers() {
+    async fn llm_path_round_trips_tool_call_then_answers() -> TestResult {
         // Acceptance #3: free-form utterance -> LLM tool call -> execute ->
         // feed result back -> final spoken answer.
         let llm = MockLlm::new()
@@ -295,7 +297,7 @@ mod tests {
             .reply("Done — I've set the office to 22 degrees.");
         let exec = MockToolExecutor::new();
         let d = Dispatcher::new(
-            intents(),
+            intents()?,
             llm,
             exec,
             ToolRegistry::default(),
@@ -310,8 +312,7 @@ mod tests {
                     speaker: Some("Burak".into()),
                 },
             )
-            .await
-            .unwrap();
+            .await?;
 
         assert_eq!(out.path, DispatchPath::Llm);
         assert_eq!(out.executed_tools(), vec!["set_temperature".to_string()]);
@@ -328,13 +329,14 @@ mod tests {
                 .any(|m| m.tool_name.as_deref() == Some("set_temperature"))
         );
         assert!(second.messages[0].content.contains("office"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn llm_path_direct_answer_runs_no_tools() {
+    async fn llm_path_direct_answer_runs_no_tools() -> TestResult {
         let llm = MockLlm::new().reply("There are eight planets.");
         let d = Dispatcher::new(
-            intents(),
+            intents()?,
             llm,
             MockToolExecutor::new(),
             ToolRegistry::default(),
@@ -345,21 +347,21 @@ mod tests {
                 &transcript("how many planets are there"),
                 &DispatchContext::default(),
             )
-            .await
-            .unwrap();
+            .await?;
         assert_eq!(out.path, DispatchPath::Llm);
-        assert!(out.executed.is_empty());
+        assert_eq!(out.executed, [] as [(ToolCall, ToolResult); 0]);
         assert_eq!(out.reply, "There are eight planets.");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn llm_path_feeds_back_validation_error_for_bad_tool() {
+    async fn llm_path_feeds_back_validation_error_for_bad_tool() -> TestResult {
         // Model hallucinates an unknown tool, then recovers next round.
         let llm = MockLlm::new()
             .call_tool("teleport", json!({"to": "mars"}))
             .reply("I can't do that, but everything else is set.");
         let d = Dispatcher::new(
-            intents(),
+            intents()?,
             llm,
             MockToolExecutor::new(),
             ToolRegistry::default(),
@@ -370,13 +372,13 @@ mod tests {
                 &transcript("teleport me to mars"),
                 &DispatchContext::default(),
             )
-            .await
-            .unwrap();
+            .await?;
         assert_eq!(out.path, DispatchPath::Llm);
         // The bad call was recorded with a failed result; the executor never ran it.
         assert_eq!(out.executed.len(), 1);
         assert!(!out.executed[0].1.ok);
         assert_eq!(d.executor().call_names().len(), 0);
         assert_eq!(out.reply, "I can't do that, but everything else is set.");
+        Ok(())
     }
 }
