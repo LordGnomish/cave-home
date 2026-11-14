@@ -219,32 +219,38 @@ const fn fold_dow(v: u32, dow: bool) -> u32 {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn wildcard_minute_allows_every_minute() {
-        let m = parse_field("*", 0, 59, false).unwrap();
+    fn wildcard_minute_allows_every_minute() -> TestResult {
+        let m = parse_field("*", 0, 59, false)?;
         for i in 0..=59 {
             assert!(bit(m, i));
         }
+        Ok(())
     }
 
     #[test]
-    fn step_field_sets_every_nth_bit() {
-        let m = parse_field("*/15", 0, 59, false).unwrap();
+    fn step_field_sets_every_nth_bit() -> TestResult {
+        let m = parse_field("*/15", 0, 59, false)?;
         assert!(bit(m, 0) && bit(m, 15) && bit(m, 30) && bit(m, 45));
         assert!(!bit(m, 1) && !bit(m, 16));
+        Ok(())
     }
 
     #[test]
-    fn dow_seven_folds_to_sunday() {
-        let m = parse_field("7", 0, 6, true).unwrap();
+    fn dow_seven_folds_to_sunday() -> TestResult {
+        let m = parse_field("7", 0, 6, true)?;
         assert!(bit(m, 0), "Sunday-as-7 sets bit 0");
+        Ok(())
     }
 
     #[test]
-    fn range_with_step() {
+    fn range_with_step() -> TestResult {
         // 0-30/10 → {0,10,20,30}
-        let m = parse_field("0-30/10", 0, 59, false).unwrap();
+        let m = parse_field("0-30/10", 0, 59, false)?;
         assert!(bit(m, 0) && bit(m, 10) && bit(m, 20) && bit(m, 30));
         assert!(!bit(m, 40));
+        Ok(())
     }
 }

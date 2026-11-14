@@ -125,6 +125,8 @@ mod tests {
     use super::*;
     use crate::workqueue::RateLimitConfig;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn queue() -> WorkQueue {
         WorkQueue::new(RateLimitConfig {
             base_delay: 10,
@@ -134,41 +136,44 @@ mod tests {
     }
 
     #[test]
-    fn done_forgets_and_does_not_requeue() {
+    fn done_forgets_and_does_not_requeue() -> TestResult {
         let mut q = queue();
         q.add("a");
-        let key = q.get(0).expect("ready");
+        let key = q.get(0).ok_or("ready")?;
         let action = apply_outcome(&mut q, &key, &Outcome::Done, 0);
         assert_eq!(action, LoopAction::Forgotten);
         assert!(q.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn requeue_re_adds_immediately() {
+    fn requeue_re_adds_immediately() -> TestResult {
         let mut q = queue();
         q.add("a");
-        let key = q.get(0).expect("ready");
+        let key = q.get(0).ok_or("ready")?;
         let action = apply_outcome(&mut q, &key, &Outcome::Requeue, 0);
         assert_eq!(action, LoopAction::Requeued);
         assert_eq!(q.get(0).as_deref(), Some("a"));
+        Ok(())
     }
 
     #[test]
-    fn requeue_after_schedules_delay() {
+    fn requeue_after_schedules_delay() -> TestResult {
         let mut q = queue();
         q.add("a");
-        let key = q.get(0).expect("ready");
+        let key = q.get(0).ok_or("ready")?;
         let action = apply_outcome(&mut q, &key, &Outcome::RequeueAfter(100), 0);
         assert_eq!(action, LoopAction::RequeuedAfter(100));
         assert_eq!(q.get(50), None);
         assert_eq!(q.get(100).as_deref(), Some("a"));
+        Ok(())
     }
 
     #[test]
-    fn err_rate_limits_then_drops_after_budget() {
+    fn err_rate_limits_then_drops_after_budget() -> TestResult {
         let mut q = queue(); // max_retries = 2
         q.add("a");
-        let key = q.get(0).expect("ready");
+        let key = q.get(0).ok_or("ready")?;
         let a1 = apply_outcome(&mut q, &key, &Outcome::Err("boom".into()), 0);
         assert_eq!(
             a1,
@@ -178,7 +183,7 @@ mod tests {
             }
         );
 
-        let key = q.get(1_000_000).expect("ready after backoff");
+        let key = q.get(1_000_000).ok_or("ready after backoff")?;
         let a2 = apply_outcome(&mut q, &key, &Outcome::Err("boom".into()), 1_000_000);
         assert_eq!(
             a2,
@@ -188,22 +193,24 @@ mod tests {
             }
         );
 
-        let key = q.get(2_000_000).expect("ready after backoff");
+        let key = q.get(2_000_000).ok_or("ready after backoff")?;
         let a3 = apply_outcome(&mut q, &key, &Outcome::Err("boom".into()), 2_000_000);
         assert_eq!(a3, LoopAction::Dropped { failures: 3 });
         assert!(q.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn success_after_failure_resets_backoff() {
+    fn success_after_failure_resets_backoff() -> TestResult {
         let mut q = queue();
         q.add("a");
-        let key = q.get(0).expect("ready");
+        let key = q.get(0).ok_or("ready")?;
         let _ = apply_outcome(&mut q, &key, &Outcome::Err("e".into()), 0);
         assert_eq!(q.retries("a"), 1);
-        let key = q.get(1_000_000).expect("ready");
+        let key = q.get(1_000_000).ok_or("ready")?;
         let _ = apply_outcome(&mut q, &key, &Outcome::Done, 1_000_000);
         assert_eq!(q.retries("a"), 0, "Done forgets backoff");
+        Ok(())
     }
 
     // A toy reconciler exercising `step` end-to-end.

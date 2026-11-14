@@ -183,7 +183,7 @@ mod tests {
     #[test]
     fn builds_room_registry() {
         let reg = cfg().room_registry();
-        assert_eq!(reg.room_of("mic-office").unwrap(), "office");
+        assert_eq!(reg.room_of("mic-office"), Ok("office"));
         assert_eq!(reg.len(), 2);
     }
 

@@ -399,6 +399,8 @@ mod tests {
     use super::*;
     use crate::types::ObjectMeta;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn obj(name: &str, ns: &str) -> ObjectMeta {
         ObjectMeta::new(name, ns, &format!("{ns}-{name}"))
     }
@@ -481,39 +483,42 @@ mod tests {
     }
 
     #[test]
-    fn fifo_emits_added_then_deleted() {
+    fn fifo_emits_added_then_deleted() -> TestResult {
         let mut f: DeltaFifo<ObjectMeta> = DeltaFifo::new();
         f.add(obj("a", "ns"));
         f.delete(obj("a", "ns"));
-        let (key, deltas) = f.pop().expect("pending");
+        let (key, deltas) = f.pop().ok_or("pending")?;
         assert_eq!(key, "ns/a");
         let types: Vec<_> = deltas.iter().map(|d| d.delta_type).collect();
         assert_eq!(types, vec![DeltaType::Added, DeltaType::Deleted]);
+        Ok(())
     }
 
     #[test]
-    fn fifo_coalesces_repeated_updates() {
+    fn fifo_coalesces_repeated_updates() -> TestResult {
         let mut f: DeltaFifo<ObjectMeta> = DeltaFifo::new();
         f.add(obj("a", "ns"));
         f.update(obj("a", "ns").with_label("v", "2"));
         f.update(obj("a", "ns").with_label("v", "3"));
-        let (_key, deltas) = f.pop().expect("pending");
+        let (_key, deltas) = f.pop().ok_or("pending")?;
         assert_eq!(deltas.len(), 1, "Added+Updated+Updated coalesce to one");
         assert_eq!(deltas[0].delta_type, DeltaType::Updated);
         assert_eq!(
             deltas[0].object.labels.get("v").map(String::as_str),
             Some("3")
         );
+        Ok(())
     }
 
     #[test]
-    fn fifo_is_fifo_over_keys() {
+    fn fifo_is_fifo_over_keys() -> TestResult {
         let mut f: DeltaFifo<ObjectMeta> = DeltaFifo::new();
         f.add(obj("first", "ns"));
         f.add(obj("second", "ns"));
-        assert_eq!(f.pop().expect("k").0, "ns/first");
-        assert_eq!(f.pop().expect("k").0, "ns/second");
+        assert_eq!(f.pop().ok_or("k")?.0, "ns/first");
+        assert_eq!(f.pop().ok_or("k")?.0, "ns/second");
         assert!(f.pop().is_none());
+        Ok(())
     }
 
     #[test]

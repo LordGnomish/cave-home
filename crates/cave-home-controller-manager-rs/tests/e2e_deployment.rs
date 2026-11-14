@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! End-to-end: a Deployment drives ReplicaSet creation, which drives Pod
+//! End-to-end: a Deployment drives `ReplicaSet` creation, which drives Pod
 //! creation, all the way to a converged, fully-available rollout — through the
 //! work queue + resync manager, with kubelet pod-admission simulated.
 
@@ -8,6 +8,8 @@ use cave_home_controller_manager_rs::apis::{
 };
 use cave_home_controller_manager_rs::manager::Manager;
 use cave_home_controller_manager_rs::types::{Object, ObjectMeta};
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 fn sel(app: &str) -> std::collections::BTreeMap<String, String> {
     let mut m = std::collections::BTreeMap::new();
@@ -40,7 +42,7 @@ fn ready_pods(m: &Manager) -> usize {
 }
 
 #[test]
-fn deployment_creates_replicaset_creates_pods_to_convergence() {
+fn deployment_creates_replicaset_creates_pods_to_convergence() -> TestResult {
     let mut m = Manager::new();
     let d = m.cluster.deployments.create(deploy(3, "v1"));
 
@@ -62,28 +64,41 @@ fn deployment_creates_replicaset_creates_pods_to_convergence() {
     assert_eq!(ready_pods(&m), 3, "all pods admitted and ready");
 
     // Deployment status reflects the converged rollout.
-    let d2 = m.cluster.deployments.get("prod/web").unwrap();
+    let d2 = m
+        .cluster
+        .deployments
+        .get("prod/web")
+        .ok_or("expected Some, got None")?;
     assert_eq!(d2.status.replicas, 3);
     assert_eq!(d2.status.available_replicas, 3);
     assert_eq!(d2.status.updated_replicas, 3);
+    Ok(())
 }
 
 #[test]
-fn scaling_the_deployment_up_and_down_converges() {
+fn scaling_the_deployment_up_and_down_converges() -> TestResult {
     let mut m = Manager::new();
     m.cluster.deployments.create(deploy(2, "v1"));
     m.run_until_stable(0, 50);
     assert_eq!(ready_pods(&m), 2);
 
     // Scale up to 5.
-    let mut d = m.cluster.deployments.get("prod/web").unwrap();
+    let mut d = m
+        .cluster
+        .deployments
+        .get("prod/web")
+        .ok_or("expected Some, got None")?;
     d.spec.replicas = 5;
     m.cluster.deployments.update(d);
     m.run_until_stable(1, 50);
     assert_eq!(ready_pods(&m), 5, "scaled up to 5");
 
     // Scale down to 1.
-    let mut d = m.cluster.deployments.get("prod/web").unwrap();
+    let mut d = m
+        .cluster
+        .deployments
+        .get("prod/web")
+        .ok_or("expected Some, got None")?;
     d.spec.replicas = 1;
     m.cluster.deployments.update(d);
     m.run_until_stable(2, 50);
@@ -97,17 +112,22 @@ fn scaling_the_deployment_up_and_down_converges() {
         1,
         "scaled down to 1"
     );
+    Ok(())
 }
 
 #[test]
-fn rolling_update_replaces_pods_with_the_new_revision() {
+fn rolling_update_replaces_pods_with_the_new_revision() -> TestResult {
     let mut m = Manager::new();
     let d = m.cluster.deployments.create(deploy(3, "v1"));
     m.run_until_stable(0, 50);
     let v1_hash = template_hash(&d.spec.template);
 
     // Roll out a new template revision.
-    let mut d2 = m.cluster.deployments.get("prod/web").unwrap();
+    let mut d2 = m
+        .cluster
+        .deployments
+        .get("prod/web")
+        .ok_or("expected Some, got None")?;
     d2.spec.template = PodTemplateSpec::with_labels(&[("app", "web"), ("ver", "v2")]);
     let v2_hash = template_hash(&d2.spec.template);
     assert_ne!(v1_hash, v2_hash, "template change yields a new hash");
@@ -121,13 +141,13 @@ fn rolling_update_replaces_pods_with_the_new_revision() {
         .cluster
         .replicasets
         .get(&format!("prod/web-{v2_hash}"))
-        .expect("new RS exists");
+        .ok_or("new RS exists")?;
     assert_eq!(new_rs.spec.replicas, 3, "new revision at desired");
     let old_rs = m
         .cluster
         .replicasets
         .get(&format!("prod/web-{v1_hash}"))
-        .expect("old RS still tracked");
+        .ok_or("old RS still tracked")?;
     assert_eq!(old_rs.spec.replicas, 0, "old revision drained to zero");
 
     // Total active pods equal desired, all on the new revision.
@@ -136,7 +156,7 @@ fn rolling_update_replaces_pods_with_the_new_revision() {
         .pods
         .list()
         .into_iter()
-        .filter(|p| p.is_active())
+        .filter(cave_home_controller_manager_rs::apis::Pod::is_active)
         .collect();
     assert_eq!(active.len(), 3, "exactly desired pods remain active");
     for p in &active {
@@ -146,4 +166,5 @@ fn rolling_update_replaces_pods_with_the_new_revision() {
             "all pods on v2"
         );
     }
+    Ok(())
 }

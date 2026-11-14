@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Integration tests for the ServiceAccount controller — ensures every
-//! namespace has a `default` ServiceAccount (`pkg/controller/serviceaccount`).
+//! Integration tests for the `ServiceAccount` controller — ensures every
+//! namespace has a `default` `ServiceAccount` (`pkg/controller/serviceaccount`).
 
 use cave_home_controller_manager_rs::apis::{Cluster, Namespace};
 use cave_home_controller_manager_rs::controllers::serviceaccount::ServiceAccountController;
 use cave_home_controller_manager_rs::reconcile::Outcome;
 
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
 #[test]
-fn creates_a_default_service_account_for_a_namespace() {
+fn creates_a_default_service_account_for_a_namespace() -> TestResult {
     let mut c = Cluster::new();
     c.namespaces.create(Namespace::new("team-a", ""));
     let mut ctrl = ServiceAccountController::new();
@@ -16,17 +18,23 @@ fn creates_a_default_service_account_for_a_namespace() {
     let sa = c
         .service_accounts
         .get("team-a/default")
-        .expect("default SA created");
+        .ok_or("default SA created")?;
     assert_eq!(sa.meta.namespace, "team-a");
+    Ok(())
 }
 
 #[test]
-fn is_idempotent_when_default_already_exists() {
+fn is_idempotent_when_default_already_exists() -> TestResult {
     let mut c = Cluster::new();
     c.namespaces.create(Namespace::new("team-a", ""));
     let mut ctrl = ServiceAccountController::new();
     ctrl.reconcile("team-a", &mut c, 0);
-    let uid = c.service_accounts.get("team-a/default").unwrap().meta.uid;
+    let uid = c
+        .service_accounts
+        .get("team-a/default")
+        .ok_or("expected Some, got None")?
+        .meta
+        .uid;
     ctrl.reconcile("team-a", &mut c, 1);
     assert_eq!(
         c.service_accounts.list().len(),
@@ -34,10 +42,15 @@ fn is_idempotent_when_default_already_exists() {
         "no duplicate default SA"
     );
     assert_eq!(
-        c.service_accounts.get("team-a/default").unwrap().meta.uid,
+        c.service_accounts
+            .get("team-a/default")
+            .ok_or("expected Some, got None")?
+            .meta
+            .uid,
         uid,
         "same object"
     );
+    Ok(())
 }
 
 #[test]

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Integration tests for the StatefulSet controller — ordered, stable pod
+//! Integration tests for the `StatefulSet` controller — ordered, stable pod
 //! identities (`pkg/controller/statefulset` contract).
 
 use cave_home_controller_manager_rs::apis::{
@@ -8,6 +8,8 @@ use cave_home_controller_manager_rs::apis::{
 use cave_home_controller_manager_rs::controllers::statefulset::StatefulSetController;
 use cave_home_controller_manager_rs::reconcile::Outcome;
 use cave_home_controller_manager_rs::types::{Object, ObjectMeta};
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 fn sel() -> std::collections::BTreeMap<String, String> {
     let mut m = std::collections::BTreeMap::new();
@@ -27,11 +29,12 @@ fn sts(replicas: i32) -> StatefulSet {
     )
 }
 
-fn admit(c: &mut Cluster, name: &str) {
-    let mut p = c.pods.get(&format!("prod/{name}")).expect("pod exists");
+fn admit(c: &mut Cluster, name: &str) -> TestResult {
+    let mut p = c.pods.get(&format!("prod/{name}")).ok_or("pod exists")?;
     p.status.phase = PodPhase::Running;
     p.status.ready = true;
     c.pods.update(p);
+    Ok(())
 }
 
 fn pod_names(c: &Cluster) -> Vec<String> {
@@ -46,7 +49,7 @@ fn pod_names(c: &Cluster) -> Vec<String> {
 }
 
 #[test]
-fn creates_the_first_ordinal_then_waits_for_readiness() {
+fn creates_the_first_ordinal_then_waits_for_readiness() -> TestResult {
     let mut c = Cluster::new();
     c.statefulsets.create(sts(3));
     let mut ctrl = StatefulSetController::new();
@@ -62,42 +65,47 @@ fn creates_the_first_ordinal_then_waits_for_readiness() {
         "no progress while 0 is not ready"
     );
 
-    admit(&mut c, "db-0");
+    admit(&mut c, "db-0")?;
     ctrl.reconcile("prod/db", &mut c, 2);
     assert_eq!(
         pod_names(&c),
         vec!["db-0", "db-1"],
         "ordinal 1 created once 0 is ready"
     );
+    Ok(())
 }
 
 #[test]
-fn fills_all_ordinals_in_order_as_each_becomes_ready() {
+fn fills_all_ordinals_in_order_as_each_becomes_ready() -> TestResult {
     let mut c = Cluster::new();
     c.statefulsets.create(sts(3));
     let mut ctrl = StatefulSetController::new();
     for i in 0..3 {
         ctrl.reconcile("prod/db", &mut c, i);
-        admit(&mut c, &format!("db-{i}"));
+        admit(&mut c, &format!("db-{i}"))?;
     }
     ctrl.reconcile("prod/db", &mut c, 10);
     assert_eq!(pod_names(&c), vec!["db-0", "db-1", "db-2"]);
+    Ok(())
 }
 
 #[test]
-fn scales_down_highest_ordinal_first() {
+fn scales_down_highest_ordinal_first() -> TestResult {
     let mut c = Cluster::new();
     c.statefulsets.create(sts(3));
     let mut ctrl = StatefulSetController::new();
     for i in 0..3 {
         ctrl.reconcile("prod/db", &mut c, i);
-        admit(&mut c, &format!("db-{i}"));
+        admit(&mut c, &format!("db-{i}"))?;
     }
     ctrl.reconcile("prod/db", &mut c, 10);
     assert_eq!(pod_names(&c).len(), 3);
 
     // Scale down to 1.
-    let mut s = c.statefulsets.get("prod/db").unwrap();
+    let mut s = c
+        .statefulsets
+        .get("prod/db")
+        .ok_or("expected Some, got None")?;
     s.spec.replicas = 1;
     c.statefulsets.update(s);
 
@@ -109,18 +117,20 @@ fn scales_down_highest_ordinal_first() {
     );
     ctrl.reconcile("prod/db", &mut c, 12);
     assert_eq!(pod_names(&c), vec!["db-0"], "then db-1");
+    Ok(())
 }
 
 #[test]
-fn steady_state_is_a_noop() {
+fn steady_state_is_a_noop() -> TestResult {
     let mut c = Cluster::new();
     c.statefulsets.create(sts(1));
     let mut ctrl = StatefulSetController::new();
     ctrl.reconcile("prod/db", &mut c, 0);
-    admit(&mut c, "db-0");
+    admit(&mut c, "db-0")?;
     let before = pod_names(&c);
     assert_eq!(ctrl.reconcile("prod/db", &mut c, 1), Outcome::Done);
     assert_eq!(pod_names(&c), before);
+    Ok(())
 }
 
 #[test]
@@ -133,21 +143,26 @@ fn missing_statefulset_is_a_noop() {
 // --- Status subresource -------------------------------------------------
 
 #[test]
-fn status_reports_replicas_and_ready_counts() {
+fn status_reports_replicas_and_ready_counts() -> TestResult {
     let mut c = Cluster::new();
     c.statefulsets.create(sts(3));
     let mut ctrl = StatefulSetController::new();
     // Bring up all three ordinals.
     for i in 0..3 {
         ctrl.reconcile("prod/db", &mut c, i);
-        admit(&mut c, &format!("db-{i}"));
+        admit(&mut c, &format!("db-{i}"))?;
     }
     ctrl.reconcile("prod/db", &mut c, 10);
-    let st = c.statefulsets.get("prod/db").unwrap().status;
+    let st = c
+        .statefulsets
+        .get("prod/db")
+        .ok_or("expected Some, got None")?
+        .status;
     assert_eq!(st.replicas, 3, "three pods created");
     assert_eq!(st.ready_replicas, 3, "all ready");
     assert_eq!(st.current_replicas, 3);
     assert_eq!(st.updated_replicas, 3);
+    Ok(())
 }
 
 // --- volumeClaimTemplates → PVCs ----------------------------------------
@@ -177,7 +192,7 @@ fn pvc_names(c: &Cluster) -> Vec<String> {
 }
 
 #[test]
-fn creates_one_pvc_per_template_per_ordinal() {
+fn creates_one_pvc_per_template_per_ordinal() -> TestResult {
     let mut c = Cluster::new();
     c.statefulsets.create(sts_with_pvc(2, &["data", "logs"]));
     let mut ctrl = StatefulSetController::new();
@@ -188,28 +203,32 @@ fn creates_one_pvc_per_template_per_ordinal() {
         vec!["data-db-0", "logs-db-0"],
         "PVCs for ordinal 0"
     );
-    admit(&mut c, "db-0");
+    admit(&mut c, "db-0")?;
     ctrl.reconcile("prod/db", &mut c, 1);
     assert_eq!(
         pvc_names(&c),
         vec!["data-db-0", "data-db-1", "logs-db-0", "logs-db-1"],
         "PVCs for ordinal 1 added once it is created"
     );
+    Ok(())
 }
 
 #[test]
-fn pvcs_survive_scale_down() {
+fn pvcs_survive_scale_down() -> TestResult {
     let mut c = Cluster::new();
     c.statefulsets.create(sts_with_pvc(2, &["data"]));
     let mut ctrl = StatefulSetController::new();
     ctrl.reconcile("prod/db", &mut c, 0);
-    admit(&mut c, "db-0");
+    admit(&mut c, "db-0")?;
     ctrl.reconcile("prod/db", &mut c, 1);
-    admit(&mut c, "db-1");
+    admit(&mut c, "db-1")?;
     assert_eq!(pvc_names(&c), vec!["data-db-0", "data-db-1"]);
 
     // Scale to 1: db-1 the pod is deleted, but its PVC is retained.
-    let mut s = c.statefulsets.get("prod/db").unwrap();
+    let mut s = c
+        .statefulsets
+        .get("prod/db")
+        .ok_or("expected Some, got None")?;
     s.spec.replicas = 1;
     c.statefulsets.update(s);
     ctrl.reconcile("prod/db", &mut c, 2);
@@ -219,6 +238,7 @@ fn pvcs_survive_scale_down() {
         vec!["data-db-0", "data-db-1"],
         "PVC for db-1 retained"
     );
+    Ok(())
 }
 
 // --- podManagementPolicy: Parallel --------------------------------------
@@ -247,7 +267,7 @@ fn parallel_policy_creates_all_ordinals_at_once() {
 }
 
 #[test]
-fn parallel_policy_deletes_all_surplus_at_once() {
+fn parallel_policy_deletes_all_surplus_at_once() -> TestResult {
     let mut c = Cluster::new();
     c.statefulsets.create(StatefulSet::new(
         ObjectMeta::new("db", "prod", ""),
@@ -262,9 +282,12 @@ fn parallel_policy_deletes_all_surplus_at_once() {
     let mut ctrl = StatefulSetController::new();
     ctrl.reconcile("prod/db", &mut c, 0);
     for i in 0..3 {
-        admit(&mut c, &format!("db-{i}"));
+        admit(&mut c, &format!("db-{i}"))?;
     }
-    let mut s = c.statefulsets.get("prod/db").unwrap();
+    let mut s = c
+        .statefulsets
+        .get("prod/db")
+        .ok_or("expected Some, got None")?;
     s.spec.replicas = 1;
     c.statefulsets.update(s);
     ctrl.reconcile("prod/db", &mut c, 1);
@@ -273,4 +296,5 @@ fn parallel_policy_deletes_all_surplus_at_once() {
         vec!["db-0"],
         "Parallel removes db-1 and db-2 in one pass"
     );
+    Ok(())
 }

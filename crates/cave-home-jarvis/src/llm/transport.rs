@@ -140,6 +140,8 @@ impl HttpTransport for MockTransport {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     fn post(url: &str, body: &str) -> HttpRequest {
         HttpRequest {
             method: HttpMethod::Post,
@@ -150,30 +152,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn route_matches_by_substring() {
+    async fn route_matches_by_substring() -> TestResult {
         let t = MockTransport::new().route("/api/chat", 200, "ok");
         let r = t
             .send(post("http://localhost:11434/api/chat", "{}"))
-            .await
-            .unwrap();
+            .await?;
         assert_eq!(r.status, 200);
         assert_eq!(r.body, "ok");
         assert_eq!(t.request_count(), 1);
         assert_eq!(t.nth_body(0).as_deref(), Some("{}"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn queue_consumed_before_routes() {
+    async fn queue_consumed_before_routes() -> TestResult {
         let t = MockTransport::new().route("/api/chat", 200, "route");
         t.push_response(200, "queued");
-        assert_eq!(
-            t.send(post("x/api/chat", "{}")).await.unwrap().body,
-            "queued"
-        );
-        assert_eq!(
-            t.send(post("x/api/chat", "{}")).await.unwrap().body,
-            "route"
-        );
+        assert_eq!(t.send(post("x/api/chat", "{}")).await?.body, "queued");
+        assert_eq!(t.send(post("x/api/chat", "{}")).await?.body, "route");
+        Ok(())
     }
 
     #[tokio::test]
@@ -181,8 +178,8 @@ mod tests {
         let t = MockTransport::new();
         t.set_failure(Some("connection refused".into()));
         assert!(matches!(
-            t.send(post("x", "{}")).await.unwrap_err(),
-            JarvisError::Transport(_)
+            t.send(post("x", "{}")).await,
+            Err(JarvisError::Transport(_))
         ));
     }
 

@@ -283,10 +283,11 @@ mod tests {
             .map(|i| {
                 #[allow(clippy::cast_precision_loss)]
                 let phase = (i as f32 % period) / period; // 0..1
+                let scaled = 4.0 * phase;
                 let tri = if phase < 0.5 {
-                    4.0 * phase - 1.0
+                    scaled - 1.0
                 } else {
-                    3.0 - 4.0 * phase
+                    3.0 - scaled
                 };
                 tri * amp
             })
@@ -333,7 +334,7 @@ mod tests {
         assert_eq!(src.remaining(), 2);
         assert!(src.next_frame().await.is_ok());
         assert!(src.next_frame().await.is_ok());
-        assert_eq!(src.next_frame().await.unwrap_err(), JarvisError::AudioEnded);
+        assert_eq!(src.next_frame().await.err(), Some(JarvisError::AudioEnded));
     }
 
     #[test]

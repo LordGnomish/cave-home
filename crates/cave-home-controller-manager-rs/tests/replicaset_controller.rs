@@ -9,6 +9,8 @@ use cave_home_controller_manager_rs::controllers::replicaset::ReplicaSetControll
 use cave_home_controller_manager_rs::reconcile::Outcome;
 use cave_home_controller_manager_rs::types::{Object, ObjectMeta, OwnerReference};
 
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
 fn sel(app: &str) -> std::collections::BTreeMap<String, String> {
     let mut m = std::collections::BTreeMap::new();
     m.insert("app".to_owned(), app.to_owned());
@@ -117,7 +119,7 @@ fn scale_down_deletes_least_ready_pods_first() {
 }
 
 #[test]
-fn adopts_a_matching_orphan_pod() {
+fn adopts_a_matching_orphan_pod() -> TestResult {
     let mut c = Cluster::new();
     let rs = c.replicasets.create(rs("web", 1));
     let mut ctrl = ReplicaSetController::new();
@@ -128,13 +130,13 @@ fn adopts_a_matching_orphan_pod() {
 
     ctrl.reconcile("prod/web", &mut c, 0);
 
-    let adopted = c.pods.get("prod/legacy").expect("orphan still present");
+    let adopted = c.pods.get("prod/legacy").ok_or("orphan still present")?;
     let owner = adopted
         .meta()
         .owner_references
         .iter()
         .find(|r| r.controller)
-        .expect("adopted: now has a controller owner");
+        .ok_or("adopted: now has a controller owner")?;
     assert_eq!(owner.uid, rs.meta().uid);
     // It satisfied desired replicas, so no extra pod was created.
     assert_eq!(
@@ -142,10 +144,11 @@ fn adopts_a_matching_orphan_pod() {
         1,
         "adoption avoids creating a redundant pod"
     );
+    Ok(())
 }
 
 #[test]
-fn releases_an_owned_pod_that_no_longer_matches() {
+fn releases_an_owned_pod_that_no_longer_matches() -> TestResult {
     let mut c = Cluster::new();
     let rs = c.replicasets.create(rs("web", 0));
     let mut ctrl = ReplicaSetController::new();
@@ -161,7 +164,7 @@ fn releases_an_owned_pod_that_no_longer_matches() {
 
     ctrl.reconcile("prod/web", &mut c, 0);
 
-    let released = c.pods.get("prod/drifted").expect("pod still present");
+    let released = c.pods.get("prod/drifted").ok_or("pod still present")?;
     assert!(
         !released
             .meta()
@@ -170,6 +173,7 @@ fn releases_an_owned_pod_that_no_longer_matches() {
             .any(|r| r.controller && r.uid == rs.meta().uid),
         "the drifted pod was released (controller owner ref removed)"
     );
+    Ok(())
 }
 
 #[test]

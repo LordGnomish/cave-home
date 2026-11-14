@@ -134,6 +134,8 @@ impl SpeechToText for MockStt {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     fn frame(n: usize) -> AudioFrame {
         AudioFrame::new("mic", vec![0.1; n])
     }
@@ -152,25 +154,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mock_returns_scripted_text_and_records_audio() {
+    async fn mock_returns_scripted_text_and_records_audio() -> TestResult {
         let stt = MockStt::new().say("turn the kitchen light on");
-        let t = stt.transcribe(&[frame(160), frame(160)]).await.unwrap();
+        let t = stt.transcribe(&[frame(160), frame(160)]).await?;
         assert_eq!(t.text, "turn the kitchen light on");
         assert_eq!(t.language, Lang::En);
         assert_eq!(*stt.received_samples.lock(), vec![320]);
+        Ok(())
     }
 
     #[tokio::test]
     async fn mock_errors_when_script_empty() {
         let stt = MockStt::new();
-        let err = stt.transcribe(&[frame(10)]).await.unwrap_err();
-        assert!(matches!(err, JarvisError::Stt(_)));
+        let result = stt.transcribe(&[frame(10)]).await;
+        assert!(matches!(result, Err(JarvisError::Stt(_))));
     }
 
     #[tokio::test]
-    async fn mock_replays_in_order() {
+    async fn mock_replays_in_order() -> TestResult {
         let stt = MockStt::new().say("first").say("second");
-        assert_eq!(stt.transcribe(&[frame(1)]).await.unwrap().text, "first");
-        assert_eq!(stt.transcribe(&[frame(1)]).await.unwrap().text, "second");
+        assert_eq!(stt.transcribe(&[frame(1)]).await?.text, "first");
+        assert_eq!(stt.transcribe(&[frame(1)]).await?.text, "second");
+        Ok(())
     }
 }

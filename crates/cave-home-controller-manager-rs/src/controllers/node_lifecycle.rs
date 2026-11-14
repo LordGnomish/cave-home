@@ -271,6 +271,6 @@ mod tests {
     fn ready_node_never_evicts() {
         let n = NodeState::ready("n", 1000);
         let actions = reconcile_node(&n, &cfg(), None, 1000);
-        assert!(actions.is_empty());
+        assert_eq!(actions, [] as [NodeAction; 0]);
     }
 }

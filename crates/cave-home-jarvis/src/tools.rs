@@ -276,6 +276,8 @@ impl ToolExecutor for MockToolExecutor {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn set_light_intent_maps_to_set_light_tool() {
         let call = intent_to_tool_call(&IntentAction::SetLight {
@@ -328,8 +330,8 @@ mod tests {
         let reg = ToolRegistry::default();
         let call = ToolCall::new("launch_rocket", serde_json::json!({}));
         assert!(matches!(
-            reg.validate(&call).unwrap_err(),
-            JarvisError::UnknownTool(_)
+            reg.validate(&call),
+            Err(JarvisError::UnknownTool(_))
         ));
     }
 
@@ -338,29 +340,31 @@ mod tests {
         let reg = ToolRegistry::default();
         let call = ToolCall::new("set_light", serde_json::json!({"target": "kitchen"})); // no `on`
         assert!(matches!(
-            reg.validate(&call).unwrap_err(),
-            JarvisError::ToolArguments { .. }
+            reg.validate(&call),
+            Err(JarvisError::ToolArguments { .. })
         ));
     }
 
     #[tokio::test]
-    async fn mock_executor_records_and_defaults_to_ok() {
+    async fn mock_executor_records_and_defaults_to_ok() -> TestResult {
         let exec = MockToolExecutor::new();
         let call = ToolCall::new("set_light", serde_json::json!({"target": "x", "on": false}));
-        let r = exec.execute(&call).await.unwrap();
+        let r = exec.execute(&call).await?;
         assert!(r.ok);
         assert_eq!(exec.call_names(), vec!["set_light".to_string()]);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn mock_executor_returns_scripted_result() {
+    async fn mock_executor_returns_scripted_result() -> TestResult {
         let exec = MockToolExecutor::new().returning(ToolResult::failed("device offline"));
         let call = ToolCall::new(
             "set_cover",
             serde_json::json!({"target": "garage", "open": true}),
         );
-        let r = exec.execute(&call).await.unwrap();
+        let r = exec.execute(&call).await?;
         assert!(!r.ok);
         assert_eq!(r.message, "device offline");
+        Ok(())
     }
 }

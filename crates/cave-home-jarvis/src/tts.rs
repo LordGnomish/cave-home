@@ -108,30 +108,30 @@ impl TextToSpeech for MockTts {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[tokio::test]
-    async fn synthesizes_non_empty_audio_and_records_text() {
+    async fn synthesizes_non_empty_audio_and_records_text() -> TestResult {
         let tts = MockTts::new();
         let r = tts
             .synthesize("Turning on the kitchen light.", Lang::En)
-            .await
-            .unwrap();
+            .await?;
         assert_eq!(r.text, "Turning on the kitchen light.");
         assert_eq!(r.language, Lang::En);
-        assert!(!r.samples.is_empty());
+        assert_ne!(r.samples, [] as [f32; 0]);
         assert_eq!(
             *tts.spoken.lock(),
             vec!["Turning on the kitchen light.".to_string()]
         );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn longer_text_speaks_longer() {
+    async fn longer_text_speaks_longer() -> TestResult {
         let tts = MockTts::new();
-        let short = tts.synthesize("ok", Lang::En).await.unwrap();
-        let long = tts
-            .synthesize("okay then, here we go", Lang::En)
-            .await
-            .unwrap();
+        let short = tts.synthesize("ok", Lang::En).await?;
+        let long = tts.synthesize("okay then, here we go", Lang::En).await?;
         assert!(long.duration_ms() > short.duration_ms());
+        Ok(())
     }
 }

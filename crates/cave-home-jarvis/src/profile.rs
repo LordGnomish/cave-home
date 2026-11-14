@@ -166,25 +166,30 @@ mod tests {
 
     const SR: u32 = 16_000;
 
+    type TestError = Box<dyn std::error::Error>;
+    type TestResult = Result<(), TestError>;
+
     /// A multi-tone "voice" — a fixed set of formant-like tones, scaled by amp.
-    fn voice(formants: &[f32], n: usize, amp: f32) -> Vec<f32> {
+    fn voice(formants: &[f32], n: usize, amp: f32) -> Result<Vec<f32>, TestError> {
         #[allow(clippy::cast_precision_loss)]
         let srf = SR as f32;
-        (0..n)
+        // A handful of tones: the count converts to `f32` exactly.
+        let count = f32::from(u8::try_from(formants.len())?);
+        Ok((0..n)
             .map(|i| {
                 #[allow(clippy::cast_precision_loss)]
                 let t = i as f32 / srf;
                 let s: f32 = formants.iter().map(|f| (2.0 * PI * f * t).sin()).sum();
-                amp * s / formants.len() as f32
+                amp * s / count
             })
-            .collect()
+            .collect())
     }
 
-    fn burak(n: usize, amp: f32) -> Vec<f32> {
+    fn burak(n: usize, amp: f32) -> Result<Vec<f32>, TestError> {
         voice(&[150.0, 800.0, 2400.0], n, amp) // lower, darker
     }
 
-    fn sanja(n: usize, amp: f32) -> Vec<f32> {
+    fn sanja(n: usize, amp: f32) -> Result<Vec<f32>, TestError> {
         voice(&[320.0, 1300.0, 3100.0], n, amp) // higher, brighter
     }
 
@@ -195,43 +200,50 @@ mod tests {
     }
 
     #[test]
-    fn embed_is_unit_length() {
+    fn embed_is_unit_length() -> TestResult {
         let book = SpeakerBook::with_defaults();
-        let emb = book.embed(&burak(4096, 0.7));
+        let emb = book.embed(&burak(4096, 0.7)?);
         let norm: f32 = emb.iter().map(|x| x * x).sum::<f32>().sqrt();
         assert!((norm - 1.0).abs() < 1e-4, "embedding should be unit length");
+        Ok(())
     }
 
     #[test]
-    fn identifies_the_right_household_member() {
+    fn identifies_the_right_household_member() -> TestResult {
         let mut book = SpeakerBook::with_defaults();
-        book.enroll("Burak", &burak(8192, 0.8));
-        book.enroll("Sanja", &sanja(8192, 0.8));
+        book.enroll("Burak", &burak(8192, 0.8)?);
+        book.enroll("Sanja", &sanja(8192, 0.8)?);
         assert_eq!(book.len(), 2);
 
         // A fresh Burak sample (different length + loudness) -> Burak.
-        let hit = book.identify(&burak(6000, 0.4)).expect("identified");
+        let hit = book.identify(&burak(6000, 0.4)?).ok_or("identified")?;
         assert_eq!(hit.name, "Burak");
 
         // And Sanja's sample -> Sanja.
-        assert_eq!(book.identify(&sanja(6000, 0.5)).unwrap().name, "Sanja");
+        assert_eq!(
+            book.identify(&sanja(6000, 0.5)?).ok_or("identified")?.name,
+            "Sanja"
+        );
+        Ok(())
     }
 
     #[test]
-    fn correct_member_outscores_the_other() {
+    fn correct_member_outscores_the_other() -> TestResult {
         let mut book = SpeakerBook::with_defaults();
-        book.enroll("Burak", &burak(8192, 0.8));
-        book.enroll("Sanja", &sanja(8192, 0.8));
-        let scores = book.score(&burak(6000, 0.6));
+        book.enroll("Burak", &burak(8192, 0.8)?);
+        book.enroll("Sanja", &sanja(8192, 0.8)?);
+        let scores = book.score(&burak(6000, 0.6)?);
         // Sorted best-first: Burak must beat Sanja.
         assert_eq!(scores[0].name, "Burak");
         assert!(scores[0].similarity > scores[1].similarity);
+        Ok(())
     }
 
     #[test]
-    fn silence_identifies_no_one() {
+    fn silence_identifies_no_one() -> TestResult {
         let mut book = SpeakerBook::with_defaults();
-        book.enroll("Burak", &burak(8192, 0.8));
+        book.enroll("Burak", &burak(8192, 0.8)?);
         assert!(book.identify(&vec![0.0; 6000]).is_none());
+        Ok(())
     }
 }

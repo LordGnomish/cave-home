@@ -305,6 +305,8 @@ impl WorkQueue {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn cfg() -> RateLimitConfig {
         RateLimitConfig {
             base_delay: 10,
@@ -337,10 +339,10 @@ mod tests {
     }
 
     #[test]
-    fn readd_while_processing_requeues_once_on_done() {
+    fn readd_while_processing_requeues_once_on_done() -> TestResult {
         let mut q = WorkQueue::new(cfg());
         q.add("a");
-        let item = q.get(0).expect("ready item");
+        let item = q.get(0).ok_or("ready item")?;
         assert_eq!(item, "a");
         // Re-added (twice) while in flight: must not be visible yet.
         q.add("a");
@@ -351,6 +353,7 @@ mod tests {
         assert_eq!(q.get(0).as_deref(), Some("a"));
         q.done("a");
         assert_eq!(q.get(0), None);
+        Ok(())
     }
 
     #[test]

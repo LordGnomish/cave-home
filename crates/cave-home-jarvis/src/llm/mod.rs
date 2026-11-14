@@ -326,8 +326,10 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn request_serialises_to_ollama_shape() {
+    fn request_serialises_to_ollama_shape() -> TestResult {
         let req = ChatRequest::new("llama3.1", vec![ChatMessage::user("hi")]).with_tools(vec![
             ToolSpec::function(
                 "set_light",
@@ -335,23 +337,25 @@ mod tests {
                 json!({"type":"object","properties":{"on":{"type":"boolean"}}}),
             ),
         ]);
-        let v: serde_json::Value = serde_json::to_value(&req).unwrap();
+        let v: serde_json::Value = serde_json::to_value(&req)?;
         assert_eq!(v["model"], "llama3.1");
         assert_eq!(v["stream"], false);
         assert_eq!(v["messages"][0]["role"], "user");
         assert_eq!(v["tools"][0]["type"], "function");
         assert_eq!(v["tools"][0]["function"]["name"], "set_light");
+        Ok(())
     }
 
     #[test]
-    fn empty_tools_are_omitted_from_wire() {
+    fn empty_tools_are_omitted_from_wire() -> TestResult {
         let req = ChatRequest::new("m", vec![ChatMessage::user("hi")]);
-        let v = serde_json::to_value(&req).unwrap();
+        let v = serde_json::to_value(&req)?;
         assert!(v.get("tools").is_none());
+        Ok(())
     }
 
     #[test]
-    fn response_with_tool_call_parses() {
+    fn response_with_tool_call_parses() -> TestResult {
         let body = r#"{
             "model":"llama3.1",
             "message":{"role":"assistant","content":"",
@@ -359,32 +363,35 @@ mod tests {
                     "arguments":{"room":"kitchen","on":true}}}]},
             "done":false
         }"#;
-        let resp: ChatResponse = serde_json::from_str(body).unwrap();
+        let resp: ChatResponse = serde_json::from_str(body)?;
         assert!(resp.wants_tools());
         let call = &resp.tool_calls()[0];
         assert_eq!(call.name(), "set_light");
         assert_eq!(call.arguments()["room"], "kitchen");
         assert_eq!(call.arguments()["on"], true);
+        Ok(())
     }
 
     #[test]
-    fn tool_result_message_round_trips() {
+    fn tool_result_message_round_trips() -> TestResult {
         let m = ChatMessage::tool_result("set_light", "ok");
-        let v = serde_json::to_value(&m).unwrap();
+        let v = serde_json::to_value(&m)?;
         assert_eq!(v["role"], "tool");
         assert_eq!(v["content"], "ok");
         assert_eq!(v["tool_name"], "set_light");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn mock_llm_replays_scripted_turns() {
+    async fn mock_llm_replays_scripted_turns() -> TestResult {
         let llm = MockLlm::new()
             .call_tool("set_light", json!({"on":true}))
             .reply("Done.");
-        let first = llm.chat(ChatRequest::new("m", vec![])).await.unwrap();
+        let first = llm.chat(ChatRequest::new("m", vec![])).await?;
         assert!(first.wants_tools());
-        let second = llm.chat(ChatRequest::new("m", vec![])).await.unwrap();
+        let second = llm.chat(ChatRequest::new("m", vec![])).await?;
         assert_eq!(second.content(), "Done.");
         assert_eq!(llm.request_count(), 2);
+        Ok(())
     }
 }

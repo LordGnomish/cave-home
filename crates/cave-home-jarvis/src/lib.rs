@@ -87,10 +87,10 @@ mod doctest_like {
     use crate::wake::{WakeConfig, WakeWordDetector};
 
     #[tokio::test]
-    async fn end_to_end_command_controls_a_light() {
+    async fn end_to_end_command_controls_a_light() -> Result<(), Box<dyn std::error::Error>> {
         let stt = MockStt::new().say("turn the kitchen light on");
         let dispatcher = Dispatcher::new(
-            cave_home_voice::intents::builtin_intents().unwrap(),
+            cave_home_voice::intents::builtin_intents()?,
             MockLlm::new(),
             MockToolExecutor::new(),
             ToolRegistry::default(),
@@ -105,8 +105,9 @@ mod doctest_like {
             MockTts::new(),
         );
         let cmd = vec![AudioFrame::new("mic-kitchen", vec![0.2; 4096])];
-        let turn = pipeline.handle_command("mic-kitchen", &cmd).await.unwrap();
+        let turn = pipeline.handle_command("mic-kitchen", &cmd).await?;
         assert_eq!(turn.outcome.executed_tools(), vec!["set_light".to_string()]);
         assert_eq!(turn.room.as_deref(), Some("kitchen"));
+        Ok(())
     }
 }

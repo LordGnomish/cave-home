@@ -114,6 +114,8 @@ impl RoomRegistry {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     fn registry() -> RoomRegistry {
         RoomRegistry::new()
             .with_device("mic-kitchen", "kitchen")
@@ -123,14 +125,14 @@ mod tests {
 
     #[test]
     fn room_of_known_device() {
-        assert_eq!(registry().room_of("mic-office").unwrap(), "office");
+        assert_eq!(registry().room_of("mic-office"), Ok("office"));
     }
 
     #[test]
     fn room_of_unknown_device_errors() {
         assert!(matches!(
-            registry().room_of("mic-attic").unwrap_err(),
-            JarvisError::UnknownRoom(_)
+            registry().room_of("mic-attic"),
+            Err(JarvisError::UnknownRoom(_))
         ));
     }
 
@@ -145,30 +147,25 @@ mod tests {
     }
 
     #[test]
-    fn context_carries_room_and_speaker() {
-        let ctx = registry()
-            .context_for("mic-kitchen", Some("Sanja".into()))
-            .unwrap();
+    fn context_carries_room_and_speaker() -> TestResult {
+        let ctx = registry().context_for("mic-kitchen", Some("Sanja".into()))?;
         assert_eq!(ctx.room.as_deref(), Some("kitchen"));
         assert_eq!(ctx.speaker.as_deref(), Some("Sanja"));
+        Ok(())
     }
 
     #[test]
-    fn deictic_target_resolves_to_room() {
+    fn deictic_target_resolves_to_room() -> TestResult {
         let r = registry();
-        assert_eq!(r.resolve_target("mic-office", "here").unwrap(), "office");
-        assert_eq!(
-            r.resolve_target("mic-office", "this room").unwrap(),
-            "office"
-        );
+        assert_eq!(r.resolve_target("mic-office", "here")?, "office");
+        assert_eq!(r.resolve_target("mic-office", "this room")?, "office");
+        Ok(())
     }
 
     #[test]
-    fn explicit_target_is_unchanged() {
+    fn explicit_target_is_unchanged() -> TestResult {
         let r = registry();
-        assert_eq!(
-            r.resolve_target("mic-office", "the garage").unwrap(),
-            "the garage"
-        );
+        assert_eq!(r.resolve_target("mic-office", "the garage")?, "the garage");
+        Ok(())
     }
 }

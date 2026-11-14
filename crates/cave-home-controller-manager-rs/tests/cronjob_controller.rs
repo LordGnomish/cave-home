@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Integration tests for the CronJob controller (`pkg/controller/cronjob`).
+//! Integration tests for the `CronJob` controller (`pkg/controller/cronjob`).
 
 use cave_home_controller_manager_rs::apis::{
     Cluster, ConcurrencyPolicy, CronJob, CronJobSpec, Job, JobSpec,
@@ -9,12 +9,14 @@ use cave_home_controller_manager_rs::reconcile::Outcome;
 use cave_home_controller_manager_rs::types::Object;
 use cave_home_controller_manager_rs::types::ObjectMeta;
 
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
 /// 2021-01-01T00:00:00Z (a Friday) — the base for the daily-schedule cases.
 const FRI: i64 = 1_609_459_200;
 /// One hour, in seconds.
 const HOUR: i64 = 3600;
 
-/// A "* * * * *" (every minute) CronJob created at epoch 0, period 60s.
+/// A "* * * * *" (every minute) `CronJob` created at epoch 0, period 60s.
 fn cronjob(concurrency: ConcurrencyPolicy, suspend: bool) -> CronJob {
     CronJob::new(
         ObjectMeta::new("nightly", "prod", ""),
@@ -39,7 +41,7 @@ fn active_jobs(c: &Cluster, owner: &str) -> usize {
 const PERIOD: u64 = 60;
 
 #[test]
-fn first_reconcile_starts_a_job_at_the_first_scheduled_minute() {
+fn first_reconcile_starts_a_job_at_the_first_scheduled_minute() -> TestResult {
     let mut c = Cluster::new();
     // created_at 0, every minute → first fire is at second 60.
     let cj = c.cronjobs.create(cronjob(ConcurrencyPolicy::Allow, false));
@@ -52,9 +54,13 @@ fn first_reconcile_starts_a_job_at_the_first_scheduled_minute() {
     );
     // Most recent fire at/<=100 from base 0 is second 60.
     assert_eq!(
-        c.cronjobs.get("prod/nightly").unwrap().last_scheduled,
+        c.cronjobs
+            .get("prod/nightly")
+            .ok_or("expected Some, got None")?
+            .last_scheduled,
         Some(60)
     );
+    Ok(())
 }
 
 #[test]
@@ -127,15 +133,13 @@ fn replace_deletes_the_active_run_then_starts_a_new_one() {
         .map(|j| j.meta().uid.clone())
         .collect();
     ctrl.reconcile("prod/nightly", &mut c, 100 + PERIOD);
-    let now_jobs: Vec<_> = c
-        .jobs
-        .list_owned_by(&cj.meta().uid)
-        .iter()
-        .map(|j| j.meta().uid.clone())
-        .collect();
     assert_eq!(active_jobs(&c, &cj.meta().uid), 1, "exactly one active run");
+    let previous = &first[0];
     assert!(
-        !now_jobs.contains(&first[0]),
+        !c.jobs
+            .list_owned_by(&cj.meta().uid)
+            .iter()
+            .any(|j| j.meta().uid == *previous),
         "the previous run was replaced"
     );
 }
@@ -155,7 +159,7 @@ fn allow_starts_even_with_an_active_run() {
 }
 
 #[test]
-fn missed_run_past_the_starting_deadline_is_skipped() {
+fn missed_run_past_the_starting_deadline_is_skipped() -> TestResult {
     let mut c = Cluster::new();
     let mut spec = cronjob(ConcurrencyPolicy::Allow, false);
     spec.spec.starting_deadline = Some(10);
@@ -172,9 +176,13 @@ fn missed_run_past_the_starting_deadline_is_skipped() {
     // The schedule still advances to the most-recent slot (180) so we don't keep
     // retrying the missed one.
     assert_eq!(
-        c.cronjobs.get("prod/nightly").unwrap().last_scheduled,
+        c.cronjobs
+            .get("prod/nightly")
+            .ok_or("expected Some, got None")?
+            .last_scheduled,
         Some(180)
     );
+    Ok(())
 }
 
 #[test]
@@ -187,7 +195,7 @@ fn missing_cronjob_is_a_noop() {
 // --- Real cron-schedule semantics ---------------------------------------
 
 #[test]
-fn daily_schedule_fires_once_a_day_at_the_right_hour() {
+fn daily_schedule_fires_once_a_day_at_the_right_hour() -> TestResult {
     // "0 3 * * *" → 03:00 daily; created the previous midnight.
     let mut c = Cluster::new();
     let cj = c.cronjobs.create(
@@ -216,13 +224,17 @@ fn daily_schedule_fires_once_a_day_at_the_right_hour() {
         "the 03:00 run started"
     );
     assert_eq!(
-        c.cronjobs.get("prod/backup").unwrap().last_scheduled,
+        c.cronjobs
+            .get("prod/backup")
+            .ok_or("expected Some, got None")?
+            .last_scheduled,
         Some(FRI + 3 * HOUR)
     );
+    Ok(())
 }
 
 #[test]
-fn a_single_reconcile_starts_at_most_one_job_even_after_many_missed_slots() {
+fn a_single_reconcile_starts_at_most_one_job_even_after_many_missed_slots() -> TestResult {
     // "* * * * *" but we don't reconcile for an hour: only one Job is created,
     // and last_scheduled jumps to the most recent slot (collapsing the backlog).
     let mut c = Cluster::new();
@@ -235,9 +247,13 @@ fn a_single_reconcile_starts_at_most_one_job_even_after_many_missed_slots() {
         "one job, not 60"
     );
     assert_eq!(
-        c.cronjobs.get("prod/nightly").unwrap().last_scheduled,
+        c.cronjobs
+            .get("prod/nightly")
+            .ok_or("expected Some, got None")?
+            .last_scheduled,
         Some(3600)
     );
+    Ok(())
 }
 
 #[test]

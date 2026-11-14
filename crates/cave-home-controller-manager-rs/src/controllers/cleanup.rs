@@ -109,6 +109,8 @@ pub fn namespace_sweep(namespace_meta: &ObjectMeta, contents: &[String]) -> Name
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn no_ttl_leaves_job_alone() {
         let j = FinishedJob {
@@ -162,7 +164,7 @@ mod tests {
     }
 
     #[test]
-    fn terminating_namespace_with_content_awaits() {
+    fn terminating_namespace_with_content_awaits() -> TestResult {
         let mut ns = ObjectMeta::new("dev", "", "u").with_finalizer(NAMESPACE_FINALIZER);
         ns.deletion_timestamp = Some(500);
         let contents = vec!["dev/item-b".to_owned(), "dev/item-a".to_owned()];
@@ -170,8 +172,9 @@ mod tests {
             NamespaceSweep::AwaitingContent { remaining } => {
                 assert_eq!(remaining, vec!["dev/item-a", "dev/item-b"], "sorted");
             }
-            other => panic!("expected AwaitingContent, got {other:?}"),
+            other => return Err(format!("expected AwaitingContent, got {other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]
@@ -189,13 +192,14 @@ mod tests {
     }
 
     #[test]
-    fn namespace_sweep_dedups_remaining_content() {
+    fn namespace_sweep_dedups_remaining_content() -> TestResult {
         let mut ns = ObjectMeta::new("dev", "", "u").with_finalizer(NAMESPACE_FINALIZER);
         ns.deletion_timestamp = Some(1);
         let contents = vec!["dev/x".to_owned(), "dev/x".to_owned()];
         match namespace_sweep(&ns, &contents) {
             NamespaceSweep::AwaitingContent { remaining } => assert_eq!(remaining, vec!["dev/x"]),
-            other => panic!("expected AwaitingContent, got {other:?}"),
+            other => return Err(format!("expected AwaitingContent, got {other:?}").into()),
         }
+        Ok(())
     }
 }
