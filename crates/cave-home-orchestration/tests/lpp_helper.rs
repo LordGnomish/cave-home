@@ -4,14 +4,18 @@
 //! pure command/env/args/name construction). References API not yet implemented.
 
 use cave_home_orchestration::local_path_provisioner::ProvisionerConfig;
-use cave_home_orchestration::local_path_provisioner::config::{ActionType, StorageClassConfig};
+use cave_home_orchestration::local_path_provisioner::config::{
+    ActionType, ConfigError, StorageClassConfig,
+};
 use cave_home_orchestration::local_path_provisioner::helper::{
     DEFAULT_SETUP_SCRIPT, DEFAULT_TEARDOWN_SCRIPT, HelperError, VolumeOptions, build_helper_command,
 };
 use cave_home_orchestration::local_path_provisioner::provision::VolumeMode;
 
-fn local() -> StorageClassConfig {
-    StorageClassConfig::canonicalize(&[("node1", &["/opt/lpp"][..])], "").unwrap()
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+fn local() -> Result<StorageClassConfig, ConfigError> {
+    StorageClassConfig::canonicalize(&[("node1", &["/opt/lpp"][..])], "")
 }
 
 fn opts() -> VolumeOptions {
@@ -25,40 +29,43 @@ fn opts() -> VolumeOptions {
 }
 
 #[test]
-fn create_uses_default_setup_command_when_unset() {
-    let cfg = ProvisionerConfig::new(local(), 0);
-    let cmd = build_helper_command(ActionType::Create, "helper-pod", &opts(), &cfg, false).unwrap();
+fn create_uses_default_setup_command_when_unset() -> TestResult {
+    let cfg = ProvisionerConfig::new(local()?, 0);
+    let cmd = build_helper_command(ActionType::Create, "helper-pod", &opts(), &cfg, false)?;
     // Upstream: provisionCmd defaults to ["/bin/sh", "/script/setup"].
     assert_eq!(
         cmd.command,
         vec!["/bin/sh".to_string(), "/script/setup".to_string()]
     );
+    Ok(())
 }
 
 #[test]
-fn delete_uses_default_teardown_command_when_unset() {
-    let cfg = ProvisionerConfig::new(local(), 0);
-    let cmd = build_helper_command(ActionType::Delete, "helper-pod", &opts(), &cfg, false).unwrap();
+fn delete_uses_default_teardown_command_when_unset() -> TestResult {
+    let cfg = ProvisionerConfig::new(local()?, 0);
+    let cmd = build_helper_command(ActionType::Delete, "helper-pod", &opts(), &cfg, false)?;
     assert_eq!(
         cmd.command,
         vec!["/bin/sh".to_string(), "/script/teardown".to_string()]
     );
+    Ok(())
 }
 
 #[test]
-fn custom_setup_teardown_commands_are_used_verbatim() {
+fn custom_setup_teardown_commands_are_used_verbatim() -> TestResult {
     let cfg =
-        ProvisionerConfig::new(local(), 0).with_commands("/custom/setup.sh", "/custom/tear.sh");
-    let c = build_helper_command(ActionType::Create, "helper-pod", &opts(), &cfg, false).unwrap();
+        ProvisionerConfig::new(local()?, 0).with_commands("/custom/setup.sh", "/custom/tear.sh");
+    let c = build_helper_command(ActionType::Create, "helper-pod", &opts(), &cfg, false)?;
     assert_eq!(c.command, vec!["/custom/setup.sh".to_string()]);
-    let d = build_helper_command(ActionType::Delete, "helper-pod", &opts(), &cfg, false).unwrap();
+    let d = build_helper_command(ActionType::Delete, "helper-pod", &opts(), &cfg, false)?;
     assert_eq!(d.command, vec!["/custom/tear.sh".to_string()]);
+    Ok(())
 }
 
 #[test]
-fn env_triplet_matches_upstream() {
-    let cfg = ProvisionerConfig::new(local(), 0);
-    let cmd = build_helper_command(ActionType::Create, "helper-pod", &opts(), &cfg, false).unwrap();
+fn env_triplet_matches_upstream() -> TestResult {
+    let cfg = ProvisionerConfig::new(local()?, 0);
+    let cmd = build_helper_command(ActionType::Create, "helper-pod", &opts(), &cfg, false)?;
     // VOL_DIR = join(parentDir, volumeDir) = the cleaned volume path.
     assert_eq!(
         cmd.env_var("VOL_DIR"),
@@ -66,12 +73,13 @@ fn env_triplet_matches_upstream() {
     );
     assert_eq!(cmd.env_var("VOL_MODE"), Some("Filesystem"));
     assert_eq!(cmd.env_var("VOL_SIZE_BYTES"), Some("1024"));
+    Ok(())
 }
 
 #[test]
-fn args_match_upstream_flag_order() {
-    let cfg = ProvisionerConfig::new(local(), 0);
-    let cmd = build_helper_command(ActionType::Create, "helper-pod", &opts(), &cfg, false).unwrap();
+fn args_match_upstream_flag_order() -> TestResult {
+    let cfg = ProvisionerConfig::new(local()?, 0);
+    let cmd = build_helper_command(ActionType::Create, "helper-pod", &opts(), &cfg, false)?;
     // Upstream args: -p <path> -s <size> -m <mode> -a <action>.
     assert_eq!(
         cmd.args,
@@ -86,25 +94,27 @@ fn args_match_upstream_flag_order() {
             "create".to_string(),
         ]
     );
+    Ok(())
 }
 
 #[test]
-fn pod_name_is_base_action_name_and_truncated_to_128() {
-    let cfg = ProvisionerConfig::new(local(), 0);
-    let cmd = build_helper_command(ActionType::Create, "helper-pod", &opts(), &cfg, false).unwrap();
+fn pod_name_is_base_action_name_and_truncated_to_128() -> TestResult {
+    let cfg = ProvisionerConfig::new(local()?, 0);
+    let cmd = build_helper_command(ActionType::Create, "helper-pod", &opts(), &cfg, false)?;
     assert_eq!(cmd.pod_name, "helper-pod-create-pvc-123");
 
     // Long PV name → the assembled name is byte-truncated to 128.
     let mut long = opts();
     long.name = "x".repeat(200);
-    let cmd2 = build_helper_command(ActionType::Create, "helper-pod", &long, &cfg, false).unwrap();
+    let cmd2 = build_helper_command(ActionType::Create, "helper-pod", &long, &cfg, false)?;
     assert_eq!(cmd2.pod_name.len(), 128);
     assert!(cmd2.pod_name.starts_with("helper-pod-create-"));
+    Ok(())
 }
 
 #[test]
-fn validation_rejects_empty_relative_and_root_parent_paths() {
-    let cfg = ProvisionerConfig::new(local(), 0);
+fn validation_rejects_empty_relative_and_root_parent_paths() -> TestResult {
+    let cfg = ProvisionerConfig::new(local()?, 0);
 
     // empty name → error.
     let mut o = opts();
@@ -129,11 +139,12 @@ fn validation_rejects_empty_relative_and_root_parent_paths() {
         build_helper_command(ActionType::Create, "helper-pod", &o, &cfg, false),
         Err(HelperError::InvalidVolumePath { .. })
     ));
+    Ok(())
 }
 
 #[test]
-fn node_required_on_local_fs_but_optional_on_shared_fs() {
-    let cfg = ProvisionerConfig::new(local(), 0);
+fn node_required_on_local_fs_but_optional_on_shared_fs() -> TestResult {
+    let cfg = ProvisionerConfig::new(local()?, 0);
     let mut o = opts();
     o.node = String::new();
 
@@ -144,8 +155,9 @@ fn node_required_on_local_fs_but_optional_on_shared_fs() {
     ));
 
     // shared FS → empty node is fine; pod gets no node pin.
-    let cmd = build_helper_command(ActionType::Create, "helper-pod", &o, &cfg, true).unwrap();
+    let cmd = build_helper_command(ActionType::Create, "helper-pod", &o, &cfg, true)?;
     assert_eq!(cmd.node, "");
+    Ok(())
 }
 
 #[test]

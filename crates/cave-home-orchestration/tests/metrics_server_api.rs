@@ -17,7 +17,7 @@ use cave_home_orchestration::metrics_server::quantity::{Quantity, ResourceList};
 use cave_home_orchestration::metrics_server::store::{Storage, Usage};
 use cave_home_orchestration::metrics_server::summary::MetricsPoint;
 
-fn usage(ts: u64, window: u64, cpu_nano: u64, mem: u64) -> Usage {
+const fn usage(ts: u64, window: u64, cpu_nano: u64, mem: u64) -> Usage {
     Usage {
         timestamp_nanos: ts,
         window_nanos: window,
@@ -28,7 +28,7 @@ fn usage(ts: u64, window: u64, cpu_nano: u64, mem: u64) -> Usage {
     }
 }
 
-fn point(ts: u64, cpu: u64, mem: u64) -> MetricsPoint {
+const fn point(ts: u64, cpu: u64, mem: u64) -> MetricsPoint {
     MetricsPoint {
         timestamp_nanos: ts,
         cumulative_cpu_nanos: cpu,

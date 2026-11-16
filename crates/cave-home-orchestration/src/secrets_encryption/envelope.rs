@@ -303,8 +303,8 @@ mod tests {
     /// A deterministic, non-zero 64-byte ML-KEM seed for a test KEK.
     fn kek(tag: u8) -> KekKeypair {
         let mut seed = [0u8; KEK_SEED_LEN];
-        for (i, b) in seed.iter_mut().enumerate() {
-            *b = tag ^ (i as u8).wrapping_mul(7).wrapping_add(1);
+        for (i, b) in (0u8..).zip(seed.iter_mut()) {
+            *b = tag ^ i.wrapping_mul(7).wrapping_add(1);
         }
         KekKeypair::from_seed(seed)
     }

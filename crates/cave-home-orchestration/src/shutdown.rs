@@ -72,40 +72,43 @@ pub fn is_safe_shutdown(requested: &[Component], order: &[Component]) -> bool {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn full_set_shutdown_stops_kine_last() {
-        let order = shutdown_order(&Component::ALL).expect("ok");
+    fn full_set_shutdown_stops_kine_last() -> TestResult {
+        let order = shutdown_order(&Component::ALL)?;
         assert_eq!(order.len(), 10);
         assert_eq!(order.last(), Some(&Component::Kine));
         // The first thing stopped depends on something (a leaf of bring-up).
         assert!(!order[0].dependencies().is_empty() || order[0] == Component::KubeProxy);
+        Ok(())
     }
 
     #[test]
-    fn shutdown_is_reverse_of_bringup() {
-        let mut bring = BringUpPlan::compute(&Component::ALL)
-            .expect("ok")
-            .order()
-            .to_vec();
-        let down = shutdown_order(&Component::ALL).expect("ok");
+    fn shutdown_is_reverse_of_bringup() -> TestResult {
+        let mut bring = BringUpPlan::compute(&Component::ALL)?.order().to_vec();
+        let down = shutdown_order(&Component::ALL)?;
         bring.reverse();
         assert_eq!(down, bring);
+        Ok(())
     }
 
     #[test]
-    fn proxy_stops_before_kubelet_and_apiserver_before_kine() {
-        let order = shutdown_order(&Component::ALL).expect("ok");
-        let pos = |c: Component| order.iter().position(|x| *x == c).expect("present");
-        assert!(pos(Component::KubeProxy) < pos(Component::Kubelet));
-        assert!(pos(Component::Apiserver) < pos(Component::Kine));
-        assert!(pos(Component::Scheduler) < pos(Component::Apiserver));
-        assert!(pos(Component::Traefik) < pos(Component::Apiserver));
+    fn proxy_stops_before_kubelet_and_apiserver_before_kine() -> TestResult {
+        let order = shutdown_order(&Component::ALL)?;
+        let pos = |c: Component| order.iter().position(|x| *x == c).ok_or("present");
+        assert!(pos(Component::KubeProxy)? < pos(Component::Kubelet)?);
+        assert!(pos(Component::Apiserver)? < pos(Component::Kine)?);
+        assert!(pos(Component::Scheduler)? < pos(Component::Apiserver)?);
+        assert!(pos(Component::Traefik)? < pos(Component::Apiserver)?);
+        Ok(())
     }
 
     #[test]
-    fn safety_predicate_accepts_the_computed_order() {
-        let order = shutdown_order(&Component::ALL).expect("ok");
+    fn safety_predicate_accepts_the_computed_order() -> TestResult {
+        let order = shutdown_order(&Component::ALL)?;
         assert!(is_safe_shutdown(&Component::ALL, &order));
+        Ok(())
     }
 
     #[test]
@@ -128,25 +131,30 @@ mod tests {
     }
 
     #[test]
-    fn safety_predicate_rejects_wrong_membership() {
-        let order = shutdown_order(&[Component::Kine, Component::Apiserver]).expect("ok");
+    fn safety_predicate_rejects_wrong_membership() -> TestResult {
+        let order = shutdown_order(&[Component::Kine, Component::Apiserver])?;
         // Missing a component from the requested set.
         assert!(!is_safe_shutdown(&Component::ALL, &order));
+        Ok(())
     }
 
     #[test]
-    fn missing_dependency_propagates_from_planner() {
-        let err = shutdown_order(&[Component::Apiserver]).unwrap_err();
+    fn missing_dependency_propagates_from_planner() -> TestResult {
+        let err = shutdown_order(&[Component::Apiserver])
+            .err()
+            .ok_or("expected an error")?;
         assert!(matches!(err, OrderError::MissingDependency { .. }));
+        Ok(())
     }
 
     #[test]
-    fn agent_set_shutdown_stops_proxy_first_cni_last() {
+    fn agent_set_shutdown_stops_proxy_first_cni_last() -> TestResult {
         let set = [Component::Cni, Component::Kubelet, Component::KubeProxy];
         // The agent's kubelet depends on a remote apiserver (external).
-        let order = shutdown_order_with_external(&set, &[Component::Apiserver]).expect("ok");
+        let order = shutdown_order_with_external(&set, &[Component::Apiserver])?;
         assert_eq!(order.first(), Some(&Component::KubeProxy));
         assert_eq!(order.last(), Some(&Component::Cni));
         assert!(is_safe_shutdown(&set, &order));
+        Ok(())
     }
 }

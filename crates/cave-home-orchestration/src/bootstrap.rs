@@ -220,6 +220,8 @@ impl fmt::Display for Phase {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn phase_ladder_is_linear_and_terminates() {
         let mut p = Phase::Initializing;
@@ -269,7 +271,7 @@ mod tests {
     }
 
     #[test]
-    fn transient_failures_escalate_to_abort_when_budget_exhausted() {
+    fn transient_failures_escalate_to_abort_when_budget_exhausted() -> TestResult {
         let mut b = Bootstrap::new(3);
         assert_eq!(
             b.fail(FailureKind::Transient, "x"),
@@ -288,18 +290,19 @@ mod tests {
         // Third attempt hits the budget (3) -> abort.
         match b.fail(FailureKind::Transient, "x") {
             Transition::Aborted(msg) => assert!(msg.contains("retry budget exhausted")),
-            other => panic!("expected abort, got {other:?}"),
+            other => return Err(format!("expected abort, got {other:?}").into()),
         }
         assert!(b.aborted_reason().is_some());
         assert!(!b.is_running());
+        Ok(())
     }
 
     #[test]
-    fn fatal_failure_aborts_immediately() {
+    fn fatal_failure_aborts_immediately() -> TestResult {
         let mut b = Bootstrap::default();
         match b.fail(FailureKind::Fatal, "bad token") {
             Transition::Aborted(msg) => assert!(msg.contains("bad token")),
-            other => panic!("expected abort, got {other:?}"),
+            other => return Err(format!("expected abort, got {other:?}").into()),
         }
         // Once aborted, neither success nor failure advances.
         assert!(matches!(b.succeed(), Transition::Aborted(_)));
@@ -308,6 +311,7 @@ mod tests {
             Transition::Aborted(_)
         ));
         assert!(!b.is_running());
+        Ok(())
     }
 
     #[test]
@@ -345,7 +349,7 @@ mod tests {
             Phase::NodeReady,
             Phase::Running,
         ] {
-            assert!(!format!("{p}").is_empty());
+            assert_ne!(format!("{p}"), "");
         }
     }
 }

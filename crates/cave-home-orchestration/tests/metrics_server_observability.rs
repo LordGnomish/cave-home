@@ -15,7 +15,7 @@ use cave_home_orchestration::metrics_server::scraper::{
 use cave_home_orchestration::metrics_server::store::Storage;
 use cave_home_orchestration::metrics_server::summary::MetricsPoint;
 
-fn point(ts: u64, cpu: u64, mem: u64) -> MetricsPoint {
+const fn point(ts: u64, cpu: u64, mem: u64) -> MetricsPoint {
     MetricsPoint {
         timestamp_nanos: ts,
         cumulative_cpu_nanos: cpu,
@@ -31,7 +31,7 @@ fn metric_names_are_namespaced_and_unique() {
             .iter()
             .all(|n| n.starts_with("cave_home_metrics_server_"))
     );
-    let mut sorted = names.to_vec();
+    let mut sorted = names.clone();
     sorted.sort_unstable();
     let before = sorted.len();
     sorted.dedup();

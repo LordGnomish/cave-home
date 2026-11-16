@@ -13,7 +13,9 @@
 use cave_home_orchestration::metrics_server::store::{PointRing, RateError, Storage, Usage};
 use cave_home_orchestration::metrics_server::summary::MetricsPoint;
 
-fn point(ts: u64, cpu: u64, mem: u64) -> MetricsPoint {
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+const fn point(ts: u64, cpu: u64, mem: u64) -> MetricsPoint {
     MetricsPoint {
         timestamp_nanos: ts,
         cumulative_cpu_nanos: cpu,
@@ -22,26 +24,28 @@ fn point(ts: u64, cpu: u64, mem: u64) -> MetricsPoint {
 }
 
 #[test]
-fn rate_from_two_points_is_nanocores_over_window() {
+fn rate_from_two_points_is_nanocores_over_window() -> TestResult {
     // 0.25 core-second consumed over a 1s window → 0.25 cores = 250m.
     let prev = point(0, 0, 0);
     let last = point(1_000_000_000, 250_000_000, 64 * 1024 * 1024);
-    let u: Usage = Usage::between(prev, last).expect("monotonic, no reset");
+    let u: Usage = Usage::between(prev, last).map_err(|e| format!("monotonic, no reset: {e:?}"))?;
     assert_eq!(u.usage.cpu.to_cpu_string(), "250m");
     // Memory is the latest gauge, not a rate.
     assert_eq!(u.usage.memory.raw(), 64 * 1024 * 1024);
     assert_eq!(u.window_nanos, 1_000_000_000);
     assert_eq!(u.timestamp_nanos, 1_000_000_000);
+    Ok(())
 }
 
 #[test]
-fn full_core_for_two_seconds_is_one_thousand_milli() {
+fn full_core_for_two_seconds_is_one_thousand_milli() -> TestResult {
     // 1 core for 2s = 2e9 CPU-ns over a 2s window → 1 core = "1".
     let prev = point(1_000_000_000, 5_000_000_000, 10);
     let last = point(3_000_000_000, 7_000_000_000, 20);
-    let u = Usage::between(prev, last).expect("ok");
+    let u = Usage::between(prev, last).map_err(|e| format!("ok: {e:?}"))?;
     assert_eq!(u.usage.cpu.to_cpu_string(), "1");
     assert_eq!(u.usage.cpu.milli_cpu(), 1000);
+    Ok(())
 }
 
 #[test]
@@ -60,7 +64,7 @@ fn non_increasing_timestamp_is_a_zero_window_error() {
 }
 
 #[test]
-fn ring_keeps_last_two_and_derives_usage() {
+fn ring_keeps_last_two_and_derives_usage() -> TestResult {
     let mut ring = PointRing::with_capacity(2);
     assert_eq!(ring.usage(), Err(RateError::InsufficientData));
     ring.push(point(0, 0, 1));
@@ -69,21 +73,24 @@ fn ring_keeps_last_two_and_derives_usage() {
     // A third push evicts the oldest; the rate uses the two most recent.
     ring.push(point(2_000_000_000, 750_000_000, 3));
     assert_eq!(ring.len(), 2);
-    let u = ring.usage().expect("two points present");
+    let u = ring
+        .usage()
+        .map_err(|e| format!("two points present: {e:?}"))?;
     // Δcpu = 500_000_000 over 1s → 500m.
     assert_eq!(u.usage.cpu.to_cpu_string(), "500m");
     assert_eq!(u.usage.memory.raw(), 3);
+    Ok(())
 }
 
 #[test]
-fn storage_tracks_nodes_and_pod_containers() {
+fn storage_tracks_nodes_and_pod_containers() -> TestResult {
     let mut store = Storage::new();
     store.store_node("hub-1", point(0, 0, 100));
     store.store_node("hub-1", point(1_000_000_000, 1_000_000_000, 200));
     let nu = store
         .node_usage("hub-1")
-        .expect("node present")
-        .expect("rate ok");
+        .ok_or("node present")?
+        .map_err(|e| format!("rate ok: {e:?}"))?;
     assert_eq!(nu.usage.cpu.to_cpu_string(), "1");
     assert_eq!(nu.usage.memory.raw(), 200);
     assert!(store.node_usage("absent").is_none());
@@ -105,6 +112,7 @@ fn storage_tracks_nodes_and_pod_containers() {
     assert_eq!(usages[0].1.usage.cpu.to_cpu_string(), "150m");
     assert_eq!(usages[1].0, "nginx");
     assert_eq!(usages[1].1.usage.cpu.to_cpu_string(), "100m");
+    Ok(())
 }
 
 #[test]
