@@ -69,9 +69,11 @@ impl ContentLine {
     }
 }
 
-/// Unfold RFC 5545 line folding: a CRLF (or LF) immediately followed by a space
-/// or tab is a continuation of the previous line and the break + leading
-/// whitespace char are removed. Robust to both `\r\n` and bare `\n`.
+/// Unfold RFC 5545 line folding.
+///
+/// A CRLF (or LF) immediately followed by a space or tab is a continuation of
+/// the previous line and the break + leading whitespace char are removed.
+/// Robust to both `\r\n` and bare `\n`.
 #[must_use]
 pub fn unfold_lines(input: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
@@ -320,6 +322,8 @@ pub fn parse_vcalendar(input: &str) -> Result<Vec<VEvent>, IcalError> {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn unfolds_crlf_and_lf_folding() {
         // A SUMMARY split across two physical lines with a leading space.
@@ -336,20 +340,21 @@ mod tests {
     }
 
     #[test]
-    fn parses_name_params_value() {
-        let cl = parse_content_line("DTSTART;TZID=Europe/Berlin;VALUE=DATE-TIME:20260529T150000")
-            .unwrap();
+    fn parses_name_params_value() -> TestResult {
+        let cl = parse_content_line("DTSTART;TZID=Europe/Berlin;VALUE=DATE-TIME:20260529T150000")?;
         assert_eq!(cl.name, "DTSTART");
         assert_eq!(cl.param("TZID"), Some("Europe/Berlin"));
         assert_eq!(cl.param("value"), Some("DATE-TIME"));
         assert_eq!(cl.value, "20260529T150000");
+        Ok(())
     }
 
     #[test]
-    fn quoted_param_value_keeps_colon() {
-        let cl = parse_content_line("X-TEST;CN=\"Last:First\":hello").unwrap();
+    fn quoted_param_value_keeps_colon() -> TestResult {
+        let cl = parse_content_line("X-TEST;CN=\"Last:First\":hello")?;
         assert_eq!(cl.param("CN"), Some("Last:First"));
         assert_eq!(cl.value, "hello");
+        Ok(())
     }
 
     #[test]
@@ -361,22 +366,24 @@ mod tests {
     }
 
     #[test]
-    fn parses_date_only_value() {
-        let v = parse_date_value("20260529").unwrap();
+    fn parses_date_only_value() -> TestResult {
+        let v = parse_date_value("20260529")?;
         assert!(v.is_all_day());
-        assert_eq!(v.date(), Date::new(2026, 5, 29).unwrap());
+        assert_eq!(v.date(), Date::new(2026, 5, 29)?);
+        Ok(())
     }
 
     #[test]
-    fn parses_datetime_value_with_and_without_z() {
-        let local = parse_date_value("20260529T153000").unwrap();
+    fn parses_datetime_value_with_and_without_z() -> TestResult {
+        let local = parse_date_value("20260529T153000")?;
         assert!(!local.is_all_day());
         let dt = local.as_datetime();
         assert_eq!(dt.hour(), 15);
         assert_eq!(dt.minute(), 30);
         // Trailing Z (UTC) parses to the same civil components in Phase 1.
-        let z = parse_date_value("20260529T153000Z").unwrap();
+        let z = parse_date_value("20260529T153000Z")?;
         assert_eq!(z.as_datetime(), dt);
+        Ok(())
     }
 
     #[test]
@@ -387,27 +394,44 @@ mod tests {
     }
 
     #[test]
-    fn parses_vcalendar_with_single_event() {
+    fn parses_vcalendar_with_single_event() -> TestResult {
         let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\n\
             UID:1@cave\r\nSUMMARY:Dentist\r\nDTSTART:20260529T150000\r\n\
             END:VEVENT\r\nEND:VCALENDAR\r\n";
-        let events = parse_vcalendar(ics).unwrap();
+        let events = parse_vcalendar(ics)?;
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].get("SUMMARY").unwrap().value, "Dentist");
-        assert_eq!(events[0].get("UID").unwrap().value, "1@cave");
+        assert_eq!(
+            events[0]
+                .get("SUMMARY")
+                .ok_or("expected Some, got None")?
+                .value,
+            "Dentist"
+        );
+        assert_eq!(
+            events[0].get("UID").ok_or("expected Some, got None")?.value,
+            "1@cave"
+        );
+        Ok(())
     }
 
     #[test]
-    fn skips_nested_valarm_inside_event() {
+    fn skips_nested_valarm_inside_event() -> TestResult {
         let ics = "BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:1\nSUMMARY:Meeting\n\
             BEGIN:VALARM\nACTION:DISPLAY\nTRIGGER:-PT15M\nEND:VALARM\n\
             END:VEVENT\nEND:VCALENDAR\n";
-        let events = parse_vcalendar(ics).unwrap();
+        let events = parse_vcalendar(ics)?;
         assert_eq!(events.len(), 1);
         // The VALARM's ACTION/TRIGGER must not leak into the event's lines.
         assert!(events[0].get("ACTION").is_none());
         assert!(events[0].get("TRIGGER").is_none());
-        assert_eq!(events[0].get("SUMMARY").unwrap().value, "Meeting");
+        assert_eq!(
+            events[0]
+                .get("SUMMARY")
+                .ok_or("expected Some, got None")?
+                .value,
+            "Meeting"
+        );
+        Ok(())
     }
 
     #[test]

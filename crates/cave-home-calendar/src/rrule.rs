@@ -15,6 +15,7 @@
 use crate::date::{Date, Weekday, days_in_month};
 use crate::ical::IcalError;
 use crate::ical::parse::parse_date_value;
+use crate::num::{i8_to_u8, i8_to_usize, i64_to_i32};
 
 /// How often an appointment repeats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,7 +231,7 @@ impl RRule {
             Freq::Daily => start.add_days(step),
             Freq::Weekly => start.add_days(step * 7),
             Freq::Monthly => start.add_months_clamped(step),
-            Freq::Yearly => start.add_years_clamped((step) as i32),
+            Freq::Yearly => start.add_years_clamped(i64_to_i32(step)),
         }
     }
 
@@ -257,8 +258,8 @@ impl RRule {
     /// With no `BYDAY`, the single weekday of `start` is used.
     fn weekly_candidates(&self, start: Date, base: Date) -> Vec<Date> {
         // Find the first day of base's week per WKST.
-        let wkst = self.week_start.index_from_monday() as i64;
-        let base_idx = base.weekday().index_from_monday() as i64;
+        let wkst = i64::from(self.week_start.index_from_monday());
+        let base_idx = i64::from(base.weekday().index_from_monday());
         let back = (base_idx - wkst).rem_euclid(7);
         let week_start_date = base.add_days(-back);
 
@@ -356,13 +357,13 @@ impl RRule {
         match bd.ordinal {
             None => out.extend(matches),
             Some(ord) if ord > 0 => {
-                if let Some(d) = matches.get((ord as usize).saturating_sub(1)) {
+                if let Some(d) = matches.get(i8_to_usize(ord).saturating_sub(1)) {
                     out.push(*d);
                 }
             }
             Some(ord) => {
                 // Negative: count from the end (-1 = last).
-                let from_end = (-ord) as usize;
+                let from_end = i8_to_usize(-ord);
                 if from_end >= 1 && from_end <= matches.len() {
                     out.push(matches[matches.len() - from_end]);
                 }
@@ -375,11 +376,11 @@ impl RRule {
 /// to a concrete day-of-month, or `None` if it falls outside the month.
 fn resolve_monthday(n: i8, days_in_month: u8) -> Option<u8> {
     if n > 0 {
-        let d = n as u8;
+        let d = i8_to_u8(n);
         (d <= days_in_month).then_some(d)
     } else {
         // -1 => last day.
-        let from_end = (-n) as u8;
+        let from_end = i8_to_u8(-n);
         (from_end <= days_in_month).then(|| days_in_month - from_end + 1)
     }
 }
@@ -402,20 +403,24 @@ fn parse_byday(tok: &str) -> Option<ByDay> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::date::DateError;
 
-    fn d(y: i32, m: u8, day: u8) -> Date {
-        Date::new(y, m, day).unwrap()
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn d(y: i32, m: u8, day: u8) -> Result<Date, DateError> {
+        Date::new(y, m, day)
     }
 
     #[test]
-    fn parses_basic_rule() {
-        let r = RRule::parse("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE,FR;WKST=SU").unwrap();
+    fn parses_basic_rule() -> TestResult {
+        let r = RRule::parse("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE,FR;WKST=SU")?;
         assert_eq!(r.freq, Freq::Weekly);
         assert_eq!(r.interval, 2);
         assert_eq!(r.week_start, Weekday::Sunday);
         assert_eq!(r.by_day.len(), 3);
         assert_eq!(r.by_day[0].weekday, Weekday::Monday);
         assert_eq!(r.by_day[0].ordinal, None);
+        Ok(())
     }
 
     #[test]
@@ -426,194 +431,276 @@ mod tests {
     }
 
     #[test]
-    fn parses_ordinal_byday() {
-        let r = RRule::parse("FREQ=MONTHLY;BYDAY=1FR").unwrap();
+    fn parses_ordinal_byday() -> TestResult {
+        let r = RRule::parse("FREQ=MONTHLY;BYDAY=1FR")?;
         assert_eq!(r.by_day[0].ordinal, Some(1));
         assert_eq!(r.by_day[0].weekday, Weekday::Friday);
-        let r2 = RRule::parse("FREQ=MONTHLY;BYDAY=-1SU").unwrap();
+        let r2 = RRule::parse("FREQ=MONTHLY;BYDAY=-1SU")?;
         assert_eq!(r2.by_day[0].ordinal, Some(-1));
         assert_eq!(r2.by_day[0].weekday, Weekday::Sunday);
+        Ok(())
     }
 
     #[test]
-    fn daily_count() {
+    fn daily_count() -> TestResult {
         // RFC 5545 example: daily for 10 occurrences from 1997-09-02.
-        let r = RRule::parse("FREQ=DAILY;COUNT=10").unwrap();
-        let start = d(1997, 9, 2);
-        let occ = r.occurrences(start, d(1997, 1, 1), d(1998, 1, 1));
+        let r = RRule::parse("FREQ=DAILY;COUNT=10")?;
+        let start = d(1997, 9, 2)?;
+        let occ = r.occurrences(start, d(1997, 1, 1)?, d(1998, 1, 1)?);
         assert_eq!(occ.len(), 10);
-        assert_eq!(occ.first(), Some(&d(1997, 9, 2)));
-        assert_eq!(occ.last(), Some(&d(1997, 9, 11)));
+        assert_eq!(occ.first(), Some(&d(1997, 9, 2)?));
+        assert_eq!(occ.last(), Some(&d(1997, 9, 11)?));
+        Ok(())
     }
 
     #[test]
-    fn daily_interval() {
+    fn daily_interval() -> TestResult {
         // Every other day for a week's window.
-        let r = RRule::parse("FREQ=DAILY;INTERVAL=2").unwrap();
-        let start = d(2026, 5, 1);
-        let occ = r.occurrences(start, d(2026, 5, 1), d(2026, 5, 7));
+        let r = RRule::parse("FREQ=DAILY;INTERVAL=2")?;
+        let start = d(2026, 5, 1)?;
+        let occ = r.occurrences(start, d(2026, 5, 1)?, d(2026, 5, 7)?);
         assert_eq!(
             occ,
-            vec![d(2026, 5, 1), d(2026, 5, 3), d(2026, 5, 5), d(2026, 5, 7)]
+            vec![
+                d(2026, 5, 1)?,
+                d(2026, 5, 3)?,
+                d(2026, 5, 5)?,
+                d(2026, 5, 7)?
+            ]
         );
+        Ok(())
     }
 
     #[test]
-    fn daily_until_inclusive() {
-        let r = RRule::parse("FREQ=DAILY;UNTIL=20260505").unwrap();
-        let start = d(2026, 5, 1);
-        let occ = r.occurrences(start, d(2026, 5, 1), d(2026, 6, 1));
+    fn daily_until_inclusive() -> TestResult {
+        let r = RRule::parse("FREQ=DAILY;UNTIL=20260505")?;
+        let start = d(2026, 5, 1)?;
+        let occ = r.occurrences(start, d(2026, 5, 1)?, d(2026, 6, 1)?);
         assert_eq!(occ.len(), 5); // 1..=5 inclusive
-        assert_eq!(occ.last(), Some(&d(2026, 5, 5)));
+        assert_eq!(occ.last(), Some(&d(2026, 5, 5)?));
+        Ok(())
     }
 
     #[test]
-    fn weekly_on_multiple_days_every_other_week() {
+    fn weekly_on_multiple_days_every_other_week() -> TestResult {
         // RFC 5545 example: every other week on Mon/Wed/Fri.
         // From Mon 1997-09-01.
-        let r = RRule::parse("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE,FR;WKST=SU").unwrap();
-        let start = d(1997, 9, 1); // Monday
-        let occ = r.occurrences(start, d(1997, 9, 1), d(1997, 9, 30));
+        let r = RRule::parse("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE,FR;WKST=SU")?;
+        let start = d(1997, 9, 1)?; // Monday
+        let occ = r.occurrences(start, d(1997, 9, 1)?, d(1997, 9, 30)?);
         // Week of Sep 1: Mon 1, Wed 3, Fri 5. Skip week of Sep 8.
         // Week of Sep 15: Mon 15, Wed 17, Fri 19. Skip. Week of 29: Mon 29.
         assert_eq!(
             occ,
             vec![
-                d(1997, 9, 1),
-                d(1997, 9, 3),
-                d(1997, 9, 5),
-                d(1997, 9, 15),
-                d(1997, 9, 17),
-                d(1997, 9, 19),
-                d(1997, 9, 29),
+                d(1997, 9, 1)?,
+                d(1997, 9, 3)?,
+                d(1997, 9, 5)?,
+                d(1997, 9, 15)?,
+                d(1997, 9, 17)?,
+                d(1997, 9, 19)?,
+                d(1997, 9, 29)?,
             ]
         );
+        Ok(())
     }
 
     #[test]
-    fn weekly_default_uses_start_weekday() {
+    fn weekly_default_uses_start_weekday() -> TestResult {
         // No BYDAY: weekly on the start's own weekday (a Tuesday here).
-        let r = RRule::parse("FREQ=WEEKLY").unwrap();
-        let start = d(2026, 6, 2); // Tuesday
-        let occ = r.occurrences(start, d(2026, 6, 1), d(2026, 6, 30));
+        let r = RRule::parse("FREQ=WEEKLY")?;
+        let start = d(2026, 6, 2)?; // Tuesday
+        let occ = r.occurrences(start, d(2026, 6, 1)?, d(2026, 6, 30)?);
         assert_eq!(
             occ,
             vec![
-                d(2026, 6, 2),
-                d(2026, 6, 9),
-                d(2026, 6, 16),
-                d(2026, 6, 23),
-                d(2026, 6, 30)
+                d(2026, 6, 2)?,
+                d(2026, 6, 9)?,
+                d(2026, 6, 16)?,
+                d(2026, 6, 23)?,
+                d(2026, 6, 30)?
             ]
         );
+        Ok(())
     }
 
     #[test]
-    fn monthly_first_friday() {
+    fn monthly_first_friday() -> TestResult {
         // RFC 5545: monthly on the 1st Friday.
-        let r = RRule::parse("FREQ=MONTHLY;BYDAY=1FR").unwrap();
-        let start = d(2026, 1, 2); // first Friday of Jan 2026
-        let occ = r.occurrences(start, d(2026, 1, 1), d(2026, 4, 30));
-        assert_eq!(
-            occ,
-            vec![d(2026, 1, 2), d(2026, 2, 6), d(2026, 3, 6), d(2026, 4, 3)]
-        );
-    }
-
-    #[test]
-    fn monthly_last_sunday() {
-        let r = RRule::parse("FREQ=MONTHLY;BYDAY=-1SU").unwrap();
-        let start = d(2026, 1, 25); // last Sunday of Jan 2026
-        let occ = r.occurrences(start, d(2026, 1, 1), d(2026, 3, 31));
-        assert_eq!(occ, vec![d(2026, 1, 25), d(2026, 2, 22), d(2026, 3, 29)]);
-    }
-
-    #[test]
-    fn monthly_by_month_day() {
-        let r = RRule::parse("FREQ=MONTHLY;BYMONTHDAY=15").unwrap();
-        let start = d(2026, 1, 15);
-        let occ = r.occurrences(start, d(2026, 1, 1), d(2026, 3, 31));
-        assert_eq!(occ, vec![d(2026, 1, 15), d(2026, 2, 15), d(2026, 3, 15)]);
-    }
-
-    #[test]
-    fn monthly_last_day_negative_monthday() {
-        let r = RRule::parse("FREQ=MONTHLY;BYMONTHDAY=-1").unwrap();
-        let start = d(2024, 1, 31);
-        let occ = r.occurrences(start, d(2024, 1, 1), d(2024, 3, 31));
-        // Jan 31, Feb 29 (leap), Mar 31.
-        assert_eq!(occ, vec![d(2024, 1, 31), d(2024, 2, 29), d(2024, 3, 31)]);
-    }
-
-    #[test]
-    fn monthly_interval_clamps_day() {
-        // Plain monthly from Jan 31 with no BY* clamps short months.
-        let r = RRule::parse("FREQ=MONTHLY").unwrap();
-        let start = d(2026, 1, 31);
-        let occ = r.occurrences(start, d(2026, 1, 1), d(2026, 4, 30));
+        let r = RRule::parse("FREQ=MONTHLY;BYDAY=1FR")?;
+        let start = d(2026, 1, 2)?; // first Friday of Jan 2026
+        let occ = r.occurrences(start, d(2026, 1, 1)?, d(2026, 4, 30)?);
         assert_eq!(
             occ,
             vec![
-                d(2026, 1, 31),
-                d(2026, 2, 28),
-                d(2026, 3, 31),
-                d(2026, 4, 30)
+                d(2026, 1, 2)?,
+                d(2026, 2, 6)?,
+                d(2026, 3, 6)?,
+                d(2026, 4, 3)?
             ]
         );
+        Ok(())
     }
 
     #[test]
-    fn yearly_simple() {
+    fn monthly_last_sunday() -> TestResult {
+        let r = RRule::parse("FREQ=MONTHLY;BYDAY=-1SU")?;
+        let start = d(2026, 1, 25)?; // last Sunday of Jan 2026
+        let occ = r.occurrences(start, d(2026, 1, 1)?, d(2026, 3, 31)?);
+        assert_eq!(occ, vec![d(2026, 1, 25)?, d(2026, 2, 22)?, d(2026, 3, 29)?]);
+        Ok(())
+    }
+
+    #[test]
+    fn monthly_by_month_day() -> TestResult {
+        let r = RRule::parse("FREQ=MONTHLY;BYMONTHDAY=15")?;
+        let start = d(2026, 1, 15)?;
+        let occ = r.occurrences(start, d(2026, 1, 1)?, d(2026, 3, 31)?);
+        assert_eq!(occ, vec![d(2026, 1, 15)?, d(2026, 2, 15)?, d(2026, 3, 15)?]);
+        Ok(())
+    }
+
+    #[test]
+    fn monthly_last_day_negative_monthday() -> TestResult {
+        let r = RRule::parse("FREQ=MONTHLY;BYMONTHDAY=-1")?;
+        let start = d(2024, 1, 31)?;
+        let occ = r.occurrences(start, d(2024, 1, 1)?, d(2024, 3, 31)?);
+        // Jan 31, Feb 29 (leap), Mar 31.
+        assert_eq!(occ, vec![d(2024, 1, 31)?, d(2024, 2, 29)?, d(2024, 3, 31)?]);
+        Ok(())
+    }
+
+    #[test]
+    fn monthly_interval_clamps_day() -> TestResult {
+        // Plain monthly from Jan 31 with no BY* clamps short months.
+        let r = RRule::parse("FREQ=MONTHLY")?;
+        let start = d(2026, 1, 31)?;
+        let occ = r.occurrences(start, d(2026, 1, 1)?, d(2026, 4, 30)?);
+        assert_eq!(
+            occ,
+            vec![
+                d(2026, 1, 31)?,
+                d(2026, 2, 28)?,
+                d(2026, 3, 31)?,
+                d(2026, 4, 30)?
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn yearly_simple() -> TestResult {
         // A birthday: yearly.
-        let r = RRule::parse("FREQ=YEARLY;COUNT=3").unwrap();
-        let start = d(2026, 5, 29);
-        let occ = r.occurrences(start, d(2020, 1, 1), d(2030, 1, 1));
-        assert_eq!(occ, vec![d(2026, 5, 29), d(2027, 5, 29), d(2028, 5, 29)]);
+        let r = RRule::parse("FREQ=YEARLY;COUNT=3")?;
+        let start = d(2026, 5, 29)?;
+        let occ = r.occurrences(start, d(2020, 1, 1)?, d(2030, 1, 1)?);
+        assert_eq!(occ, vec![d(2026, 5, 29)?, d(2027, 5, 29)?, d(2028, 5, 29)?]);
+        Ok(())
     }
 
     #[test]
-    fn yearly_with_bymonth_and_byday() {
+    fn yearly_with_bymonth_and_byday() -> TestResult {
         // US-style: last Sunday of October, yearly (a clock-change kind of rule).
-        let r = RRule::parse("FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU").unwrap();
-        let start = d(2025, 10, 26);
-        let occ = r.occurrences(start, d(2025, 1, 1), d(2027, 12, 31));
-        assert_eq!(occ, vec![d(2025, 10, 26), d(2026, 10, 25), d(2027, 10, 31)]);
+        let r = RRule::parse("FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU")?;
+        let start = d(2025, 10, 26)?;
+        let occ = r.occurrences(start, d(2025, 1, 1)?, d(2027, 12, 31)?);
+        assert_eq!(
+            occ,
+            vec![d(2025, 10, 26)?, d(2026, 10, 25)?, d(2027, 10, 31)?]
+        );
+        Ok(())
     }
 
     #[test]
-    fn window_clips_both_ends() {
-        let r = RRule::parse("FREQ=DAILY").unwrap();
-        let start = d(2026, 1, 1);
-        let occ = r.occurrences(start, d(2026, 1, 10), d(2026, 1, 12));
-        assert_eq!(occ, vec![d(2026, 1, 10), d(2026, 1, 11), d(2026, 1, 12)]);
+    fn window_clips_both_ends() -> TestResult {
+        let r = RRule::parse("FREQ=DAILY")?;
+        let start = d(2026, 1, 1)?;
+        let occ = r.occurrences(start, d(2026, 1, 10)?, d(2026, 1, 12)?);
+        assert_eq!(occ, vec![d(2026, 1, 10)?, d(2026, 1, 11)?, d(2026, 1, 12)?]);
+        Ok(())
     }
 
     #[test]
-    fn never_emits_before_dtstart() {
-        let r = RRule::parse("FREQ=DAILY").unwrap();
-        let start = d(2026, 5, 15);
-        let occ = r.occurrences(start, d(2026, 5, 1), d(2026, 5, 17));
-        assert_eq!(occ, vec![d(2026, 5, 15), d(2026, 5, 16), d(2026, 5, 17)]);
+    fn never_emits_before_dtstart() -> TestResult {
+        let r = RRule::parse("FREQ=DAILY")?;
+        let start = d(2026, 5, 15)?;
+        let occ = r.occurrences(start, d(2026, 5, 1)?, d(2026, 5, 17)?);
+        assert_eq!(occ, vec![d(2026, 5, 15)?, d(2026, 5, 16)?, d(2026, 5, 17)?]);
+        Ok(())
     }
 
     #[test]
-    fn count_is_over_whole_series_not_window() {
+    fn count_is_over_whole_series_not_window() -> TestResult {
         // COUNT=10 daily, but window starts after the series begins: only the
         // members that fall in the window AND within the first 10 are returned.
-        let r = RRule::parse("FREQ=DAILY;COUNT=10").unwrap();
-        let start = d(2026, 1, 1);
-        let occ = r.occurrences(start, d(2026, 1, 5), d(2026, 1, 31));
+        let r = RRule::parse("FREQ=DAILY;COUNT=10")?;
+        let start = d(2026, 1, 1)?;
+        let occ = r.occurrences(start, d(2026, 1, 5)?, d(2026, 1, 31)?);
         // Members 5..=10 of Jan are in window (Jan 5..10).
         assert_eq!(
             occ,
             vec![
-                d(2026, 1, 5),
-                d(2026, 1, 6),
-                d(2026, 1, 7),
-                d(2026, 1, 8),
-                d(2026, 1, 9),
-                d(2026, 1, 10)
+                d(2026, 1, 5)?,
+                d(2026, 1, 6)?,
+                d(2026, 1, 7)?,
+                d(2026, 1, 8)?,
+                d(2026, 1, 9)?,
+                d(2026, 1, 10)?
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn monthday_resolution_edge_values() {
+        assert_eq!(resolve_monthday(1, 31), Some(1));
+        assert_eq!(resolve_monthday(31, 31), Some(31));
+        assert_eq!(resolve_monthday(31, 30), None);
+        assert_eq!(resolve_monthday(127, 31), None);
+        assert_eq!(resolve_monthday(-1, 28), Some(28));
+        assert_eq!(resolve_monthday(-28, 28), Some(1));
+        assert_eq!(resolve_monthday(-29, 28), None);
+        assert_eq!(resolve_monthday(-31, 31), Some(1));
+        assert_eq!(resolve_monthday(-127, 31), None);
+    }
+
+    #[test]
+    fn byday_ordinal_edge_values() -> TestResult {
+        // May 2026 has five Fridays: 1, 8, 15, 22 and 29.
+        let pick = |ordinal: Option<i8>| {
+            let mut out = Vec::new();
+            let entry = ByDay {
+                ordinal,
+                weekday: Weekday::Friday,
+            };
+            RRule::collect_byday_in_month(2026, 5, entry, &mut out);
+            out
+        };
+        assert_eq!(pick(None).len(), 5);
+        assert_eq!(pick(Some(1)), vec![d(2026, 5, 1)?]);
+        assert_eq!(pick(Some(5)), vec![d(2026, 5, 29)?]);
+        assert_eq!(pick(Some(6)), [] as [Date; 0]);
+        assert_eq!(pick(Some(127)), [] as [Date; 0]);
+        assert_eq!(pick(Some(0)), [] as [Date; 0]);
+        assert_eq!(pick(Some(-1)), vec![d(2026, 5, 29)?]);
+        assert_eq!(pick(Some(-5)), vec![d(2026, 5, 1)?]);
+        assert_eq!(pick(Some(-6)), [] as [Date; 0]);
+        assert_eq!(pick(Some(-127)), [] as [Date; 0]);
+        Ok(())
+    }
+
+    #[test]
+    fn yearly_period_base_edge_values() -> TestResult {
+        let mut r = RRule::parse("FREQ=YEARLY")?;
+        let leap_day = d(2024, 2, 29)?;
+        assert_eq!(r.period_base(leap_day, 0), leap_day);
+        assert_eq!(r.period_base(leap_day, 1), d(2025, 2, 28)?);
+        assert_eq!(r.period_base(leap_day, 4), d(2028, 2, 29)?);
+        // A step of years that no longer fits `i32` keeps its low 32 bits
+        // (2^32 - 1 reads as -1). This pins the long-standing behaviour of the
+        // conversion; it is not a statement that the wrap is desirable.
+        r.interval = u32::MAX;
+        assert_eq!(r.period_base(leap_day, 1), d(2023, 2, 28)?);
+        Ok(())
     }
 }

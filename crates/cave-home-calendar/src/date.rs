@@ -15,6 +15,8 @@
 
 use core::cmp::Ordering;
 
+use crate::num::{i64_to_i32, i64_to_u8};
+
 /// Days in a non-leap year, indexed 1..=12 (index 0 is a filler).
 const MONTH_LENGTHS: [u8; 13] = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
@@ -224,9 +226,9 @@ impl Date {
         let year = if m <= 2 { y + 1 } else { y };
         // Components are guaranteed in range by construction.
         Self {
-            year: year as i32,
-            month: m as u8,
-            day: d as u8,
+            year: i64_to_i32(year),
+            month: i64_to_u8(m),
+            day: i64_to_u8(d),
         }
     }
 
@@ -250,8 +252,8 @@ impl Date {
     #[must_use]
     pub const fn add_months_clamped(self, months: i64) -> Self {
         let zero_based = (self.year as i64) * 12 + (self.month as i64 - 1) + months;
-        let year = zero_based.div_euclid(12) as i32;
-        let month = (zero_based.rem_euclid(12) + 1) as u8;
+        let year = i64_to_i32(zero_based.div_euclid(12));
+        let month = i64_to_u8(zero_based.rem_euclid(12) + 1);
         let max = days_in_month(year, month);
         let day = if self.day > max { max } else { self.day };
         Self { year, month, day }
@@ -377,6 +379,8 @@ impl Ord for DateTime {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn leap_year_rules() {
         assert!(is_leap_year(2000)); // divisible by 400
@@ -409,21 +413,22 @@ mod tests {
     }
 
     #[test]
-    fn weekday_of_known_dates() {
+    fn weekday_of_known_dates() -> TestResult {
         // Reference: 1970-01-01 was a Thursday.
-        assert_eq!(Date::new(1970, 1, 1).unwrap().weekday(), Weekday::Thursday);
+        assert_eq!(Date::new(1970, 1, 1)?.weekday(), Weekday::Thursday);
         // 2000-01-01 was a Saturday.
-        assert_eq!(Date::new(2000, 1, 1).unwrap().weekday(), Weekday::Saturday);
+        assert_eq!(Date::new(2000, 1, 1)?.weekday(), Weekday::Saturday);
         // 2026-05-29 (today, per task) was a Friday.
-        assert_eq!(Date::new(2026, 5, 29).unwrap().weekday(), Weekday::Friday);
+        assert_eq!(Date::new(2026, 5, 29)?.weekday(), Weekday::Friday);
         // 1900-01-01 was a Monday (1900 not a leap year).
-        assert_eq!(Date::new(1900, 1, 1).unwrap().weekday(), Weekday::Monday);
+        assert_eq!(Date::new(1900, 1, 1)?.weekday(), Weekday::Monday);
         // RFC 5545 example date 1997-09-02 was a Tuesday.
-        assert_eq!(Date::new(1997, 9, 2).unwrap().weekday(), Weekday::Tuesday);
+        assert_eq!(Date::new(1997, 9, 2)?.weekday(), Weekday::Tuesday);
+        Ok(())
     }
 
     #[test]
-    fn days_from_epoch_round_trips() {
+    fn days_from_epoch_round_trips() -> TestResult {
         for &(y, m, d) in &[
             (1970, 1, 1),
             (1969, 12, 31),
@@ -433,65 +438,131 @@ mod tests {
             (1900, 3, 1),
             (2400, 12, 31),
         ] {
-            let date = Date::new(y, m, d).unwrap();
+            let date = Date::new(y, m, d)?;
             let back = Date::from_days_from_epoch(date.days_from_epoch());
             assert_eq!(date, back, "round trip failed for {y}-{m}-{d}");
         }
-        assert_eq!(Date::new(1970, 1, 1).unwrap().days_from_epoch(), 0);
-        assert_eq!(Date::new(1970, 1, 2).unwrap().days_from_epoch(), 1);
-        assert_eq!(Date::new(1969, 12, 31).unwrap().days_from_epoch(), -1);
+        assert_eq!(Date::new(1970, 1, 1)?.days_from_epoch(), 0);
+        assert_eq!(Date::new(1970, 1, 2)?.days_from_epoch(), 1);
+        assert_eq!(Date::new(1969, 12, 31)?.days_from_epoch(), -1);
+        Ok(())
     }
 
     #[test]
-    fn add_days_crosses_month_and_year() {
-        let d = Date::new(2024, 2, 28).unwrap();
-        assert_eq!(d.add_days(1), Date::new(2024, 2, 29).unwrap()); // leap
-        assert_eq!(d.add_days(2), Date::new(2024, 3, 1).unwrap());
-        let nye = Date::new(2023, 12, 31).unwrap();
-        assert_eq!(nye.add_days(1), Date::new(2024, 1, 1).unwrap());
-        assert_eq!(nye.add_days(-1), Date::new(2023, 12, 30).unwrap());
+    fn add_days_crosses_month_and_year() -> TestResult {
+        let d = Date::new(2024, 2, 28)?;
+        assert_eq!(d.add_days(1), Date::new(2024, 2, 29)?); // leap
+        assert_eq!(d.add_days(2), Date::new(2024, 3, 1)?);
+        let nye = Date::new(2023, 12, 31)?;
+        assert_eq!(nye.add_days(1), Date::new(2024, 1, 1)?);
+        assert_eq!(nye.add_days(-1), Date::new(2023, 12, 30)?);
+        Ok(())
     }
 
     #[test]
-    fn add_months_clamps_day() {
-        let jan31 = Date::new(2024, 1, 31).unwrap();
-        assert_eq!(jan31.add_months_clamped(1), Date::new(2024, 2, 29).unwrap());
-        let jan31_2023 = Date::new(2023, 1, 31).unwrap();
+    fn add_months_clamps_day() -> TestResult {
+        let jan31 = Date::new(2024, 1, 31)?;
+        assert_eq!(jan31.add_months_clamped(1), Date::new(2024, 2, 29)?);
+        let jan31_2023 = Date::new(2023, 1, 31)?;
+        assert_eq!(jan31_2023.add_months_clamped(1), Date::new(2023, 2, 28)?);
+        let dec = Date::new(2023, 12, 15)?;
+        assert_eq!(dec.add_months_clamped(1), Date::new(2024, 1, 15)?);
+        assert_eq!(dec.add_months_clamped(-1), Date::new(2023, 11, 15)?);
+        Ok(())
+    }
+
+    #[test]
+    fn from_days_from_epoch_edge_values() -> TestResult {
+        // Negative day counts and year boundaries.
+        assert_eq!(Date::from_days_from_epoch(0), Date::new(1970, 1, 1)?);
+        assert_eq!(Date::from_days_from_epoch(-1), Date::new(1969, 12, 31)?);
+        assert_eq!(Date::from_days_from_epoch(-365), Date::new(1969, 1, 1)?);
+        assert_eq!(Date::from_days_from_epoch(11_016), Date::new(2000, 2, 29)?);
         assert_eq!(
-            jan31_2023.add_months_clamped(1),
-            Date::new(2023, 2, 28).unwrap()
+            Date::from_days_from_epoch(2_932_896),
+            Date::new(9999, 12, 31)?
         );
-        let dec = Date::new(2023, 12, 15).unwrap();
-        assert_eq!(dec.add_months_clamped(1), Date::new(2024, 1, 15).unwrap());
-        assert_eq!(dec.add_months_clamped(-1), Date::new(2023, 11, 15).unwrap());
+        // Around year 0 (a leap year in the proleptic calendar).
+        assert_eq!(Date::from_days_from_epoch(-719_468), Date::new(0, 3, 1)?);
+        assert_eq!(Date::from_days_from_epoch(-719_528), Date::new(0, 1, 1)?);
+        assert_eq!(Date::from_days_from_epoch(-719_529), Date::new(-1, 12, 31)?);
+        Ok(())
     }
 
     #[test]
-    fn add_years_clamps_leap_day() {
-        let leap = Date::new(2024, 2, 29).unwrap();
-        assert_eq!(leap.add_years_clamped(1), Date::new(2025, 2, 28).unwrap());
-        assert_eq!(leap.add_years_clamped(4), Date::new(2028, 2, 29).unwrap());
+    fn from_days_from_epoch_at_the_i32_year_limits() -> TestResult {
+        let last = Date::new(i32::MAX, 12, 31)?;
+        assert_eq!(last.days_from_epoch(), 784_351_576_776);
+        assert_eq!(Date::from_days_from_epoch(784_351_576_776), last);
+        let first = Date::new(i32::MIN, 1, 1)?;
+        assert_eq!(first.days_from_epoch(), -784_353_015_833);
+        assert_eq!(Date::from_days_from_epoch(-784_353_015_833), first);
+        // One day past either limit the year no longer fits `i32` and keeps
+        // its low 32 bits, so it wraps to the other end.
+        assert_eq!(Date::from_days_from_epoch(784_351_576_777), first);
+        assert_eq!(Date::from_days_from_epoch(-784_353_015_834), last);
+        Ok(())
     }
 
     #[test]
-    fn ordinal_counts_day_of_year() {
-        assert_eq!(Date::new(2024, 1, 1).unwrap().ordinal(), 1);
-        assert_eq!(Date::new(2024, 3, 1).unwrap().ordinal(), 61); // leap: 31+29+1
-        assert_eq!(Date::new(2023, 3, 1).unwrap().ordinal(), 60);
-        assert_eq!(Date::new(2024, 12, 31).unwrap().ordinal(), 366);
+    fn add_months_edge_values() -> TestResult {
+        let jan31 = Date::new(2024, 1, 31)?;
+        // Negative months cross the year boundary backwards.
+        assert_eq!(jan31.add_months_clamped(-1), Date::new(2023, 12, 31)?);
+        assert_eq!(jan31.add_months_clamped(-2), Date::new(2023, 11, 30)?);
+        assert_eq!(jan31.add_months_clamped(-11), Date::new(2023, 2, 28)?);
+        assert_eq!(jan31.add_months_clamped(-12), Date::new(2023, 1, 31)?);
+        assert_eq!(jan31.add_months_clamped(0), jan31);
+        assert_eq!(jan31.add_months_clamped(11), Date::new(2024, 12, 31)?);
+        assert_eq!(jan31.add_months_clamped(12), Date::new(2025, 1, 31)?);
+        // Across year 0 into negative years.
+        let early = Date::new(1, 1, 15)?;
+        assert_eq!(early.add_months_clamped(-1), Date::new(0, 12, 15)?);
+        assert_eq!(early.add_months_clamped(-13), Date::new(-1, 12, 15)?);
+        // A year that no longer fits `i32` keeps its low 32 bits: 2^32 years
+        // is a full wrap, and one month past the last year is the first one.
+        assert_eq!(jan31.add_months_clamped(12 * 4_294_967_296), jan31);
+        assert_eq!(jan31.add_months_clamped(-12 * 4_294_967_296), jan31);
+        assert_eq!(
+            Date::new(i32::MAX, 12, 31)?.add_months_clamped(1),
+            Date::new(i32::MIN, 1, 31)?
+        );
+        assert_eq!(
+            Date::new(i32::MIN, 1, 31)?.add_months_clamped(-1),
+            Date::new(i32::MAX, 12, 31)?
+        );
+        Ok(())
     }
 
     #[test]
-    fn datetime_validation_and_ordering() {
-        let d = Date::new(2026, 5, 29).unwrap();
+    fn add_years_clamps_leap_day() -> TestResult {
+        let leap = Date::new(2024, 2, 29)?;
+        assert_eq!(leap.add_years_clamped(1), Date::new(2025, 2, 28)?);
+        assert_eq!(leap.add_years_clamped(4), Date::new(2028, 2, 29)?);
+        Ok(())
+    }
+
+    #[test]
+    fn ordinal_counts_day_of_year() -> TestResult {
+        assert_eq!(Date::new(2024, 1, 1)?.ordinal(), 1);
+        assert_eq!(Date::new(2024, 3, 1)?.ordinal(), 61); // leap: 31+29+1
+        assert_eq!(Date::new(2023, 3, 1)?.ordinal(), 60);
+        assert_eq!(Date::new(2024, 12, 31)?.ordinal(), 366);
+        Ok(())
+    }
+
+    #[test]
+    fn datetime_validation_and_ordering() -> TestResult {
+        let d = Date::new(2026, 5, 29)?;
         assert_eq!(DateTime::new(d, 24, 0, 0), Err(DateError::TimeOutOfRange));
         assert_eq!(DateTime::new(d, 0, 60, 0), Err(DateError::TimeOutOfRange));
         assert!(DateTime::new(d, 23, 59, 60).is_ok()); // leap second tolerated
-        let morning = DateTime::new(d, 9, 0, 0).unwrap();
-        let evening = DateTime::new(d, 18, 0, 0).unwrap();
+        let morning = DateTime::new(d, 9, 0, 0)?;
+        let evening = DateTime::new(d, 18, 0, 0)?;
         assert!(morning < evening);
         let next_day = DateTime::at_midnight(d.add_days(1));
         assert!(evening < next_day);
+        Ok(())
     }
 
     #[test]

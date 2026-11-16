@@ -1,6 +1,6 @@
 //! Grandma-friendly calendar phrasing (Charter §6.3, ADR-007, ADR-027).
 //!
-//! The household never sees "VEVENT", "RRULE" or "CalDAV". They see "Dentist at
+//! The household never sees "VEVENT", "RRULE" or "`CalDAV`". They see "Dentist at
 //! 3pm tomorrow", "Trash day every Tuesday", "Birthday next month" — in EN, DE
 //! or TR. This module turns the structured model ([`crate::event::Event`],
 //! [`crate::rrule::RRule`]) into those phrases.
@@ -124,9 +124,7 @@ pub fn occurrence_phrase(
 
     if all_day {
         match lang {
-            Lang::En => format!("{summary} {day_word}"),
-            Lang::De => format!("{summary} {day_word}"),
-            Lang::Tr => format!("{summary} {day_word}"),
+            Lang::En | Lang::De | Lang::Tr => format!("{summary} {day_word}"),
         }
     } else {
         let t = time_phrase(when, lang);
@@ -213,43 +211,46 @@ pub fn recurrence_phrase(rule: &RRule, lang: Lang) -> String {
 /// relative wording.
 #[must_use]
 pub fn event_headline(event: &Event, today: Date, lang: Lang) -> String {
-    match &event.rrule {
+    event.rrule.as_ref().map_or_else(
+        || occurrence_phrase(&event.summary, event.start, event.all_day, today, lang),
         // For a repeating event the recurrence phrase is the headline
         // ("Trash day — every Tuesday"); the single-occurrence wording is not
         // used, to avoid a misleading "tomorrow" on a series.
-        Some(rule) => format!("{} — {}", event.summary, recurrence_phrase(rule, lang)),
-        None => occurrence_phrase(&event.summary, event.start, event.all_day, today, lang),
-    }
+        |rule| format!("{} — {}", event.summary, recurrence_phrase(rule, lang)),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::date::Date;
+    use crate::date::{Date, DateError};
     use crate::ical::parse::parse_vcalendar;
 
-    fn d(y: i32, m: u8, day: u8) -> Date {
-        Date::new(y, m, day).unwrap()
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn d(y: i32, m: u8, day: u8) -> Result<Date, DateError> {
+        Date::new(y, m, day)
     }
 
-    fn dt(y: i32, m: u8, day: u8, h: u8, min: u8) -> DateTime {
-        DateTime::new(d(y, m, day), h, min, 0).unwrap()
+    fn dt(y: i32, m: u8, day: u8, h: u8, min: u8) -> Result<DateTime, DateError> {
+        DateTime::new(d(y, m, day)?, h, min, 0)
     }
 
     #[test]
-    fn dentist_at_3pm_tomorrow_en() {
-        let today = d(2026, 5, 29);
-        let when = dt(2026, 5, 30, 15, 0);
+    fn dentist_at_3pm_tomorrow_en() -> TestResult {
+        let today = d(2026, 5, 29)?;
+        let when = dt(2026, 5, 30, 15, 0)?;
         assert_eq!(
             occurrence_phrase("Dentist", when, false, today, Lang::En),
             "Dentist at 3pm tomorrow"
         );
+        Ok(())
     }
 
     #[test]
-    fn occurrence_phrase_all_three_languages() {
-        let today = d(2026, 5, 29);
-        let when = dt(2026, 5, 30, 15, 30);
+    fn occurrence_phrase_all_three_languages() -> TestResult {
+        let today = d(2026, 5, 29)?;
+        let when = dt(2026, 5, 30, 15, 30)?;
         assert_eq!(
             occurrence_phrase("Dentist", when, false, today, Lang::De),
             "Dentist um 15:30 Uhr morgen"
@@ -257,54 +258,60 @@ mod tests {
         let tr = occurrence_phrase("Dentist", when, false, today, Lang::Tr);
         assert!(tr.contains("yarın"));
         assert!(tr.contains("Dentist"));
+        Ok(())
     }
 
     #[test]
-    fn all_day_birthday_next_month() {
-        let today = d(2026, 5, 29);
-        let when = DateTime::at_midnight(d(2026, 6, 15));
+    fn all_day_birthday_next_month() -> TestResult {
+        let today = d(2026, 5, 29)?;
+        let when = DateTime::at_midnight(d(2026, 6, 15)?);
         assert_eq!(
             occurrence_phrase("Birthday", when, true, today, Lang::En),
             "Birthday next month"
         );
+        Ok(())
     }
 
     #[test]
-    fn trash_day_every_tuesday() {
-        let r = RRule::parse("FREQ=WEEKLY;BYDAY=TU").unwrap();
+    fn trash_day_every_tuesday() -> TestResult {
+        let r = RRule::parse("FREQ=WEEKLY;BYDAY=TU")?;
         assert_eq!(recurrence_phrase(&r, Lang::En), "every Tuesday");
         assert_eq!(recurrence_phrase(&r, Lang::De), "jeden Dienstag");
         assert_eq!(recurrence_phrase(&r, Lang::Tr), "her Salı");
+        Ok(())
     }
 
     #[test]
-    fn every_other_week_and_yearly() {
-        let biweekly = RRule::parse("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE").unwrap();
+    fn every_other_week_and_yearly() -> TestResult {
+        let biweekly = RRule::parse("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE")?;
         assert_eq!(recurrence_phrase(&biweekly, Lang::En), "every 2 weeks");
-        let yearly = RRule::parse("FREQ=YEARLY").unwrap();
+        let yearly = RRule::parse("FREQ=YEARLY")?;
         assert_eq!(recurrence_phrase(&yearly, Lang::En), "every year");
         assert_eq!(recurrence_phrase(&yearly, Lang::Tr), "her yıl");
+        Ok(())
     }
 
     #[test]
-    fn recurrence_with_count_and_until() {
-        let counted = RRule::parse("FREQ=DAILY;COUNT=5").unwrap();
+    fn recurrence_with_count_and_until() -> TestResult {
+        let counted = RRule::parse("FREQ=DAILY;COUNT=5")?;
         assert_eq!(recurrence_phrase(&counted, Lang::En), "every day (5 times)");
-        let until = RRule::parse("FREQ=WEEKLY;UNTIL=20261231").unwrap();
+        let until = RRule::parse("FREQ=WEEKLY;UNTIL=20261231")?;
         assert!(recurrence_phrase(&until, Lang::En).contains("until 2026-12-31"));
+        Ok(())
     }
 
     #[test]
-    fn event_headline_uses_recurrence_for_repeating() {
+    fn event_headline_uses_recurrence_for_repeating() -> TestResult {
         let ics = "BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:trash\nSUMMARY:Trash day\n\
             DTSTART;VALUE=DATE:20260602\nRRULE:FREQ=WEEKLY;BYDAY=TU\nEND:VEVENT\nEND:VCALENDAR\n";
-        let ev = Event::from_vevent(&parse_vcalendar(ics).unwrap()[0]).unwrap();
-        let line = event_headline(&ev, d(2026, 5, 29), Lang::En);
+        let ev = Event::from_vevent(&parse_vcalendar(ics)?[0])?;
+        let line = event_headline(&ev, d(2026, 5, 29)?, Lang::En);
         assert_eq!(line, "Trash day — every Tuesday");
+        Ok(())
     }
 
     #[test]
-    fn ui_strings_carry_no_implementation_jargon() {
+    fn ui_strings_carry_no_implementation_jargon() -> TestResult {
         // Charter §6.3 / ADR-027: the UI must never surface protocol terms.
         const BANNED: &[&str] = &[
             "VEVENT",
@@ -322,7 +329,7 @@ mod tests {
             "RFC",
             "UID",
         ];
-        let today = d(2026, 5, 29);
+        let today = d(2026, 5, 29)?;
         let langs = [Lang::En, Lang::De, Lang::Tr];
 
         // Occurrence + recurrence phrasing across a spread of rules and times.
@@ -333,17 +340,18 @@ mod tests {
             "FREQ=YEARLY;UNTIL=20301231",
         ];
         for lang in langs {
-            let phr = occurrence_phrase("Dentist", dt(2026, 5, 30, 15, 0), false, today, lang);
+            let phr = occurrence_phrase("Dentist", dt(2026, 5, 30, 15, 0)?, false, today, lang);
             for b in BANNED {
                 assert!(!phr.contains(b), "occurrence phrase leaks {b:?}: {phr}");
             }
             for spec in &rules {
-                let r = RRule::parse(spec).unwrap();
+                let r = RRule::parse(spec)?;
                 let rp = recurrence_phrase(&r, lang);
                 for b in BANNED {
                     assert!(!rp.contains(b), "recurrence phrase leaks {b:?}: {rp}");
                 }
             }
         }
+        Ok(())
     }
 }
