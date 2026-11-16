@@ -12,6 +12,7 @@ pub mod views;
 
 use crate::api::v1::V1Context;
 use crate::errors::HueProtocolError;
+use crate::num::{f64_to_f32, i64_to_u16};
 use crate::registry::BridgeRegistry;
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
@@ -33,7 +34,7 @@ pub struct EnvelopeError {
 impl Envelope {
     /// Convenience: a successful response with this data array.
     #[must_use]
-    pub fn ok(data: Vec<Value>) -> Self {
+    pub const fn ok(data: Vec<Value>) -> Self {
         Self {
             errors: Vec::new(),
             data,
@@ -60,7 +61,6 @@ impl Envelope {
 pub const APP_KEY_HEADER: &str = "hue-application-key";
 
 /// Verify a request's `hue-application-key` header.
-#[must_use]
 pub fn check_app_key(ctx: &V1Context, app_key: Option<&str>) -> Result<(), Envelope> {
     match app_key {
         Some(key) if ctx.pairing.whitelist_get(key).is_some() => Ok(()),
@@ -69,6 +69,7 @@ pub fn check_app_key(ctx: &V1Context, app_key: Option<&str>) -> Result<(), Envel
 }
 
 /// `GET /clip/v2/resource/light`.
+#[must_use]
 pub fn get_lights(ctx: &V1Context, app_key: Option<&str>) -> Envelope {
     if let Err(e) = check_app_key(ctx, app_key) {
         return e;
@@ -83,33 +84,33 @@ pub fn get_lights(ctx: &V1Context, app_key: Option<&str>) -> Envelope {
 }
 
 /// `GET /clip/v2/resource/light/<uuid>`.
+#[must_use]
 pub fn get_light(ctx: &V1Context, app_key: Option<&str>, uuid: &str) -> Envelope {
     if let Err(e) = check_app_key(ctx, app_key) {
         return e;
     }
-    let parsed = match uuid::Uuid::parse_str(uuid) {
-        Ok(u) => u,
-        Err(_) => return Envelope::error(format!("invalid id: {uuid}")),
+    let Ok(parsed) = uuid::Uuid::parse_str(uuid) else {
+        return Envelope::error(format!("invalid id: {uuid}"));
     };
-    match ctx.registry.light_by_uuid(&parsed) {
-        Some(l) => Envelope::ok(vec![views::light_view(&l)]),
-        None => Envelope::error("not found"),
-    }
+    ctx.registry.light_by_uuid(&parsed).map_or_else(
+        || Envelope::error("not found"),
+        |l| Envelope::ok(vec![views::light_view(&l)]),
+    )
 }
 
-/// `PUT /clip/v2/resource/light/<uuid>` — accepts the published LightPut body.
+/// `PUT /clip/v2/resource/light/<uuid>` — accepts the published `LightPut` body.
+#[must_use]
 pub fn put_light(ctx: &V1Context, app_key: Option<&str>, uuid: &str, body: &Value) -> Envelope {
     if let Err(e) = check_app_key(ctx, app_key) {
         return e;
     }
-    let parsed = match uuid::Uuid::parse_str(uuid) {
-        Ok(u) => u,
-        Err(_) => return Envelope::error(format!("invalid id: {uuid}")),
+    let Ok(parsed) = uuid::Uuid::parse_str(uuid) else {
+        return Envelope::error(format!("invalid id: {uuid}"));
     };
     let Some(light) = ctx.registry.light_by_uuid(&parsed) else {
         return Envelope::error("not found");
     };
-    let id_v1 = light.id_v1.clone();
+    let id_v1 = light.id_v1;
     ctx.registry.update_light(&id_v1, |l| {
         if let Some(on) = body
             .get("on")
@@ -123,15 +124,15 @@ pub fn put_light(ctx: &V1Context, app_key: Option<&str>, uuid: &str, body: &Valu
             .and_then(|v| v.get("brightness"))
             .and_then(Value::as_f64)
         {
-            l.brightness = bri as f32;
+            l.brightness = f64_to_f32(bri);
         }
         if let Some(xy) = body
             .get("color")
             .and_then(|v| v.get("xy"))
             .and_then(Value::as_object)
         {
-            let x = xy.get("x").and_then(Value::as_f64).unwrap_or(0.0) as f32;
-            let y = xy.get("y").and_then(Value::as_f64).unwrap_or(0.0) as f32;
+            let x = f64_to_f32(xy.get("x").and_then(Value::as_f64).unwrap_or(0.0));
+            let y = f64_to_f32(xy.get("y").and_then(Value::as_f64).unwrap_or(0.0));
             l.xy = Some((x, y));
         }
         if let Some(mirek) = body
@@ -139,7 +140,7 @@ pub fn put_light(ctx: &V1Context, app_key: Option<&str>, uuid: &str, body: &Valu
             .and_then(|v| v.get("mirek"))
             .and_then(Value::as_i64)
         {
-            l.mirek = Some(mirek.clamp(153, 500) as u16);
+            l.mirek = Some(i64_to_u16(mirek.clamp(153, 500)));
         }
     });
     Envelope::ok(vec![json!({
@@ -149,6 +150,7 @@ pub fn put_light(ctx: &V1Context, app_key: Option<&str>, uuid: &str, body: &Valu
 }
 
 /// `GET /clip/v2/resource/scene`.
+#[must_use]
 pub fn get_scenes(ctx: &V1Context, app_key: Option<&str>) -> Envelope {
     if let Err(e) = check_app_key(ctx, app_key) {
         return e;
@@ -167,9 +169,8 @@ pub fn put_scene(ctx: &V1Context, app_key: Option<&str>, uuid: &str, body: &Valu
     if let Err(e) = check_app_key(ctx, app_key) {
         return e;
     }
-    let parsed = match uuid::Uuid::parse_str(uuid) {
-        Ok(u) => u,
-        Err(_) => return Envelope::error(format!("invalid id: {uuid}")),
+    let Ok(parsed) = uuid::Uuid::parse_str(uuid) else {
+        return Envelope::error(format!("invalid id: {uuid}"));
     };
     // Map v2 UUID to v1 id by lookup.
     let scene_v1 = ctx
@@ -194,6 +195,7 @@ pub fn put_scene(ctx: &V1Context, app_key: Option<&str>, uuid: &str, body: &Valu
 }
 
 /// `GET /clip/v2/resource/room`.
+#[must_use]
 pub fn get_rooms(ctx: &V1Context, app_key: Option<&str>) -> Envelope {
     if let Err(e) = check_app_key(ctx, app_key) {
         return e;
@@ -209,6 +211,7 @@ pub fn get_rooms(ctx: &V1Context, app_key: Option<&str>) -> Envelope {
 }
 
 /// `GET /clip/v2/resource/zone`.
+#[must_use]
 pub fn get_zones(ctx: &V1Context, app_key: Option<&str>) -> Envelope {
     if let Err(e) = check_app_key(ctx, app_key) {
         return e;
@@ -224,6 +227,7 @@ pub fn get_zones(ctx: &V1Context, app_key: Option<&str>) -> Envelope {
 }
 
 /// `GET /clip/v2/resource/bridge` — single-resource list.
+#[must_use]
 pub fn get_bridge(ctx: &V1Context, app_key: Option<&str>) -> Envelope {
     if let Err(e) = check_app_key(ctx, app_key) {
         return e;
@@ -233,6 +237,7 @@ pub fn get_bridge(ctx: &V1Context, app_key: Option<&str>) -> Envelope {
 
 /// `GET /clip/v2/resource` — *every* resource (devices, lights, scenes, rooms, ...).
 /// Reference: dev-portal §"Retrieve all resources".
+#[must_use]
 pub fn get_all_resources(ctx: &V1Context, app_key: Option<&str>) -> Envelope {
     if let Err(e) = check_app_key(ctx, app_key) {
         return e;
@@ -260,7 +265,7 @@ pub fn get_all_resources(ctx: &V1Context, app_key: Option<&str>) -> Envelope {
 
 /// Helper for tests + future routing: list the resource types we serve.
 #[must_use]
-pub fn supported_resource_segments() -> &'static [&'static str] {
+pub const fn supported_resource_segments() -> &'static [&'static str] {
     &[
         "light",
         "scene",
@@ -274,14 +279,25 @@ pub fn supported_resource_segments() -> &'static [&'static str] {
     ]
 }
 
+// keep the unused-import warning at bay (BridgeRegistry is used only via fields).
+#[allow(dead_code)]
+fn _ensure_arc_brigde_registry_used(_: Arc<BridgeRegistry>) {}
+#[allow(dead_code)]
+fn _ensure_map_used(_: Map<String, Value>) {}
+#[allow(dead_code)]
+fn _ensure_protocol_error_used(_: HueProtocolError) {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::BridgeIdentity;
+    use crate::errors::EmuError;
     use crate::pairing::PairingService;
     use crate::registry::{BridgeRegistry, EmulatedLight};
 
-    fn paired_ctx() -> (V1Context, String) {
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn paired_ctx() -> Result<(V1Context, String), EmuError> {
         let identity = BridgeIdentity::fresh("10.0.0.5");
         let pairing = PairingService::new();
         let registry = BridgeRegistry::new();
@@ -293,30 +309,30 @@ mod tests {
                     generateclientkey: false,
                 },
                 "t",
-            )
-            .unwrap()
+            )?
             .username;
-        (
+        Ok((
             V1Context {
                 identity,
                 pairing,
                 registry,
             },
             key,
-        )
+        ))
     }
 
     #[test]
-    fn get_lights_unauthorized_without_app_key() {
-        let (ctx, _) = paired_ctx();
+    fn get_lights_unauthorized_without_app_key() -> TestResult {
+        let (ctx, _) = paired_ctx()?;
         let env = get_lights(&ctx, None);
         assert_eq!(env.errors.len(), 1);
-        assert!(env.data.is_empty());
+        assert_eq!(env.data, [] as [Value; 0]);
+        Ok(())
     }
 
     #[test]
-    fn get_lights_returns_data_when_authorised() {
-        let (ctx, key) = paired_ctx();
+    fn get_lights_returns_data_when_authorised() -> TestResult {
+        let (ctx, key) = paired_ctx()?;
         let _ = ctx
             .registry
             .add_light(EmulatedLight::new_color_candle("L", ""));
@@ -324,16 +340,20 @@ mod tests {
         assert!(env.errors.is_empty());
         assert_eq!(env.data.len(), 1);
         let l = &env.data[0];
-        assert_eq!(l.get("type").unwrap(), &Value::from("light"));
+        assert_eq!(
+            l.get("type").ok_or("expected Some, got None")?,
+            &Value::from("light")
+        );
+        Ok(())
     }
 
     #[test]
-    fn put_light_applies_on_and_dimming_and_returns_rid() {
-        let (ctx, key) = paired_ctx();
+    fn put_light_applies_on_and_dimming_and_returns_rid() -> TestResult {
+        let (ctx, key) = paired_ctx()?;
         let id = ctx
             .registry
             .add_light(EmulatedLight::new_color_candle("L", ""));
-        let light = ctx.registry.light(&id).unwrap();
+        let light = ctx.registry.light(&id).ok_or("expected Some, got None")?;
         let env = put_light(
             &ctx,
             Some(&key),
@@ -342,16 +362,21 @@ mod tests {
         );
         assert!(env.errors.is_empty());
         assert_eq!(env.data.len(), 1);
-        let rid = env.data[0].get("rid").unwrap().as_str().unwrap();
+        let rid = env.data[0]
+            .get("rid")
+            .ok_or("expected Some, got None")?
+            .as_str()
+            .ok_or("expected Some, got None")?;
         assert_eq!(rid, light.id_v2.to_string());
-        let updated = ctx.registry.light(&id).unwrap();
+        let updated = ctx.registry.light(&id).ok_or("expected Some, got None")?;
         assert!(updated.on);
         assert!((updated.brightness - 33.0).abs() < 1e-3);
+        Ok(())
     }
 
     #[test]
-    fn put_scene_active_recalls_scene() {
-        let (ctx, key) = paired_ctx();
+    fn put_scene_active_recalls_scene() -> TestResult {
+        let (ctx, key) = paired_ctx()?;
         let l_id = ctx
             .registry
             .add_light(EmulatedLight::new_color_candle("L", ""));
@@ -383,12 +408,18 @@ mod tests {
             &json!({"recall": {"action": "active"}}),
         );
         assert!(env.errors.is_empty(), "envelope errors: {:?}", env.errors);
-        assert!(ctx.registry.light(&l_id).unwrap().on);
+        assert!(
+            ctx.registry
+                .light(&l_id)
+                .ok_or("expected Some, got None")?
+                .on
+        );
+        Ok(())
     }
 
     #[test]
-    fn get_all_resources_includes_bridge_lights_rooms_scenes() {
-        let (ctx, key) = paired_ctx();
+    fn get_all_resources_includes_bridge_lights_rooms_scenes() -> TestResult {
+        let (ctx, key) = paired_ctx()?;
         ctx.registry
             .add_light(EmulatedLight::new_color_candle("L", ""));
         ctx.registry
@@ -416,13 +447,63 @@ mod tests {
         ] {
             assert!(types.contains(needle), "missing type: {needle}");
         }
+        Ok(())
+    }
+
+    #[test]
+    fn put_light_edge_values() -> TestResult {
+        let (ctx, key) = paired_ctx()?;
+        let id = ctx
+            .registry
+            .add_light(EmulatedLight::new_color_candle("Edge", ""));
+        let uuid = ctx
+            .registry
+            .light(&id)
+            .ok_or("light present")?
+            .id_v2
+            .to_string();
+        let after = |body: Value| {
+            let _ = put_light(&ctx, Some(&key), &uuid, &body);
+            ctx.registry.light(&id).ok_or("light present")
+        };
+        let dim = |pct: f64| {
+            after(json!({ "dimming": { "brightness": pct } })).map(|l| l.brightness.to_bits())
+        };
+        let mirek = |n: i64| after(json!({ "color_temperature": { "mirek": n } })).map(|l| l.mirek);
+        let xy = |point: Value| {
+            after(json!({ "color": { "xy": point } }))
+                .map(|l| l.xy.map(|(x, y)| (x.to_bits(), y.to_bits())))
+        };
+
+        // Brightness is narrowed from `f64` to the nearest `f32`, unclamped.
+        assert_eq!(dim(55.5)?, 0x425e_0000);
+        assert_eq!(dim(0.1)?, 0x3dcc_cccd);
+        assert_eq!(dim(0.0)?, 0);
+        assert_eq!(dim(-2.5)?, 0xc020_0000);
+        assert_eq!(dim(1e40)?, 0x7f80_0000);
+        assert_eq!(dim(-1e40)?, 0xff80_0000);
+        assert_eq!(dim(1e-50)?, 0);
+
+        // Mirek is clamped to 153..=500.
+        assert_eq!(mirek(153)?, Some(153));
+        assert_eq!(mirek(0)?, Some(153));
+        assert_eq!(mirek(-1)?, Some(153));
+        assert_eq!(mirek(i64::MIN)?, Some(153));
+        assert_eq!(mirek(366)?, Some(366));
+        assert_eq!(mirek(500)?, Some(500));
+        assert_eq!(mirek(65_536 + 200)?, Some(500));
+        assert_eq!(mirek(i64::MAX)?, Some(500));
+
+        assert_eq!(
+            xy(json!({ "x": 0.4573, "y": 0.41 }))?,
+            Some((0x3eea_233a, 0x3ed1_eb85))
+        );
+        assert_eq!(
+            xy(json!({ "x": 1e40, "y": -1e40 }))?,
+            Some((0x7f80_0000, 0xff80_0000))
+        );
+        // A missing coordinate reads as 0.
+        assert_eq!(xy(json!({ "x": 0.5 }))?, Some((0x3f00_0000, 0)));
+        Ok(())
     }
 }
-
-// keep the unused-import warning at bay (BridgeRegistry is used only via fields).
-#[allow(dead_code)]
-fn _ensure_arc_brigde_registry_used(_: Arc<BridgeRegistry>) {}
-#[allow(dead_code)]
-fn _ensure_map_used(_: Map<String, Value>) {}
-#[allow(dead_code)]
-fn _ensure_protocol_error_used(_: HueProtocolError) {}

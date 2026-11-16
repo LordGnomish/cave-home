@@ -65,6 +65,8 @@ pub fn advertisement_is_compliant(ad: &MdnsAdvertisement) -> bool {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn advertisement_uses_documented_service_type_and_port() {
         let id = BridgeIdentity::fresh("10.0.0.7");
@@ -76,13 +78,20 @@ mod tests {
     }
 
     #[test]
-    fn txt_record_carries_bridgeid_and_modelid() {
+    fn txt_record_carries_bridgeid_and_modelid() -> TestResult {
         let id = BridgeIdentity::fresh("10.0.0.7");
         let ad = build_advertisement(&id);
         let txt: std::collections::HashMap<_, _> =
             ad.txt.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-        assert_eq!(txt.get("bridgeid").unwrap(), &id.bridge_id.to_uppercase());
-        assert_eq!(txt.get("modelid").unwrap(), &id.model_id);
+        assert_eq!(
+            txt.get("bridgeid").ok_or("expected Some, got None")?,
+            &id.bridge_id.to_uppercase()
+        );
+        assert_eq!(
+            txt.get("modelid").ok_or("expected Some, got None")?,
+            &id.model_id
+        );
+        Ok(())
     }
 
     #[test]

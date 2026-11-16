@@ -2,16 +2,16 @@
 // Copyright 2026 cave-home contributors
 // CLEAN-ROOM: Philips Hue CLIP API v1+v2 public docs reference only.
 // Upstream diyHue source NOT consulted. GPL contamination prevented by design.
-//! UPnP SSDP discovery surface.
+//! `UPnP` SSDP discovery surface.
 //!
 //! The bridge participates in SSDP M-SEARCH (UDP 1900) and serves a
 //! `description.xml` over HTTP. The payload is the published Hue Bridge
 //! `<root>` document, with substitutions for our emulator identity.
 //!
 //! Reference: developer-portal "Hue Bridge discovery" → SSDP section.
-//! Required headers (per UPnP 1.0 + Hue dev-portal docs):
+//! Required headers (per `UPnP` 1.0 + Hue dev-portal docs):
 //!   - `LOCATION: http://<bridge-ip>:80/description.xml`
-//!   - `EXT:` (empty per UPnP spec)
+//!   - `EXT:` (empty per `UPnP` spec)
 //!   - `SERVER: Linux/<kernel> UPnP/1.0 IpBridge/<bridge-sw-version>`
 //!   - `USN: uuid:<udn>::upnp:rootdevice`
 //!   - `ST: upnp:rootdevice` (also `urn:schemas-upnp-org:device:Basic:1`)

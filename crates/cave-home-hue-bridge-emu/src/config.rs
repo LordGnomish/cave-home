@@ -8,7 +8,7 @@
 //! developers.meethue.com/develop/application-design-guidance/using-https/
 //! — the bridge serves its identity from three places:
 //!
-//! 1. `GET /description.xml` (UPnP SSDP) — model + serial + bridge-id.
+//! 1. `GET /description.xml` (`UPnP` SSDP) — model + serial + bridge-id.
 //! 2. `GET /api/config` (anonymous) — short config: bridgeid, name, modelid,
 //!    swversion, apiversion, mac, datastoreversion.
 //! 3. `GET /api/<appkey>/config` (authenticated) — full config including
@@ -38,7 +38,7 @@ pub struct BridgeIdentity {
     /// in the Portal admin module per ADR-007.
     pub name: String,
     /// Normalised 12-character lowercase hex bridge ID (the upstream
-    /// publishes this as the value used by NUPNP / mDNS / UPnP).
+    /// publishes this as the value used by NUPNP / mDNS / `UPnP`).
     pub bridge_id: String,
     /// MAC address shown by `GET /api/config.mac`.
     pub mac: String,
@@ -53,7 +53,7 @@ pub struct BridgeIdentity {
     pub software_version: String,
     /// `apiversion` string. Default [`DEFAULT_API_VERSION_V1`].
     pub api_version: String,
-    /// Stable RFC 4122 UUID — used as the UPnP `<UDN>` and the v2
+    /// Stable RFC 4122 UUID — used as the `UPnP` `<UDN>` and the v2
     /// bridge resource id.
     pub uuid: uuid::Uuid,
     /// Internal IP advertised by `/description.xml` + NUPNP.
@@ -93,7 +93,7 @@ impl BridgeIdentity {
     }
 
     /// Render the SSDP `<UDN>` field as `uuid:2f402f80-da50-11e1-9b23-<mac>`.
-    /// Reference: Hue developer-portal "Bridge discovery" — UPnP UDN format.
+    /// Reference: Hue developer-portal "Bridge discovery" — `UPnP` UDN format.
     #[must_use]
     pub fn ssdp_udn(&self) -> String {
         format!("uuid:2f402f80-da50-11e1-9b23-{}", self.mac.replace(':', ""))
@@ -128,6 +128,8 @@ pub fn derive_bridge_id_from_mac(mac: &str) -> String {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn fresh_identity_has_consistent_mac_and_bridge_id() {
         let id = BridgeIdentity::fresh("10.0.0.5");
@@ -138,11 +140,12 @@ mod tests {
     }
 
     #[test]
-    fn locally_administered_bit_is_set() {
+    fn locally_administered_bit_is_set() -> TestResult {
         let id = BridgeIdentity::fresh("10.0.0.1");
-        let first_octet = u8::from_str_radix(&id.mac[0..2], 16).unwrap();
+        let first_octet = u8::from_str_radix(&id.mac[0..2], 16)?;
         assert!(first_octet & 0x02 != 0, "LAA bit must be set");
         assert!(first_octet & 0x01 == 0, "must be unicast");
+        Ok(())
     }
 
     #[test]

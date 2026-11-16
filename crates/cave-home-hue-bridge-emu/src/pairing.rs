@@ -23,6 +23,7 @@ use parking_lot::Mutex;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -30,7 +31,7 @@ use std::time::{Duration, Instant};
 /// Reference: developer-portal docs — 30 seconds.
 pub const LINK_BUTTON_WINDOW: Duration = Duration::from_secs(30);
 
-/// POST body for `POST /api`. Reference: v1 7.1 + v2 auth_v1 schemas.
+/// POST body for `POST /api`. Reference: v1 7.1 + v2 `auth_v1` schemas.
 #[derive(Debug, Clone, Deserialize)]
 pub struct PairRequest {
     /// Device type / application identifier. Format `app_name#user` (max 40 chars).
@@ -94,10 +95,9 @@ impl PairingService {
     #[must_use]
     pub fn is_link_button_pressed(&self) -> bool {
         let guard = self.inner.lock();
-        match guard.button_pressed_at {
-            Some(t) => t.elapsed() < LINK_BUTTON_WINDOW,
-            None => false,
-        }
+        guard
+            .button_pressed_at
+            .is_some_and(|t| t.elapsed() < LINK_BUTTON_WINDOW)
     }
 
     /// Try to pair. Returns the `PairSuccess` payload on success.
@@ -109,10 +109,9 @@ impl PairingService {
             )));
         }
         let mut guard = self.inner.lock();
-        let active = match guard.button_pressed_at {
-            Some(t) => t.elapsed() < LINK_BUTTON_WINDOW,
-            None => false,
-        };
+        let active = guard
+            .button_pressed_at
+            .is_some_and(|t| t.elapsed() < LINK_BUTTON_WINDOW);
         if !active {
             return Err(EmuError::LinkButtonNotPressed);
         }
@@ -131,6 +130,9 @@ impl PairingService {
                 client_key: client_key.clone(),
             },
         );
+        // The check and the insert above are one critical section; the
+        // reply below is built from locals only.
+        drop(guard);
         Ok(PairSuccess {
             username: app_key,
             clientkey: client_key,
@@ -150,6 +152,7 @@ impl PairingService {
     }
 
     /// Remove an entry (factory-reset / per-app deauth).
+    #[must_use]
     pub fn whitelist_remove(&self, app_key: &str) -> bool {
         self.inner.lock().whitelist.remove(app_key).is_some()
     }
@@ -161,98 +164,121 @@ impl PairingService {
 fn generate_app_key() -> String {
     let mut rng = rand::rng();
     let bytes: [u8; 20] = std::array::from_fn(|_| rng.random::<u8>());
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    bytes.iter().fold(String::new(), |mut out, b| {
+        let _ = write!(out, "{b:02x}");
+        out
+    })
 }
 
 /// Generate a v2 Entertainment clientkey — 32 hex chars (per public docs).
 fn generate_client_key() -> String {
     let mut rng = rand::rng();
     let bytes: [u8; 16] = std::array::from_fn(|_| rng.random::<u8>());
-    bytes.iter().map(|b| format!("{b:02X}")).collect()
+    bytes.iter().fold(String::new(), |mut out, b| {
+        let _ = write!(out, "{b:02X}");
+        out
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn pair_fails_without_button_press() {
+    fn pair_fails_without_button_press() -> TestResult {
         let svc = PairingService::new();
         let req = PairRequest {
             devicetype: "cave-home#user".into(),
             generateclientkey: false,
         };
-        let err = svc.try_pair(&req, "2026-05-17T20:00:00").unwrap_err();
+        let err = svc
+            .try_pair(&req, "2026-05-17T20:00:00")
+            .err()
+            .ok_or("expected an error")?;
         assert!(matches!(err, EmuError::LinkButtonNotPressed));
+        Ok(())
     }
 
     #[test]
-    fn pair_succeeds_within_window_and_whitelists() {
+    fn pair_succeeds_within_window_and_whitelists() -> TestResult {
         let svc = PairingService::new();
         svc.begin_link_window();
         let req = PairRequest {
             devicetype: "cave-home#user".into(),
             generateclientkey: false,
         };
-        let s = svc.try_pair(&req, "2026-05-17T20:00:00").unwrap();
+        let s = svc.try_pair(&req, "2026-05-17T20:00:00")?;
         assert_eq!(s.username.len(), 40);
         assert!(s.clientkey.is_none());
         assert!(svc.whitelist_get(&s.username).is_some());
+        Ok(())
     }
 
     #[test]
-    fn pair_with_generateclientkey_returns_clientkey() {
+    fn pair_with_generateclientkey_returns_clientkey() -> TestResult {
         let svc = PairingService::new();
         svc.begin_link_window();
         let req = PairRequest {
             devicetype: "cave-home#user".into(),
             generateclientkey: true,
         };
-        let s = svc.try_pair(&req, "2026-05-17T20:00:00").unwrap();
+        let s = svc.try_pair(&req, "2026-05-17T20:00:00")?;
         assert!(s.clientkey.is_some());
-        assert_eq!(s.clientkey.as_ref().unwrap().len(), 32);
-        let entry = svc.whitelist_get(&s.username).unwrap();
+        assert_eq!(
+            s.clientkey.as_ref().ok_or("expected Some, got None")?.len(),
+            32
+        );
+        let entry = svc
+            .whitelist_get(&s.username)
+            .ok_or("expected Some, got None")?;
         assert!(entry.client_key.is_some());
+        Ok(())
     }
 
     #[test]
-    fn devicetype_too_long_rejected() {
+    fn devicetype_too_long_rejected() -> TestResult {
         let svc = PairingService::new();
         svc.begin_link_window();
         let req = PairRequest {
             devicetype: "x".repeat(41),
             generateclientkey: false,
         };
-        let err = svc.try_pair(&req, "2026-05-17T20:00:00").unwrap_err();
+        let err = svc
+            .try_pair(&req, "2026-05-17T20:00:00")
+            .err()
+            .ok_or("expected an error")?;
         assert!(matches!(err, EmuError::InvalidBody(_)));
+        Ok(())
     }
 
     #[test]
-    fn empty_devicetype_rejected() {
+    fn empty_devicetype_rejected() -> TestResult {
         let svc = PairingService::new();
         svc.begin_link_window();
         let req = PairRequest {
             devicetype: String::new(),
             generateclientkey: false,
         };
-        let err = svc.try_pair(&req, "t").unwrap_err();
+        let err = svc.try_pair(&req, "t").err().ok_or("expected an error")?;
         assert!(matches!(err, EmuError::InvalidBody(_)));
+        Ok(())
     }
 
     #[test]
-    fn whitelist_remove_works() {
+    fn whitelist_remove_works() -> TestResult {
         let svc = PairingService::new();
         svc.begin_link_window();
-        let s = svc
-            .try_pair(
-                &PairRequest {
-                    devicetype: "x#y".into(),
-                    generateclientkey: false,
-                },
-                "t",
-            )
-            .unwrap();
+        let s = svc.try_pair(
+            &PairRequest {
+                devicetype: "x#y".into(),
+                generateclientkey: false,
+            },
+            "t",
+        )?;
         assert!(svc.whitelist_remove(&s.username));
         assert!(svc.whitelist_get(&s.username).is_none());
+        Ok(())
     }
 }

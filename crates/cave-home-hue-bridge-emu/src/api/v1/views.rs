@@ -9,34 +9,40 @@
 //! Field names/shapes match the published examples.
 
 use crate::config::BridgeIdentity;
+use crate::num::f32_to_u16;
 use crate::pairing::PairingService;
 use crate::registry::{
     BridgeRegistry, EmulatedGroup, EmulatedLight, EmulatedScene, EmulatedSensor,
 };
 use serde_json::{Map, Value, json};
 
+/// The members of the short config, in published order. Shared by
+/// [`short_config`] and [`full_config`], which extends them.
+fn short_config_members(identity: &BridgeIdentity) -> Map<String, Value> {
+    let mut obj = Map::new();
+    obj.insert("name".into(), json!(identity.name));
+    obj.insert("datastoreversion".into(), json!(identity.datastore_version));
+    obj.insert("swversion".into(), json!(identity.software_version));
+    obj.insert("apiversion".into(), json!(identity.api_version));
+    obj.insert("mac".into(), json!(identity.mac));
+    obj.insert("bridgeid".into(), json!(identity.bridge_id.to_uppercase()));
+    obj.insert("factorynew".into(), json!(false));
+    obj.insert("replacesbridgeid".into(), Value::Null);
+    obj.insert("modelid".into(), json!(identity.model_id));
+    obj.insert("starterkitid".into(), json!(""));
+    obj
+}
+
 /// Short anonymous config — `GET /api/config`. Reference: §7.2.
 #[must_use]
 pub fn short_config(identity: &BridgeIdentity) -> Value {
-    json!({
-        "name": identity.name,
-        "datastoreversion": identity.datastore_version,
-        "swversion": identity.software_version,
-        "apiversion": identity.api_version,
-        "mac": identity.mac,
-        "bridgeid": identity.bridge_id.to_uppercase(),
-        "factorynew": false,
-        "replacesbridgeid": Value::Null,
-        "modelid": identity.model_id,
-        "starterkitid": "",
-    })
+    Value::Object(short_config_members(identity))
 }
 
 /// Full authenticated config. Reference: §7.2. Includes whitelist.
 #[must_use]
 pub fn full_config(identity: &BridgeIdentity, pairing: &PairingService) -> Value {
-    let mut base = short_config(identity);
-    let obj = base.as_object_mut().expect("short_config is an object");
+    let mut obj = short_config_members(identity);
     // Whitelist map keyed by app_key — published shape.
     let mut whitelist = Map::new();
     for entry in pairing.whitelist_all() {
@@ -64,16 +70,16 @@ pub fn full_config(identity: &BridgeIdentity, pairing: &PairingService) -> Value
     obj.insert("netmask".into(), Value::String("255.255.255.0".into()));
     obj.insert("gateway".into(), Value::String("0.0.0.0".into()));
     obj.insert("dhcp".into(), Value::Bool(true));
-    base
+    Value::Object(obj)
 }
 
 /// Render a single light to its v1 view. Reference: §1.4 `/lights/<id>` schema.
 #[must_use]
 pub fn light_view(light: &EmulatedLight) -> Value {
-    let bri = (light.brightness / 100.0 * 254.0).round().clamp(1.0, 254.0) as u16;
+    let bri = f32_to_u16((light.brightness / 100.0 * 254.0).round().clamp(1.0, 254.0));
     let xy: Vec<f64> = light
         .xy
-        .map(|(x, y)| vec![x as f64, y as f64])
+        .map(|(x, y)| vec![f64::from(x), f64::from(y)])
         .unwrap_or_default();
     let ct = light.mirek.unwrap_or(366);
     let colormode = if light.xy.is_some() {
@@ -246,53 +252,198 @@ mod tests {
     use super::*;
     use crate::registry::EmulatedLight;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn short_config_uses_uppercase_bridge_id_per_docs() {
+    fn short_config_uses_uppercase_bridge_id_per_docs() -> TestResult {
         let id = BridgeIdentity::fresh("10.0.0.1");
         let v = short_config(&id);
         assert_eq!(
-            v.get("bridgeid").unwrap().as_str().unwrap(),
+            v.get("bridgeid")
+                .ok_or("expected Some, got None")?
+                .as_str()
+                .ok_or("expected Some, got None")?,
             id.bridge_id.to_uppercase()
         );
+        Ok(())
     }
 
     #[test]
-    fn light_view_round_trip_bri_percent_to_v1_int() {
+    fn light_view_round_trip_bri_percent_to_v1_int() -> TestResult {
         let mut l = EmulatedLight::new_color_candle("X", "1");
         l.on = true;
         l.brightness = 50.0;
         let v = light_view(&l);
         let bri = v
             .get("state")
-            .unwrap()
+            .ok_or("expected Some, got None")?
             .get("bri")
-            .unwrap()
+            .ok_or("expected Some, got None")?
             .as_i64()
-            .unwrap();
-        assert!(bri >= 126 && bri <= 128, "bri = {bri} expected ~127");
+            .ok_or("expected Some, got None")?;
+        assert!((126..=128).contains(&bri), "bri = {bri} expected ~127");
+        Ok(())
     }
 
     #[test]
-    fn group_view_state_all_on_only_if_every_member_on() {
+    fn group_view_state_all_on_only_if_every_member_on() -> TestResult {
         let reg = BridgeRegistry::new();
         let l1 = reg.add_light(EmulatedLight::new_color_candle("A", ""));
         let l2 = reg.add_light(EmulatedLight::new_color_candle("B", ""));
         reg.update_light(&l1, |l| l.on = true);
         // l2 stays off
         let mut g = crate::registry::EmulatedGroup::new_room("R", "");
-        g.member_lights_v1 = vec![l1.clone(), l2.clone()];
+        g.member_lights_v1 = vec![l1, l2];
         let gid = reg.add_group(g);
-        let v = group_view(&reg.group(&gid).unwrap(), &reg);
-        let state = v.get("state").unwrap();
-        assert_eq!(state.get("any_on").unwrap(), &Value::Bool(true));
-        assert_eq!(state.get("all_on").unwrap(), &Value::Bool(false));
+        let v = group_view(&reg.group(&gid).ok_or("expected Some, got None")?, &reg);
+        let state = v.get("state").ok_or("expected Some, got None")?;
+        assert_eq!(
+            state.get("any_on").ok_or("expected Some, got None")?,
+            &Value::Bool(true)
+        );
+        assert_eq!(
+            state.get("all_on").ok_or("expected Some, got None")?,
+            &Value::Bool(false)
+        );
+        Ok(())
     }
 
     #[test]
-    fn lights_map_keys_match_v1_ids() {
+    fn lights_map_keys_match_v1_ids() -> TestResult {
         let reg = BridgeRegistry::new();
         let id = reg.add_light(EmulatedLight::new_color_candle("L", ""));
         let map = lights_map(&reg);
-        assert!(map.as_object().unwrap().contains_key(&id));
+        assert!(
+            map.as_object()
+                .ok_or("expected Some, got None")?
+                .contains_key(&id)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn light_view_bri_edge_values() -> TestResult {
+        let bri_for = |brightness: f32| {
+            let mut l = EmulatedLight::new_color_candle("X", "1");
+            l.brightness = brightness;
+            light_view(&l)
+                .get("state")
+                .and_then(|s| s.get("bri"))
+                .and_then(Value::as_u64)
+                .ok_or("bri present")
+        };
+        // The percentage is rounded to the 1..=254 v1 scale and clamped.
+        assert_eq!(bri_for(0.0)?, 1);
+        assert_eq!(bri_for(-5.0)?, 1);
+        assert_eq!(bri_for(0.2)?, 1);
+        assert_eq!(bri_for(0.59)?, 1);
+        assert_eq!(bri_for(0.6)?, 2);
+        assert_eq!(bri_for(50.0)?, 127);
+        assert_eq!(bri_for(99.9)?, 254);
+        assert_eq!(bri_for(100.0)?, 254);
+        assert_eq!(bri_for(250.0)?, 254);
+        assert_eq!(bri_for(f32::INFINITY)?, 254);
+        assert_eq!(bri_for(f32::NEG_INFINITY)?, 1);
+        // A NaN brightness passes through the clamp and reads as 0.
+        assert_eq!(bri_for(f32::NAN)?, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn light_view_xy_is_widened_exactly() -> TestResult {
+        let mut l = EmulatedLight::new_color_candle("X", "1");
+        l.xy = Some((0.4, 0.25));
+        let v = light_view(&l);
+        let xy = v
+            .get("state")
+            .and_then(|s| s.get("xy"))
+            .and_then(Value::as_array)
+            .ok_or("xy present")?;
+        let bits: Vec<Option<u64>> = xy.iter().map(|n| n.as_f64().map(f64::to_bits)).collect();
+        // 0.4_f32 is 0x3ecc_cccd; widening keeps exactly those mantissa bits.
+        assert_eq!(
+            bits,
+            [Some(0x3fd9_9999_a000_0000), Some(0x3fd0_0000_0000_0000)]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn short_config_has_exactly_the_documented_keys() {
+        let id = BridgeIdentity::fresh("10.0.0.1");
+        let expected = json!({
+            "name": id.name,
+            "datastoreversion": id.datastore_version,
+            "swversion": id.software_version,
+            "apiversion": id.api_version,
+            "mac": id.mac,
+            "bridgeid": id.bridge_id.to_uppercase(),
+            "factorynew": false,
+            "replacesbridgeid": Value::Null,
+            "modelid": id.model_id,
+            "starterkitid": "",
+        });
+        assert_eq!(short_config(&id), expected);
+        assert_eq!(
+            serde_json::to_string(&short_config(&id)).ok(),
+            serde_json::to_string(&expected).ok()
+        );
+    }
+
+    #[test]
+    fn full_config_extends_the_short_config() -> TestResult {
+        let id = BridgeIdentity::fresh("10.0.0.1");
+        let pairing = PairingService::new();
+        let short = short_config(&id);
+        let full = full_config(&id, &pairing);
+        let short = short.as_object().ok_or("short config is an object")?;
+        let full_obj = full.as_object().ok_or("full config is an object")?;
+        for (key, value) in short {
+            assert_eq!(full_obj.get(key), Some(value), "key {key}");
+        }
+        let extra: Vec<&str> = full_obj
+            .keys()
+            .map(String::as_str)
+            .filter(|k| !short.contains_key(*k))
+            .collect();
+        let mut sorted = extra.clone();
+        sorted.sort_unstable();
+        assert_eq!(
+            sorted,
+            [
+                "dhcp",
+                "gateway",
+                "ipaddress",
+                "linkbutton",
+                "netmask",
+                "portalconnection",
+                "portalservices",
+                "whitelist",
+                "zigbeechannel",
+            ]
+        );
+        assert_eq!(full_obj.len(), short.len() + 9);
+
+        // Byte-for-byte: extending the rendered short config in place gives
+        // the same serialised object, key order included.
+        let mut expected = short_config(&id);
+        let obj = expected
+            .as_object_mut()
+            .ok_or("short config is an object")?;
+        obj.insert("whitelist".into(), json!({}));
+        obj.insert("linkbutton".into(), json!(false));
+        obj.insert("portalservices".into(), json!(false));
+        obj.insert("portalconnection".into(), json!("disconnected"));
+        obj.insert("zigbeechannel".into(), json!(25));
+        obj.insert("ipaddress".into(), json!("10.0.0.1"));
+        obj.insert("netmask".into(), json!("255.255.255.0"));
+        obj.insert("gateway".into(), json!("0.0.0.0"));
+        obj.insert("dhcp".into(), json!(true));
+        assert_eq!(full, expected);
+        assert_eq!(
+            serde_json::to_string(&full)?,
+            serde_json::to_string(&expected)?
+        );
+        Ok(())
     }
 }

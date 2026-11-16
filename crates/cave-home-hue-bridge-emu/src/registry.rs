@@ -7,7 +7,7 @@
 //!
 //! Reference:
 //! - Lights: developers.meethue.com/develop/hue-api/lights-api/ (v1 §1)
-//!   and #resource_light_get (v2). v1 numeric "1", "2", ... IDs; v2 UUIDs.
+//!   and `#resource_light_get` (v2). v1 numeric "1", "2", ... IDs; v2 UUIDs.
 //! - Groups: #4-groups-api (v1) and `room` / `zone` / `grouped_light` (v2).
 //! - Scenes: #5-scenes-api (v1) and `scene` (v2).
 //! - Sensors: #2-sensors-api (v1) and `motion` / `button` / `temperature` (v2).
@@ -22,10 +22,11 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
-/// One emulated light in storage. We keep it as a generic JSON-ish struct
-/// so the v1 view (numeric id + `state` block) and the v2 view (UUID +
-/// `on`/`dimming`/`color`/...) can be served from the same record without
-/// double-storage.
+/// One emulated light in storage.
+///
+/// We keep it as a generic JSON-ish struct so the v1 view (numeric id +
+/// `state` block) and the v2 view (UUID + `on`/`dimming`/`color`/...) can be
+/// served from the same record without double-storage.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmulatedLight {
     /// v1 numeric id (assigned by the registry).
@@ -82,13 +83,13 @@ impl EmulatedLight {
     }
 }
 
-/// One v1 group ("Room", "Zone", "LightGroup", "Luminaire"). Also stores
+/// One v1 group ("Room", "Zone", "`LightGroup`", "Luminaire"). Also stores
 /// the v2 `room`/`zone` shape — same data, different projection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmulatedGroup {
     pub id_v1: String,
     pub id_v2: uuid::Uuid,
-    /// Type — "Room" / "Zone" / "LightGroup" / "Luminaire".
+    /// Type — "Room" / "Zone" / "`LightGroup`" / "Luminaire".
     pub group_type: String,
     /// Name — what the user sees as "Oda" in the Portal.
     pub name: String,
@@ -396,6 +397,8 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn add_light_assigns_sequential_v1_ids() {
         let reg = BridgeRegistry::new();
@@ -406,7 +409,7 @@ mod tests {
     }
 
     #[test]
-    fn update_light_mutates_in_place_and_returns_snapshot() {
+    fn update_light_mutates_in_place_and_returns_snapshot() -> TestResult {
         let reg = BridgeRegistry::new();
         let id = reg.add_light(EmulatedLight::new_color_candle("Mutfak", ""));
         let snap = reg
@@ -414,15 +417,16 @@ mod tests {
                 l.on = true;
                 l.brightness = 50.0;
             })
-            .unwrap();
+            .ok_or("expected Some, got None")?;
         assert!(snap.on);
         assert!((snap.brightness - 50.0).abs() < 1e-3);
-        let fresh = reg.light(&id).unwrap();
+        let fresh = reg.light(&id).ok_or("expected Some, got None")?;
         assert!(fresh.on);
+        Ok(())
     }
 
     #[test]
-    fn scene_recall_propagates_action_to_member_lights() {
+    fn scene_recall_propagates_action_to_member_lights() -> TestResult {
         let reg = BridgeRegistry::new();
         let l1 = reg.add_light(EmulatedLight::new_color_candle("A", ""));
         let l2 = reg.add_light(EmulatedLight::new_color_candle("B", ""));
@@ -451,37 +455,37 @@ mod tests {
         });
         let n = reg.recall_scene(&scene_id);
         assert_eq!(n, 2);
-        assert!(reg.light(&l1).unwrap().on);
-        assert!((reg.light(&l1).unwrap().brightness - 75.0).abs() < 1e-3);
-        assert!(!reg.light(&l2).unwrap().on);
+        assert!(reg.light(&l1).ok_or("expected Some, got None")?.on);
+        assert!((reg.light(&l1).ok_or("expected Some, got None")?.brightness - 75.0).abs() < 1e-3);
+        assert!(!reg.light(&l2).ok_or("expected Some, got None")?.on);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn add_light_fires_add_event_on_eventstream() {
+    async fn add_light_fires_add_event_on_eventstream() -> TestResult {
         let reg = BridgeRegistry::new();
         let mut sub = reg.subscribe();
         let _ = reg.add_light(EmulatedLight::new_color_candle("X", ""));
-        let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-            .await
-            .expect("event must arrive within 100ms")
-            .expect("event must be Ok");
+        let event = tokio::time::timeout(Duration::from_millis(100), sub.recv()).await??;
         assert_eq!(event.kind, StreamEventKind::Add);
-        assert_eq!(event.data[0].get("type").unwrap(), "light");
+        assert_eq!(
+            event.data[0].get("type").ok_or("expected Some, got None")?,
+            "light"
+        );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn update_light_fires_update_event() {
+    async fn update_light_fires_update_event() -> TestResult {
         let reg = BridgeRegistry::new();
         let id = reg.add_light(EmulatedLight::new_color_candle("X", ""));
         let mut sub = reg.subscribe();
         reg.update_light(&id, |l| {
             l.on = true;
         });
-        let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-            .await
-            .unwrap()
-            .unwrap();
+        let event = tokio::time::timeout(Duration::from_millis(100), sub.recv()).await??;
         assert_eq!(event.kind, StreamEventKind::Update);
+        Ok(())
     }
 
     #[test]
@@ -492,13 +496,20 @@ mod tests {
     }
 
     #[test]
-    fn group_member_lights_persist() {
+    fn group_member_lights_persist() -> TestResult {
         let reg = BridgeRegistry::new();
         let l1 = reg.add_light(EmulatedLight::new_color_candle("A", ""));
         let l2 = reg.add_light(EmulatedLight::new_color_candle("B", ""));
         let mut g = EmulatedGroup::new_room("Salon", "");
         g.member_lights_v1 = vec![l1, l2];
         let g_id = reg.add_group(g);
-        assert_eq!(reg.group(&g_id).unwrap().member_lights_v1.len(), 2);
+        assert_eq!(
+            reg.group(&g_id)
+                .ok_or("expected Some, got None")?
+                .member_lights_v1
+                .len(),
+            2
+        );
+        Ok(())
     }
 }

@@ -145,12 +145,21 @@ pub type EmuResult<T> = Result<T, EmuError>;
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn unauthorized_protocol_error_serialises_with_type_1() {
+    fn unauthorized_protocol_error_serialises_with_type_1() -> TestResult {
         let err = HueProtocolError::unauthorized("/api/abc/lights");
-        let body = serde_json::to_value(&err).unwrap();
-        assert_eq!(body.get("type").unwrap(), &serde_json::Value::from(1));
-        assert_eq!(body.get("description").unwrap(), "unauthorized user");
+        let body = serde_json::to_value(&err)?;
+        assert_eq!(
+            body.get("type").ok_or("expected Some, got None")?,
+            &serde_json::Value::from(1)
+        );
+        assert_eq!(
+            body.get("description").ok_or("expected Some, got None")?,
+            "unauthorized user"
+        );
+        Ok(())
     }
 
     #[test]
