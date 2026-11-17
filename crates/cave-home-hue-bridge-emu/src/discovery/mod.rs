@@ -2,7 +2,7 @@
 // Copyright 2026 cave-home contributors
 // CLEAN-ROOM: Philips Hue CLIP API v1+v2 public docs reference only.
 // Upstream diyHue source NOT consulted. GPL contamination prevented by design.
-//! Discovery surfaces — UPnP SSDP `<description.xml>` and mDNS
+//! Discovery surfaces — `UPnP` SSDP `<description.xml>` and mDNS
 //! `_hue._tcp.local.` advertisement payloads.
 //!
 //! Reference:

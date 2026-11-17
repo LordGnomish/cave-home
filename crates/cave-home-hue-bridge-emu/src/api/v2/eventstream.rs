@@ -4,7 +4,7 @@
 // Upstream diyHue source NOT consulted. GPL contamination prevented by design.
 //! `GET /clip/v2/eventstream` — Server-Sent Events feed.
 //!
-//! Reference: developer-portal "Core concepts → EventStream" — a persistent
+//! Reference: developer-portal "Core concepts → `EventStream`" — a persistent
 //! HTTP/2 GET that emits SSE-formatted events. The bridge sends one SSE
 //! message per change, where `data:` carries a JSON array of
 //! `{id, creationtime, type, data: [...]}` objects.
@@ -43,6 +43,8 @@ mod tests {
     use crate::registry::{StreamEvent, StreamEventKind};
     use serde_json::json;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn dummy(kind: StreamEventKind) -> StreamEvent {
         StreamEvent {
             id: "evt-1".into(),
@@ -53,30 +55,38 @@ mod tests {
     }
 
     #[test]
-    fn render_event_emits_three_required_sse_lines() {
+    fn render_event_emits_three_required_sse_lines() -> TestResult {
         let s = render_event(&dummy(StreamEventKind::Update));
         let mut lines = s.lines();
-        assert_eq!(lines.next().unwrap(), "id: evt-1");
-        assert_eq!(lines.next().unwrap(), "event: update");
-        let data_line = lines.next().unwrap();
+        assert_eq!(lines.next().ok_or("expected Some, got None")?, "id: evt-1");
+        assert_eq!(
+            lines.next().ok_or("expected Some, got None")?,
+            "event: update"
+        );
+        let data_line = lines.next().ok_or("expected Some, got None")?;
         assert!(data_line.starts_with("data: "));
         // Trailing blank line per SSE spec.
         assert!(s.ends_with("\n\n"));
+        Ok(())
     }
 
     #[test]
-    fn render_event_data_is_an_array_of_one() {
+    fn render_event_data_is_an_array_of_one() -> TestResult {
         let s = render_event(&dummy(StreamEventKind::Add));
         let prefix = "data: ";
         let line = s
             .lines()
             .find(|l| l.starts_with(prefix))
-            .expect("data line");
+            .ok_or("data line")?;
         let json_text = &line[prefix.len()..];
-        let arr: serde_json::Value = serde_json::from_str(json_text).unwrap();
+        let arr: serde_json::Value = serde_json::from_str(json_text)?;
         assert!(arr.is_array());
-        assert_eq!(arr.as_array().unwrap().len(), 1);
-        assert_eq!(arr[0].get("type").unwrap(), &json!("add"));
+        assert_eq!(arr.as_array().ok_or("expected Some, got None")?.len(), 1);
+        assert_eq!(
+            arr[0].get("type").ok_or("expected Some, got None")?,
+            &json!("add")
+        );
+        Ok(())
     }
 
     #[test]

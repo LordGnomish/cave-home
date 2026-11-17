@@ -196,48 +196,55 @@ impl std::error::Error for OrderError {}
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     /// Assert `a` appears before `b` in the plan.
-    fn before(plan: &BringUpPlan, a: Component, b: Component) {
+    fn before(plan: &BringUpPlan, a: Component, b: Component) -> TestResult {
         let order = plan.order();
-        let ia = order.iter().position(|c| *c == a).expect("a present");
-        let ib = order.iter().position(|c| *c == b).expect("b present");
+        let ia = order.iter().position(|c| *c == a).ok_or("a present")?;
+        let ib = order.iter().position(|c| *c == b).ok_or("b present")?;
         assert!(ia < ib, "{} must start before {}", a.id(), b.id());
+        Ok(())
     }
 
     #[test]
-    fn full_set_orders_kine_first_and_respects_all_edges() {
-        let plan = BringUpPlan::compute(&Component::ALL).expect("acyclic full set");
+    fn full_set_orders_kine_first_and_respects_all_edges() -> TestResult {
+        let plan = BringUpPlan::compute(&Component::ALL)?;
         assert_eq!(plan.order().len(), 10);
         assert_eq!(plan.order()[0], Component::Kine);
-        before(&plan, Component::Kine, Component::Apiserver);
-        before(&plan, Component::Apiserver, Component::Scheduler);
-        before(&plan, Component::Apiserver, Component::ControllerManager);
-        before(&plan, Component::Apiserver, Component::Kubelet);
-        before(&plan, Component::Cni, Component::Kubelet);
-        before(&plan, Component::Kubelet, Component::KubeProxy);
-        before(&plan, Component::Apiserver, Component::Traefik);
-        before(&plan, Component::Apiserver, Component::ServiceLb);
-        before(&plan, Component::Apiserver, Component::HelmController);
+        before(&plan, Component::Kine, Component::Apiserver)?;
+        before(&plan, Component::Apiserver, Component::Scheduler)?;
+        before(&plan, Component::Apiserver, Component::ControllerManager)?;
+        before(&plan, Component::Apiserver, Component::Kubelet)?;
+        before(&plan, Component::Cni, Component::Kubelet)?;
+        before(&plan, Component::Kubelet, Component::KubeProxy)?;
+        before(&plan, Component::Apiserver, Component::Traefik)?;
+        before(&plan, Component::Apiserver, Component::ServiceLb)?;
+        before(&plan, Component::Apiserver, Component::HelmController)?;
+        Ok(())
     }
 
     #[test]
-    fn order_is_deterministic() {
-        let a = BringUpPlan::compute(&Component::ALL).expect("ok");
-        let b = BringUpPlan::compute(&Component::ALL).expect("ok");
+    fn order_is_deterministic() -> TestResult {
+        let a = BringUpPlan::compute(&Component::ALL)?;
+        let b = BringUpPlan::compute(&Component::ALL)?;
         assert_eq!(a.order(), b.order());
+        Ok(())
     }
 
     #[test]
-    fn duplicates_in_request_are_collapsed() {
-        let plan = BringUpPlan::compute(&[Component::Kine, Component::Kine, Component::Apiserver])
-            .expect("ok");
+    fn duplicates_in_request_are_collapsed() -> TestResult {
+        let plan = BringUpPlan::compute(&[Component::Kine, Component::Kine, Component::Apiserver])?;
         assert_eq!(plan.order(), &[Component::Kine, Component::Apiserver]);
+        Ok(())
     }
 
     #[test]
-    fn missing_dependency_is_detected() {
+    fn missing_dependency_is_detected() -> TestResult {
         // apiserver without kine.
-        let err = BringUpPlan::compute(&[Component::Apiserver]).unwrap_err();
+        let err = BringUpPlan::compute(&[Component::Apiserver])
+            .err()
+            .ok_or("expected an error")?;
         assert_eq!(
             err,
             OrderError::MissingDependency {
@@ -245,13 +252,15 @@ mod tests {
                 missing: Component::Kine,
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn kubelet_missing_cni_is_detected() {
+    fn kubelet_missing_cni_is_detected() -> TestResult {
         let err =
             BringUpPlan::compute(&[Component::Kine, Component::Apiserver, Component::Kubelet])
-                .unwrap_err();
+                .err()
+                .ok_or("expected an error")?;
         assert_eq!(
             err,
             OrderError::MissingDependency {
@@ -259,39 +268,40 @@ mod tests {
                 missing: Component::Cni,
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn agent_only_set_orders_cni_kubelet_proxy_with_external_apiserver() {
+    fn agent_only_set_orders_cni_kubelet_proxy_with_external_apiserver() -> TestResult {
         // The kubelet depends on the apiserver, which on an agent is remote;
         // supply it as an external prerequisite.
         let plan = BringUpPlan::compute_with_external(
             &[Component::Cni, Component::Kubelet, Component::KubeProxy],
             &[Component::Apiserver],
-        )
-        .expect("ok");
-        before(&plan, Component::Cni, Component::Kubelet);
-        before(&plan, Component::Kubelet, Component::KubeProxy);
+        )?;
+        before(&plan, Component::Cni, Component::Kubelet)?;
+        before(&plan, Component::Kubelet, Component::KubeProxy)?;
+        Ok(())
     }
 
     #[test]
-    fn external_prerequisite_satisfies_otherwise_missing_dependency() {
+    fn external_prerequisite_satisfies_otherwise_missing_dependency() -> TestResult {
         // Without the external apiserver this is a MissingDependency...
         assert!(BringUpPlan::compute(&[Component::Kubelet, Component::Cni]).is_err());
         // ...with it, the kubelet plans fine.
         let plan = BringUpPlan::compute_with_external(
             &[Component::Kubelet, Component::Cni],
             &[Component::Apiserver],
-        )
-        .expect("external apiserver satisfies the kubelet dependency");
+        )?;
         assert!(plan.order().contains(&Component::Kubelet));
         // The external apiserver is NOT in the local plan — it's another node's.
         assert!(!plan.order().contains(&Component::Apiserver));
+        Ok(())
     }
 
     #[test]
-    fn readiness_gating_releases_components_as_deps_become_ready() {
-        let plan = BringUpPlan::compute(&Component::ALL).expect("ok");
+    fn readiness_gating_releases_components_as_deps_become_ready() -> TestResult {
+        let plan = BringUpPlan::compute(&Component::ALL)?;
 
         // Nothing ready: only the roots (kine, cni) may start.
         let now = plan.startable_now(&[]);
@@ -311,20 +321,22 @@ mod tests {
         assert!(now.contains(&Component::Traefik));
         // kube-proxy still gated behind the kubelet.
         assert!(!now.contains(&Component::KubeProxy));
+        Ok(())
     }
 
     #[test]
-    fn shutdown_order_is_exact_reverse_of_bringup() {
-        let plan = BringUpPlan::compute(&Component::ALL).expect("ok");
+    fn shutdown_order_is_exact_reverse_of_bringup() -> TestResult {
+        let plan = BringUpPlan::compute(&Component::ALL)?;
         let mut expected = plan.order().to_vec();
         expected.reverse();
         assert_eq!(plan.shutdown_order(), expected);
         // And kine — the datastore — is the last thing torn down.
         assert_eq!(plan.shutdown_order().last(), Some(&Component::Kine));
+        Ok(())
     }
 
     #[test]
-    fn cycle_is_detected_with_a_cyclic_edge_function() {
+    fn cycle_is_detected_with_a_cyclic_edge_function() -> TestResult {
         // The built-in graph is acyclic by construction, so we feed the core
         // algorithm a deliberately-cyclic dependency function: scheduler <->
         // controller-manager depend on each other. Kahn's sweep must stall and
@@ -341,14 +353,18 @@ mod tests {
             &[],
             cyclic,
         )
-        .unwrap_err();
+        .err()
+        .ok_or("expected an error")?;
         match err {
             OrderError::Cycle { remaining } => {
                 assert!(remaining.contains(&Component::Scheduler));
                 assert!(remaining.contains(&Component::ControllerManager));
             }
-            other => panic!("expected a cycle, got {other:?}"),
+            other @ OrderError::MissingDependency { .. } => {
+                return Err(format!("expected a cycle, got {other:?}").into());
+            }
         }
+        Ok(())
     }
 
     #[test]

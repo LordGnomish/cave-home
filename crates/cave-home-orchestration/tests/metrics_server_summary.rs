@@ -18,27 +18,29 @@ use cave_home_orchestration::metrics_server::summary::{
     ContainerStats, CpuStats, MemoryStats, MetricsPoint, NodeStats, PodRef, PodStats, Summary,
 };
 
-fn cpu(ts: u64, cumulative: u64) -> CpuStats {
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+const fn cpu(ts: u64, cumulative: u64) -> CpuStats {
     CpuStats {
         timestamp_nanos: ts,
         usage_core_nano_seconds: cumulative,
     }
 }
 
-fn mem(ws: u64) -> MemoryStats {
+const fn mem(ws: u64) -> MemoryStats {
     MemoryStats {
         working_set_bytes: ws,
     }
 }
 
 #[test]
-fn node_point_pairs_cpu_counter_and_memory_gauge() {
+fn node_point_pairs_cpu_counter_and_memory_gauge() -> TestResult {
     let node = NodeStats {
         node_name: "hub-1".into(),
         cpu: Some(cpu(1_000, 5_000_000_000)),
         memory: Some(mem(256 * 1024 * 1024)),
     };
-    let p = node.point().expect("complete node stats yield a point");
+    let p = node.point().ok_or("complete node stats yield a point")?;
     assert_eq!(
         p,
         MetricsPoint {
@@ -47,6 +49,7 @@ fn node_point_pairs_cpu_counter_and_memory_gauge() {
             working_set_bytes: 256 * 1024 * 1024,
         }
     );
+    Ok(())
 }
 
 #[test]
@@ -143,5 +146,8 @@ fn summary_holds_node_and_pods() {
     assert_eq!(s.node.node_name, "hub-1");
     assert_eq!(s.pods.len(), 1);
     // A pod with no decodable containers contributes no points.
-    assert!(s.pods[0].container_points().is_empty());
+    assert_eq!(
+        s.pods[0].container_points(),
+        [] as [(String, MetricsPoint); 0]
+    );
 }

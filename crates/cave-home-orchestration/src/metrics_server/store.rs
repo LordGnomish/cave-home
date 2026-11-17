@@ -262,6 +262,8 @@ impl Storage {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn point(ts: u64, cpu: u64, mem: u64) -> MetricsPoint {
         MetricsPoint {
             timestamp_nanos: ts,
@@ -278,21 +280,26 @@ mod tests {
     }
 
     #[test]
-    fn ring_history_can_exceed_two_but_rate_uses_latest_pair() {
+    fn ring_history_can_exceed_two_but_rate_uses_latest_pair() -> TestResult {
         let mut ring = PointRing::with_capacity(5);
         ring.push(point(0, 0, 1));
         ring.push(point(1_000_000_000, 100_000_000, 2));
         ring.push(point(2_000_000_000, 300_000_000, 3));
         assert_eq!(ring.len(), 3);
         // Latest pair: Δcpu 200_000_000 over 1s → 200m.
-        assert_eq!(ring.usage().expect("ok").usage.cpu.to_cpu_string(), "200m");
+        let usage = ring.usage().map_err(|e| format!("ok: {e:?}"))?;
+        assert_eq!(usage.usage.cpu.to_cpu_string(), "200m");
+        Ok(())
     }
 
     #[test]
     fn unknown_node_usage_is_none() {
         let store = Storage::new();
         assert!(store.node_usage("nope").is_none());
-        assert!(store.pod_container_usages("ns", "nope").is_empty());
+        assert_eq!(
+            store.pod_container_usages("ns", "nope"),
+            [] as [(String, Usage); 0]
+        );
     }
 
     #[test]

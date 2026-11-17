@@ -334,11 +334,11 @@ impl std::error::Error for ConfigError {}
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn good_token() -> Token {
-        match Token::new("K10abcdef::server:secrethere") {
-            Ok(t) => t,
-            Err(_) => Token("fallback-token".to_owned()),
-        }
+        Token::new("K10abcdef::server:secrethere")
+            .unwrap_or_else(|_| Token("fallback-token".to_owned()))
     }
 
     #[test]
@@ -355,9 +355,10 @@ mod tests {
     }
 
     #[test]
-    fn token_accepts_plausible_value() {
-        let t = Token::new("K10::node::abcdef").expect("valid token");
+    fn token_accepts_plausible_value() -> TestResult {
+        let t = Token::new("K10::node::abcdef")?;
         assert_eq!(t.as_str(), "K10::node::abcdef");
+        Ok(())
     }
 
     #[test]
@@ -370,7 +371,7 @@ mod tests {
     fn addons_default_is_all_on_nothing_disabled() {
         let a = Addons::default();
         assert!(a.flannel && a.servicelb && a.traefik);
-        assert!(a.disabled.is_empty());
+        assert_eq!(a.disabled, [] as [String; 0]);
         assert!(a.is_enabled("flannel"));
         assert!(!a.is_enabled("unknown"));
     }
@@ -517,7 +518,7 @@ mod tests {
             ConfigError::ServerUrlNoScheme,
         ];
         for e in errs {
-            assert!(!format!("{e}").is_empty());
+            assert_ne!(format!("{e}"), "");
         }
     }
 }

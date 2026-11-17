@@ -172,8 +172,8 @@ mod tests {
 
     #[test]
     fn roots_have_no_dependencies() {
-        assert!(Component::Kine.dependencies().is_empty());
-        assert!(Component::Cni.dependencies().is_empty());
+        assert_eq!(Component::Kine.dependencies(), []);
+        assert_eq!(Component::Cni.dependencies(), []);
     }
 
     #[test]

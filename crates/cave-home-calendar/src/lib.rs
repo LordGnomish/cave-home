@@ -28,12 +28,12 @@
 //! # Clean-room provenance
 //!
 //! The iCalendar parsing and recurrence logic are implemented **from the public
-//! RFCs** (RFC 5545 iCalendar, RFC 4791 CalDAV). Radicale (the GPL-3.0 CalDAV
+//! RFCs** (RFC 5545 iCalendar, RFC 4791 `CalDAV`). Radicale (the GPL-3.0 `CalDAV`
 //! server referenced by ADR-027) was **not** read or ported (Charter §6.1).
 //!
 //! # Deferred (Phase 1b)
 //!
-//! The CalDAV *server* surface (RFC 4791 HTTP `REPORT` / `PROPFIND` / `PUT`,
+//! The `CalDAV` *server* surface (RFC 4791 HTTP `REPORT` / `PROPFIND` / `PUT`,
 //! sync-tokens / etags, storage), the full time-zone database (`TZID` /
 //! `VTIMEZONE`), and `VTODO` / `VJOURNAL` handling are network/storage/
 //! TZ-data-bound and are enumerated in `parity.manifest.toml` `[[unmapped]]`
@@ -74,6 +74,7 @@ pub mod date;
 pub mod event;
 pub mod ical;
 pub mod label;
+mod num;
 pub mod rrule;
 
 pub use agenda::{Occurrence, agenda, next_occurrence};

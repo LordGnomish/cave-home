@@ -188,28 +188,44 @@ mod tests {
     use super::*;
     use crate::registry::EmulatedLight;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn light_view_includes_dimming_and_color() {
+    fn light_view_includes_dimming_and_color() -> TestResult {
         let l = EmulatedLight::new_color_candle("X", "1");
         let v = light_view(&l);
-        assert_eq!(v.get("type").unwrap(), &Value::from("light"));
+        assert_eq!(
+            v.get("type").ok_or("expected Some, got None")?,
+            &Value::from("light")
+        );
         assert!(v.get("dimming").is_some());
         assert!(v.get("color").is_some());
         assert!(v.get("color_temperature").is_some());
-        let metadata = v.get("metadata").unwrap();
-        assert_eq!(metadata.get("name").unwrap(), &Value::from("X"));
+        let metadata = v.get("metadata").ok_or("expected Some, got None")?;
+        assert_eq!(
+            metadata.get("name").ok_or("expected Some, got None")?,
+            &Value::from("X")
+        );
+        Ok(())
     }
 
     #[test]
-    fn bridge_view_includes_bridge_id_and_uuid() {
+    fn bridge_view_includes_bridge_id_and_uuid() -> TestResult {
         let id = BridgeIdentity::fresh("10.0.0.7");
         let v = bridge_view(&id);
-        assert_eq!(v.get("type").unwrap(), &Value::from("bridge"));
+        assert_eq!(
+            v.get("type").ok_or("expected Some, got None")?,
+            &Value::from("bridge")
+        );
         assert!(v.get("id").is_some());
         assert_eq!(
-            v.get("bridge_id").unwrap().as_str().unwrap(),
+            v.get("bridge_id")
+                .ok_or("expected Some, got None")?
+                .as_str()
+                .ok_or("expected Some, got None")?,
             id.bridge_id.as_str()
         );
+        Ok(())
     }
 
     #[test]

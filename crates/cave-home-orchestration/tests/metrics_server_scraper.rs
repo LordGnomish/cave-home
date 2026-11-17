@@ -15,7 +15,9 @@ use cave_home_orchestration::metrics_server::scraper::{
     ScrapeConfig, ScrapeFailure, ScrapeOutcome, Scraper,
 };
 
-fn cfg(resolution: u64) -> ScrapeConfig {
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+const fn cfg(resolution: u64) -> ScrapeConfig {
     ScrapeConfig::new(resolution, resolution)
 }
 
@@ -48,7 +50,7 @@ fn success_outcome_updates_counters_and_latency() {
 }
 
 #[test]
-fn failure_outcome_counts_as_error_and_bumps_consecutive() {
+fn failure_outcome_counts_as_error_and_bumps_consecutive() -> TestResult {
     let mut s = Scraper::new(cfg(1_000));
     s.record(
         "hub-1",
@@ -61,22 +63,24 @@ fn failure_outcome_counts_as_error_and_bumps_consecutive() {
     assert_eq!(s.total_scrapes(), 2);
     assert_eq!(s.total_errors(), 2);
     assert_eq!(s.error_rate(), 1.0);
-    let st = s.node_state("hub-1").expect("known node");
+    let st = s.node_state("hub-1").ok_or("known node")?;
     assert_eq!(st.consecutive_errors, 2);
+    Ok(())
 }
 
 #[test]
-fn success_resets_consecutive_errors() {
+fn success_resets_consecutive_errors() -> TestResult {
     let mut s = Scraper::new(cfg(1_000));
     s.record(
         "hub-1",
         ScrapeOutcome::failure(0, 10, ScrapeFailure::Decode),
     );
     s.record("hub-1", ScrapeOutcome::success(1_000, 20));
-    let st = s.node_state("hub-1").expect("known node");
+    let st = s.node_state("hub-1").ok_or("known node")?;
     assert_eq!(st.consecutive_errors, 0);
     // One error out of two scrapes → 0.5.
     assert_eq!(s.error_rate(), 0.5);
+    Ok(())
 }
 
 #[test]

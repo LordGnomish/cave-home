@@ -23,6 +23,7 @@ pub mod views;
 
 use crate::config::BridgeIdentity;
 use crate::errors::{HueProtocolError, emu_to_protocol};
+use crate::num::{f64_to_f32, i64_to_u16};
 use crate::pairing::{PairRequest, PairingService};
 use crate::registry::BridgeRegistry;
 use serde_json::{Map, Value, json};
@@ -43,6 +44,7 @@ pub struct V1Context {
 
 /// Handle `POST /api`. Returns the standard `[{"success":{"username": ...}}]`
 /// or `[{"error":{...}}]` payload.
+#[must_use]
 pub fn pair(ctx: &V1Context, body: &Value) -> Value {
     let req: PairRequest = match serde_json::from_value(body.clone()) {
         Ok(v) => v,
@@ -82,13 +84,14 @@ pub fn require_app_key(ctx: &V1Context, app_key: &str, address: &str) -> Result<
 }
 
 /// `GET /api/config` — anonymous short config. Reference: dev-portal §7.2.
+#[must_use]
 pub fn anonymous_config(ctx: &V1Context) -> Value {
     views::short_config(&ctx.identity)
 }
 
 /// `GET /api/<appkey>/config` — authenticated config.
 pub fn full_config(ctx: &V1Context, app_key: &str) -> ApiResult {
-    if let Err(_) = require_app_key(ctx, app_key, &format!("/api/{app_key}/config")) {
+    if require_app_key(ctx, app_key, &format!("/api/{app_key}/config")).is_err() {
         return Err(vec![HueProtocolError::unauthorized(format!(
             "/api/{app_key}/config"
         ))]);
@@ -98,7 +101,7 @@ pub fn full_config(ctx: &V1Context, app_key: &str) -> ApiResult {
 
 /// `GET /api/<appkey>` — entire datastore.
 pub fn full_state(ctx: &V1Context, app_key: &str) -> ApiResult {
-    if let Err(_) = require_app_key(ctx, app_key, &format!("/api/{app_key}")) {
+    if require_app_key(ctx, app_key, &format!("/api/{app_key}")).is_err() {
         return Err(vec![HueProtocolError::unauthorized(format!(
             "/api/{app_key}"
         ))]);
@@ -118,7 +121,7 @@ pub fn full_state(ctx: &V1Context, app_key: &str) -> ApiResult {
 
 /// `GET /api/<appkey>/lights`.
 pub fn get_lights(ctx: &V1Context, app_key: &str) -> ApiResult {
-    if let Err(_) = require_app_key(ctx, app_key, &format!("/api/{app_key}/lights")) {
+    if require_app_key(ctx, app_key, &format!("/api/{app_key}/lights")).is_err() {
         return Err(vec![HueProtocolError::unauthorized(format!(
             "/api/{app_key}/lights"
         ))]);
@@ -129,19 +132,20 @@ pub fn get_lights(ctx: &V1Context, app_key: &str) -> ApiResult {
 /// `GET /api/<appkey>/lights/<id>`.
 pub fn get_light(ctx: &V1Context, app_key: &str, id: &str) -> ApiResult {
     let address = format!("/api/{app_key}/lights/{id}");
-    if let Err(_) = require_app_key(ctx, app_key, &address) {
+    if require_app_key(ctx, app_key, &address).is_err() {
         return Err(vec![HueProtocolError::unauthorized(address)]);
     }
-    match ctx.registry.light(id) {
-        Some(light) => Ok(views::light_view(&light)),
-        None => Err(vec![HueProtocolError::not_found(format!("/lights/{id}"))]),
-    }
+    ctx.registry.light(id).map_or_else(
+        || Err(vec![HueProtocolError::not_found(format!("/lights/{id}"))]),
+        |light| Ok(views::light_view(&light)),
+    )
 }
 
 /// `PUT /api/<appkey>/lights/<id>/state` — apply a state patch.
 ///
 /// Body schema (per dev-portal §1.6): `{on, bri, hue, sat, xy, ct, alert,
 /// effect, transitiontime, *_inc}`. We support `on`, `bri`, `xy`, `ct`.
+#[must_use]
 pub fn put_light_state(ctx: &V1Context, app_key: &str, id: &str, body: &Value) -> Value {
     let address = format!("/api/{app_key}/lights/{id}/state");
     if let Err(envelope) = require_app_key(ctx, app_key, &address) {
@@ -156,7 +160,7 @@ pub fn put_light_state(ctx: &V1Context, app_key: &str, id: &str, body: &Value) -
     let Some(obj) = body.as_object() else {
         let p = HueProtocolError {
             kind: crate::errors::error_type::BODY_CONTAINS_INVALID_JSON,
-            address: address.clone(),
+            address,
             description: "body is not an object".into(),
         };
         return json!([{ "error": err_obj(&p) }]);
@@ -169,19 +173,20 @@ pub fn put_light_state(ctx: &V1Context, app_key: &str, id: &str, body: &Value) -
         }
         if let Some(v) = obj.get("bri").and_then(Value::as_i64) {
             let clamped = v.clamp(1, 254);
-            light.brightness = clamped as f32 / 254.0 * 100.0;
+            // `clamped` is in 1..=254, so its low 16 bits are the value.
+            light.brightness = f32::from(i64_to_u16(clamped)) / 254.0 * 100.0;
             acks.push(json!({ "success": { format!("/lights/{id}/state/bri"): clamped } }));
         }
         if let Some(arr) = obj.get("xy").and_then(Value::as_array) {
             if arr.len() == 2 {
-                let x = arr[0].as_f64().unwrap_or(0.0) as f32;
-                let y = arr[1].as_f64().unwrap_or(0.0) as f32;
+                let x = f64_to_f32(arr[0].as_f64().unwrap_or(0.0));
+                let y = f64_to_f32(arr[1].as_f64().unwrap_or(0.0));
                 light.xy = Some((x, y));
                 acks.push(json!({ "success": { format!("/lights/{id}/state/xy"): [x, y] } }));
             }
         }
         if let Some(v) = obj.get("ct").and_then(Value::as_i64) {
-            let clamped = v.clamp(153, 500) as u16;
+            let clamped = i64_to_u16(v.clamp(153, 500));
             light.mirek = Some(clamped);
             acks.push(json!({ "success": { format!("/lights/{id}/state/ct"): clamped } }));
         }
@@ -200,7 +205,7 @@ pub fn put_light_state(ctx: &V1Context, app_key: &str, id: &str, body: &Value) -
 /// `GET /api/<appkey>/groups`.
 pub fn get_groups(ctx: &V1Context, app_key: &str) -> ApiResult {
     let address = format!("/api/{app_key}/groups");
-    if let Err(_) = require_app_key(ctx, app_key, &address) {
+    if require_app_key(ctx, app_key, &address).is_err() {
         return Err(vec![HueProtocolError::unauthorized(address)]);
     }
     Ok(views::groups_map(&ctx.registry))
@@ -248,18 +253,19 @@ pub fn put_group_action(ctx: &V1Context, app_key: &str, id: &str, body: &Value) 
             }
             if let Some(v) = obj.get("bri").and_then(Value::as_i64) {
                 let clamped = v.clamp(1, 254);
-                light.brightness = clamped as f32 / 254.0 * 100.0;
+                // `clamped` is in 1..=254, so its low 16 bits are the value.
+                light.brightness = f32::from(i64_to_u16(clamped)) / 254.0 * 100.0;
             }
             if let Some(arr) = obj.get("xy").and_then(Value::as_array) {
                 if arr.len() == 2 {
                     light.xy = Some((
-                        arr[0].as_f64().unwrap_or(0.0) as f32,
-                        arr[1].as_f64().unwrap_or(0.0) as f32,
+                        f64_to_f32(arr[0].as_f64().unwrap_or(0.0)),
+                        f64_to_f32(arr[1].as_f64().unwrap_or(0.0)),
                     ));
                 }
             }
             if let Some(v) = obj.get("ct").and_then(Value::as_i64) {
-                light.mirek = Some(v.clamp(153, 500) as u16);
+                light.mirek = Some(i64_to_u16(v.clamp(153, 500)));
             }
         });
     }
@@ -274,7 +280,7 @@ pub fn put_group_action(ctx: &V1Context, app_key: &str, id: &str, body: &Value) 
 /// `GET /api/<appkey>/scenes`.
 pub fn get_scenes(ctx: &V1Context, app_key: &str) -> ApiResult {
     let address = format!("/api/{app_key}/scenes");
-    if let Err(_) = require_app_key(ctx, app_key, &address) {
+    if require_app_key(ctx, app_key, &address).is_err() {
         return Err(vec![HueProtocolError::unauthorized(address)]);
     }
     Ok(views::scenes_map(&ctx.registry))
@@ -283,7 +289,7 @@ pub fn get_scenes(ctx: &V1Context, app_key: &str) -> ApiResult {
 /// `GET /api/<appkey>/sensors`.
 pub fn get_sensors(ctx: &V1Context, app_key: &str) -> ApiResult {
     let address = format!("/api/{app_key}/sensors");
-    if let Err(_) = require_app_key(ctx, app_key, &address) {
+    if require_app_key(ctx, app_key, &address).is_err() {
         return Err(vec![HueProtocolError::unauthorized(address)]);
     }
     Ok(views::sensors_map(&ctx.registry))
@@ -297,7 +303,10 @@ fn err_obj(p: &HueProtocolError) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::errors::EmuError;
     use crate::registry::EmulatedLight;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     fn fresh_ctx() -> V1Context {
         let identity = BridgeIdentity::fresh("10.0.0.5");
@@ -310,7 +319,7 @@ mod tests {
         }
     }
 
-    fn paired_ctx() -> (V1Context, String) {
+    fn paired_ctx() -> Result<(V1Context, String), EmuError> {
         let ctx = fresh_ctx();
         ctx.pairing.begin_link_window();
         let key = ctx
@@ -321,97 +330,222 @@ mod tests {
                     generateclientkey: false,
                 },
                 "t",
-            )
-            .unwrap()
+            )?
             .username;
-        (ctx, key)
+        Ok((ctx, key))
     }
 
     #[test]
-    fn pair_without_button_returns_link_button_error() {
+    fn pair_without_button_returns_link_button_error() -> TestResult {
         let ctx = fresh_ctx();
         let resp = pair(&ctx, &json!({"devicetype": "x#y"}));
-        let arr = resp.as_array().unwrap();
+        let arr = resp.as_array().ok_or("expected Some, got None")?;
         assert_eq!(arr.len(), 1);
-        let err = arr[0].get("error").unwrap();
-        assert_eq!(err.get("type").unwrap(), &json!(101));
+        let err = arr[0].get("error").ok_or("expected Some, got None")?;
+        assert_eq!(
+            err.get("type").ok_or("expected Some, got None")?,
+            &json!(101)
+        );
+        Ok(())
     }
 
     #[test]
-    fn pair_after_button_press_returns_username() {
+    fn pair_after_button_press_returns_username() -> TestResult {
         let ctx = fresh_ctx();
         ctx.pairing.begin_link_window();
         let resp = pair(&ctx, &json!({"devicetype": "x#y"}));
-        let arr = resp.as_array().unwrap();
-        let success = arr[0].get("success").unwrap();
-        assert!(success.get("username").unwrap().is_string());
+        let arr = resp.as_array().ok_or("expected Some, got None")?;
+        let success = arr[0].get("success").ok_or("expected Some, got None")?;
+        assert!(
+            success
+                .get("username")
+                .ok_or("expected Some, got None")?
+                .is_string()
+        );
         assert!(success.get("clientkey").is_none());
+        Ok(())
     }
 
     #[test]
-    fn pair_with_generateclientkey_returns_clientkey() {
+    fn pair_with_generateclientkey_returns_clientkey() -> TestResult {
         let ctx = fresh_ctx();
         ctx.pairing.begin_link_window();
         let resp = pair(
             &ctx,
             &json!({"devicetype": "x#y", "generateclientkey": true}),
         );
-        let arr = resp.as_array().unwrap();
-        let success = arr[0].get("success").unwrap();
-        assert!(success.get("clientkey").unwrap().is_string());
+        let arr = resp.as_array().ok_or("expected Some, got None")?;
+        let success = arr[0].get("success").ok_or("expected Some, got None")?;
+        assert!(
+            success
+                .get("clientkey")
+                .ok_or("expected Some, got None")?
+                .is_string()
+        );
+        Ok(())
     }
 
     #[test]
-    fn anonymous_config_includes_bridgeid_and_modelid() {
+    fn anonymous_config_includes_bridgeid_and_modelid() -> TestResult {
         let ctx = fresh_ctx();
         let cfg = anonymous_config(&ctx);
         assert!(cfg.get("bridgeid").is_some());
-        assert_eq!(cfg.get("modelid").unwrap(), &json!("BSB002"));
+        assert_eq!(
+            cfg.get("modelid").ok_or("expected Some, got None")?,
+            &json!("BSB002")
+        );
         assert!(cfg.get("apiversion").is_some());
+        Ok(())
     }
 
     #[test]
-    fn get_lights_unauthorized_without_app_key() {
+    fn get_lights_unauthorized_without_app_key() -> TestResult {
         let ctx = fresh_ctx();
         let result = get_lights(&ctx, "wrong-key");
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err()[0].kind, 1);
+        assert_eq!(result.err().ok_or("expected an error")?[0].kind, 1);
+        Ok(())
     }
 
     #[test]
-    fn round_trip_pair_then_create_light_then_set_state() {
-        let (ctx, key) = paired_ctx();
+    fn round_trip_pair_then_create_light_then_set_state() -> TestResult {
+        let (ctx, key) = paired_ctx()?;
         let id = ctx
             .registry
             .add_light(EmulatedLight::new_color_candle("Mutfak", ""));
         // Set on=true, bri=200.
         let resp = put_light_state(&ctx, &key, &id, &json!({"on": true, "bri": 200}));
-        let arr = resp.as_array().unwrap();
+        let arr = resp.as_array().ok_or("expected Some, got None")?;
         assert!(arr.iter().any(|v| v.get("success").is_some()));
-        let snap = ctx.registry.light(&id).unwrap();
+        let snap = ctx.registry.light(&id).ok_or("expected Some, got None")?;
         assert!(snap.on);
         assert!(snap.brightness > 78.0 && snap.brightness < 79.0); // 200/254*100 = 78.74...
+        Ok(())
     }
 
     #[test]
-    fn put_unknown_light_returns_not_found() {
-        let (ctx, key) = paired_ctx();
+    fn put_unknown_light_returns_not_found() -> TestResult {
+        let (ctx, key) = paired_ctx()?;
         let resp = put_light_state(&ctx, &key, "99", &json!({"on": true}));
-        let arr = resp.as_array().unwrap();
-        let err = arr[0].get("error").unwrap();
-        assert_eq!(err.get("type").unwrap(), &json!(3));
+        let arr = resp.as_array().ok_or("expected Some, got None")?;
+        let err = arr[0].get("error").ok_or("expected Some, got None")?;
+        assert_eq!(err.get("type").ok_or("expected Some, got None")?, &json!(3));
+        Ok(())
     }
 
     #[test]
-    fn full_state_for_known_app_key_returns_all_sections() {
-        let (ctx, key) = paired_ctx();
+    fn full_state_for_known_app_key_returns_all_sections() -> TestResult {
+        let (ctx, key) = paired_ctx()?;
         let _ = ctx
             .registry
             .add_light(EmulatedLight::new_color_candle("L1", ""));
-        let value = full_state(&ctx, &key).unwrap();
+        let value = full_state(&ctx, &key).map_err(|e| format!("{e:?}"))?;
         for s in ["lights", "groups", "scenes", "sensors", "config"] {
             assert!(value.get(s).is_some(), "missing section {s}");
         }
-        assert_eq!(value.get("lights").unwrap().as_object().unwrap().len(), 1);
+        assert_eq!(
+            value
+                .get("lights")
+                .ok_or("expected Some, got None")?
+                .as_object()
+                .ok_or("expected Some, got None")?
+                .len(),
+            1
+        );
+        Ok(())
+    }
+
+    /// Bit pattern of `n / 254 * 100`, the v1 `bri` to percent mapping.
+    const BRI_1_PERCENT: u32 = 0x3ec9_9326;
+    const BRI_127_PERCENT: u32 = 0x4248_0000;
+    const BRI_200_PERCENT: u32 = 0x429d_7af6;
+    const BRI_254_PERCENT: u32 = 0x42c8_0000;
+
+    #[test]
+    fn put_light_state_edge_values() -> TestResult {
+        let (ctx, key) = paired_ctx()?;
+        let id = ctx
+            .registry
+            .add_light(EmulatedLight::new_color_candle("Edge", ""));
+        let after = |body: Value| {
+            let _ = put_light_state(&ctx, &key, &id, &body);
+            ctx.registry.light(&id).ok_or("light present")
+        };
+        let bri = |n: i64| after(json!({ "bri": n })).map(|l| l.brightness.to_bits());
+        let ct = |n: i64| after(json!({ "ct": n })).map(|l| l.mirek);
+        let xy = |pair: Value| {
+            after(json!({ "xy": pair })).map(|l| l.xy.map(|(x, y)| (x.to_bits(), y.to_bits())))
+        };
+
+        // `bri` is clamped to 1..=254 before it becomes a percentage.
+        assert_eq!(bri(1)?, BRI_1_PERCENT);
+        assert_eq!(bri(0)?, BRI_1_PERCENT);
+        assert_eq!(bri(-7)?, BRI_1_PERCENT);
+        assert_eq!(bri(i64::MIN)?, BRI_1_PERCENT);
+        assert_eq!(bri(127)?, BRI_127_PERCENT);
+        assert_eq!(bri(200)?, BRI_200_PERCENT);
+        assert_eq!(bri(254)?, BRI_254_PERCENT);
+        assert_eq!(bri(255)?, BRI_254_PERCENT);
+        assert_eq!(bri(65_536 + 3)?, BRI_254_PERCENT);
+        assert_eq!(bri(i64::MAX)?, BRI_254_PERCENT);
+
+        // `ct` is clamped to 153..=500 mirek.
+        assert_eq!(ct(153)?, Some(153));
+        assert_eq!(ct(152)?, Some(153));
+        assert_eq!(ct(0)?, Some(153));
+        assert_eq!(ct(-1)?, Some(153));
+        assert_eq!(ct(i64::MIN)?, Some(153));
+        assert_eq!(ct(366)?, Some(366));
+        assert_eq!(ct(500)?, Some(500));
+        assert_eq!(ct(501)?, Some(500));
+        assert_eq!(ct(65_536 + 200)?, Some(500));
+        assert_eq!(ct(i64::MAX)?, Some(500));
+
+        // `xy` is narrowed from `f64` to the nearest `f32`.
+        assert_eq!(xy(json!([0.4573, 0.41]))?, Some((0x3eea_233a, 0x3ed1_eb85)));
+        assert_eq!(xy(json!([0.1, 1]))?, Some((0x3dcc_cccd, 0x3f80_0000)));
+        assert_eq!(xy(json!([1e40, -1e40]))?, Some((0x7f80_0000, 0xff80_0000)));
+        assert_eq!(xy(json!([1e-50, -1e-50]))?, Some((0, 0x8000_0000)));
+        // A non-number coordinate reads as 0.
+        assert_eq!(xy(json!(["x", 0.5]))?, Some((0, 0x3f00_0000)));
+        Ok(())
+    }
+
+    #[test]
+    fn put_group_action_edge_values() -> TestResult {
+        let (ctx, key) = paired_ctx()?;
+        let id = ctx
+            .registry
+            .add_light(EmulatedLight::new_color_candle("Edge", ""));
+        // Group 0 is "all lights".
+        let after = |body: Value| {
+            let _ = put_group_action(&ctx, &key, "0", &body);
+            ctx.registry.light(&id).ok_or("light present")
+        };
+        let bri = |n: i64| after(json!({ "bri": n })).map(|l| l.brightness.to_bits());
+        let ct = |n: i64| after(json!({ "ct": n })).map(|l| l.mirek);
+        let xy = |pair: Value| {
+            after(json!({ "xy": pair })).map(|l| l.xy.map(|(x, y)| (x.to_bits(), y.to_bits())))
+        };
+
+        assert_eq!(bri(1)?, BRI_1_PERCENT);
+        assert_eq!(bri(0)?, BRI_1_PERCENT);
+        assert_eq!(bri(i64::MIN)?, BRI_1_PERCENT);
+        assert_eq!(bri(127)?, BRI_127_PERCENT);
+        assert_eq!(bri(254)?, BRI_254_PERCENT);
+        assert_eq!(bri(255)?, BRI_254_PERCENT);
+        assert_eq!(bri(i64::MAX)?, BRI_254_PERCENT);
+
+        assert_eq!(ct(153)?, Some(153));
+        assert_eq!(ct(-1)?, Some(153));
+        assert_eq!(ct(i64::MIN)?, Some(153));
+        assert_eq!(ct(500)?, Some(500));
+        assert_eq!(ct(65_536 + 200)?, Some(500));
+        assert_eq!(ct(i64::MAX)?, Some(500));
+
+        assert_eq!(xy(json!([0.4573, 0.41]))?, Some((0x3eea_233a, 0x3ed1_eb85)));
+        assert_eq!(xy(json!([1e40, -1e40]))?, Some((0x7f80_0000, 0xff80_0000)));
+        assert_eq!(xy(json!([1e-50, "y"]))?, Some((0, 0)));
+        Ok(())
     }
 }

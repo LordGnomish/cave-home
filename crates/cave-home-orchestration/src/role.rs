@@ -211,8 +211,14 @@ mod tests {
 
     #[test]
     fn server_has_no_external_prerequisites() {
-        assert!(NodeIntent::PrimaryHub.external_prerequisites().is_empty());
-        assert!(NodeIntent::BackupHub.external_prerequisites().is_empty());
+        assert_eq!(
+            NodeIntent::PrimaryHub.external_prerequisites(),
+            [] as [Component; 0]
+        );
+        assert_eq!(
+            NodeIntent::BackupHub.external_prerequisites(),
+            [] as [Component; 0]
+        );
     }
 
     #[test]
@@ -256,7 +262,7 @@ mod tests {
             RoleError::NoPrimary,
             RoleError::MultiplePrimaries { count: 3 },
         ] {
-            assert!(!format!("{e}").is_empty());
+            assert_ne!(format!("{e}"), "");
         }
     }
 }

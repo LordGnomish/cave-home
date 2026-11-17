@@ -9,6 +9,8 @@ use cave_home_orchestration::local_path_provisioner::provision::{
 };
 use cave_home_orchestration::local_path_provisioner::report::{PvRow, StorageReport};
 
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
 fn pv_spec(name: &str, source: VolumeSource, affinity: Option<NodeAffinityTerm>) -> PvSpec {
     PvSpec {
         name: name.to_string(),
@@ -60,7 +62,7 @@ fn row_handles_shared_fs_pv_with_no_affinity() {
 }
 
 #[test]
-fn report_lists_rows_and_describes_by_pvc() {
+fn report_lists_rows_and_describes_by_pvc() -> TestResult {
     let rows = vec![
         PvRow::from_pv_spec(
             &pv_spec(
@@ -92,11 +94,12 @@ fn report_lists_rows_and_describes_by_pvc() {
     assert!(!report.is_empty());
 
     // describe <pvc> — namespaced lookup.
-    let found = report.find_by_pvc("team", "claim-b").expect("present");
+    let found = report.find_by_pvc("team", "claim-b").ok_or("present")?;
     assert_eq!(found.name, "pv-b");
     assert_eq!(found.host_path, "/opt/b");
     assert!(report.find_by_pvc("team", "nope").is_none());
     assert!(report.find_by_pvc("default", "claim-b").is_none()); // namespace matters
+    Ok(())
 }
 
 #[test]

@@ -13,13 +13,13 @@
 //!
 //! - [`config`]    — emulated bridge identity (UUID, MAC, bridge ID, model).
 //! - [`registry`]  — in-memory registry of lights, groups, scenes, sensors
-//!                   plus an event-stream broadcaster.
+//!   plus an event-stream broadcaster.
 //! - [`pairing`]   — `POST /api` pairing flow with link-button window.
 //! - [`api::v1`]   — `/api/{appkey}/...` v1 REST endpoints.
 //! - [`api::v2`]   — `/clip/v2/resource/...` v2 endpoints + `/clip/v2/eventstream`.
-//! - [`discovery`] — `/description.xml` (UPnP SSDP) + `/api/config`
-//!                   anonymous probe + mDNS `_hue._tcp` advertisement-payload
-//!                   builder.
+//! - [`discovery`] — `/description.xml` (`UPnP` SSDP) + `/api/config`
+//!   anonymous probe + mDNS `_hue._tcp` advertisement-payload
+//!   builder.
 //!
 //! ## Charter v6 / ADR-007 — advanced-mode toggle
 //!
@@ -35,5 +35,6 @@ pub mod api;
 pub mod config;
 pub mod discovery;
 pub mod errors;
+mod num;
 pub mod pairing;
 pub mod registry;
