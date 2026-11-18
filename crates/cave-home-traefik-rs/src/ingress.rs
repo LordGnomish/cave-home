@@ -469,6 +469,8 @@ mod tests {
     use super::*;
     use crate::request::RequestDescriptor;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn prefix_path(path: &str, backend: IngressBackend) -> HttpPath {
         HttpPath::new(Some(path), PathType::Prefix, backend)
     }
@@ -518,22 +520,23 @@ mod tests {
     }
 
     #[test]
-    fn host_and_prefix_path_build_combined_rule() {
+    fn host_and_prefix_path_build_combined_rule() -> TestResult {
         let ing = ingress(vec![IngressRule::new(
             Some("example.com"),
             vec![prefix_path("/api", IngressBackend::numeric("api", 80))],
         )]);
-        let t = ing.translate().unwrap();
+        let t = ing.translate()?;
         assert_eq!(t.routers.len(), 1);
         assert_eq!(
             t.routers[0].rule_text,
             "Host(`example.com`) && PathPrefix(`/api`)"
         );
         assert_eq!(t.routers[0].service, "default-api-80");
+        Ok(())
     }
 
     #[test]
-    fn exact_path_type_uses_path_matcher() {
+    fn exact_path_type_uses_path_matcher() -> TestResult {
         let ing = ingress(vec![IngressRule::new(
             Some("example.com"),
             vec![HttpPath::new(
@@ -542,15 +545,16 @@ mod tests {
                 IngressBackend::numeric("a", 80),
             )],
         )]);
-        let t = ing.translate().unwrap();
+        let t = ing.translate()?;
         assert_eq!(
             t.routers[0].rule_text,
             "Host(`example.com`) && Path(`/exact`)"
         );
+        Ok(())
     }
 
     #[test]
-    fn implementation_specific_path_type_uses_prefix() {
+    fn implementation_specific_path_type_uses_prefix() -> TestResult {
         let ing = ingress(vec![IngressRule::new(
             Some("example.com"),
             vec![HttpPath::new(
@@ -559,15 +563,16 @@ mod tests {
                 IngressBackend::numeric("a", 80),
             )],
         )]);
-        let t = ing.translate().unwrap();
+        let t = ing.translate()?;
         assert_eq!(
             t.routers[0].rule_text,
             "Host(`example.com`) && PathPrefix(`/x`)"
         );
+        Ok(())
     }
 
     #[test]
-    fn host_only_rule_omits_path_matcher() {
+    fn host_only_rule_omits_path_matcher() -> TestResult {
         let ing = ingress(vec![IngressRule::new(
             Some("example.com"),
             vec![HttpPath::new(
@@ -576,22 +581,24 @@ mod tests {
                 IngressBackend::numeric("a", 80),
             )],
         )]);
-        let t = ing.translate().unwrap();
+        let t = ing.translate()?;
         assert_eq!(t.routers[0].rule_text, "Host(`example.com`)");
+        Ok(())
     }
 
     #[test]
-    fn path_only_rule_omits_host_matcher() {
+    fn path_only_rule_omits_host_matcher() -> TestResult {
         let ing = ingress(vec![IngressRule::new(
             None,
             vec![prefix_path("/only", IngressBackend::numeric("a", 80))],
         )]);
-        let t = ing.translate().unwrap();
+        let t = ing.translate()?;
         assert_eq!(t.routers[0].rule_text, "PathPrefix(`/only`)");
+        Ok(())
     }
 
     #[test]
-    fn empty_rule_is_rejected() {
+    fn empty_rule_is_rejected() -> TestResult {
         let ing = ingress(vec![IngressRule::new(
             None,
             vec![HttpPath::new(
@@ -601,50 +608,57 @@ mod tests {
             )],
         )]);
         assert_eq!(
-            ing.translate().unwrap_err(),
+            ing.translate().err().ok_or("expected an error")?,
             IngressError::EmptyRule {
                 ingress: "default/web".to_string()
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn empty_service_name_is_rejected() {
+    fn empty_service_name_is_rejected() -> TestResult {
         let ing = ingress(vec![IngressRule::new(
             Some("a.com"),
             vec![prefix_path("/", IngressBackend::numeric("", 80))],
         )]);
-        assert_eq!(ing.translate().unwrap_err(), IngressError::EmptyServiceName);
+        assert_eq!(
+            ing.translate().err().ok_or("expected an error")?,
+            IngressError::EmptyServiceName
+        );
+        Ok(())
     }
 
     #[test]
-    fn zero_port_is_rejected() {
+    fn zero_port_is_rejected() -> TestResult {
         let ing = ingress(vec![IngressRule::new(
             Some("a.com"),
             vec![prefix_path("/", IngressBackend::numeric("api", 0))],
         )]);
         assert_eq!(
-            ing.translate().unwrap_err(),
+            ing.translate().err().ok_or("expected an error")?,
             IngressError::InvalidPort("api".to_string())
         );
+        Ok(())
     }
 
     #[test]
-    fn host_with_backtick_is_reported_not_panicked() {
+    fn host_with_backtick_is_reported_not_panicked() -> TestResult {
         // A host carrying a backtick would break the `Host(`...`)` rule text;
         // the translation surfaces it as an error rather than panicking.
         let ing = ingress(vec![IngressRule::new(
             Some("ev`il.com"),
             vec![prefix_path("/", IngressBackend::numeric("a", 80))],
         )]);
-        match ing.translate().unwrap_err() {
+        match ing.translate().err().ok_or("expected an error")? {
             IngressError::InvalidRule { ingress, .. } => assert_eq!(ingress, "default/web"),
-            other => panic!("expected InvalidRule, got {other:?}"),
+            other => return Err(format!("expected InvalidRule, got {other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]
-    fn multiple_paths_make_distinct_routers_and_dedup_backends() {
+    fn multiple_paths_make_distinct_routers_and_dedup_backends() -> TestResult {
         let ing = ingress(vec![IngressRule::new(
             Some("example.com"),
             vec![
@@ -652,16 +666,17 @@ mod tests {
                 prefix_path("/b", IngressBackend::numeric("svc", 80)),
             ],
         )]);
-        let t = ing.translate().unwrap();
+        let t = ing.translate()?;
         assert_eq!(t.routers.len(), 2);
         assert_ne!(t.routers[0].name, t.routers[1].name);
         // Both paths point at the same service -> one deduped backend.
         assert_eq!(t.backends.len(), 1);
         assert_eq!(t.backends[0].service_id, "default-svc-80");
+        Ok(())
     }
 
     #[test]
-    fn tls_enabled_for_listed_host_and_wildcard() {
+    fn tls_enabled_for_listed_host_and_wildcard() -> TestResult {
         let mut ing = ingress(vec![
             IngressRule::new(
                 Some("secure.com"),
@@ -676,7 +691,7 @@ mod tests {
             hosts: vec!["secure.com".to_string()],
             secret_name: None,
         }];
-        let t = ing.translate().unwrap();
+        let t = ing.translate()?;
         assert!(t.routers[0].tls, "secure.com is in the tls host list");
         assert!(!t.routers[1].tls, "plain.com is not");
 
@@ -685,30 +700,32 @@ mod tests {
             hosts: vec![],
             secret_name: None,
         }];
-        let t = ing.translate().unwrap();
+        let t = ing.translate()?;
         assert!(t.routers[0].tls && t.routers[1].tls);
+        Ok(())
     }
 
     #[test]
-    fn default_backend_makes_lowest_priority_catch_all() {
+    fn default_backend_makes_lowest_priority_catch_all() -> TestResult {
         let mut ing = ingress(vec![IngressRule::new(
             Some("example.com"),
             vec![prefix_path("/api", IngressBackend::numeric("api", 80))],
         )]);
         ing.default_backend = Some(IngressBackend::numeric("fallback", 80));
-        let t = ing.translate().unwrap();
+        let t = ing.translate()?;
         let def = t
             .routers
             .iter()
             .find(|r| r.name == "default-web-default")
-            .unwrap();
+            .ok_or("expected a value, got None")?;
         assert_eq!(def.rule_text, "PathPrefix(`/`)");
         assert_eq!(def.priority, Some(1));
         assert_eq!(def.service, "default-fallback-80");
+        Ok(())
     }
 
     #[test]
-    fn translate_ingresses_filters_by_class_and_merges() {
+    fn translate_ingresses_filters_by_class_and_merges() -> TestResult {
         let mut mine = ingress(vec![IngressRule::new(
             Some("a.com"),
             vec![prefix_path("/", IngressBackend::numeric("a", 80))],
@@ -721,42 +738,49 @@ mod tests {
         theirs.name = "other".to_string();
         theirs.ingress_class_name = Some("nginx".to_string());
 
-        let t = translate_ingresses(&[mine, theirs], Some("traefik")).unwrap();
+        let t = translate_ingresses(&[mine, theirs], Some("traefik"))?;
         assert_eq!(t.routers.len(), 1);
         assert_eq!(t.routers[0].rule_text, "Host(`a.com`) && PathPrefix(`/`)");
+        Ok(())
     }
 
     #[test]
-    fn into_config_builds_routable_config() {
+    fn into_config_builds_routable_config() -> TestResult {
         let ing = ingress(vec![IngressRule::new(
             Some("example.com"),
             vec![prefix_path("/api", IngressBackend::numeric("api", 80))],
         )]);
         let cfg = ing
-            .translate()
-            .unwrap()
-            .into_config(|_b| vec![Server::new("http://10.0.0.1:80")])
-            .unwrap();
+            .translate()?
+            .into_config(|_b| vec![Server::new("http://10.0.0.1:80")])?;
         let req = RequestDescriptor::new("GET", "http", "example.com", "/api/users");
-        let route = cfg.route(&req, None).unwrap();
+        let route = cfg
+            .route(&req, None)
+            .ok_or("cfg.route(&req, None) is None")?;
         assert_eq!(route.service.name, "default-api-80");
         assert_eq!(
-            route.service.pick_round_robin(0).unwrap().url,
+            route
+                .service
+                .pick_round_robin(0)
+                .ok_or("route.service.pick_round_robin(0) is None")?
+                .url,
             "http://10.0.0.1:80"
         );
+        Ok(())
     }
 
     #[test]
-    fn into_config_rejects_backend_with_no_endpoints() {
+    fn into_config_rejects_backend_with_no_endpoints() -> TestResult {
         let ing = ingress(vec![IngressRule::new(
             Some("example.com"),
             vec![prefix_path("/api", IngressBackend::numeric("api", 80))],
         )]);
         let err = ing
-            .translate()
-            .unwrap()
+            .translate()?
             .into_config(|_b| vec![])
-            .unwrap_err();
+            .err()
+            .ok_or("expected an error")?;
         assert_eq!(err, ConfigError::EmptyService("default-api-80".to_string()));
+        Ok(())
     }
 }

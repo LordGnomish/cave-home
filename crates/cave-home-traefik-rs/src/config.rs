@@ -179,6 +179,9 @@ mod tests {
     use super::*;
     use crate::loadbalancer::{LoadBalancer, Server};
     use crate::middleware::Middleware;
+    use crate::rule::ParseError;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     fn svc(name: &str) -> Service {
         Service::new(
@@ -188,28 +191,30 @@ mod tests {
         )
     }
 
-    fn router(name: &str, rule: &str, service: &str) -> Router {
-        Router::new(name, rule, service).unwrap()
+    fn router(name: &str, rule: &str, service: &str) -> Result<Router, ParseError> {
+        Router::new(name, rule, service)
     }
 
     #[test]
-    fn valid_config_builds() {
+    fn valid_config_builds() -> TestResult {
         let cfg = DynamicConfig::build(
-            vec![router("r", "Host(`a.com`)", "s")],
+            vec![router("r", "Host(`a.com`)", "s")?],
             vec![svc("s")],
             vec![],
         );
         assert!(cfg.is_ok());
+        Ok(())
     }
 
     #[test]
-    fn unknown_service_is_rejected() {
+    fn unknown_service_is_rejected() -> TestResult {
         let err = DynamicConfig::build(
-            vec![router("r", "Host(`a.com`)", "ghost")],
+            vec![router("r", "Host(`a.com`)", "ghost")?],
             vec![svc("s")],
             vec![],
         )
-        .unwrap_err();
+        .err()
+        .ok_or("expected an error")?;
         assert_eq!(
             err,
             ConfigError::UnknownService {
@@ -217,12 +222,15 @@ mod tests {
                 service: "ghost".to_string()
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn unknown_middleware_is_rejected() {
-        let r = router("r", "Host(`a.com`)", "s").with_middlewares(&["ghost-mw"]);
-        let err = DynamicConfig::build(vec![r], vec![svc("s")], vec![]).unwrap_err();
+    fn unknown_middleware_is_rejected() -> TestResult {
+        let r = router("r", "Host(`a.com`)", "s")?.with_middlewares(&["ghost-mw"]);
+        let err = DynamicConfig::build(vec![r], vec![svc("s")], vec![])
+            .err()
+            .ok_or("expected an error")?;
         assert_eq!(
             err,
             ConfigError::UnknownMiddleware {
@@ -230,68 +238,78 @@ mod tests {
                 middleware: "ghost-mw".to_string(),
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn known_middleware_reference_is_accepted() {
-        let r = router("r", "Host(`a.com`)", "s").with_middlewares(&["strip"]);
+    fn known_middleware_reference_is_accepted() -> TestResult {
+        let r = router("r", "Host(`a.com`)", "s")?.with_middlewares(&["strip"]);
         let mw = MiddlewareChain::new(vec![Middleware::AddPrefix {
             prefix: "/x".to_string(),
         }]);
         let cfg = DynamicConfig::build(vec![r], vec![svc("s")], vec![("strip".to_string(), mw)]);
         assert!(cfg.is_ok());
+        Ok(())
     }
 
     #[test]
-    fn duplicate_router_name_is_rejected() {
+    fn duplicate_router_name_is_rejected() -> TestResult {
         let err = DynamicConfig::build(
             vec![
-                router("dup", "Host(`a.com`)", "s"),
-                router("dup", "Host(`b.com`)", "s"),
+                router("dup", "Host(`a.com`)", "s")?,
+                router("dup", "Host(`b.com`)", "s")?,
             ],
             vec![svc("s")],
             vec![],
         )
-        .unwrap_err();
+        .err()
+        .ok_or("expected an error")?;
         assert_eq!(err, ConfigError::DuplicateRouter("dup".to_string()));
+        Ok(())
     }
 
     #[test]
-    fn duplicate_service_name_is_rejected() {
-        let err = DynamicConfig::build(vec![], vec![svc("s"), svc("s")], vec![]).unwrap_err();
+    fn duplicate_service_name_is_rejected() -> TestResult {
+        let err = DynamicConfig::build(vec![], vec![svc("s"), svc("s")], vec![])
+            .err()
+            .ok_or("expected an error")?;
         assert_eq!(err, ConfigError::DuplicateService("s".to_string()));
+        Ok(())
     }
 
     #[test]
-    fn empty_service_is_rejected() {
+    fn empty_service_is_rejected() -> TestResult {
         let empty = Service::new("s", vec![], LoadBalancer::WeightedRoundRobin);
-        let err = DynamicConfig::build(vec![], vec![empty], vec![]).unwrap_err();
+        let err = DynamicConfig::build(vec![], vec![empty], vec![])
+            .err()
+            .ok_or("expected an error")?;
         assert_eq!(err, ConfigError::EmptyService("s".to_string()));
+        Ok(())
     }
 
     #[test]
-    fn route_resolves_router_and_service() {
+    fn route_resolves_router_and_service() -> TestResult {
         let cfg = DynamicConfig::build(
-            vec![router("r", "Host(`a.com`)", "s")],
+            vec![router("r", "Host(`a.com`)", "s")?],
             vec![svc("s")],
             vec![],
-        )
-        .unwrap();
+        )?;
         let req = RequestDescriptor::new("GET", "http", "a.com", "/");
-        let route = cfg.route(&req, None).unwrap();
+        let route = cfg.route(&req, None).ok_or("no route matched")?;
         assert_eq!(route.router.name, "r");
         assert_eq!(route.service.name, "s");
+        Ok(())
     }
 
     #[test]
-    fn route_returns_none_when_no_router_matches() {
+    fn route_returns_none_when_no_router_matches() -> TestResult {
         let cfg = DynamicConfig::build(
-            vec![router("r", "Host(`a.com`)", "s")],
+            vec![router("r", "Host(`a.com`)", "s")?],
             vec![svc("s")],
             vec![],
-        )
-        .unwrap();
+        )?;
         let req = RequestDescriptor::new("GET", "http", "other.com", "/");
         assert!(cfg.route(&req, None).is_none());
+        Ok(())
     }
 }

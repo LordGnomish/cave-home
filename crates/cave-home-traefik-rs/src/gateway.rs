@@ -373,6 +373,8 @@ mod tests {
     use super::*;
     use crate::request::RequestDescriptor;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn route(rules: Vec<HttpRouteRule>) -> HttpRoute {
         HttpRoute {
             namespace: "default".to_string(),
@@ -390,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn host_and_path_build_combined_rule() {
+    fn host_and_path_build_combined_rule() -> TestResult {
         let mut r = route(vec![rule(
             vec![HttpRouteMatch::path(GwPathMatch::PathPrefix(
                 "/api".to_string(),
@@ -398,68 +400,68 @@ mod tests {
             vec![HttpBackendRef::new("api", 80)],
         )]);
         r.hostnames = vec!["example.com".to_string()];
-        let t = r.translate().unwrap();
+        let t = r.translate()?;
         assert_eq!(t.routers.len(), 1);
         assert_eq!(
             t.routers[0].rule_text,
             "Host(`example.com`) && PathPrefix(`/api`)"
         );
         assert_eq!(t.routers[0].service, "default-rt-0");
+        Ok(())
     }
 
     #[test]
-    fn exact_path_uses_path_matcher() {
+    fn exact_path_uses_path_matcher() -> TestResult {
         let r = route(vec![rule(
             vec![HttpRouteMatch::path(GwPathMatch::Exact("/x".to_string()))],
             vec![HttpBackendRef::new("a", 80)],
         )]);
-        assert_eq!(r.translate().unwrap().routers[0].rule_text, "Path(`/x`)");
+        assert_eq!(r.translate()?.routers[0].rule_text, "Path(`/x`)");
+        Ok(())
     }
 
     #[test]
-    fn multiple_hostnames_become_or_list() {
+    fn multiple_hostnames_become_or_list() -> TestResult {
         let mut r = route(vec![rule(vec![], vec![HttpBackendRef::new("a", 80)])]);
         r.hostnames = vec!["a.com".to_string(), "b.com".to_string()];
-        let t = r.translate().unwrap();
+        let t = r.translate()?;
         assert_eq!(t.routers[0].rule_text, "Host(`a.com`, `b.com`)");
+        Ok(())
     }
 
     #[test]
-    fn method_and_headers_are_anded() {
+    fn method_and_headers_are_anded() -> TestResult {
         let m = HttpRouteMatch {
             path: Some(GwPathMatch::PathPrefix("/".to_string())),
             method: Some("GET".to_string()),
             headers: vec![GwHeaderMatch::new("X-Env", "prod")],
         };
         let r = route(vec![rule(vec![m], vec![HttpBackendRef::new("a", 80)])]);
-        let t = r.translate().unwrap();
+        let t = r.translate()?;
         assert_eq!(
             t.routers[0].rule_text,
             "PathPrefix(`/`) && Method(`GET`) && Header(`X-Env`, `prod`)"
         );
+        Ok(())
     }
 
     #[test]
-    fn empty_match_with_no_host_is_catch_all() {
+    fn empty_match_with_no_host_is_catch_all() -> TestResult {
         let r = route(vec![rule(vec![], vec![HttpBackendRef::new("a", 80)])]);
-        assert_eq!(
-            r.translate().unwrap().routers[0].rule_text,
-            "PathPrefix(`/`)"
-        );
+        assert_eq!(r.translate()?.routers[0].rule_text, "PathPrefix(`/`)");
+        Ok(())
     }
 
     #[test]
-    fn host_with_empty_match_omits_path() {
+    fn host_with_empty_match_omits_path() -> TestResult {
         let mut r = route(vec![rule(vec![], vec![HttpBackendRef::new("a", 80)])]);
         r.hostnames = vec!["only.com".to_string()];
-        assert_eq!(
-            r.translate().unwrap().routers[0].rule_text,
-            "Host(`only.com`)"
-        );
+        assert_eq!(r.translate()?.routers[0].rule_text, "Host(`only.com`)");
+        Ok(())
     }
 
     #[test]
-    fn several_matches_make_several_routers_sharing_one_service() {
+    fn several_matches_make_several_routers_sharing_one_service() -> TestResult {
         let r = route(vec![rule(
             vec![
                 HttpRouteMatch::path(GwPathMatch::PathPrefix("/a".to_string())),
@@ -467,16 +469,17 @@ mod tests {
             ],
             vec![HttpBackendRef::new("svc", 80)],
         )]);
-        let t = r.translate().unwrap();
+        let t = r.translate()?;
         assert_eq!(t.routers.len(), 2);
         assert_eq!(t.routers[0].service, t.routers[1].service);
         assert_ne!(t.routers[0].name, t.routers[1].name);
         assert_eq!(t.services.len(), 1);
         assert_eq!(t.services[0].backends.len(), 1);
+        Ok(())
     }
 
     #[test]
-    fn rule_without_backends_is_rejected() {
+    fn rule_without_backends_is_rejected() -> TestResult {
         let r = route(vec![rule(
             vec![HttpRouteMatch::path(GwPathMatch::PathPrefix(
                 "/".to_string(),
@@ -484,36 +487,42 @@ mod tests {
             vec![],
         )]);
         assert_eq!(
-            r.translate().unwrap_err(),
+            r.translate().err().ok_or("expected an error")?,
             GatewayError::NoBackend {
                 route: "default/rt".to_string()
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn empty_backend_name_and_zero_port_are_rejected() {
+    fn empty_backend_name_and_zero_port_are_rejected() -> TestResult {
         let r1 = route(vec![rule(vec![], vec![HttpBackendRef::new("", 80)])]);
-        assert_eq!(r1.translate().unwrap_err(), GatewayError::EmptyBackendName);
+        assert_eq!(
+            r1.translate().err().ok_or("expected an error")?,
+            GatewayError::EmptyBackendName
+        );
         let r2 = route(vec![rule(vec![], vec![HttpBackendRef::new("a", 0)])]);
         assert_eq!(
-            r2.translate().unwrap_err(),
+            r2.translate().err().ok_or("expected an error")?,
             GatewayError::InvalidPort("a".to_string())
         );
+        Ok(())
     }
 
     #[test]
-    fn backtick_hostname_is_reported_not_panicked() {
+    fn backtick_hostname_is_reported_not_panicked() -> TestResult {
         let mut r = route(vec![rule(vec![], vec![HttpBackendRef::new("a", 80)])]);
         r.hostnames = vec!["ev`il".to_string()];
-        match r.translate().unwrap_err() {
+        match r.translate().err().ok_or("expected an error")? {
             GatewayError::InvalidRule { route, .. } => assert_eq!(route, "default/rt"),
-            other => panic!("expected InvalidRule, got {other:?}"),
+            other => return Err(format!("expected InvalidRule, got {other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]
-    fn into_config_distributes_across_weighted_backends() {
+    fn into_config_distributes_across_weighted_backends() -> TestResult {
         // Two backends, weights 3 and 1: of every 4 requests, 3 go to the
         // first backend's server and 1 to the second's.
         let r = route(vec![rule(
@@ -526,21 +535,21 @@ mod tests {
             ],
         )]);
         let cfg = r
-            .translate()
-            .unwrap()
-            .into_config(|b| vec![Server::new(&format!("http://{}:80", b.service_name))])
-            .unwrap();
-        let svc = cfg.service("default-rt-0").unwrap();
+            .translate()?
+            .into_config(|b| vec![Server::new(&format!("http://{}:80", b.service_name))])?;
+        let svc = cfg.service("default-rt-0").ok_or("service missing")?;
         let picks: Vec<&str> = (0..4)
-            .map(|i| svc.pick_round_robin(i).unwrap().url.as_str())
-            .collect();
+            .map(|i| svc.pick_round_robin(i).map(|s| s.url.as_str()))
+            .collect::<Option<_>>()
+            .ok_or("no server picked")?;
         let heavy = picks.iter().filter(|u| u.contains("heavy")).count();
         let light = picks.iter().filter(|u| u.contains("light")).count();
         assert_eq!((heavy, light), (3, 1));
+        Ok(())
     }
 
     #[test]
-    fn into_config_is_routable_end_to_end() {
+    fn into_config_is_routable_end_to_end() -> TestResult {
         let mut r = route(vec![rule(
             vec![HttpRouteMatch::path(GwPathMatch::PathPrefix(
                 "/api".to_string(),
@@ -549,26 +558,32 @@ mod tests {
         )]);
         r.hostnames = vec!["example.com".to_string()];
         let cfg = r
-            .translate()
-            .unwrap()
-            .into_config(|_b| vec![Server::new("http://10.0.0.1:80")])
-            .unwrap();
+            .translate()?
+            .into_config(|_b| vec![Server::new("http://10.0.0.1:80")])?;
         let req = RequestDescriptor::new("GET", "http", "example.com", "/api/x");
-        assert_eq!(cfg.route(&req, None).unwrap().service.name, "default-rt-0");
+        assert_eq!(
+            cfg.route(&req, None)
+                .ok_or("no route matched")?
+                .service
+                .name,
+            "default-rt-0"
+        );
+        Ok(())
     }
 
     #[test]
-    fn translate_routes_merges_multiple_routes() {
+    fn translate_routes_merges_multiple_routes() -> TestResult {
         let mut a = route(vec![rule(vec![], vec![HttpBackendRef::new("a", 80)])]);
         a.name = "a".to_string();
         a.hostnames = vec!["a.com".to_string()];
         let mut b = route(vec![rule(vec![], vec![HttpBackendRef::new("b", 80)])]);
         b.name = "b".to_string();
         b.hostnames = vec!["b.com".to_string()];
-        let t = translate_routes(&[a, b]).unwrap();
+        let t = translate_routes(&[a, b])?;
         assert_eq!(t.routers.len(), 2);
         assert_eq!(t.services.len(), 2);
         assert_eq!(t.routers[0].rule_text, "Host(`a.com`)");
         assert_eq!(t.routers[1].rule_text, "Host(`b.com`)");
+        Ok(())
     }
 }

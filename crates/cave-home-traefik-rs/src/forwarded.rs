@@ -110,8 +110,10 @@ fn set_header(headers: &mut HeaderMap, name: &'static str, value: &str) {
 mod tests {
     use super::*;
 
-    fn hv(s: &str) -> HeaderValue {
-        HeaderValue::from_str(s).unwrap()
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn hv(s: &str) -> Result<HeaderValue, http::header::InvalidHeaderValue> {
+        HeaderValue::from_str(s)
     }
 
     #[test]
@@ -132,35 +134,38 @@ mod tests {
     }
 
     #[test]
-    fn strip_removes_fixed_hop_by_hop_keeps_others() {
+    fn strip_removes_fixed_hop_by_hop_keeps_others() -> TestResult {
         let mut h = HeaderMap::new();
-        h.insert(http::header::CONNECTION, hv("keep-alive"));
-        h.insert(http::header::UPGRADE, hv("websocket"));
-        h.insert(http::header::CONTENT_TYPE, hv("application/json"));
+        h.insert(http::header::CONNECTION, hv("keep-alive")?);
+        h.insert(http::header::UPGRADE, hv("websocket")?);
+        h.insert(http::header::CONTENT_TYPE, hv("application/json")?);
         strip_hop_by_hop(&mut h);
         assert!(!h.contains_key(http::header::CONNECTION));
         assert!(!h.contains_key(http::header::UPGRADE));
         assert_eq!(
-            h.get(http::header::CONTENT_TYPE).unwrap(),
+            h.get(http::header::CONTENT_TYPE)
+                .ok_or("content-type missing")?,
             "application/json"
         );
+        Ok(())
     }
 
     #[test]
-    fn strip_removes_headers_named_in_connection_token_list() {
+    fn strip_removes_headers_named_in_connection_token_list() -> TestResult {
         let mut h = HeaderMap::new();
-        h.insert(http::header::CONNECTION, hv("X-Custom, close"));
-        h.insert(HeaderName::from_static("x-custom"), hv("secret"));
-        h.insert(HeaderName::from_static("x-keep"), hv("yes"));
+        h.insert(http::header::CONNECTION, hv("X-Custom, close")?);
+        h.insert(HeaderName::from_static("x-custom"), hv("secret")?);
+        h.insert(HeaderName::from_static("x-keep"), hv("yes")?);
         strip_hop_by_hop(&mut h);
         assert!(!h.contains_key("x-custom"));
-        assert_eq!(h.get("x-keep").unwrap(), "yes");
+        assert_eq!(h.get("x-keep").ok_or("x-keep missing")?, "yes");
+        Ok(())
     }
 
     #[test]
-    fn forwarded_sets_all_headers_and_appends_xff() {
+    fn forwarded_sets_all_headers_and_appends_xff() -> TestResult {
         let mut h = HeaderMap::new();
-        h.insert(HeaderName::from_static("x-forwarded-for"), hv("9.9.9.9"));
+        h.insert(HeaderName::from_static("x-forwarded-for"), hv("9.9.9.9")?);
         let fwd = Forwarded {
             client_ip: "2.2.2.2".to_string(),
             proto: "https".to_string(),
@@ -168,10 +173,26 @@ mod tests {
             port: Some(443),
         };
         fwd.apply(&mut h);
-        assert_eq!(h.get("x-forwarded-for").unwrap(), "9.9.9.9, 2.2.2.2");
-        assert_eq!(h.get("x-forwarded-proto").unwrap(), "https");
-        assert_eq!(h.get("x-forwarded-host").unwrap(), "example.com");
-        assert_eq!(h.get("x-forwarded-port").unwrap(), "443");
-        assert_eq!(h.get("x-real-ip").unwrap(), "2.2.2.2");
+        assert_eq!(
+            h.get("x-forwarded-for").ok_or("x-forwarded-for missing")?,
+            "9.9.9.9, 2.2.2.2"
+        );
+        assert_eq!(
+            h.get("x-forwarded-proto")
+                .ok_or("x-forwarded-proto missing")?,
+            "https"
+        );
+        assert_eq!(
+            h.get("x-forwarded-host")
+                .ok_or("x-forwarded-host missing")?,
+            "example.com"
+        );
+        assert_eq!(
+            h.get("x-forwarded-port")
+                .ok_or("x-forwarded-port missing")?,
+            "443"
+        );
+        assert_eq!(h.get("x-real-ip").ok_or("x-real-ip missing")?, "2.2.2.2");
+        Ok(())
     }
 }

@@ -131,90 +131,101 @@ pub fn select<'a>(
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn req() -> RequestDescriptor {
         RequestDescriptor::new("GET", "https", "example.com", "/api/users")
     }
 
     #[test]
-    fn effective_priority_defaults_to_rule_length() {
-        let r = Router::new("r", "Host(`a`)", "svc").unwrap();
+    fn effective_priority_defaults_to_rule_length() -> TestResult {
+        let r = Router::new("r", "Host(`a`)", "svc")?;
         assert_eq!(r.effective_priority(), "Host(`a`)".len());
+        Ok(())
     }
 
     #[test]
-    fn explicit_priority_overrides_default() {
-        let r = Router::new("r", "Host(`a`)", "svc")
-            .unwrap()
-            .with_priority(5000);
+    fn explicit_priority_overrides_default() -> TestResult {
+        let r = Router::new("r", "Host(`a`)", "svc")?.with_priority(5000);
         assert_eq!(r.effective_priority(), 5000);
+        Ok(())
     }
 
     #[test]
-    fn longest_rule_wins_by_default() {
-        let broad = Router::new("broad", "PathPrefix(`/`)", "s1").unwrap();
+    fn longest_rule_wins_by_default() -> TestResult {
+        let broad = Router::new("broad", "PathPrefix(`/`)", "s1")?;
         let specific = Router::new(
             "specific",
             "Host(`example.com`) && PathPrefix(`/api`)",
             "s2",
-        )
-        .unwrap();
+        )?;
         let routers = [broad, specific];
-        let chosen = select(&routers, &req(), None).unwrap();
+        let chosen =
+            select(&routers, &req(), None).ok_or("select(&routers, &req(), None) is None")?;
         assert_eq!(chosen.name, "specific");
+        Ok(())
     }
 
     #[test]
-    fn explicit_priority_beats_longer_rule() {
-        let broad = Router::new("broad", "PathPrefix(`/`)", "s1")
-            .unwrap()
-            .with_priority(10_000);
+    fn explicit_priority_beats_longer_rule() -> TestResult {
+        let broad = Router::new("broad", "PathPrefix(`/`)", "s1")?.with_priority(10_000);
         let specific = Router::new(
             "specific",
             "Host(`example.com`) && PathPrefix(`/api`)",
             "s2",
-        )
-        .unwrap();
+        )?;
         let routers = [broad, specific];
-        let chosen = select(&routers, &req(), None).unwrap();
+        let chosen =
+            select(&routers, &req(), None).ok_or("select(&routers, &req(), None) is None")?;
         assert_eq!(chosen.name, "broad");
+        Ok(())
     }
 
     #[test]
-    fn tie_broken_by_name_deterministically() {
+    fn tie_broken_by_name_deterministically() -> TestResult {
         // Two routers, identical rule text -> identical priority. Name "aaa" < "zzz".
-        let a = Router::new("zzz", "Host(`example.com`)", "s1").unwrap();
-        let b = Router::new("aaa", "Host(`example.com`)", "s2").unwrap();
+        let a = Router::new("zzz", "Host(`example.com`)", "s1")?;
+        let b = Router::new("aaa", "Host(`example.com`)", "s2")?;
         let routers = [a, b];
-        let chosen = select(&routers, &req(), None).unwrap();
+        let chosen =
+            select(&routers, &req(), None).ok_or("select(&routers, &req(), None) is None")?;
         assert_eq!(chosen.name, "aaa");
+        Ok(())
     }
 
     #[test]
-    fn no_match_returns_none() {
-        let r = Router::new("r", "Host(`other.com`)", "svc").unwrap();
+    fn no_match_returns_none() -> TestResult {
+        let r = Router::new("r", "Host(`other.com`)", "svc")?;
         assert!(select(&[r], &req(), None).is_none());
+        Ok(())
     }
 
     #[test]
-    fn entrypoint_filter_excludes_unbound_router() {
-        let r = Router::new("r", "Host(`example.com`)", "svc")
-            .unwrap()
-            .with_entrypoints(&["websecure"]);
+    fn entrypoint_filter_excludes_unbound_router() -> TestResult {
+        let r = Router::new("r", "Host(`example.com`)", "svc")?.with_entrypoints(&["websecure"]);
         // wrong entrypoint -> excluded
         assert!(select(std::slice::from_ref(&r), &req(), Some("web")).is_none());
         // right entrypoint -> matches
-        assert_eq!(select(&[r], &req(), Some("websecure")).unwrap().name, "r");
+        assert_eq!(
+            select(&[r], &req(), Some("websecure"))
+                .ok_or("select(&[r], &req(), Some('websecure')) is None")?
+                .name,
+            "r"
+        );
+        Ok(())
     }
 
     #[test]
-    fn empty_entrypoints_matches_any_entrypoint() {
-        let r = Router::new("r", "Host(`example.com`)", "svc").unwrap();
+    fn empty_entrypoints_matches_any_entrypoint() -> TestResult {
+        let r = Router::new("r", "Host(`example.com`)", "svc")?;
         assert!(select(&[r], &req(), Some("web")).is_some());
+        Ok(())
     }
 
     #[test]
-    fn accepts_respects_rule() {
-        let r = Router::new("r", "Method(`POST`)", "svc").unwrap();
+    fn accepts_respects_rule() -> TestResult {
+        let r = Router::new("r", "Method(`POST`)", "svc")?;
         assert!(!r.accepts(&req(), None));
+        Ok(())
     }
 }

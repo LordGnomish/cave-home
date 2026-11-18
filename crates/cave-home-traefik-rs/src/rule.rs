@@ -347,102 +347,111 @@ impl Rule {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn parses_single_host() {
+    fn parses_single_host() -> TestResult {
         assert_eq!(
-            parse("Host(`example.com`)").unwrap(),
+            parse("Host(`example.com`)")?,
             Rule::Host(vec!["example.com".to_string()])
         );
+        Ok(())
     }
 
     #[test]
-    fn host_is_lowercased() {
+    fn host_is_lowercased() -> TestResult {
         assert_eq!(
-            parse("Host(`EXAMPLE.com`)").unwrap(),
+            parse("Host(`EXAMPLE.com`)")?,
             Rule::Host(vec!["example.com".to_string()])
         );
+        Ok(())
     }
 
     #[test]
-    fn parses_multi_value_host_as_or_list() {
+    fn parses_multi_value_host_as_or_list() -> TestResult {
         assert_eq!(
-            parse("Host(`a.com`, `b.com`)").unwrap(),
+            parse("Host(`a.com`, `b.com`)")?,
             Rule::Host(vec!["a.com".to_string(), "b.com".to_string()])
         );
+        Ok(())
     }
 
     #[test]
-    fn parses_path_and_pathprefix() {
+    fn parses_path_and_pathprefix() -> TestResult {
+        assert_eq!(parse("Path(`/x`)")?, Rule::Path(vec!["/x".to_string()]));
         assert_eq!(
-            parse("Path(`/x`)").unwrap(),
-            Rule::Path(vec!["/x".to_string()])
-        );
-        assert_eq!(
-            parse("PathPrefix(`/api`)").unwrap(),
+            parse("PathPrefix(`/api`)")?,
             Rule::PathPrefix(vec!["/api".to_string()])
         );
+        Ok(())
     }
 
     #[test]
-    fn parses_header() {
+    fn parses_header() -> TestResult {
         assert_eq!(
-            parse("Header(`X-Env`, `prod`)").unwrap(),
+            parse("Header(`X-Env`, `prod`)")?,
             Rule::Header {
                 name: "X-Env".to_string(),
                 value: "prod".to_string()
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn parses_method_uppercased() {
+    fn parses_method_uppercased() -> TestResult {
         assert_eq!(
-            parse("Method(`get`, `post`)").unwrap(),
+            parse("Method(`get`, `post`)")?,
             Rule::Method(vec!["GET".to_string(), "POST".to_string()])
         );
+        Ok(())
     }
 
     #[test]
-    fn and_binds_tighter_than_or() {
+    fn and_binds_tighter_than_or() -> TestResult {
         // a || b && c  ==  a || (b && c)
-        let r = parse("Host(`a`) || Host(`b`) && Host(`c`)").unwrap();
+        let r = parse("Host(`a`) || Host(`b`) && Host(`c`)")?;
         match r {
             Rule::Or(l, right) => {
                 assert_eq!(*l, Rule::Host(vec!["a".to_string()]));
                 assert!(matches!(*right, Rule::And(_, _)));
             }
-            other => panic!("expected Or at top, got {other:?}"),
+            other => return Err(format!("expected Or at top, got {other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]
-    fn parentheses_override_precedence() {
+    fn parentheses_override_precedence() -> TestResult {
         // (a || b) && c  ==  And(Or(a,b), c)
-        let r = parse("(Host(`a`) || Host(`b`)) && Host(`c`)").unwrap();
+        let r = parse("(Host(`a`) || Host(`b`)) && Host(`c`)")?;
         match r {
             Rule::And(l, rgt) => {
                 assert!(matches!(*l, Rule::Or(_, _)));
                 assert_eq!(*rgt, Rule::Host(vec!["c".to_string()]));
             }
-            other => panic!("expected And at top, got {other:?}"),
+            other => return Err(format!("expected And at top, got {other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]
-    fn not_binds_to_primary() {
-        let r = parse("!Host(`a`)").unwrap();
+    fn not_binds_to_primary() -> TestResult {
+        let r = parse("!Host(`a`)")?;
         assert_eq!(r, Rule::Not(Box::new(Rule::Host(vec!["a".to_string()]))));
+        Ok(())
     }
 
     #[test]
-    fn double_not() {
-        let r = parse("!!Method(`GET`)").unwrap();
+    fn double_not() -> TestResult {
+        let r = parse("!!Method(`GET`)")?;
         assert_eq!(
             r,
             Rule::Not(Box::new(Rule::Not(Box::new(Rule::Method(vec![
                 "GET".to_string()
             ])))))
         );
+        Ok(())
     }
 
     #[test]

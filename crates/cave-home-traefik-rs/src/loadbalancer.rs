@@ -179,57 +179,71 @@ impl Service {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn wrr_service(servers: Vec<Server>) -> Service {
         Service::new("svc", servers, LoadBalancer::WeightedRoundRobin)
     }
 
-    #[test]
-    fn round_robin_cycles_equal_weights() {
-        let svc = wrr_service(vec![Server::new("a"), Server::new("b"), Server::new("c")]);
-        let seq: Vec<&str> = (0..6)
-            .map(|i| svc.pick_round_robin(i).unwrap().url.as_str())
-            .collect();
-        assert_eq!(seq, vec!["a", "b", "c", "a", "b", "c"]);
+    /// The URLs picked for the counters `0..n`; an error if any pick is `None`.
+    fn picked_urls(svc: &Service, n: u64) -> Result<Vec<&str>, String> {
+        (0..n)
+            .map(|i| {
+                svc.pick_round_robin(i)
+                    .map(|s| s.url.as_str())
+                    .ok_or_else(|| format!("pick_round_robin({i}) is None"))
+            })
+            .collect()
     }
 
     #[test]
-    fn weighted_distribution_is_proportional() {
+    fn round_robin_cycles_equal_weights() -> TestResult {
+        let svc = wrr_service(vec![Server::new("a"), Server::new("b"), Server::new("c")]);
+        let seq = picked_urls(&svc, 6)?;
+        assert_eq!(seq, vec!["a", "b", "c", "a", "b", "c"]);
+        Ok(())
+    }
+
+    #[test]
+    fn weighted_distribution_is_proportional() -> TestResult {
         // a:3, b:1 -> over a window of 4 slots: a,a,a,b
         let svc = wrr_service(vec![
             Server::new("a").with_weight(3),
             Server::new("b").with_weight(1),
         ]);
-        let seq: Vec<&str> = (0..4)
-            .map(|i| svc.pick_round_robin(i).unwrap().url.as_str())
-            .collect();
+        let seq = picked_urls(&svc, 4)?;
         assert_eq!(seq, vec!["a", "a", "a", "b"]);
         // wraps deterministically
-        assert_eq!(svc.pick_round_robin(4).unwrap().url, "a");
+        assert_eq!(
+            svc.pick_round_robin(4)
+                .ok_or("svc.pick_round_robin(4) is None")?
+                .url,
+            "a"
+        );
+        Ok(())
     }
 
     #[test]
-    fn skips_unhealthy_servers() {
+    fn skips_unhealthy_servers() -> TestResult {
         let svc = wrr_service(vec![
             Server::new("a"),
             Server::new("b").with_healthy(false),
             Server::new("c"),
         ]);
-        let seq: Vec<&str> = (0..4)
-            .map(|i| svc.pick_round_robin(i).unwrap().url.as_str())
-            .collect();
+        let seq = picked_urls(&svc, 4)?;
         assert_eq!(seq, vec!["a", "c", "a", "c"]);
+        Ok(())
     }
 
     #[test]
-    fn skips_zero_weight_servers() {
+    fn skips_zero_weight_servers() -> TestResult {
         let svc = wrr_service(vec![
             Server::new("a").with_weight(0),
             Server::new("b").with_weight(2),
         ]);
-        let seq: Vec<&str> = (0..2)
-            .map(|i| svc.pick_round_robin(i).unwrap().url.as_str())
-            .collect();
+        let seq = picked_urls(&svc, 2)?;
         assert_eq!(seq, vec!["b", "b"]);
+        Ok(())
     }
 
     #[test]
@@ -239,7 +253,7 @@ mod tests {
     }
 
     #[test]
-    fn sticky_pins_to_named_healthy_server() {
+    fn sticky_pins_to_named_healthy_server() -> TestResult {
         let svc = Service::new(
             "svc",
             vec![Server::new("a"), Server::new("b")],
@@ -247,13 +261,16 @@ mod tests {
                 cookie_name: "srv".to_string(),
             },
         );
-        let pick = svc.pick_sticky(Some("b"), 0).unwrap();
+        let pick = svc
+            .pick_sticky(Some("b"), 0)
+            .ok_or("svc.pick_sticky(Some('b'), 0) is None")?;
         assert_eq!(pick.server.url, "b");
         assert_eq!(pick.set_cookie, None);
+        Ok(())
     }
 
     #[test]
-    fn sticky_falls_back_when_cookie_server_unhealthy() {
+    fn sticky_falls_back_when_cookie_server_unhealthy() -> TestResult {
         let svc = Service::new(
             "svc",
             vec![Server::new("a"), Server::new("b").with_healthy(false)],
@@ -262,13 +279,16 @@ mod tests {
             },
         );
         // cookie points at the down server -> fall back, and set a new cookie
-        let pick = svc.pick_sticky(Some("b"), 0).unwrap();
+        let pick = svc
+            .pick_sticky(Some("b"), 0)
+            .ok_or("svc.pick_sticky(Some('b'), 0) is None")?;
         assert_eq!(pick.server.url, "a");
         assert_eq!(pick.set_cookie.as_deref(), Some("a"));
+        Ok(())
     }
 
     #[test]
-    fn sticky_assigns_cookie_when_absent() {
+    fn sticky_assigns_cookie_when_absent() -> TestResult {
         let svc = Service::new(
             "svc",
             vec![Server::new("a"), Server::new("b")],
@@ -276,15 +296,24 @@ mod tests {
                 cookie_name: "srv".to_string(),
             },
         );
-        let pick = svc.pick_sticky(None, 0).unwrap();
+        let pick = svc
+            .pick_sticky(None, 0)
+            .ok_or("svc.pick_sticky(None, 0) is None")?;
         assert_eq!(pick.server.url, "a");
         assert_eq!(pick.set_cookie.as_deref(), Some("a"));
+        Ok(())
     }
 
     #[test]
-    fn select_dispatches_on_policy() {
+    fn select_dispatches_on_policy() -> TestResult {
         let wrr = wrr_service(vec![Server::new("a"), Server::new("b")]);
-        assert_eq!(wrr.select(None, 1).unwrap().server.url, "b");
+        assert_eq!(
+            wrr.select(None, 1)
+                .ok_or("wrr.select(None, 1) is None")?
+                .server
+                .url,
+            "b"
+        );
 
         let sticky = Service::new(
             "svc",
@@ -293,7 +322,15 @@ mod tests {
                 cookie_name: "srv".to_string(),
             },
         );
-        assert_eq!(sticky.select(Some("b"), 0).unwrap().server.url, "b");
+        assert_eq!(
+            sticky
+                .select(Some("b"), 0)
+                .ok_or("sticky.select(Some('b'), 0) is None")?
+                .server
+                .url,
+            "b"
+        );
+        Ok(())
     }
 
     #[test]

@@ -74,35 +74,45 @@ pub fn upstream_uri(
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn assembles_scheme_authority_path_query() {
-        let uri = upstream_uri("http://10.0.0.2:8080", "/users", Some("q=1")).unwrap();
+    fn assembles_scheme_authority_path_query() -> TestResult {
+        let uri = upstream_uri("http://10.0.0.2:8080", "/users", Some("q=1"))?;
         assert_eq!(uri.to_string(), "http://10.0.0.2:8080/users?q=1");
+        Ok(())
     }
 
     #[test]
-    fn root_path_no_query() {
-        let uri = upstream_uri("http://h:80", "/", None).unwrap();
+    fn root_path_no_query() -> TestResult {
+        let uri = upstream_uri("http://h:80", "/", None)?;
         assert_eq!(uri.to_string(), "http://h:80/");
+        Ok(())
     }
 
     #[test]
-    fn empty_query_is_omitted() {
-        let uri = upstream_uri("https://api.svc", "/v1", Some("")).unwrap();
+    fn empty_query_is_omitted() -> TestResult {
+        let uri = upstream_uri("https://api.svc", "/v1", Some(""))?;
         assert_eq!(uri.to_string(), "https://api.svc/v1");
+        Ok(())
     }
 
     #[test]
-    fn missing_scheme_defaults_to_http() {
-        let uri = upstream_uri("10.0.0.9:3000", "/x", None).unwrap();
+    fn missing_scheme_defaults_to_http() -> TestResult {
+        let uri = upstream_uri("10.0.0.9:3000", "/x", None)?;
         assert_eq!(uri.to_string(), "http://10.0.0.9:3000/x");
+        Ok(())
     }
 
     #[test]
-    fn preserves_https_scheme() {
-        let uri = upstream_uri("https://secure:8443", "/a/b", None).unwrap();
+    fn preserves_https_scheme() -> TestResult {
+        let uri = upstream_uri("https://secure:8443", "/a/b", None)?;
         assert_eq!(uri.scheme_str(), Some("https"));
-        assert_eq!(uri.authority().unwrap().as_str(), "secure:8443");
+        assert_eq!(
+            uri.authority().map(http::uri::Authority::as_str),
+            Some("secure:8443")
+        );
+        Ok(())
     }
 
     #[test]

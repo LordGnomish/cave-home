@@ -46,123 +46,138 @@ fn path_has_prefix(path: &str, prefix: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rule::parse;
+    use crate::rule::{ParseError, parse};
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     fn req() -> RequestDescriptor {
         RequestDescriptor::new("GET", "https", "example.com", "/api/users")
             .with_header("X-Env", "prod")
     }
 
-    fn matches_str(rule: &str, req: &RequestDescriptor) -> bool {
-        matches(&parse(rule).unwrap(), req)
+    fn matches_str(rule: &str, req: &RequestDescriptor) -> Result<bool, ParseError> {
+        Ok(matches(&parse(rule)?, req))
     }
 
     #[test]
-    fn host_matches_case_insensitively() {
-        assert!(matches_str("Host(`EXAMPLE.com`)", &req()));
-        assert!(!matches_str("Host(`other.com`)", &req()));
+    fn host_matches_case_insensitively() -> TestResult {
+        assert!(matches_str("Host(`EXAMPLE.com`)", &req())?);
+        assert!(!matches_str("Host(`other.com`)", &req())?);
+        Ok(())
     }
 
     #[test]
-    fn host_or_list() {
-        assert!(matches_str("Host(`a.com`, `example.com`)", &req()));
+    fn host_or_list() -> TestResult {
+        assert!(matches_str("Host(`a.com`, `example.com`)", &req())?);
+        Ok(())
     }
 
     #[test]
-    fn path_is_exact() {
-        assert!(matches_str("Path(`/api/users`)", &req()));
-        assert!(!matches_str("Path(`/api`)", &req()));
+    fn path_is_exact() -> TestResult {
+        assert!(matches_str("Path(`/api/users`)", &req())?);
+        assert!(!matches_str("Path(`/api`)", &req())?);
+        Ok(())
     }
 
     #[test]
-    fn pathprefix_is_segment_aware() {
-        assert!(matches_str("PathPrefix(`/api`)", &req()));
-        assert!(matches_str("PathPrefix(`/api/users`)", &req()));
+    fn pathprefix_is_segment_aware() -> TestResult {
+        assert!(matches_str("PathPrefix(`/api`)", &req())?);
+        assert!(matches_str("PathPrefix(`/api/users`)", &req())?);
         // segment boundary: /ap should NOT match /api/users
-        assert!(!matches_str("PathPrefix(`/ap`)", &req()));
+        assert!(!matches_str("PathPrefix(`/ap`)", &req())?);
+        Ok(())
     }
 
     #[test]
-    fn pathprefix_root_matches_everything() {
-        assert!(matches_str("PathPrefix(`/`)", &req()));
+    fn pathprefix_root_matches_everything() -> TestResult {
+        assert!(matches_str("PathPrefix(`/`)", &req())?);
+        Ok(())
     }
 
     #[test]
-    fn header_exact_value() {
-        assert!(matches_str("Header(`X-Env`, `prod`)", &req()));
-        assert!(!matches_str("Header(`X-Env`, `dev`)", &req()));
-        assert!(!matches_str("Header(`X-Missing`, `prod`)", &req()));
+    fn header_exact_value() -> TestResult {
+        assert!(matches_str("Header(`X-Env`, `prod`)", &req())?);
+        assert!(!matches_str("Header(`X-Env`, `dev`)", &req())?);
+        assert!(!matches_str("Header(`X-Missing`, `prod`)", &req())?);
+        Ok(())
     }
 
     #[test]
-    fn method_matches_case_insensitively() {
-        assert!(matches_str("Method(`get`)", &req()));
-        assert!(!matches_str("Method(`post`)", &req()));
+    fn method_matches_case_insensitively() -> TestResult {
+        assert!(matches_str("Method(`get`)", &req())?);
+        assert!(!matches_str("Method(`post`)", &req())?);
+        Ok(())
     }
 
     #[test]
-    fn and_requires_both() {
+    fn and_requires_both() -> TestResult {
         assert!(matches_str(
             "Host(`example.com`) && PathPrefix(`/api`)",
             &req()
-        ));
+        )?);
         assert!(!matches_str(
             "Host(`example.com`) && PathPrefix(`/nope`)",
             &req()
-        ));
+        )?);
+        Ok(())
     }
 
     #[test]
-    fn or_requires_either() {
+    fn or_requires_either() -> TestResult {
         assert!(matches_str(
             "Host(`nope.com`) || PathPrefix(`/api`)",
             &req()
-        ));
+        )?);
         assert!(!matches_str(
             "Host(`nope.com`) || PathPrefix(`/nope`)",
             &req()
-        ));
+        )?);
+        Ok(())
     }
 
     #[test]
-    fn not_negates() {
-        assert!(matches_str("!Host(`nope.com`)", &req()));
-        assert!(!matches_str("!Host(`example.com`)", &req()));
+    fn not_negates() -> TestResult {
+        assert!(matches_str("!Host(`nope.com`)", &req())?);
+        assert!(!matches_str("!Host(`example.com`)", &req())?);
+        Ok(())
     }
 
     #[test]
-    fn precedence_and_over_or_evaluates_correctly() {
+    fn precedence_and_over_or_evaluates_correctly() -> TestResult {
         // Host(nope) || Host(example) && Path(/api/users)
         // == Host(nope) || (Host(example) && Path(/api/users)) -> true
         assert!(matches_str(
             "Host(`nope.com`) || Host(`example.com`) && Path(`/api/users`)",
             &req()
-        ));
+        )?);
         // With the AND branch failing on path, only the (false) OR-left remains.
         assert!(!matches_str(
             "Host(`nope.com`) || Host(`example.com`) && Path(`/wrong`)",
             &req()
-        ));
+        )?);
+        Ok(())
     }
 
     #[test]
-    fn parentheses_change_grouping_result() {
+    fn parentheses_change_grouping_result() -> TestResult {
         // (Host(nope) || Host(example)) && Path(/wrong) -> false
         assert!(!matches_str(
             "(Host(`nope.com`) || Host(`example.com`)) && Path(`/wrong`)",
             &req()
-        ));
+        )?);
         // (Host(nope) || Host(example)) && Path(/api/users) -> true
         assert!(matches_str(
             "(Host(`nope.com`) || Host(`example.com`)) && Path(`/api/users`)",
             &req()
-        ));
+        )?);
+        Ok(())
     }
 
     #[test]
-    fn complex_nested_rule() {
+    fn complex_nested_rule() -> TestResult {
         let rule =
             "Host(`example.com`) && (PathPrefix(`/api`) || PathPrefix(`/v2`)) && !Method(`DELETE`)";
-        assert!(matches_str(rule, &req()));
+        assert!(matches_str(rule, &req())?);
+        Ok(())
     }
 }

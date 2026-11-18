@@ -363,6 +363,8 @@ pub fn tls_acceptor(config: rustls::ServerConfig) -> tokio_rustls::TlsAcceptor {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn status_response_sets_status_and_body() {
         let r = status_response(StatusCode::NOT_FOUND, "nope");
@@ -370,7 +372,7 @@ mod tests {
     }
 
     #[test]
-    fn header_overrides_only_apply_middleware_changes() {
+    fn header_overrides_only_apply_middleware_changes() -> TestResult {
         let original =
             RequestDescriptor::new("GET", "http", "h", "/").with_header("x-keep", "orig");
         let applied = original.clone().with_header("x-new", "added");
@@ -381,7 +383,11 @@ mod tests {
         );
         apply_request_header_overrides(&mut dst, &applied, &original);
         // unchanged header is not re-applied, new one is
-        assert_eq!(dst.get("x-new").unwrap(), "added");
-        assert_eq!(dst.get("x-keep").unwrap(), "orig");
+        assert_eq!(dst.get("x-new").ok_or("dst.get('x-new') is None")?, "added");
+        assert_eq!(
+            dst.get("x-keep").ok_or("dst.get('x-keep') is None")?,
+            "orig"
+        );
+        Ok(())
     }
 }

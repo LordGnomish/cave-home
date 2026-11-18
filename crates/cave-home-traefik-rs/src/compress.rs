@@ -156,6 +156,8 @@ mod tests {
     use super::*;
     use std::io::Read as _;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     const SUPPORTED: &[Encoding] = &[Encoding::Gzip, Encoding::Deflate];
 
     #[test]
@@ -199,23 +201,25 @@ mod tests {
     }
 
     #[test]
-    fn gzip_roundtrips() {
+    fn gzip_roundtrips() -> TestResult {
         let body = b"the quick brown fox jumps over the lazy dog".repeat(20);
         let compressed = gzip(&body);
         assert_ne!(compressed, body);
         let mut dec = flate2::read::GzDecoder::new(&compressed[..]);
         let mut out = Vec::new();
-        dec.read_to_end(&mut out).unwrap();
+        dec.read_to_end(&mut out)?;
         assert_eq!(out, body);
+        Ok(())
     }
 
     #[test]
-    fn deflate_roundtrips() {
+    fn deflate_roundtrips() -> TestResult {
         let body = b"abcabcabcabc".repeat(50);
         let compressed = deflate(&body);
         let mut dec = flate2::read::DeflateDecoder::new(&compressed[..]);
         let mut out = Vec::new();
-        dec.read_to_end(&mut out).unwrap();
+        dec.read_to_end(&mut out)?;
         assert_eq!(out, body);
+        Ok(())
     }
 }
