@@ -142,9 +142,9 @@ impl Service {
     /// cookie (the chosen server's `url`) should be set.
     #[must_use]
     pub fn pick_sticky(&self, cookie_value: Option<&str>, counter: u64) -> Option<StickyPick<'_>> {
-        if let Some(want) = cookie_value
-            && let Some(s) = self.servers.iter().find(|s| s.url == want && s.healthy)
-        {
+        let pinned =
+            cookie_value.and_then(|want| self.servers.iter().find(|s| s.url == want && s.healthy));
+        if let Some(s) = pinned {
             return Some(StickyPick {
                 server: s,
                 set_cookie: None,
@@ -285,6 +285,38 @@ mod tests {
         assert_eq!(pick.server.url, "a");
         assert_eq!(pick.set_cookie.as_deref(), Some("a"));
         Ok(())
+    }
+
+    #[test]
+    fn sticky_falls_back_when_cookie_names_unknown_server() -> TestResult {
+        let svc = Service::new(
+            "svc",
+            vec![Server::new("a"), Server::new("b")],
+            LoadBalancer::Sticky {
+                cookie_name: "srv".to_string(),
+            },
+        );
+        // the cookie names no server of this service -> round-robin by the
+        // counter, and a fresh cookie for the chosen server
+        let pick = svc
+            .pick_sticky(Some("gone"), 1)
+            .ok_or("svc.pick_sticky(Some('gone'), 1) is None")?;
+        assert_eq!(pick.server.url, "b");
+        assert_eq!(pick.set_cookie.as_deref(), Some("b"));
+        Ok(())
+    }
+
+    #[test]
+    fn sticky_with_no_healthy_server_is_none() {
+        let svc = Service::new(
+            "svc",
+            vec![Server::new("a").with_healthy(false)],
+            LoadBalancer::Sticky {
+                cookie_name: "srv".to_string(),
+            },
+        );
+        assert!(svc.pick_sticky(Some("a"), 0).is_none());
+        assert!(svc.pick_sticky(None, 0).is_none());
     }
 
     #[test]

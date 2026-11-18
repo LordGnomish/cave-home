@@ -95,10 +95,10 @@ impl Router {
     /// must also be bound to that entrypoint.
     #[must_use]
     pub fn accepts(&self, req: &RequestDescriptor, entrypoint: Option<&str>) -> bool {
-        if let Some(ep) = entrypoint
-            && !self.entrypoints.is_empty()
-            && !self.entrypoints.iter().any(|e| e == ep)
-        {
+        let bound_elsewhere = entrypoint.is_some_and(|ep| {
+            !self.entrypoints.is_empty() && !self.entrypoints.iter().any(|e| e == ep)
+        });
+        if bound_elsewhere {
             return false;
         }
         matches(&self.rule, req)
@@ -219,6 +219,25 @@ mod tests {
     fn empty_entrypoints_matches_any_entrypoint() -> TestResult {
         let r = Router::new("r", "Host(`example.com`)", "svc")?;
         assert!(select(&[r], &req(), Some("web")).is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn accepts_checks_entrypoint_binding_before_the_rule() -> TestResult {
+        let unbound = Router::new("r", "Host(`example.com`)", "svc")?;
+        let bound = unbound.clone().with_entrypoints(&["web", "websecure"]);
+        // no entrypoint asked for: the binding is not consulted
+        assert!(unbound.accepts(&req(), None));
+        assert!(bound.accepts(&req(), None));
+        // a router without entrypoints is reachable from every entrypoint
+        assert!(unbound.accepts(&req(), Some("web")));
+        // a bound router only from its own entrypoints
+        assert!(bound.accepts(&req(), Some("web")));
+        assert!(bound.accepts(&req(), Some("websecure")));
+        assert!(!bound.accepts(&req(), Some("metrics")));
+        // on an accepted entrypoint the rule still decides
+        let other_host = Router::new("o", "Host(`other.com`)", "svc")?.with_entrypoints(&["web"]);
+        assert!(!other_host.accepts(&req(), Some("web")));
         Ok(())
     }
 
