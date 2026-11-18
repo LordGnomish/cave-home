@@ -170,22 +170,26 @@ impl GroupsCluster {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn add_creates_group_and_member() {
+    fn add_creates_group_and_member() -> TestResult {
         let mut c = GroupsCluster::new();
-        c.add(1, "Salon Lambaları", 0xaaaa).unwrap();
-        let g = c.view(1).unwrap();
+        c.add(1, "Salon Lambaları", 0xaaaa)?;
+        let g = c.view(1).ok_or("c.view(1) is None")?;
         assert_eq!(g.name, "Salon Lambaları");
         assert!(g.members.contains(&0xaaaa));
+        Ok(())
     }
 
     #[test]
-    fn add_to_existing_group_keeps_name() {
+    fn add_to_existing_group_keeps_name() -> TestResult {
         let mut c = GroupsCluster::new();
-        c.add(1, "Salon", 0xaaaa).unwrap();
-        c.add(1, "Other", 0xbbbb).unwrap();
-        assert_eq!(c.view(1).unwrap().name, "Salon");
-        assert_eq!(c.view(1).unwrap().members.len(), 2);
+        c.add(1, "Salon", 0xaaaa)?;
+        c.add(1, "Other", 0xbbbb)?;
+        assert_eq!(c.view(1).ok_or("c.view(1) is None")?.name, "Salon");
+        assert_eq!(c.view(1).ok_or("c.view(1) is None")?.members.len(), 2);
+        Ok(())
     }
 
     #[test]
@@ -197,48 +201,53 @@ mod tests {
     }
 
     #[test]
-    fn remove_drops_member_and_empty_group() {
+    fn remove_drops_member_and_empty_group() -> TestResult {
         let mut c = GroupsCluster::new();
-        c.add(1, "Salon", 0xaaaa).unwrap();
+        c.add(1, "Salon", 0xaaaa)?;
         assert!(c.remove(1, 0xaaaa));
         assert!(c.view(1).is_none());
+        Ok(())
     }
 
     #[test]
-    fn remove_unknown_member_returns_false() {
+    fn remove_unknown_member_returns_false() -> TestResult {
         let mut c = GroupsCluster::new();
-        c.add(1, "x", 0xaaaa).unwrap();
+        c.add(1, "x", 0xaaaa)?;
         assert!(!c.remove(1, 0xbbbb));
+        Ok(())
     }
 
     #[test]
-    fn remove_all_for_drops_membership_in_every_group() {
+    fn remove_all_for_drops_membership_in_every_group() -> TestResult {
         let mut c = GroupsCluster::new();
-        c.add(1, "a", 0xaaaa).unwrap();
-        c.add(2, "b", 0xaaaa).unwrap();
-        c.add(2, "b", 0xbbbb).unwrap();
+        c.add(1, "a", 0xaaaa)?;
+        c.add(2, "b", 0xaaaa)?;
+        c.add(2, "b", 0xbbbb)?;
         assert_eq!(c.remove_all_for(0xaaaa), 2);
         // Group 1 is now empty → gone.
         assert!(c.view(1).is_none());
         // Group 2 still has bbbb.
-        assert_eq!(c.view(2).unwrap().members.len(), 1);
+        assert_eq!(c.view(2).ok_or("c.view(2) is None")?.members.len(), 1);
+        Ok(())
     }
 
     #[test]
-    fn membership_returns_sorted_ids() {
+    fn membership_returns_sorted_ids() -> TestResult {
         let mut c = GroupsCluster::new();
-        c.add(3, "c", 0xaaaa).unwrap();
-        c.add(1, "a", 0xaaaa).unwrap();
-        c.add(2, "b", 0xaaaa).unwrap();
+        c.add(3, "c", 0xaaaa)?;
+        c.add(1, "a", 0xaaaa)?;
+        c.add(2, "b", 0xaaaa)?;
         assert_eq!(c.membership_of(0xaaaa), vec![1, 2, 3]);
+        Ok(())
     }
 
     #[test]
-    fn rename_known_group_ok() {
+    fn rename_known_group_ok() -> TestResult {
         let mut c = GroupsCluster::new();
-        c.add(1, "x", 0xaaaa).unwrap();
-        c.rename(1, "Salon").unwrap();
-        assert_eq!(c.view(1).unwrap().name, "Salon");
+        c.add(1, "x", 0xaaaa)?;
+        c.rename(1, "Salon")?;
+        assert_eq!(c.view(1).ok_or("c.view(1) is None")?.name, "Salon");
+        Ok(())
     }
 
     #[test]

@@ -4,7 +4,7 @@
 //!
 //! Maps a 16-bit destination network address to the next-hop NWK
 //! address. Each entry also tracks a routing status: ACTIVE,
-//! DISCOVERY_UNDERWAY, DISCOVERY_FAILED, INACTIVE, VALIDATION_UNDERWAY
+//! `DISCOVERY_UNDERWAY`, `DISCOVERY_FAILED`, INACTIVE, `VALIDATION_UNDERWAY`
 //! (Zigbee 3.0 Table 3-67).
 
 use std::collections::HashMap;
@@ -40,7 +40,7 @@ pub struct RoutingTableEntry {
 }
 
 /// The routing table is bounded; entries past the capacity must be
-/// reclaimed via LRU or by status (DiscoveryFailed / Inactive first).
+/// reclaimed via LRU or by status (`DiscoveryFailed` / Inactive first).
 const DEFAULT_CAPACITY: usize = 64;
 
 /// Routing table — Zigbee 3.0 §3.6.3.
@@ -157,6 +157,8 @@ impl RoutingTable {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     fn entry(dest: u16, next: u16) -> RoutingTableEntry {
         RoutingTableEntry {
             destination: dest,
@@ -182,12 +184,16 @@ mod tests {
     }
 
     #[test]
-    fn upsert_replaces_existing_entry() {
+    fn upsert_replaces_existing_entry() -> TestResult {
         let mut t = RoutingTable::new();
         t.upsert(entry(0x1234, 0x0001));
         t.upsert(entry(0x1234, 0x0002));
-        assert_eq!(t.lookup(0x1234).unwrap().next_hop, 0x0002);
+        assert_eq!(
+            t.lookup(0x1234).ok_or("t.lookup(0x1234) is None")?.next_hop,
+            0x0002
+        );
         assert_eq!(t.len(), 1);
+        Ok(())
     }
 
     #[test]
@@ -199,14 +205,15 @@ mod tests {
     }
 
     #[test]
-    fn set_status_updates_existing() {
+    fn set_status_updates_existing() -> TestResult {
         let mut t = RoutingTable::new();
         t.upsert(entry(0x1234, 0x0001));
         t.set_status(0x1234, RoutingStatus::DiscoveryFailed);
         assert_eq!(
-            t.lookup(0x1234).unwrap().status,
+            t.lookup(0x1234).ok_or("t.lookup(0x1234) is None")?.status,
             RoutingStatus::DiscoveryFailed
         );
+        Ok(())
     }
 
     #[test]

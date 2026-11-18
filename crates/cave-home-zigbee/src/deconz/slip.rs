@@ -4,8 +4,8 @@
 //!
 //! SLIP framing rules (RFC 1055):
 //! - A frame is terminated by an END byte (0xc0).
-//! - END bytes inside the payload are escaped as ESC (0xdb), ESC_END (0xdc).
-//! - ESC bytes inside the payload are escaped as ESC, ESC_ESC (0xdd).
+//! - END bytes inside the payload are escaped as ESC (0xdb), `ESC_END` (0xdc).
+//! - ESC bytes inside the payload are escaped as ESC, `ESC_ESC` (0xdd).
 //!
 //! deCONZ wraps each SLIP frame around a (command id, sequence, status,
 //! frame length, payload, CRC-16) payload. This module is only about
@@ -20,9 +20,9 @@ use crate::error::{Result, ZigbeeError};
 pub const SLIP_END: u8 = 0xc0;
 /// SLIP escape byte (RFC 1055 ESC).
 pub const SLIP_ESC: u8 = 0xdb;
-/// SLIP escape-for-END (RFC 1055 ESC_END).
+/// SLIP escape-for-END (RFC 1055 `ESC_END`).
 pub const SLIP_ESC_END: u8 = 0xdc;
-/// SLIP escape-for-ESC (RFC 1055 ESC_ESC).
+/// SLIP escape-for-ESC (RFC 1055 `ESC_ESC`).
 pub const SLIP_ESC_ESC: u8 = 0xdd;
 
 /// Encode `payload` as a single SLIP-framed packet.
@@ -78,10 +78,7 @@ impl SlipFramer {
     pub fn feed(&mut self, chunk: &[u8]) -> Result<Vec<Vec<u8>>> {
         self.buf.extend_from_slice(chunk);
         let mut out = Vec::new();
-        loop {
-            let Some(end) = self.buf.iter().position(|b| *b == SLIP_END) else {
-                break;
-            };
+        while let Some(end) = self.buf.iter().position(|b| *b == SLIP_END) {
             let body: Vec<u8> = self.buf[..end].to_vec();
             let _ = self.buf.split_to(end + 1);
             if body.is_empty() {
@@ -136,56 +133,91 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<u8>> {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn encode_decode_round_trip_no_special_bytes() {
+    fn encode_decode_round_trip_no_special_bytes() -> TestResult {
         let payload = b"hello";
-        let framed = encode(payload);
-        assert_eq!(framed.first(), Some(&SLIP_END));
-        assert_eq!(framed.last(), Some(&SLIP_END));
+        let wire = encode(payload);
+        assert_eq!(wire.first(), Some(&SLIP_END));
+        assert_eq!(wire.last(), Some(&SLIP_END));
         let mut framer = SlipFramer::new();
-        let decoded = framer.feed(&framed).unwrap();
+        let decoded = framer.feed(&wire)?;
         assert_eq!(decoded, vec![payload.to_vec()]);
+        Ok(())
     }
 
     #[test]
-    fn end_byte_in_payload_gets_escaped() {
+    fn end_byte_in_payload_gets_escaped() -> TestResult {
         let payload = vec![SLIP_END];
-        let framed = encode(&payload);
+        let wire = encode(&payload);
         // Body should be [ESC, ESC_END].
-        let body = &framed[1..framed.len() - 1];
+        let body = &wire[1..wire.len() - 1];
         assert_eq!(body, &[SLIP_ESC, SLIP_ESC_END]);
         let mut framer = SlipFramer::new();
-        assert_eq!(framer.feed(&framed).unwrap(), vec![payload]);
+        assert_eq!(framer.feed(&wire)?, vec![payload]);
+        Ok(())
     }
 
     #[test]
-    fn esc_byte_in_payload_gets_escaped() {
+    fn esc_byte_in_payload_gets_escaped() -> TestResult {
         let payload = vec![SLIP_ESC];
-        let framed = encode(&payload);
-        let body = &framed[1..framed.len() - 1];
+        let wire = encode(&payload);
+        let body = &wire[1..wire.len() - 1];
         assert_eq!(body, &[SLIP_ESC, SLIP_ESC_ESC]);
         let mut framer = SlipFramer::new();
-        assert_eq!(framer.feed(&framed).unwrap(), vec![payload]);
+        assert_eq!(framer.feed(&wire)?, vec![payload]);
+        Ok(())
     }
 
     #[test]
-    fn framer_handles_multiple_frames_in_one_chunk() {
+    fn framer_handles_multiple_frames_in_one_chunk() -> TestResult {
         let mut chunk = encode(b"one");
         chunk.extend(encode(b"two"));
         let mut framer = SlipFramer::new();
-        let frames = framer.feed(&chunk).unwrap();
-        assert_eq!(frames, vec![b"one".to_vec(), b"two".to_vec()]);
+        let decoded = framer.feed(&chunk)?;
+        assert_eq!(decoded, vec![b"one".to_vec(), b"two".to_vec()]);
+        Ok(())
     }
 
     #[test]
-    fn framer_assembles_across_split_chunks() {
-        let framed = encode(&[0x01, 0x02, 0x03]);
-        let (a, b) = framed.split_at(framed.len() / 2);
+    fn framer_assembles_across_split_chunks() -> TestResult {
+        let wire = encode(&[0x01, 0x02, 0x03]);
+        let (a, b) = wire.split_at(wire.len() / 2);
         let mut framer = SlipFramer::new();
-        let first = framer.feed(a).unwrap();
-        assert!(first.is_empty());
-        let second = framer.feed(b).unwrap();
+        let first = framer.feed(a)?;
+        assert_eq!(first, [] as [Vec<u8>; 0]);
+        let second = framer.feed(b)?;
         assert_eq!(second, vec![vec![0x01, 0x02, 0x03]]);
+        Ok(())
+    }
+
+    #[test]
+    fn framer_skips_empty_frames_and_keeps_a_partial_tail() -> TestResult {
+        // END END "a" END END END "b" — the last frame is not closed yet
+        let mut framer = SlipFramer::new();
+        let chunk = [SLIP_END, SLIP_END, b'a', SLIP_END, SLIP_END, SLIP_END, b'b'];
+        assert_eq!(framer.feed(&chunk)?, vec![b"a".to_vec()]);
+        // the next chunk completes the tail
+        assert_eq!(framer.feed(&[b'c', SLIP_END])?, vec![b"bc".to_vec()]);
+        // and nothing is buffered any more
+        assert_eq!(framer.feed(&[SLIP_END])?, [] as [Vec<u8>; 0]);
+        Ok(())
+    }
+
+    #[test]
+    fn framer_error_consumes_only_the_bad_frame() -> TestResult {
+        // a frame ending in a lone escape, then a good frame in the same chunk
+        let mut chunk = vec![b'x', SLIP_ESC, SLIP_END];
+        chunk.extend(encode(b"ok"));
+        let mut framer = SlipFramer::new();
+        assert!(matches!(
+            framer.feed(&chunk),
+            Err(ZigbeeError::Integrity(_))
+        ));
+        // the bad frame is gone, the good one is still buffered
+        assert_eq!(framer.feed(&[])?, vec![b"ok".to_vec()]);
+        Ok(())
     }
 
     #[test]

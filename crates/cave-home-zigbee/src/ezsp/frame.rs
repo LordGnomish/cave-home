@@ -90,7 +90,7 @@ pub struct EzspFrame {
 impl EzspFrame {
     /// Build a new outbound host→NCP command frame.
     #[must_use]
-    pub fn command(sequence: u8, frame_id: u16, parameters: Vec<u8>) -> Self {
+    pub const fn command(sequence: u8, frame_id: u16, parameters: Vec<u8>) -> Self {
         Self {
             sequence,
             control: EzspFrameControl::command(),
@@ -140,25 +140,29 @@ impl EzspFrame {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn command_frame_round_trip() {
+    fn command_frame_round_trip() -> TestResult {
         let f = EzspFrame::command(0x10, 0x0000, vec![]);
         let bytes = f.encode();
-        let decoded = EzspFrame::decode(&bytes).unwrap();
+        let decoded = EzspFrame::decode(&bytes)?;
         assert_eq!(decoded, f);
         // Header is 5 bytes.
         assert_eq!(bytes.len(), 5);
         assert_eq!(bytes[0], 0x10);
+        Ok(())
     }
 
     #[test]
-    fn response_frame_round_trip() {
+    fn response_frame_round_trip() -> TestResult {
         let mut f = EzspFrame::command(0x42, 0x0017, vec![0xaa, 0xbb]);
         f.control = EzspFrameControl::response();
         let bytes = f.encode();
-        let decoded = EzspFrame::decode(&bytes).unwrap();
+        let decoded = EzspFrame::decode(&bytes)?;
         assert_eq!(decoded, f);
         assert!(decoded.control.response);
+        Ok(())
     }
 
     #[test]

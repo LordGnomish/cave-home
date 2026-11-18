@@ -7,8 +7,8 @@
 //!   any router/end-device that performs network steering with the
 //!   well-known link key (`5A 69 67 42 65 65 41 6C 6C 69 61 6E 63 65 30 39`,
 //!   public, Zigbee 3.0 §4.6.3.4).
-//! - **InstallCode join** — derive a per-device link key from a
-//!   16-byte InstallCode printed on the device (ZBDB §13.3); the
+//! - **`InstallCode` join** — derive a per-device link key from a
+//!   16-byte `InstallCode` printed on the device (ZBDB §13.3); the
 //!   network is opened only for that key.
 //! - **Touchlink** — short-range commissioning (BDB §10.1); Phase 1
 //!   ships the typed enum and surface so the higher coordinator layer
@@ -31,12 +31,12 @@ pub enum TouchlinkMode {
 
 /// Pre-configured global link key — Zigbee 3.0 §4.6.3.4 (public test key).
 ///
-/// "ZigBeeAlliance09" — used when a device joins without an InstallCode.
+/// `"ZigBeeAlliance09"` — used when a device joins without an `InstallCode`.
 pub const GLOBAL_LINK_KEY_ZB3: [u8; 16] = [
     0x5a, 0x69, 0x67, 0x42, 0x65, 0x65, 0x41, 0x6c, 0x6c, 0x69, 0x61, 0x6e, 0x63, 0x65, 0x30, 0x39,
 ];
 
-/// InstallCode — a 6/8/12/16-byte device-specific code printed on the
+/// `InstallCode` — a 6/8/12/16-byte device-specific code printed on the
 /// device label, with a trailing 2-byte CRC. Used to derive a unique
 /// per-device link key (ZBDB §13.3.1).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -137,7 +137,7 @@ impl Default for NetworkSteering {
 impl NetworkSteering {
     /// Build a closed controller.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             open_window: None,
             install_code: None,
@@ -190,24 +190,24 @@ impl NetworkSteering {
 
     /// `true` iff the window is currently open.
     #[must_use]
-    pub fn is_open(&self) -> bool {
+    pub const fn is_open(&self) -> bool {
         self.open_window.is_some()
     }
 
     /// The install-code currently restricting joins, if any.
     #[must_use]
-    pub fn install_code(&self) -> Option<&InstallCode> {
+    pub const fn install_code(&self) -> Option<&InstallCode> {
         self.install_code.as_ref()
     }
 
     /// Touchlink mode.
     #[must_use]
-    pub fn touchlink_mode(&self) -> TouchlinkMode {
+    pub const fn touchlink_mode(&self) -> TouchlinkMode {
         self.touchlink
     }
 
     /// Set touchlink mode.
-    pub fn set_touchlink_mode(&mut self, mode: TouchlinkMode) {
+    pub const fn set_touchlink_mode(&mut self, mode: TouchlinkMode) {
         self.touchlink = mode;
     }
 }
@@ -216,17 +216,20 @@ impl NetworkSteering {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn global_link_key_is_zigbee_alliance_09() {
         assert_eq!(&GLOBAL_LINK_KEY_ZB3, b"ZigBeeAlliance09");
     }
 
     #[test]
-    fn install_code_from_hex_round_trips() {
-        let code = InstallCode::from_hex("0102030405060708090A0B0C0D0E0F10 1234").unwrap();
+    fn install_code_from_hex_round_trips() -> TestResult {
+        let code = InstallCode::from_hex("0102030405060708090A0B0C0D0E0F10 1234")?;
         assert_eq!(code.bytes.len(), 18);
         assert_eq!(code.crc(), 0x3412);
         assert_eq!(code.data().len(), 16);
+        Ok(())
     }
 
     #[test]
@@ -241,32 +244,30 @@ mod tests {
     }
 
     #[test]
-    fn install_code_crc_helper_works() {
-        let payload = b"hello";
-        let crc = crate::ezsp::ash::crc_ccitt(payload);
-        let mut bytes = payload.to_vec();
-        bytes.extend_from_slice(&crc.to_le_bytes());
-        // 5 + 2 = 7 bytes — *not* a supported install-code length,
-        // so we cheat and create a 16+2 byte code.
+    fn install_code_crc_helper_works() -> TestResult {
+        // A 5-byte payload + CRC would be 7 bytes — *not* a supported
+        // install-code length — so the code under test is 16 + 2 bytes.
         let mut data = vec![0u8; 16];
-        for (i, x) in data.iter_mut().enumerate() {
-            *x = i as u8;
+        for (i, x) in (0u8..).zip(data.iter_mut()) {
+            *x = i;
         }
         let crc = crate::ezsp::ash::crc_ccitt(&data);
         let mut bytes = data.clone();
         bytes.extend_from_slice(&crc.to_le_bytes());
-        let code = InstallCode::from_bytes(bytes).unwrap();
+        let code = InstallCode::from_bytes(bytes)?;
         assert!(code.crc_valid());
+        Ok(())
     }
 
     #[test]
-    fn steering_open_and_close() {
+    fn steering_open_and_close() -> TestResult {
         let mut s = NetworkSteering::new();
         assert!(!s.is_open());
-        s.open(Duration::from_secs(60)).unwrap();
+        s.open(Duration::from_secs(60))?;
         assert!(s.is_open());
         s.close();
         assert!(!s.is_open());
+        Ok(())
     }
 
     #[test]
@@ -282,26 +283,27 @@ mod tests {
     }
 
     #[test]
-    fn steering_double_open_rejected() {
+    fn steering_double_open_rejected() -> TestResult {
         let mut s = NetworkSteering::new();
-        s.open(Duration::from_secs(30)).unwrap();
+        s.open(Duration::from_secs(30))?;
         assert!(s.open(Duration::from_secs(60)).is_err());
+        Ok(())
     }
 
     #[test]
-    fn steering_install_code_restricts_join() {
+    fn steering_install_code_restricts_join() -> TestResult {
         let mut s = NetworkSteering::new();
         let mut data = vec![0u8; 16];
-        for (i, x) in data.iter_mut().enumerate() {
-            *x = (i as u8).wrapping_mul(3);
+        for (i, x) in (0u8..).zip(data.iter_mut()) {
+            *x = i.wrapping_mul(3);
         }
         let crc = crate::ezsp::ash::crc_ccitt(&data);
         let mut bytes = data;
         bytes.extend_from_slice(&crc.to_le_bytes());
-        let code = InstallCode::from_bytes(bytes).unwrap();
-        s.open_with_install_code(Duration::from_secs(60), code)
-            .unwrap();
+        let code = InstallCode::from_bytes(bytes)?;
+        s.open_with_install_code(Duration::from_secs(60), code)?;
         assert!(s.install_code().is_some());
+        Ok(())
     }
 
     #[test]

@@ -9,7 +9,7 @@
 //!   USB-UART (CDC-ACM at `/dev/ttyACM0`).
 //! - **SMLIGHT SLZB-06** — EZSP either over USB-UART or over a TCP
 //!   socket (network mode).
-//! - **ConBee II** (dresden-elektronik deRFusb-23E06) — deCONZ serial
+//! - **`ConBee` II** (dresden-elektronik deRFusb-23E06) — deCONZ serial
 //!   protocol over USB-UART.
 //!
 //! The coordinator owns the [`crate::transport::Transport`] handle, the
@@ -36,7 +36,7 @@ use crate::transport::Transport;
 pub enum DongleFamily {
     /// Silicon Labs EZSP (Sonoff ZBDongle-E, SMLIGHT SLZB-06).
     SiliconLabsEzsp,
-    /// dresden-elektronik deCONZ serial (ConBee II).
+    /// dresden-elektronik deCONZ serial (`ConBee` II).
     DeconzSerial,
 }
 
@@ -104,19 +104,19 @@ impl Coordinator {
 
     /// Borrow the network layer.
     #[must_use]
-    pub fn network(&self) -> &NetworkLayer {
+    pub const fn network(&self) -> &NetworkLayer {
         &self.network
     }
 
     /// Borrow the OTA queue.
     #[must_use]
-    pub fn ota(&self) -> &OtaQueue {
+    pub const fn ota(&self) -> &OtaQueue {
         &self.ota
     }
 
     /// Borrow the event bus.
     #[must_use]
-    pub fn events(&self) -> &EventBus {
+    pub const fn events(&self) -> &EventBus {
         &self.events
     }
 
@@ -179,7 +179,8 @@ impl Coordinator {
         nib.extended_pan_id = coordinator_ieee;
         self.network.set_nib(nib);
         *self.state.write() = CoordinatorState::Ready;
-        self.events.publish(ZigbeeEvent::CoordinatorReady {
+        // The receiver count is informational: nobody may be subscribed yet.
+        let _ = self.events.publish(ZigbeeEvent::CoordinatorReady {
             coordinator_ieee,
             pan_id,
             channel,
@@ -190,7 +191,8 @@ impl Coordinator {
     /// Mark the coordinator as down (e.g. NCP firmware crash detected).
     pub fn mark_down(&self, reason: impl Into<String>) {
         *self.state.write() = CoordinatorState::Down;
-        self.events.publish(ZigbeeEvent::CoordinatorDown {
+        // The receiver count is informational: nobody may be subscribed yet.
+        let _ = self.events.publish(ZigbeeEvent::CoordinatorDown {
             reason: reason.into(),
         });
     }
@@ -201,6 +203,8 @@ mod tests {
     use super::*;
     use crate::transport::MemoryTransport;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[tokio::test]
     async fn new_coordinator_is_idle() {
         let t = Arc::new(MemoryTransport::new("loop"));
@@ -210,17 +214,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn initialise_populates_nib_and_emits_event() {
+    async fn initialise_populates_nib_and_emits_event() -> TestResult {
         let t = Arc::new(MemoryTransport::new("loop"));
         let c = Coordinator::new(DongleFamily::SiliconLabsEzsp, t);
         let mut sub = c.events.subscribe();
-        c.initialise(0xdead_beef, 0x1a2b, 15).await.unwrap();
+        c.initialise(0xdead_beef, 0x1a2b, 15).await?;
         assert_eq!(c.state(), CoordinatorState::Ready);
         let nib = c.network().nib();
         assert_eq!(nib.pan_id, 0x1a2b);
         assert_eq!(nib.channel, 15);
         assert_eq!(nib.coordinator_short_address, 0x0000);
-        let event = sub.recv().await.unwrap();
+        let event = sub.recv().await?;
         assert_eq!(
             event,
             ZigbeeEvent::CoordinatorReady {
@@ -229,6 +233,7 @@ mod tests {
                 channel: 15,
             }
         );
+        Ok(())
     }
 
     #[tokio::test]
@@ -240,24 +245,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mark_down_transitions_state_and_emits_event() {
+    async fn mark_down_transitions_state_and_emits_event() -> TestResult {
         let t = Arc::new(MemoryTransport::new("loop"));
         let c = Coordinator::new(DongleFamily::DeconzSerial, t);
         let mut sub = c.events.subscribe();
         c.mark_down("ncp gone");
         assert_eq!(c.state(), CoordinatorState::Down);
-        let e = sub.recv().await.unwrap();
+        let e = sub.recv().await?;
         match e {
             ZigbeeEvent::CoordinatorDown { reason } => assert_eq!(reason, "ncp gone"),
-            other => panic!("expected CoordinatorDown, got {other:?}"),
+            other => return Err(format!("expected CoordinatorDown, got {other:?}").into()),
         }
+        Ok(())
     }
 
     #[tokio::test]
-    async fn deconz_family_can_initialise() {
+    async fn deconz_family_can_initialise() -> TestResult {
         let t = Arc::new(MemoryTransport::new("loop"));
         let c = Coordinator::new(DongleFamily::DeconzSerial, t);
-        c.initialise(0xcafebabe, 0x4242, 20).await.unwrap();
+        c.initialise(0xcafe_babe, 0x4242, 20).await?;
         assert_eq!(c.state(), CoordinatorState::Ready);
+        Ok(())
     }
 }

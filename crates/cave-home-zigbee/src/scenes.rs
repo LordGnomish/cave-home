@@ -142,11 +142,14 @@ impl ScenesCluster {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn add_and_view() {
+    fn add_and_view() -> TestResult {
         let mut c = ScenesCluster::new();
-        c.add(Scene::new(1, 1, "Akşam")).unwrap();
-        assert_eq!(c.view(1, 1).unwrap().name, "Akşam");
+        c.add(Scene::new(1, 1, "Akşam"))?;
+        assert_eq!(c.view(1, 1).ok_or("c.view(1, 1) is None")?.name, "Akşam");
+        Ok(())
     }
 
     #[test]
@@ -156,38 +159,42 @@ mod tests {
     }
 
     #[test]
-    fn remove_returns_true_only_when_present() {
+    fn remove_returns_true_only_when_present() -> TestResult {
         let mut c = ScenesCluster::new();
-        c.add(Scene::new(1, 2, "x")).unwrap();
+        c.add(Scene::new(1, 2, "x"))?;
         assert!(c.remove(1, 2));
         assert!(!c.remove(1, 2));
+        Ok(())
     }
 
     #[test]
-    fn remove_all_in_group_targets_only_that_group() {
+    fn remove_all_in_group_targets_only_that_group() -> TestResult {
         let mut c = ScenesCluster::new();
-        c.add(Scene::new(1, 1, "a")).unwrap();
-        c.add(Scene::new(1, 2, "b")).unwrap();
-        c.add(Scene::new(2, 1, "c")).unwrap();
+        c.add(Scene::new(1, 1, "a"))?;
+        c.add(Scene::new(1, 2, "b"))?;
+        c.add(Scene::new(2, 1, "c"))?;
         assert_eq!(c.remove_all_in_group(1), 2);
         assert!(c.view(2, 1).is_some());
+        Ok(())
     }
 
     #[test]
-    fn membership_is_sorted() {
+    fn membership_is_sorted() -> TestResult {
         let mut c = ScenesCluster::new();
-        c.add(Scene::new(1, 3, "x")).unwrap();
-        c.add(Scene::new(1, 1, "x")).unwrap();
-        c.add(Scene::new(1, 2, "x")).unwrap();
+        c.add(Scene::new(1, 3, "x"))?;
+        c.add(Scene::new(1, 1, "x"))?;
+        c.add(Scene::new(1, 2, "x"))?;
         assert_eq!(c.membership(1), vec![1, 2, 3]);
+        Ok(())
     }
 
     #[test]
-    fn recall_returns_view() {
+    fn recall_returns_view() -> TestResult {
         let mut c = ScenesCluster::new();
         let s = Scene::new(1, 1, "Sabah");
-        c.add(s.clone()).unwrap();
+        c.add(s.clone())?;
         assert_eq!(c.recall(1, 1), Some(&s));
+        Ok(())
     }
 
     #[test]

@@ -10,6 +10,8 @@ use cave_home_zigbee::color_control::{
     ColorStepMode, HueDirection, attribute_id, command_id,
 };
 
+type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
 #[test]
 fn cluster_and_command_ids_match_spec() {
     assert_eq!(COLOR_CONTROL_CLUSTER_ID, 0x0300);
@@ -38,21 +40,22 @@ fn attribute_ids_match_spec() {
 }
 
 #[test]
-fn color_mode_round_trips() {
+fn color_mode_round_trips() -> TestResult {
     // §3.2.2.2.8 ColorMode enum8.
     for (v, e) in [
         (0x00u8, ColorMode::CurrentHueAndSaturation),
         (0x01, ColorMode::CurrentXy),
         (0x02, ColorMode::ColorTemperatureMireds),
     ] {
-        assert_eq!(ColorMode::from_u8(v).unwrap(), e);
+        assert_eq!(ColorMode::from_u8(v)?, e);
         assert_eq!(e.to_u8(), v);
     }
     assert!(ColorMode::from_u8(0x03).is_err());
+    Ok(())
 }
 
 #[test]
-fn hue_direction_round_trips() {
+fn hue_direction_round_trips() -> TestResult {
     // §3.2.11.2 direction field.
     for (v, e) in [
         (0x00u8, HueDirection::ShortestDistance),
@@ -60,30 +63,32 @@ fn hue_direction_round_trips() {
         (0x02, HueDirection::Up),
         (0x03, HueDirection::Down),
     ] {
-        assert_eq!(HueDirection::from_u8(v).unwrap(), e);
+        assert_eq!(HueDirection::from_u8(v)?, e);
         assert_eq!(e.to_u8(), v);
     }
     assert!(HueDirection::from_u8(0x04).is_err());
+    Ok(())
 }
 
 #[test]
-fn move_mode_and_step_mode_round_trip() {
+fn move_mode_and_step_mode_round_trip() -> TestResult {
     // §3.2.11.3 move mode: 0x00 stop, 0x01 up, 0x03 down (0x02 reserved).
-    assert_eq!(ColorMoveMode::from_u8(0x00).unwrap(), ColorMoveMode::Stop);
-    assert_eq!(ColorMoveMode::from_u8(0x01).unwrap(), ColorMoveMode::Up);
-    assert_eq!(ColorMoveMode::from_u8(0x03).unwrap(), ColorMoveMode::Down);
+    assert_eq!(ColorMoveMode::from_u8(0x00)?, ColorMoveMode::Stop);
+    assert_eq!(ColorMoveMode::from_u8(0x01)?, ColorMoveMode::Up);
+    assert_eq!(ColorMoveMode::from_u8(0x03)?, ColorMoveMode::Down);
     assert!(ColorMoveMode::from_u8(0x02).is_err());
     // §3.2.11.4 step mode: 0x01 up, 0x03 down.
-    assert_eq!(ColorStepMode::from_u8(0x01).unwrap(), ColorStepMode::Up);
-    assert_eq!(ColorStepMode::from_u8(0x03).unwrap(), ColorStepMode::Down);
+    assert_eq!(ColorStepMode::from_u8(0x01)?, ColorStepMode::Up);
+    assert_eq!(ColorStepMode::from_u8(0x03)?, ColorStepMode::Down);
     assert!(ColorStepMode::from_u8(0x00).is_err());
     assert!(ColorStepMode::from_u8(0x02).is_err());
+    Ok(())
 }
 
 #[test]
-fn parse_move_to_hue() {
+fn parse_move_to_hue() -> TestResult {
     // §3.2.11.1: hue (u8) + direction (u8) + transition_time (u16 LE).
-    let cmd = ColorCommand::parse(command_id::MOVE_TO_HUE, &[0x40, 0x00, 0x0a, 0x00]).unwrap();
+    let cmd = ColorCommand::parse(command_id::MOVE_TO_HUE, &[0x40, 0x00, 0x0a, 0x00])?;
     assert_eq!(
         cmd,
         ColorCommand::MoveToHue {
@@ -92,12 +97,13 @@ fn parse_move_to_hue() {
             transition_time: 10,
         }
     );
+    Ok(())
 }
 
 #[test]
-fn parse_step_hue() {
+fn parse_step_hue() -> TestResult {
     // §3.2.11.5: step_mode (u8) + step_size (u8) + transition_time (u8).
-    let cmd = ColorCommand::parse(command_id::STEP_HUE, &[0x01, 0x10, 0x05]).unwrap();
+    let cmd = ColorCommand::parse(command_id::STEP_HUE, &[0x01, 0x10, 0x05])?;
     assert_eq!(
         cmd,
         ColorCommand::StepHue {
@@ -106,16 +112,16 @@ fn parse_step_hue() {
             transition_time: 0x05,
         }
     );
+    Ok(())
 }
 
 #[test]
-fn parse_move_to_hue_and_saturation() {
+fn parse_move_to_hue_and_saturation() -> TestResult {
     // §3.2.11.7: hue (u8) + saturation (u8) + transition_time (u16 LE).
     let cmd = ColorCommand::parse(
         command_id::MOVE_TO_HUE_AND_SATURATION,
         &[0x20, 0xfe, 0x14, 0x00],
-    )
-    .unwrap();
+    )?;
     assert_eq!(
         cmd,
         ColorCommand::MoveToHueAndSaturation {
@@ -124,17 +130,17 @@ fn parse_move_to_hue_and_saturation() {
             transition_time: 20,
         }
     );
+    Ok(())
 }
 
 #[test]
-fn parse_move_to_color() {
+fn parse_move_to_color() -> TestResult {
     // §3.2.11.8: color_x (u16 LE) + color_y (u16 LE) + transition_time (u16 LE).
     // x = 0x4ccc, y = 0x3333, t = 0x000a.
     let cmd = ColorCommand::parse(
         command_id::MOVE_TO_COLOR,
         &[0xcc, 0x4c, 0x33, 0x33, 0x0a, 0x00],
-    )
-    .unwrap();
+    )?;
     assert_eq!(
         cmd,
         ColorCommand::MoveToColor {
@@ -143,17 +149,17 @@ fn parse_move_to_color() {
             transition_time: 10,
         }
     );
+    Ok(())
 }
 
 #[test]
-fn parse_move_to_color_temperature() {
+fn parse_move_to_color_temperature() -> TestResult {
     // §3.2.11.11: color_temp_mireds (u16 LE) + transition_time (u16 LE).
     // 0x00fa = 250 mireds (4000 K), t = 0x0005.
     let cmd = ColorCommand::parse(
         command_id::MOVE_TO_COLOR_TEMPERATURE,
         &[0xfa, 0x00, 0x05, 0x00],
-    )
-    .unwrap();
+    )?;
     assert_eq!(
         cmd,
         ColorCommand::MoveToColorTemperature {
@@ -161,6 +167,7 @@ fn parse_move_to_color_temperature() {
             transition_time: 5,
         }
     );
+    Ok(())
 }
 
 #[test]
@@ -171,7 +178,7 @@ fn parse_rejects_truncated_and_unknown() {
 }
 
 #[test]
-fn command_round_trips() {
+fn command_round_trips() -> TestResult {
     for cmd in [
         ColorCommand::MoveToHue {
             hue: 100,
@@ -217,8 +224,9 @@ fn command_round_trips() {
     ] {
         let id = cmd.command_id();
         let payload = cmd.encode_payload();
-        assert_eq!(ColorCommand::parse(id, &payload).unwrap(), cmd);
+        assert_eq!(ColorCommand::parse(id, &payload)?, cmd);
     }
+    Ok(())
 }
 
 #[test]

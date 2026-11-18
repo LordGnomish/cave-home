@@ -43,7 +43,7 @@ pub struct AshFrame {
 impl AshFrame {
     /// Build a DATA frame with the given control byte and EZSP payload.
     #[must_use]
-    pub fn data(control: u8, payload: Vec<u8>) -> Self {
+    pub const fn data(control: u8, payload: Vec<u8>) -> Self {
         Self { control, payload }
     }
 }
@@ -141,11 +141,8 @@ impl AshFramer {
     pub fn feed(&mut self, chunk: &[u8]) -> Result<Vec<AshFrame>> {
         self.buf.extend_from_slice(chunk);
         let mut frames = Vec::new();
-        loop {
-            // Find next FLAG.
-            let Some(end) = self.buf.iter().position(|b| *b == FLAG) else {
-                break;
-            };
+        // Find the next FLAG until none is left.
+        while let Some(end) = self.buf.iter().position(|b| *b == FLAG) {
             // Slice the bytes up to (but not including) end into a frame body.
             let body: Vec<u8> = self.buf[..end].to_vec();
             // Consume body + FLAG from buf.
@@ -189,6 +186,8 @@ impl AshFramer {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn crc_ccitt_known_vector() {
         // Spec test vector: CRC over the single byte 0x00 with init 0xffff
@@ -197,26 +196,29 @@ mod tests {
     }
 
     #[test]
-    fn byte_stuff_round_trip_no_special_bytes() {
+    fn byte_stuff_round_trip_no_special_bytes() -> TestResult {
         let original = b"\x01\x02\x03\xab";
         let stuffed = byte_stuff(original);
         assert_eq!(stuffed, original);
-        let back = byte_unstuff(&stuffed).unwrap();
+        let back = byte_unstuff(&stuffed)?;
         assert_eq!(back, original);
+        Ok(())
     }
 
     #[test]
-    fn byte_stuff_escapes_flag() {
+    fn byte_stuff_escapes_flag() -> TestResult {
         let stuffed = byte_stuff(&[0x7e]);
         assert_eq!(stuffed, vec![0x7d, 0x5e]);
-        assert_eq!(byte_unstuff(&stuffed).unwrap(), vec![0x7e]);
+        assert_eq!(byte_unstuff(&stuffed)?, vec![0x7e]);
+        Ok(())
     }
 
     #[test]
-    fn byte_stuff_escapes_xon_and_xoff() {
+    fn byte_stuff_escapes_xon_and_xoff() -> TestResult {
         let stuffed = byte_stuff(&[XON, XOFF]);
         assert_eq!(stuffed, vec![ESCAPE, XON ^ 0x20, ESCAPE, XOFF ^ 0x20]);
-        assert_eq!(byte_unstuff(&stuffed).unwrap(), vec![XON, XOFF]);
+        assert_eq!(byte_unstuff(&stuffed)?, vec![XON, XOFF]);
+        Ok(())
     }
 
     #[test]
@@ -228,36 +230,39 @@ mod tests {
     }
 
     #[test]
-    fn framer_round_trip_single_frame() {
+    fn framer_round_trip_single_frame() -> TestResult {
         let f = AshFrame::data(0x81, vec![0x00, 0x01, 0x02]);
         let bytes = AshFramer::encode(&f);
         // Last byte must be FLAG.
-        assert_eq!(*bytes.last().unwrap(), FLAG);
+        assert_eq!(*bytes.last().ok_or("bytes.last() is None")?, FLAG);
         let mut framer = AshFramer::new();
-        let decoded = framer.feed(&bytes).unwrap();
+        let decoded = framer.feed(&bytes)?;
         assert_eq!(decoded, vec![f]);
+        Ok(())
     }
 
     #[test]
-    fn framer_handles_two_frames_in_one_chunk() {
+    fn framer_handles_two_frames_in_one_chunk() -> TestResult {
         let f1 = AshFrame::data(0x10, vec![0xaa]);
         let f2 = AshFrame::data(0x11, vec![0xbb, 0xcc]);
         let mut chunk = AshFramer::encode(&f1);
         chunk.extend(AshFramer::encode(&f2));
         let mut framer = AshFramer::new();
-        let frames = framer.feed(&chunk).unwrap();
-        assert_eq!(frames, vec![f1, f2]);
+        let decoded = framer.feed(&chunk)?;
+        assert_eq!(decoded, vec![f1, f2]);
+        Ok(())
     }
 
     #[test]
-    fn framer_handles_split_chunks() {
+    fn framer_handles_split_chunks() -> TestResult {
         let f = AshFrame::data(0x20, vec![0x7e, 0x7d, 0x11]);
         let bytes = AshFramer::encode(&f);
         let (head, tail) = bytes.split_at(3);
         let mut framer = AshFramer::new();
-        assert!(framer.feed(head).unwrap().is_empty());
-        let frames = framer.feed(tail).unwrap();
-        assert_eq!(frames, vec![f]);
+        assert_eq!(framer.feed(head)?, [] as [AshFrame; 0]);
+        let decoded = framer.feed(tail)?;
+        assert_eq!(decoded, vec![f]);
+        Ok(())
     }
 
     #[test]
@@ -275,14 +280,31 @@ mod tests {
     }
 
     #[test]
-    fn framer_drops_garbage_between_flags() {
+    fn framer_error_consumes_only_the_bad_frame() -> TestResult {
+        // one byte cannot hold control + CRC; a good frame follows in the same chunk
+        let good = AshFrame::data(0x25, vec![0x01, 0x02]);
+        let mut chunk = vec![0x00, FLAG];
+        chunk.extend(AshFramer::encode(&good));
+        let mut framer = AshFramer::new();
+        assert!(matches!(
+            framer.feed(&chunk),
+            Err(ZigbeeError::Integrity(_))
+        ));
+        // the bad frame is gone, the good one is still buffered
+        assert_eq!(framer.feed(&[])?, vec![good]);
+        Ok(())
+    }
+
+    #[test]
+    fn framer_drops_garbage_between_flags() -> TestResult {
         // Garbage then valid frame.
         let valid = AshFramer::encode(&AshFrame::data(0x42, vec![0x01]));
         let mut chunk = vec![FLAG, FLAG]; // empty garbage frames
         chunk.extend(valid);
         let mut framer = AshFramer::new();
-        let frames = framer.feed(&chunk).unwrap();
-        assert_eq!(frames.len(), 1);
-        assert_eq!(frames[0].control, 0x42);
+        let decoded = framer.feed(&chunk)?;
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].control, 0x42);
+        Ok(())
     }
 }

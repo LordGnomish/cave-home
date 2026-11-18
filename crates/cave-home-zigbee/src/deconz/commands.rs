@@ -47,7 +47,7 @@ pub mod parameter_id {
 /// Outbound deCONZ command.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DeconzCommand {
-    /// version().
+    /// `version()`.
     Version,
     /// read-parameter(parameter_id).
     ReadParameter { parameter_id: u8 },
@@ -116,7 +116,7 @@ impl DeconzCommand {
 /// Inbound deCONZ response (post-SLIP unstuff, after CRC validation).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DeconzResponse {
-    /// version() response — major/minor stack version bytes.
+    /// `version()` response — major/minor stack version bytes.
     Version {
         sequence: u8,
         status: u8,
@@ -253,11 +253,13 @@ impl DeconzResponse {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn version_command_frame_round_trips() {
+    fn version_command_frame_round_trips() -> TestResult {
         let cmd = DeconzCommand::Version;
         let bytes = cmd.to_frame_bytes(0x05);
-        let resp = DeconzResponse::decode(&bytes).unwrap();
+        let resp = DeconzResponse::decode(&bytes)?;
         // Our encoder writes 0 status, so decode comes back as version-shaped
         // payload of all zeros (the response handler treats it as version).
         if let DeconzResponse::Version {
@@ -267,18 +269,19 @@ mod tests {
             assert_eq!(sequence, 0x05);
             assert_eq!(status, 0x00);
         } else {
-            panic!("expected Version, got {resp:?}");
+            return Err(format!("expected Version, got {resp:?}").into());
         }
+        Ok(())
     }
 
     #[test]
-    fn read_parameter_command_frame_round_trips() {
+    fn read_parameter_command_frame_round_trips() -> TestResult {
         let cmd = DeconzCommand::ReadParameter {
             parameter_id: parameter_id::CHANNEL,
         };
         let bytes = cmd.to_frame_bytes(0x10);
         // Decode succeeds — read-parameter "value" is empty on the outgoing side.
-        let resp = DeconzResponse::decode(&bytes).unwrap();
+        let resp = DeconzResponse::decode(&bytes)?;
         match resp {
             DeconzResponse::ReadParameter {
                 sequence,
@@ -288,18 +291,19 @@ mod tests {
                 assert_eq!(sequence, 0x10);
                 assert_eq!(parameter_id, parameter_id::CHANNEL);
             }
-            other => panic!("expected ReadParameter, got {other:?}"),
+            other => return Err(format!("expected ReadParameter, got {other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]
-    fn write_parameter_command_frame_round_trips() {
+    fn write_parameter_command_frame_round_trips() -> TestResult {
         let cmd = DeconzCommand::WriteParameter {
             parameter_id: parameter_id::CHANNEL,
             value: vec![15],
         };
         let bytes = cmd.to_frame_bytes(0x11);
-        let resp = DeconzResponse::decode(&bytes).unwrap();
+        let resp = DeconzResponse::decode(&bytes)?;
         match resp {
             DeconzResponse::WriteParameter {
                 sequence,
@@ -309,34 +313,37 @@ mod tests {
                 assert_eq!(sequence, 0x11);
                 assert_eq!(parameter_id, parameter_id::CHANNEL);
             }
-            other => panic!("expected WriteParameter, got {other:?}"),
+            other => return Err(format!("expected WriteParameter, got {other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]
-    fn permit_join_command_frame_round_trips() {
+    fn permit_join_command_frame_round_trips() -> TestResult {
         let cmd = DeconzCommand::PermitJoin { seconds: 60 };
         let bytes = cmd.to_frame_bytes(0x12);
-        let resp = DeconzResponse::decode(&bytes).unwrap();
+        let resp = DeconzResponse::decode(&bytes)?;
         match resp {
             DeconzResponse::PermitJoin { sequence, status } => {
                 assert_eq!(sequence, 0x12);
                 assert_eq!(status, 0x00);
             }
-            other => panic!("expected PermitJoin, got {other:?}"),
+            other => return Err(format!("expected PermitJoin, got {other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]
-    fn decode_rejects_crc_corruption() {
+    fn decode_rejects_crc_corruption() -> TestResult {
         let cmd = DeconzCommand::Version;
         let mut bytes = cmd.to_frame_bytes(0x01);
         // Flip a CRC byte.
-        *bytes.last_mut().unwrap() ^= 0x01;
+        *bytes.last_mut().ok_or("bytes.last_mut() is None")? ^= 0x01;
         assert!(matches!(
             DeconzResponse::decode(&bytes),
             Err(ZigbeeError::Integrity(_))
         ));
+        Ok(())
     }
 
     #[test]

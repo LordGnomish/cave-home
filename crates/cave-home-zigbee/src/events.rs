@@ -71,6 +71,7 @@ impl EventBus {
 
     /// Publish an event. Returns the number of receivers that got it,
     /// or 0 if there were none (no-op, not an error per `broadcast`'s contract).
+    #[must_use]
     pub fn publish(&self, event: ZigbeeEvent) -> usize {
         self.tx.send(event).unwrap_or(0)
     }
@@ -79,6 +80,8 @@ impl EventBus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
 
     #[tokio::test]
     async fn publish_to_no_subscribers_is_zero() {
@@ -90,14 +93,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn subscriber_receives_published_event() {
+    async fn subscriber_receives_published_event() -> TestResult {
         let bus = EventBus::new(8);
         let mut rx = bus.subscribe();
-        bus.publish(ZigbeeEvent::DeviceJoined {
+        let delivered = bus.publish(ZigbeeEvent::DeviceJoined {
             device_ieee: 0xaa,
             device_short_address: 0x1234,
         });
-        let got = rx.recv().await.unwrap();
+        assert_eq!(delivered, 1);
+        let got = rx.recv().await?;
         assert_eq!(
             got,
             ZigbeeEvent::DeviceJoined {
@@ -105,17 +109,22 @@ mod tests {
                 device_short_address: 0x1234,
             }
         );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn multiple_subscribers_each_receive() {
+    async fn multiple_subscribers_each_receive() -> TestResult {
         let bus = EventBus::new(8);
         let mut a = bus.subscribe();
         let mut b = bus.subscribe();
         assert_eq!(bus.subscriber_count(), 2);
-        bus.publish(ZigbeeEvent::DeviceLeft { device_ieee: 0x42 });
-        let ea = a.recv().await.unwrap();
-        let eb = b.recv().await.unwrap();
+        assert_eq!(
+            bus.publish(ZigbeeEvent::DeviceLeft { device_ieee: 0x42 }),
+            2
+        );
+        let ea = a.recv().await?;
+        let eb = b.recv().await?;
         assert_eq!(ea, eb);
+        Ok(())
     }
 }

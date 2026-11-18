@@ -39,7 +39,7 @@ pub struct ApsDataRequest {
     pub dest_endpoint: u8,
     /// 16-bit ZCL profile identifier (0x0104 = Home Automation; 0xc05e = ZLL).
     pub profile_id: u16,
-    /// Cluster identifier (e.g. 0x0006 = OnOff).
+    /// Cluster identifier (e.g. 0x0006 = `OnOff`).
     pub cluster_id: u16,
     /// Source endpoint on the coordinator (1..=240; 0 reserved for ZDO).
     pub source_endpoint: u8,
@@ -191,14 +191,14 @@ mod tests {
         let req = ApsDataRequest::unicast(0x1234, 1, 0x0104, 0x0006, 1, vec![0x01, 0x02]);
         assert_eq!(req.dest_address_mode, ApsAddressMode::Short);
         assert_eq!(req.dest_address, 0x1234);
-        assert!(req.validate().is_empty());
+        assert_eq!(req.validate(), [] as [&str; 0]);
     }
 
     #[test]
     fn group_constructor_sets_group_addressing() {
         let req = ApsDataRequest::group(0x0001, 0x0104, 0x0006, 1, vec![0x01]);
         assert_eq!(req.dest_address_mode, ApsAddressMode::Group);
-        assert!(req.validate().is_empty());
+        assert_eq!(req.validate(), [] as [&str; 0]);
     }
 
     #[test]
