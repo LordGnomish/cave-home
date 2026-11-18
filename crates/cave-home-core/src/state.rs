@@ -28,6 +28,12 @@ pub enum EntityIdError {
 }
 
 impl EntityId {
+    /// Build an entity id from its two halves.
+    ///
+    /// # Errors
+    /// [`EntityIdError::Invalid`] carrying the rejected `domain.object_id`
+    /// if either half is empty or contains anything other than ASCII
+    /// lowercase letters, ASCII digits and `_`.
     pub fn new(
         domain: impl Into<String>,
         object_id: impl Into<String>,
@@ -74,7 +80,7 @@ impl FromStr for EntityId {
 
 pub type StateAttributes = BTreeMap<String, serde_json::Value>;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct State {
     pub entity_id: EntityId,
     pub state: String,
@@ -109,13 +115,16 @@ impl State {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn entity_id_round_trip_and_validation() {
-        let id: EntityId = "light.kitchen".parse().expect("parse");
+    fn entity_id_round_trip_and_validation() -> TestResult {
+        let id: EntityId = "light.kitchen".parse()?;
         assert_eq!(id.to_string(), "light.kitchen");
         assert!("LIGHT.kitchen".parse::<EntityId>().is_err());
         assert!("light.kitchen.x".parse::<EntityId>().is_err());
         assert!("light.".parse::<EntityId>().is_err());
+        Ok(())
     }
 
     #[test]
@@ -141,17 +150,18 @@ mod tests {
     }
 
     #[test]
-    fn state_serde_round_trip() {
-        let id: EntityId = "light.kitchen".parse().expect("parse");
+    fn state_serde_round_trip() -> TestResult {
+        let id: EntityId = "light.kitchen".parse()?;
         let mut attrs = StateAttributes::new();
         attrs.insert("brightness".into(), serde_json::json!(128));
         let st = State::new(id, "on", attrs, Context::new());
-        let s = serde_json::to_string(&st).expect("serialise");
-        let back: State = serde_json::from_str(&s).expect("deserialise");
+        let s = serde_json::to_string(&st)?;
+        let back: State = serde_json::from_str(&s)?;
         assert_eq!(back.state, "on");
         assert_eq!(back.attributes["brightness"], 128);
         assert_eq!(back.entity_id.to_string(), "light.kitchen");
         // fresh State has last_changed == last_updated
         assert_eq!(back.last_changed, back.last_updated);
+        Ok(())
     }
 }

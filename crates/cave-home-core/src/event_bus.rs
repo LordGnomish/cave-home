@@ -70,9 +70,15 @@ impl EventBus {
                 once,
                 tx,
             });
+        drop(guard);
         (id, rx)
     }
 
+    /// Deliver `event` to every listener of its type and to the
+    /// [`MATCH_ALL`] listeners; `listen_once` listeners are removed.
+    ///
+    /// Every listener but the last gets a clone, the last one gets `event`
+    /// itself. A listener whose receiver is gone is skipped silently.
     pub fn fire(&self, event: Event) {
         let drained = {
             let mut guard = self.inner.write();
@@ -93,9 +99,13 @@ impl EventBus {
             }
             drained
         };
-        for listener in drained {
+        let Some((last, rest)) = drained.split_last() else {
+            return;
+        };
+        for listener in rest {
             let _ = listener.tx.send(event.clone());
         }
+        let _ = last.tx.send(event);
     }
 }
 
@@ -104,16 +114,19 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[tokio::test]
-    async fn listener_and_wildcard_routing() {
+    async fn listener_and_wildcard_routing() -> TestResult {
         let bus = EventBus::new();
         let (_id, mut rx) = bus.listen("state_changed");
         let (_id2, mut rx_all) = bus.listen(MATCH_ALL);
         bus.fire(Event::local("state_changed", json!({"x": 1})));
         bus.fire(Event::local("other", json!({})));
-        assert_eq!(rx.recv().await.expect("e1").event_type, "state_changed");
-        assert_eq!(rx_all.recv().await.expect("a1").event_type, "state_changed");
-        assert_eq!(rx_all.recv().await.expect("a2").event_type, "other");
+        assert_eq!(rx.recv().await.ok_or("e1")?.event_type, "state_changed");
+        assert_eq!(rx_all.recv().await.ok_or("a1")?.event_type, "state_changed");
+        assert_eq!(rx_all.recv().await.ok_or("a2")?.event_type, "other");
+        Ok(())
     }
 
     #[tokio::test]
@@ -127,17 +140,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn wildcard_listen_once_consumes_first_event_only() {
+    async fn wildcard_listen_once_consumes_first_event_only() -> TestResult {
         let bus = EventBus::new();
         let (_id, mut rx) = bus.listen_once(MATCH_ALL);
         bus.fire(Event::local("first", json!({})));
         bus.fire(Event::local("second", json!({})));
-        assert_eq!(rx.recv().await.expect("first").event_type, "first");
+        assert_eq!(rx.recv().await.ok_or("first")?.event_type, "first");
         assert!(rx.recv().await.is_none());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn fire_with_no_listeners_and_dropped_receiver_is_silent() {
+    async fn fire_with_no_listeners_and_dropped_receiver_is_silent() -> TestResult {
         let bus = EventBus::new();
         // no listeners at all — fire must not panic
         bus.fire(Event::local("orphan", json!({})));
@@ -147,18 +161,44 @@ mod tests {
         drop(dead_rx);
         let (_live_id, mut live_rx) = bus.listen("topic");
         bus.fire(Event::local("topic", json!({"n": 1})));
-        assert_eq!(live_rx.recv().await.expect("live").data["n"], 1);
+        assert_eq!(live_rx.recv().await.ok_or("live")?.data["n"], 1);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn distinct_event_types_are_isolated() {
+    async fn every_listener_gets_the_same_event() -> TestResult {
+        let bus = EventBus::new();
+        let (_a, mut rx_a) = bus.listen("topic");
+        let (_b, mut rx_b) = bus.listen_once("topic");
+        let (_c, mut rx_c) = bus.listen(MATCH_ALL);
+        // registered last, so it is the last one the event is handed to
+        let (_d, dead_rx) = bus.listen(MATCH_ALL);
+        drop(dead_rx);
+        let event = Event::local("topic", json!({"n": 7}));
+        bus.fire(event.clone());
+        for rx in [&mut rx_a, &mut rx_b, &mut rx_c] {
+            let got = rx.recv().await.ok_or("listener got no event")?;
+            assert_eq!(got.event_type, event.event_type);
+            assert_eq!(got.data, event.data);
+            assert_eq!(got.origin, event.origin);
+            assert_eq!(got.context, event.context);
+        }
+        // exactly one copy each: nothing else is queued
+        assert!(rx_a.try_recv().is_err());
+        assert!(rx_c.try_recv().is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn distinct_event_types_are_isolated() -> TestResult {
         let bus = EventBus::new();
         let (_id, mut rx) = bus.listen("only_this");
         bus.fire(Event::local("not_this", json!({})));
         bus.fire(Event::local("only_this", json!({"ok": true})));
         // the first matching event is the one we asked for
-        let evt = rx.recv().await.expect("matched");
+        let evt = rx.recv().await.ok_or("matched")?;
         assert_eq!(evt.event_type, "only_this");
         assert_eq!(evt.data["ok"], true);
+        Ok(())
     }
 }

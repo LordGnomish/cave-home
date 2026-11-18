@@ -93,6 +93,7 @@ impl AreaRegistry {
             ..AreaEntry::default()
         };
         guard.areas.insert(id, entry.clone());
+        drop(guard);
         Ok(entry)
     }
 
@@ -157,7 +158,9 @@ impl AreaRegistry {
         if let Some(picture) = changes.picture {
             entry.picture = picture;
         }
-        Ok(entry.clone())
+        let updated = entry.clone();
+        drop(guard);
+        Ok(updated)
     }
 
     /// `async_delete` — remove an area, returning the removed entry.
@@ -188,10 +191,12 @@ pub struct AreaUpdate {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn create_generates_slug_id_and_dedupes() {
+    fn create_generates_slug_id_and_dedupes() -> TestResult {
         let reg = AreaRegistry::new();
-        let a = reg.create("Living Room").expect("create");
+        let a = reg.create("Living Room")?;
         assert_eq!(a.id, "living_room");
         assert_eq!(a.name, "Living Room");
         // a different name that slugs to the same id gets a _2 suffix
@@ -199,20 +204,25 @@ mod tests {
         // "Living  Room!" normalises to "living room" — a duplicate name
         assert_eq!(b, Err(AreaError::DuplicateName("Living  Room!".into())));
         // genuinely different name, colliding slug
-        let c = reg.create("Living Room 2").expect("c");
+        let c = reg.create("Living Room 2")?;
         assert_eq!(c.id, "living_room_2");
+        Ok(())
     }
 
     #[test]
-    fn empty_name_rejected() {
+    fn empty_name_rejected() -> TestResult {
         let reg = AreaRegistry::new();
-        assert_eq!(reg.create("   ").unwrap_err(), AreaError::EmptyName);
+        assert_eq!(
+            reg.create("   ").err().ok_or("expected an error")?,
+            AreaError::EmptyName
+        );
+        Ok(())
     }
 
     #[test]
-    fn get_and_get_by_name() {
+    fn get_and_get_by_name() -> TestResult {
         let reg = AreaRegistry::new();
-        let a = reg.create("Kitchen").expect("create");
+        let a = reg.create("Kitchen")?;
         assert_eq!(reg.get(&a.id), Some(a.clone()));
         // name lookup is normalised (case / whitespace insensitive)
         assert_eq!(
@@ -220,20 +230,21 @@ mod tests {
             Some("kitchen".into())
         );
         assert!(reg.get_by_name("nowhere").is_none());
+        Ok(())
     }
 
     #[test]
-    fn update_fields_and_rename_collision() {
+    fn update_fields_and_rename_collision() -> TestResult {
         let reg = AreaRegistry::new();
-        let kitchen = reg.create("Kitchen").expect("k");
-        let bedroom = reg.create("Bedroom").expect("b");
+        let kitchen = reg.create("Kitchen")?;
+        let bedroom = reg.create("Bedroom")?;
 
         let changes = AreaUpdate {
             floor_id: Some(Some("ground".into())),
             aliases: Some(BTreeSet::from(["cookspace".to_owned()])),
             ..AreaUpdate::default()
         };
-        let updated = reg.update(&kitchen.id, changes).expect("update");
+        let updated = reg.update(&kitchen.id, changes)?;
         assert_eq!(updated.floor_id.as_deref(), Some("ground"));
         assert!(updated.aliases.contains("cookspace"));
         // id never changes on update
@@ -245,7 +256,9 @@ mod tests {
             ..AreaUpdate::default()
         };
         assert_eq!(
-            reg.update(&bedroom.id, rename).unwrap_err(),
+            reg.update(&bedroom.id, rename)
+                .err()
+                .ok_or("expected an error")?,
             AreaError::DuplicateName("Kitchen".into())
         );
         // renaming to a fresh name works and frees the old name
@@ -253,40 +266,46 @@ mod tests {
             name: Some("Main Bedroom".into()),
             ..AreaUpdate::default()
         };
-        let r = reg.update(&bedroom.id, rename_ok).expect("rename");
+        let r = reg.update(&bedroom.id, rename_ok)?;
         assert_eq!(r.name, "Main Bedroom");
         assert!(reg.get_by_name("bedroom").is_none());
+        Ok(())
     }
 
     #[test]
-    fn update_unknown_id_errors() {
+    fn update_unknown_id_errors() -> TestResult {
         let reg = AreaRegistry::new();
         assert_eq!(
-            reg.update("ghost", AreaUpdate::default()).unwrap_err(),
+            reg.update("ghost", AreaUpdate::default())
+                .err()
+                .ok_or("expected an error")?,
             AreaError::UnknownId("ghost".into())
         );
+        Ok(())
     }
 
     #[test]
-    fn delete_removes_and_frees_name() {
+    fn delete_removes_and_frees_name() -> TestResult {
         let reg = AreaRegistry::new();
-        let a = reg.create("Garage").expect("create");
+        let a = reg.create("Garage")?;
         assert_eq!(reg.delete(&a.id), Some(a));
         assert!(reg.get("garage").is_none());
         // name is free again
-        let b = reg.create("Garage").expect("recreate");
+        let b = reg.create("Garage")?;
         assert_eq!(b.id, "garage");
         assert!(reg.delete("garage").is_some());
         assert!(reg.delete("garage").is_none());
+        Ok(())
     }
 
     #[test]
-    fn list_is_ordered_by_id() {
+    fn list_is_ordered_by_id() -> TestResult {
         let reg = AreaRegistry::new();
-        reg.create("Zen Den").expect("z");
-        reg.create("Attic").expect("a");
+        reg.create("Zen Den")?;
+        reg.create("Attic")?;
         let ids: Vec<_> = reg.list().into_iter().map(|e| e.id).collect();
         assert_eq!(ids, vec!["attic", "zen_den"]);
+        Ok(())
     }
 
     // silence unused-import warnings in the RED skeleton

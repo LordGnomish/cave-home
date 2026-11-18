@@ -205,6 +205,8 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     /// A minimal light that overrides only what it needs — exercises the
     /// trait defaults for everything else.
     struct Light {
@@ -343,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn device_info_serde_round_trip() {
+    fn device_info_serde_round_trip() -> TestResult {
         let di = DeviceInfo {
             identifiers: vec![("hue".into(), "00:17".into())],
             manufacturer: Some("Signify".into()),
@@ -351,10 +353,11 @@ mod tests {
             via_device: Some(("hue".into(), "bridge".into())),
             ..DeviceInfo::default()
         };
-        let s = serde_json::to_string(&di).expect("ser");
-        let back: DeviceInfo = serde_json::from_str(&s).expect("de");
+        let s = serde_json::to_string(&di)?;
+        let back: DeviceInfo = serde_json::from_str(&s)?;
         assert_eq!(back, di);
         // omitted optionals stay absent on the wire
         assert!(!s.contains("sw_version"));
+        Ok(())
     }
 }

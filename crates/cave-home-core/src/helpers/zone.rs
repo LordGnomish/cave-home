@@ -109,6 +109,7 @@ impl ZoneRegistry {
             icon: None,
         };
         guard.zones.insert(id, zone.clone());
+        drop(guard);
         Ok(zone)
     }
 
@@ -152,6 +153,8 @@ impl ZoneRegistry {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn distance_and_contains() {
         let z = Zone {
@@ -171,34 +174,38 @@ mod tests {
         assert!((d - 111.0).abs() < 5.0, "expected ~111 m, got {d}");
         assert!(!z.contains(52.001, 4.0));
         // a 150 m radius would include it
-        let mut big = z.clone();
+        let mut big = z;
         big.radius = 150.0;
         assert!(big.contains(52.001, 4.0));
     }
 
     #[test]
-    fn create_slugs_and_dedupes() {
+    fn create_slugs_and_dedupes() -> TestResult {
         let reg = ZoneRegistry::new();
-        let a = reg.create("Home Base", 52.0, 4.0, 100.0).expect("a");
+        let a = reg.create("Home Base", 52.0, 4.0, 100.0)?;
         assert_eq!(a.id, "home_base");
-        let b = reg.create("Home Base", 1.0, 1.0, 50.0).expect("b");
+        let b = reg.create("Home Base", 1.0, 1.0, 50.0)?;
         assert_eq!(b.id, "home_base_2");
         assert_eq!(reg.list().len(), 2);
         assert!(reg.delete("home_base").is_some());
         assert!(reg.get("home_base").is_none());
+        Ok(())
     }
 
     #[test]
-    fn empty_name_rejected() {
+    fn empty_name_rejected() -> TestResult {
         let reg = ZoneRegistry::new();
         assert_eq!(
-            reg.create("  ", 0.0, 0.0, 1.0).unwrap_err(),
+            reg.create("  ", 0.0, 0.0, 1.0)
+                .err()
+                .ok_or("expected an error")?,
             ZoneError::EmptyName
         );
+        Ok(())
     }
 
     #[test]
-    fn active_zone_picks_smallest_containing_non_passive() {
+    fn active_zone_picks_smallest_containing_non_passive() -> TestResult {
         let reg = ZoneRegistry::new();
         // a big city zone and a small home zone share the same centre
         reg.upsert(Zone {
@@ -232,14 +239,15 @@ mod tests {
 
         // standing at the centre: smallest *active* zone is home (100 m),
         // not the passive 10 m region
-        let active = reg.active_zone(52.0, 4.0).expect("active");
+        let active = reg.active_zone(52.0, 4.0).ok_or("active")?;
         assert_eq!(active.id, "home");
 
         // far away: no zone contains the point
         assert!(reg.active_zone(0.0, 0.0).is_none());
 
         // 200 m north-ish: outside home, inside city → city wins
-        let active2 = reg.active_zone(52.0018, 4.0).expect("active2");
+        let active2 = reg.active_zone(52.0018, 4.0).ok_or("active2")?;
         assert_eq!(active2.id, "city");
+        Ok(())
     }
 }

@@ -54,6 +54,8 @@ impl Default for Context {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn new_assigns_unique_ids() {
         let a = Context::new();
@@ -75,7 +77,7 @@ mod tests {
         let c = Context::default();
         assert!(c.user_id.is_none());
         assert!(c.parent_id.is_none());
-        assert!(!c.id.is_empty());
+        assert_ne!(c.id, "");
     }
 
     #[test]
@@ -93,11 +95,12 @@ mod tests {
     }
 
     #[test]
-    fn serde_round_trip_preserves_chain() {
+    fn serde_round_trip_preserves_chain() -> TestResult {
         let root = Context::with_user("bob");
         let child = Context::child_of(&root);
-        let s = serde_json::to_string(&child).expect("serialise");
-        let back: Context = serde_json::from_str(&s).expect("deserialise");
+        let s = serde_json::to_string(&child)?;
+        let back: Context = serde_json::from_str(&s)?;
         assert_eq!(back, child);
+        Ok(())
     }
 }

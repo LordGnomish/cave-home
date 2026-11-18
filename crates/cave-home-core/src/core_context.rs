@@ -59,26 +59,29 @@ mod tests {
     use crate::state::{EntityId, StateAttributes};
     use crate::state_machine::EVENT_STATE_CHANGED;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[tokio::test]
-    async fn state_changes_are_observable_on_the_shared_bus() {
+    async fn state_changes_are_observable_on_the_shared_bus() -> TestResult {
         let ctx = CoreContext::new();
         let (_id, mut rx) = ctx.bus.listen(EVENT_STATE_CHANGED);
         ctx.states.set(
-            EntityId::new("light", "kitchen").expect("id"),
+            EntityId::new("light", "kitchen")?,
             "on",
             StateAttributes::new(),
             Context::new(),
         );
-        let evt = rx.recv().await.expect("state_changed");
+        let evt = rx.recv().await.ok_or("state_changed")?;
         assert_eq!(evt.data["entity_id"], "light.kitchen");
+        Ok(())
     }
 
     #[test]
-    fn clones_share_underlying_state() {
+    fn clones_share_underlying_state() -> TestResult {
         let ctx = CoreContext::new();
         let clone = ctx.clone();
         ctx.states.set(
-            EntityId::new("lock", "front").expect("id"),
+            EntityId::new("lock", "front")?,
             "locked",
             StateAttributes::new(),
             Context::new(),
@@ -87,13 +90,14 @@ mod tests {
         assert!(
             clone
                 .states
-                .is_state(&EntityId::new("lock", "front").expect("id"), "locked")
+                .is_state(&EntityId::new("lock", "front")?, "locked")
         );
         // and the same area registry
-        let area = ctx.areas.create("Garage").expect("area");
+        let area = ctx.areas.create("Garage")?;
         assert_eq!(
             clone.areas.get(&area.id).map(|a| a.name),
             Some("Garage".into())
         );
+        Ok(())
     }
 }
