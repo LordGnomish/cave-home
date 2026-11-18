@@ -26,7 +26,7 @@ use crate::error::{Result, ZigbeeError};
 pub enum FrameType {
     /// Profile-wide command (a Foundation command — Read/Write/Report…).
     ProfileWide,
-    /// Cluster-specific command (e.g. Groups Add 0x00, OnOff Toggle 0x02).
+    /// Cluster-specific command (e.g. Groups Add 0x00, `OnOff` Toggle 0x02).
     ClusterSpecific,
 }
 
@@ -171,7 +171,7 @@ pub struct ZclFrame {
 impl ZclFrame {
     /// Build a profile-wide client→server frame with the given command.
     #[must_use]
-    pub fn profile_wide(tsn: u8, command_id: u8, payload: Vec<u8>) -> Self {
+    pub const fn profile_wide(tsn: u8, command_id: u8, payload: Vec<u8>) -> Self {
         Self {
             control: ZclFrameControl::profile_wide(),
             mfr_code: None,
@@ -183,7 +183,7 @@ impl ZclFrame {
 
     /// Build a cluster-specific client→server frame with the given command.
     #[must_use]
-    pub fn cluster_specific(tsn: u8, command_id: u8, payload: Vec<u8>) -> Self {
+    pub const fn cluster_specific(tsn: u8, command_id: u8, payload: Vec<u8>) -> Self {
         Self {
             control: ZclFrameControl::cluster_specific(),
             mfr_code: None,
@@ -259,63 +259,76 @@ impl ZclFrame {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn frame_control_profile_wide_round_trip() {
+    fn frame_control_profile_wide_round_trip() -> TestResult {
         let fc = ZclFrameControl::profile_wide();
-        assert_eq!(ZclFrameControl::from_byte(fc.to_byte()).unwrap(), fc);
+        assert_eq!(ZclFrameControl::from_byte(fc.to_byte())?, fc);
+        Ok(())
     }
 
     #[test]
-    fn frame_control_cluster_specific_round_trip() {
+    fn frame_control_cluster_specific_round_trip() -> TestResult {
         let fc = ZclFrameControl::cluster_specific();
-        assert_eq!(ZclFrameControl::from_byte(fc.to_byte()).unwrap(), fc);
+        assert_eq!(ZclFrameControl::from_byte(fc.to_byte())?, fc);
+        Ok(())
     }
 
     #[test]
-    fn frame_control_server_to_client_with_disable_response() {
+    fn frame_control_server_to_client_with_disable_response() -> TestResult {
         let fc = ZclFrameControl {
             frame_type: FrameType::ProfileWide,
             mfr_specific: false,
             direction: Direction::ServerToClient,
             disable_default_response: true,
         };
-        assert_eq!(ZclFrameControl::from_byte(fc.to_byte()).unwrap(), fc);
+        assert_eq!(ZclFrameControl::from_byte(fc.to_byte())?, fc);
         // direction bit 3 + disable bit 4 ⇒ 0b00011000 = 0x18
         assert_eq!(fc.to_byte(), 0x18);
+        Ok(())
     }
 
     #[test]
-    fn frame_control_reserved_bits_rejected() {
+    fn frame_control_reserved_bits_rejected() -> TestResult {
         // bits 0..1 = 11 (reserved)
-        let err = ZclFrameControl::from_byte(0b11).unwrap_err();
+        let err = ZclFrameControl::from_byte(0b11)
+            .err()
+            .ok_or("expected an error")?;
         assert!(matches!(err, ZigbeeError::Integrity(_)));
+        Ok(())
     }
 
     #[test]
-    fn frame_encode_decode_round_trip_no_mfr() {
+    fn frame_encode_decode_round_trip_no_mfr() -> TestResult {
         let frame = ZclFrame::profile_wide(0x42, 0x00, vec![0x01, 0x02, 0x03, 0x04]);
         let bytes = frame.encode();
-        let decoded = ZclFrame::decode(&bytes).unwrap();
+        let decoded = ZclFrame::decode(&bytes)?;
         assert_eq!(decoded, frame);
+        Ok(())
     }
 
     #[test]
-    fn frame_encode_decode_round_trip_with_mfr() {
+    fn frame_encode_decode_round_trip_with_mfr() -> TestResult {
         let mut frame = ZclFrame::cluster_specific(0x10, 0xa1, vec![0xde, 0xad]);
         frame.control.mfr_specific = true;
         frame.mfr_code = Some(0x100b);
         let bytes = frame.encode();
         assert_eq!(bytes[0] & (1 << 2), 1 << 2, "mfr bit must be set");
-        let decoded = ZclFrame::decode(&bytes).unwrap();
+        let decoded = ZclFrame::decode(&bytes)?;
         assert_eq!(decoded, frame);
+        Ok(())
     }
 
     #[test]
-    fn frame_decode_truncated_returns_error() {
-        let err = ZclFrame::decode(&[]).unwrap_err();
+    fn frame_decode_truncated_returns_error() -> TestResult {
+        let err = ZclFrame::decode(&[]).err().ok_or("expected an error")?;
         assert!(matches!(err, ZigbeeError::Truncated { .. }));
-        let err = ZclFrame::decode(&[0x00, 0x01]).unwrap_err();
+        let err = ZclFrame::decode(&[0x00, 0x01])
+            .err()
+            .ok_or("expected an error")?;
         assert!(matches!(err, ZigbeeError::Truncated { .. }));
+        Ok(())
     }
 
     #[test]

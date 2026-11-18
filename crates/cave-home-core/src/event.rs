@@ -53,15 +53,18 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn local_event_origin_and_round_trip() {
+    fn local_event_origin_and_round_trip() -> TestResult {
         let evt = Event::local("state_changed", json!({"entity_id": "light.kitchen"}));
         assert_eq!(evt.origin, EventOrigin::Local);
 
-        let s = serde_json::to_string(&evt).expect("serialise");
-        let back: Event = serde_json::from_str(&s).expect("deserialise");
+        let s = serde_json::to_string(&evt)?;
+        let back: Event = serde_json::from_str(&s)?;
         assert_eq!(back.event_type, "state_changed");
         assert_eq!(back.origin, EventOrigin::Local);
+        Ok(())
     }
 
     #[test]
@@ -79,15 +82,10 @@ mod tests {
     }
 
     #[test]
-    fn origin_serializes_to_lowercase_tokens() {
+    fn origin_serializes_to_lowercase_tokens() -> TestResult {
         // upstream wire form uses lowercase "local"/"remote"
-        assert_eq!(
-            serde_json::to_string(&EventOrigin::Local).expect("ser"),
-            "\"local\""
-        );
-        assert_eq!(
-            serde_json::to_string(&EventOrigin::Remote).expect("ser"),
-            "\"remote\""
-        );
+        assert_eq!(serde_json::to_string(&EventOrigin::Local)?, "\"local\"");
+        assert_eq!(serde_json::to_string(&EventOrigin::Remote)?, "\"remote\"");
+        Ok(())
     }
 }

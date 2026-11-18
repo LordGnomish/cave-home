@@ -12,23 +12,23 @@
 //! Phase 1 MVP scope:
 //! - [`transport`]  — abstracted USB UART + TCP socket transport.
 //! - [`ezsp`]       — EZSP frame layer + ASH transport for Silicon Labs
-//!                    NCPs (Sonoff ZBDongle-E + SMLIGHT SLZB-06).
+//!   NCPs (Sonoff ZBDongle-E + SMLIGHT SLZB-06).
 //! - [`deconz`]     — deCONZ serial protocol + SLIP framer for the
-//!                    dresden-elektronik ConBee II.
+//!   dresden-elektronik `ConBee` II.
 //! - [`coordinator`] — coordinator init / form-network entry point.
 //! - [`network`]    — NWK + APS layers + routing table.
 //! - [`zcl`]        — ZCL frame format + Foundation commands.
-//! - [`onoff`]      — OnOff cluster (0x0006) commands + state.
+//! - [`onoff`]      — `OnOff` cluster (0x0006) commands + state.
 //! - [`level_control`] — Level Control cluster (0x0008) dimming.
 //! - [`color_control`] — Color Control cluster (0x0300) colour/temperature.
 //! - [`ias_zone`]   — IAS Zone cluster (0x0500) security sensors.
 //! - [`occupancy_sensing`] — Occupancy Sensing cluster (0x0406) presence.
-//! - [`pairing`]    — network steering / InstallCode / Touchlink.
+//! - [`pairing`]    — network steering / `InstallCode` / Touchlink.
 //! - [`attribute_reporting`] — Configure / Read / Report attributes.
 //! - [`groups`]     — Groups cluster (0x0004).
 //! - [`scenes`]     — Scenes cluster (0x0005).
 //! - [`ota`]        — OTA Upgrade cluster (0x0019) signal handler + queue.
-//! - [`events`]     — outbound event stream (DeviceJoined / Report / …).
+//! - [`events`]     — outbound event stream (`DeviceJoined` / Report / …).
 //! - [`error`]      — crate-wide error type.
 //! - [`prelude`]    — re-exports for downstream callers.
 //!

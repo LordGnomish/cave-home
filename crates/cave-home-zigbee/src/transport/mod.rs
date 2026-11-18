@@ -3,8 +3,8 @@
 //! Transport abstraction.
 //!
 //! A Zigbee coordinator is reached either over a local USB-UART
-//! (Sonoff ZBDongle-E, ConBee II) or over a TCP socket (SMLIGHT
-//! SLZB-06 in network mode; also ESPHome `zigbee_*` gateway boards).
+//! (Sonoff ZBDongle-E, `ConBee` II) or over a TCP socket (SMLIGHT
+//! SLZB-06 in network mode; also `ESPHome` `zigbee_*` gateway boards).
 //! This module abstracts both behind a single async byte-stream trait
 //! so the EZSP / deCONZ layers above don't care.
 //!
@@ -80,9 +80,7 @@ impl MemoryTransport {
     /// Drain every byte written so far.
     #[must_use]
     pub fn take_written(&self) -> Vec<u8> {
-        let mut guard = self.written.lock();
-        let bytes = guard.split().to_vec();
-        bytes
+        self.written.lock().split().to_vec()
     }
 
     /// Push bytes that will be returned by subsequent `read` calls.
@@ -105,6 +103,7 @@ impl Transport for MemoryTransport {
             return Ok(0);
         }
         let chunk = guard.split_to(n);
+        drop(guard);
         buf[..n].copy_from_slice(&chunk);
         Ok(n)
     }
@@ -251,33 +250,52 @@ impl Transport for UartTransport {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[tokio::test]
-    async fn memory_loopback_round_trips() {
+    async fn memory_loopback_round_trips() -> TestResult {
         let t = MemoryTransport::new("loop");
-        t.write_all(b"hello").await.expect("write");
+        t.write_all(b"hello").await?;
         assert_eq!(t.take_written(), b"hello");
 
         t.push_to_read(b"world");
         let mut buf = [0u8; 16];
-        let n = t.read(&mut buf).await.expect("read");
+        let n = t.read(&mut buf).await?;
         assert_eq!(&buf[..n], b"world");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn memory_read_on_empty_returns_zero() {
+    async fn memory_read_hands_out_at_most_the_buffer_length() -> TestResult {
+        let t = MemoryTransport::new("loop");
+        t.push_to_read(&[1, 2, 3, 4, 5]);
+        let mut small = [0u8; 3];
+        assert_eq!(t.read(&mut small).await?, 3);
+        assert_eq!(small, [1, 2, 3]);
+        let mut large = [0u8; 8];
+        assert_eq!(t.read(&mut large).await?, 2);
+        assert_eq!(large, [4, 5, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(t.read(&mut large).await?, 0);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn memory_read_on_empty_returns_zero() -> TestResult {
         let t = MemoryTransport::new("loop");
         let mut buf = [0u8; 4];
-        let n = t.read(&mut buf).await.expect("read");
+        let n = t.read(&mut buf).await?;
         assert_eq!(n, 0);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn memory_write_take_is_drained() {
+    async fn memory_write_take_is_drained() -> TestResult {
         let t = MemoryTransport::new("loop");
-        t.write_all(b"abc").await.unwrap();
+        t.write_all(b"abc").await?;
         assert_eq!(t.take_written(), b"abc");
         // Second take returns empty.
-        assert!(t.take_written().is_empty());
+        assert_eq!(t.take_written(), [] as [u8; 0]);
+        Ok(())
     }
 
     #[tokio::test]

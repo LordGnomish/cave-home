@@ -111,6 +111,7 @@ impl PersonRegistry {
             device_trackers: Vec::new(),
         };
         guard.people.insert(id, person.clone());
+        drop(guard);
         Ok(person)
     }
 
@@ -126,7 +127,9 @@ impl PersonRegistry {
         if !person.device_trackers.contains(&tracker) {
             person.device_trackers.push(tracker);
         }
-        Ok(person.clone())
+        let updated = person.clone();
+        drop(guard);
+        Ok(updated)
     }
 
     #[must_use]
@@ -152,64 +155,69 @@ mod tests {
     use crate::context::Context;
     use crate::state::StateAttributes;
 
-    fn tracker(object: &str) -> EntityId {
-        EntityId::new("device_tracker", object).expect("id")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn tracker(object: &str) -> Result<EntityId, crate::state::EntityIdError> {
+        EntityId::new("device_tracker", object)
     }
 
-    fn states_with(pairs: &[(&str, &str)]) -> StateMachine {
+    fn states_with(pairs: &[(&str, &str)]) -> Result<StateMachine, crate::state::EntityIdError> {
         let sm = StateMachine::new(crate::event_bus::EventBus::new());
         for (obj, st) in pairs {
-            sm.set(tracker(obj), *st, StateAttributes::new(), Context::new());
+            sm.set(tracker(obj)?, *st, StateAttributes::new(), Context::new());
         }
-        sm
+        Ok(sm)
     }
 
     #[test]
-    fn home_wins_over_everything() {
+    fn home_wins_over_everything() -> TestResult {
         let p = Person {
             id: "alice".into(),
             name: "Alice".into(),
             user_id: None,
-            device_trackers: vec![tracker("phone"), tracker("watch")],
+            device_trackers: vec![tracker("phone")?, tracker("watch")?],
         };
-        let states = states_with(&[("phone", "not_home"), ("watch", STATE_HOME)]);
+        let states = states_with(&[("phone", "not_home"), ("watch", STATE_HOME)])?;
         assert_eq!(p.resolve_state(&states), STATE_HOME);
+        Ok(())
     }
 
     #[test]
-    fn named_zone_beats_not_home() {
+    fn named_zone_beats_not_home() -> TestResult {
         let p = Person {
             id: "bob".into(),
             name: "Bob".into(),
             user_id: None,
-            device_trackers: vec![tracker("phone"), tracker("car")],
+            device_trackers: vec![tracker("phone")?, tracker("car")?],
         };
-        let states = states_with(&[("phone", "not_home"), ("car", "Work")]);
+        let states = states_with(&[("phone", "not_home"), ("car", "Work")])?;
         assert_eq!(p.resolve_state(&states), "Work");
+        Ok(())
     }
 
     #[test]
-    fn all_away_is_not_home() {
+    fn all_away_is_not_home() -> TestResult {
         let p = Person {
             id: "carol".into(),
             name: "Carol".into(),
             user_id: None,
-            device_trackers: vec![tracker("phone")],
+            device_trackers: vec![tracker("phone")?],
         };
-        let states = states_with(&[("phone", "not_home")]);
+        let states = states_with(&[("phone", "not_home")])?;
         assert_eq!(p.resolve_state(&states), STATE_NOT_HOME);
+        Ok(())
     }
 
     #[test]
-    fn no_usable_tracker_is_unknown() {
+    fn no_usable_tracker_is_unknown() -> TestResult {
         // unknown/unavailable trackers and missing trackers → unknown
         let p = Person {
             id: "dave".into(),
             name: "Dave".into(),
             user_id: None,
-            device_trackers: vec![tracker("phone"), tracker("ghost")],
+            device_trackers: vec![tracker("phone")?, tracker("ghost")?],
         };
-        let states = states_with(&[("phone", STATE_UNAVAILABLE)]);
+        let states = states_with(&[("phone", STATE_UNAVAILABLE)])?;
         assert_eq!(p.resolve_state(&states), STATE_UNKNOWN);
 
         // a person with no trackers at all is unknown
@@ -220,25 +228,22 @@ mod tests {
             device_trackers: vec![],
         };
         assert_eq!(empty.resolve_state(&states), STATE_UNKNOWN);
+        Ok(())
     }
 
     #[test]
-    fn registry_create_track_and_state_of() {
+    fn registry_create_track_and_state_of() -> TestResult {
         let reg = PersonRegistry::new();
-        let alice = reg
-            .create("Alice Smith", Some("user-1".into()))
-            .expect("create");
+        let alice = reg.create("Alice Smith", Some("user-1".into()))?;
         assert_eq!(alice.id, "alice_smith");
         assert_eq!(alice.user_id.as_deref(), Some("user-1"));
 
-        reg.add_tracker(&alice.id, tracker("phone")).expect("track");
+        reg.add_tracker(&alice.id, tracker("phone")?)?;
         // adding the same tracker twice is idempotent
-        let p = reg
-            .add_tracker(&alice.id, tracker("phone"))
-            .expect("track2");
+        let p = reg.add_tracker(&alice.id, tracker("phone")?)?;
         assert_eq!(p.device_trackers.len(), 1);
 
-        let states = states_with(&[("phone", STATE_HOME)]);
+        let states = states_with(&[("phone", STATE_HOME)])?;
         assert_eq!(
             reg.state_of(&alice.id, &states).as_deref(),
             Some(STATE_HOME)
@@ -246,8 +251,11 @@ mod tests {
         assert!(reg.state_of("nobody", &states).is_none());
 
         assert_eq!(
-            reg.add_tracker("nobody", tracker("x")).unwrap_err(),
+            reg.add_tracker("nobody", tracker("x")?)
+                .err()
+                .ok_or("expected an error")?,
             PersonError::UnknownId("nobody".into())
         );
+        Ok(())
     }
 }

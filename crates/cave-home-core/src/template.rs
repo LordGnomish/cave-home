@@ -98,94 +98,86 @@ mod tests {
     use crate::state::StateAttributes;
     use serde_json::json;
 
-    fn engine_with_kitchen() -> TemplateEngine {
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn engine_with_kitchen() -> Result<TemplateEngine, crate::state::EntityIdError> {
         let sm = StateMachine::new(crate::event_bus::EventBus::new());
-        let id = EntityId::new("light", "kitchen").expect("id");
+        let id = EntityId::new("light", "kitchen")?;
         let mut attrs = StateAttributes::new();
         attrs.insert("brightness".into(), json!(200));
         attrs.insert("friendly_name".into(), json!("Kitchen"));
         sm.set(id, "on", attrs, Context::new());
-        TemplateEngine::new(sm)
+        Ok(TemplateEngine::new(sm))
     }
 
     #[test]
-    fn literal_passthrough() {
-        let eng = engine_with_kitchen();
-        assert_eq!(eng.render("hello world").expect("render"), "hello world");
+    fn literal_passthrough() -> TestResult {
+        let eng = engine_with_kitchen()?;
+        assert_eq!(eng.render("hello world")?, "hello world");
+        Ok(())
     }
 
     #[test]
-    fn states_function_reads_value() {
-        let eng = engine_with_kitchen();
-        assert_eq!(
-            eng.render("{{ states('light.kitchen') }}").expect("render"),
-            "on"
-        );
+    fn states_function_reads_value() -> TestResult {
+        let eng = engine_with_kitchen()?;
+        assert_eq!(eng.render("{{ states('light.kitchen') }}")?, "on");
         // missing entity -> unknown
-        assert_eq!(
-            eng.render("{{ states('light.nope') }}").expect("render"),
-            "unknown"
-        );
+        assert_eq!(eng.render("{{ states('light.nope') }}")?, "unknown");
         // malformed id -> unknown (no error)
-        assert_eq!(
-            eng.render("{{ states('garbage') }}").expect("render"),
-            "unknown"
-        );
+        assert_eq!(eng.render("{{ states('garbage') }}")?, "unknown");
+        Ok(())
     }
 
     #[test]
-    fn is_state_branches_in_if() {
-        let eng = engine_with_kitchen();
-        let out = eng
-            .render("{% if is_state('light.kitchen', 'on') %}lit{% else %}dark{% endif %}")
-            .expect("render");
+    fn is_state_branches_in_if() -> TestResult {
+        let eng = engine_with_kitchen()?;
+        let out =
+            eng.render("{% if is_state('light.kitchen', 'on') %}lit{% else %}dark{% endif %}")?;
         assert_eq!(out, "lit");
-        let out2 = eng
-            .render("{% if is_state('light.kitchen', 'off') %}lit{% else %}dark{% endif %}")
-            .expect("render");
+        let out2 =
+            eng.render("{% if is_state('light.kitchen', 'off') %}lit{% else %}dark{% endif %}")?;
         assert_eq!(out2, "dark");
+        Ok(())
     }
 
     #[test]
-    fn state_attr_reads_attribute_and_supports_arithmetic() {
-        let eng = engine_with_kitchen();
+    fn state_attr_reads_attribute_and_supports_arithmetic() -> TestResult {
+        let eng = engine_with_kitchen()?;
         assert_eq!(
-            eng.render("{{ state_attr('light.kitchen', 'brightness') }}")
-                .expect("r"),
+            eng.render("{{ state_attr('light.kitchen', 'brightness') }}")?,
             "200"
         );
         // the value is a real number, usable in arithmetic
         assert_eq!(
-            eng.render("{{ state_attr('light.kitchen', 'brightness') // 2 }}")
-                .expect("r"),
+            eng.render("{{ state_attr('light.kitchen', 'brightness') // 2 }}")?,
             "100"
         );
         // missing attribute renders as Jinja2's `None` (as in Home Assistant)
         assert_eq!(
-            eng.render("{{ state_attr('light.kitchen', 'nope') }}")
-                .expect("r"),
+            eng.render("{{ state_attr('light.kitchen', 'nope') }}")?,
             "None"
         );
+        Ok(())
     }
 
     #[test]
-    fn is_state_attr_compares_value() {
-        let eng = engine_with_kitchen();
+    fn is_state_attr_compares_value() -> TestResult {
+        let eng = engine_with_kitchen()?;
         assert_eq!(
-            eng.render("{{ is_state_attr('light.kitchen', 'brightness', 200) }}")
-                .expect("r"),
+            eng.render("{{ is_state_attr('light.kitchen', 'brightness', 200) }}")?,
             "True"
         );
         assert_eq!(
-            eng.render("{{ is_state_attr('light.kitchen', 'brightness', 5) }}")
-                .expect("r"),
+            eng.render("{{ is_state_attr('light.kitchen', 'brightness', 5) }}")?,
             "False"
         );
+        Ok(())
     }
 
     #[test]
-    fn malformed_template_errors() {
-        let eng = engine_with_kitchen();
+    fn malformed_template_errors() -> TestResult {
+        let eng = engine_with_kitchen()?;
         assert!(eng.render("{{ unclosed ").is_err());
+        Ok(())
     }
 }

@@ -161,7 +161,9 @@ impl DeviceRegistry {
             }
         }
 
-        Ok(entry.clone())
+        let merged = entry.clone();
+        drop(guard);
+        Ok(merged)
     }
 
     /// `async_get`.
@@ -206,7 +208,9 @@ impl DeviceRegistry {
         if let Some(sw_version) = changes.sw_version {
             entry.sw_version = sw_version;
         }
-        Ok(entry.clone())
+        let updated = entry.clone();
+        drop(guard);
+        Ok(updated)
     }
 
     /// `async_remove_device`.
@@ -248,6 +252,8 @@ pub struct DeviceUpdate {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn info(ids: &[(&str, &str)]) -> DeviceInfo {
         DeviceInfo {
             identifiers: ids
@@ -259,19 +265,19 @@ mod tests {
     }
 
     #[test]
-    fn get_or_create_creates_then_merges_on_shared_identifier() {
+    fn get_or_create_creates_then_merges_on_shared_identifier() -> TestResult {
         let reg = DeviceRegistry::new();
         let mut first = info(&[("hue", "0017")]);
         first.manufacturer = Some("Signify".into());
-        let a = reg.get_or_create("entry1", &first).expect("create");
-        assert!(!a.id.is_empty());
+        let a = reg.get_or_create("entry1", &first)?;
+        assert_ne!(a.id, "");
         assert_eq!(a.manufacturer.as_deref(), Some("Signify"));
         assert!(a.config_entries.contains("entry1"));
 
         // a second call sharing the identifier merges (same id) and fills model
         let mut second = info(&[("hue", "0017")]);
         second.model = Some("LCT015".into());
-        let b = reg.get_or_create("entry2", &second).expect("merge");
+        let b = reg.get_or_create("entry2", &second)?;
         assert_eq!(b.id, a.id);
         assert_eq!(b.model.as_deref(), Some("LCT015"));
         // earlier manufacturer is preserved through the merge
@@ -281,59 +287,64 @@ mod tests {
         assert!(b.config_entries.contains("entry2"));
         // only one device exists
         assert_eq!(reg.list().len(), 1);
+        Ok(())
     }
 
     #[test]
-    fn distinct_identity_creates_distinct_devices() {
+    fn distinct_identity_creates_distinct_devices() -> TestResult {
         let reg = DeviceRegistry::new();
-        let a = reg.get_or_create("e", &info(&[("hue", "a")])).expect("a");
-        let b = reg.get_or_create("e", &info(&[("hue", "b")])).expect("b");
+        let a = reg.get_or_create("e", &info(&[("hue", "a")]))?;
+        let b = reg.get_or_create("e", &info(&[("hue", "b")]))?;
         assert_ne!(a.id, b.id);
         assert_eq!(reg.list().len(), 2);
+        Ok(())
     }
 
     #[test]
-    fn identity_less_hint_is_rejected() {
+    fn identity_less_hint_is_rejected() -> TestResult {
         let reg = DeviceRegistry::new();
         assert_eq!(
-            reg.get_or_create("e", &DeviceInfo::default()).unwrap_err(),
+            reg.get_or_create("e", &DeviceInfo::default())
+                .err()
+                .ok_or("expected an error")?,
             DeviceError::NoIdentity
         );
+        Ok(())
     }
 
     #[test]
-    fn via_device_resolves_to_parent_id() {
+    fn via_device_resolves_to_parent_id() -> TestResult {
         let reg = DeviceRegistry::new();
-        let bridge = reg
-            .get_or_create("e", &info(&[("hue", "bridge")]))
-            .expect("bridge");
+        let bridge = reg.get_or_create("e", &info(&[("hue", "bridge")]))?;
         let mut bulb = info(&[("hue", "bulb1")]);
         bulb.via_device = Some(("hue".into(), "bridge".into()));
-        let child = reg.get_or_create("e", &bulb).expect("child");
+        let child = reg.get_or_create("e", &bulb)?;
         assert_eq!(child.via_device_id.as_deref(), Some(bridge.id.as_str()));
+        Ok(())
     }
 
     #[test]
-    fn get_device_matches_on_connection() {
+    fn get_device_matches_on_connection() -> TestResult {
         let reg = DeviceRegistry::new();
         let mut di = info(&[("zwave", "node5")]);
         di.connections = vec![("mac".into(), "aa:bb".into())];
-        let d = reg.get_or_create("e", &di).expect("d");
+        let d = reg.get_or_create("e", &di)?;
         let conn = BTreeSet::from([("mac".to_owned(), "aa:bb".to_owned())]);
         assert_eq!(
             reg.get_device(&BTreeSet::new(), &conn).map(|x| x.id),
-            Some(d.id.clone())
+            Some(d.id)
         );
         // unknown identity → None
         assert!(reg.get_device(&BTreeSet::new(), &BTreeSet::new()).is_none());
+        Ok(())
     }
 
     #[test]
-    fn update_area_and_name_by_user_and_display_name() {
+    fn update_area_and_name_by_user_and_display_name() -> TestResult {
         let reg = DeviceRegistry::new();
         let mut di = info(&[("hue", "x")]);
         di.name = Some("Hue lamp 1".into());
-        let d = reg.get_or_create("e", &di).expect("d");
+        let d = reg.get_or_create("e", &di)?;
         assert_eq!(d.display_name(), Some("Hue lamp 1"));
 
         let changes = DeviceUpdate {
@@ -341,7 +352,7 @@ mod tests {
             name_by_user: Some(Some("Reading lamp".into())),
             ..DeviceUpdate::default()
         };
-        let u = reg.update(&d.id, changes).expect("update");
+        let u = reg.update(&d.id, changes)?;
         assert_eq!(u.area_id.as_deref(), Some("living_room"));
         // user name now wins
         assert_eq!(u.display_name(), Some("Reading lamp"));
@@ -349,17 +360,21 @@ mod tests {
 
         // unknown id errors
         assert_eq!(
-            reg.update("ghost", DeviceUpdate::default()).unwrap_err(),
+            reg.update("ghost", DeviceUpdate::default())
+                .err()
+                .ok_or("expected an error")?,
             DeviceError::UnknownId("ghost".into())
         );
+        Ok(())
     }
 
     #[test]
-    fn remove_device() {
+    fn remove_device() -> TestResult {
         let reg = DeviceRegistry::new();
-        let d = reg.get_or_create("e", &info(&[("hue", "x")])).expect("d");
+        let d = reg.get_or_create("e", &info(&[("hue", "x")]))?;
         assert!(reg.remove(&d.id).is_some());
         assert!(reg.get(&d.id).is_none());
         assert!(reg.remove(&d.id).is_none());
+        Ok(())
     }
 }

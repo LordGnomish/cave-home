@@ -265,15 +265,18 @@ impl ConfigureReporting {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn read_attributes_round_trip() {
+    fn read_attributes_round_trip() -> TestResult {
         let r = ReadAttributes {
             ids: vec![0x0000, 0x0004, 0x0005],
         };
         let bytes = r.encode();
         assert_eq!(bytes, vec![0x00, 0x00, 0x04, 0x00, 0x05, 0x00]);
-        let decoded = ReadAttributes::decode(&bytes).unwrap();
+        let decoded = ReadAttributes::decode(&bytes)?;
         assert_eq!(decoded, r);
+        Ok(())
     }
 
     #[test]
@@ -285,7 +288,7 @@ mod tests {
     }
 
     #[test]
-    fn read_attributes_response_success_record_round_trip() {
+    fn read_attributes_response_success_record_round_trip() -> TestResult {
         let resp = ReadAttributesResponse {
             records: vec![
                 AttributeRecord {
@@ -301,12 +304,13 @@ mod tests {
             ],
         };
         let bytes = resp.encode();
-        let decoded = ReadAttributesResponse::decode(&bytes).unwrap();
+        let decoded = ReadAttributesResponse::decode(&bytes)?;
         assert_eq!(decoded, resp);
+        Ok(())
     }
 
     #[test]
-    fn write_attributes_round_trip() {
+    fn write_attributes_round_trip() -> TestResult {
         let w = WriteAttributes {
             writes: vec![
                 (0x0000, AttributeValue::Boolean(true)),
@@ -315,12 +319,13 @@ mod tests {
             ],
         };
         let bytes = w.encode();
-        let decoded = WriteAttributes::decode(&bytes).unwrap();
+        let decoded = WriteAttributes::decode(&bytes)?;
         assert_eq!(decoded, w);
+        Ok(())
     }
 
     #[test]
-    fn configure_reporting_round_trip() {
+    fn configure_reporting_round_trip() -> TestResult {
         let c = ConfigureReporting {
             direction: ReportingDirection::Reported,
             attribute_id: 0x0021,
@@ -330,8 +335,9 @@ mod tests {
         };
         let bytes = c.encode();
         assert_eq!(bytes.len(), 8);
-        let (decoded, used) = ConfigureReporting::decode(&bytes).unwrap();
+        let (decoded, used) = ConfigureReporting::decode(&bytes)?;
         assert_eq!(decoded, c);
         assert_eq!(used, 8);
+        Ok(())
     }
 }

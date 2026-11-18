@@ -68,8 +68,9 @@ impl EzspNetworkParameters {
             )));
         }
         // node_type byte = bytes[1].
-        let ext_pan_bytes: [u8; 8] = bytes[2..10].try_into().expect("bounds checked");
-        let extended_pan_id = u64::from_le_bytes(ext_pan_bytes);
+        let extended_pan_id = u64::from_le_bytes([
+            bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9],
+        ]);
         let pan_id = u16::from_le_bytes([bytes[10], bytes[11]]);
         // tx_power = bytes[12]
         let channel = bytes[13];
@@ -140,7 +141,7 @@ impl EzspCommand {
 /// Decoded EZSP response — one variant per command we issue.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EzspResponse {
-    /// `version` response: (protocol_version, stack_type, stack_version).
+    /// `version` response: (`protocol_version`, `stack_type`, `stack_version`).
     Version {
         protocol_version: u8,
         stack_type: u8,
@@ -221,6 +222,8 @@ impl EzspResponse {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn version_command_encodes_correctly() {
         let cmd = EzspCommand::Version {
@@ -243,14 +246,14 @@ mod tests {
     }
 
     #[test]
-    fn response_parses_version_layout() {
+    fn response_parses_version_layout() -> TestResult {
         let frame = EzspFrame {
             sequence: 0,
             control: super::super::frame::EzspFrameControl::response(),
             frame_id: frame_id::VERSION,
             parameters: vec![0x08, 0x02, 0x34, 0x12],
         };
-        let resp = EzspResponse::from_frame(&frame).unwrap();
+        let resp = EzspResponse::from_frame(&frame)?;
         assert_eq!(
             resp,
             EzspResponse::Version {
@@ -259,12 +262,13 @@ mod tests {
                 stack_version: 0x1234,
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn unknown_frame_id_returned_opaquely() {
+    fn unknown_frame_id_returned_opaquely() -> TestResult {
         let frame = EzspFrame::command(0, 0xbeef, vec![0xde, 0xad]);
-        let resp = EzspResponse::from_frame(&frame).unwrap();
+        let resp = EzspResponse::from_frame(&frame)?;
         assert_eq!(
             resp,
             EzspResponse::Unknown {
@@ -272,10 +276,11 @@ mod tests {
                 parameters: vec![0xde, 0xad],
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn network_parameters_round_trip() {
+    fn network_parameters_round_trip() -> TestResult {
         // status 00, node_type 01, extended pan id 0x0123456789abcdef LE,
         // pan id 0x1a2b, tx_power 8, channel 15, join_method 0,
         // manager id 0x0000, channels mask 0x07fff800, update id 7.
@@ -283,11 +288,12 @@ mod tests {
             0x00, 0x01, 0xef, 0xcd, 0xab, 0x89, 0x67, 0x45, 0x23, 0x01, 0x2b, 0x1a, 0x08, 0x0f,
             0x00, 0x00, 0x00, 0x00, 0xf8, 0xff, 0x07, 0x07,
         ];
-        let params = EzspNetworkParameters::decode(&buf).unwrap();
+        let params = EzspNetworkParameters::decode(&buf)?;
         assert_eq!(params.channel, 15);
         assert_eq!(params.pan_id, 0x1a2b);
         assert_eq!(params.extended_pan_id, 0x0123_4567_89ab_cdef);
         assert_eq!(params.network_update_id, 7);
+        Ok(())
     }
 
     #[test]

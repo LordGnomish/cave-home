@@ -205,7 +205,9 @@ impl EntityRegistry {
         if let Some(hidden_by) = changes.hidden_by {
             entry.hidden_by = hidden_by;
         }
-        Ok(entry.clone())
+        let updated = entry.clone();
+        drop(guard);
+        Ok(updated)
     }
 
     /// `async_remove` — drop an entry and its identity index.
@@ -218,6 +220,7 @@ impl EntityRegistry {
             removed.domain.clone(),
             removed.unique_id.clone(),
         ));
+        drop(guard);
         Some(removed)
     }
 
@@ -258,6 +261,8 @@ pub struct EntityUpdate {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[test]
     fn get_or_create_allocates_entity_id_from_unique_id() {
@@ -339,52 +344,50 @@ mod tests {
         );
         assert_eq!(
             reg.get_entity_id("sensor", "zwave", "node5-temp"),
-            Some(e.entity_id.clone())
+            Some(e.entity_id)
         );
         assert!(reg.get_entity_id("sensor", "zwave", "nope").is_none());
         assert_eq!(reg.entities_for_device("dev1").len(), 1);
-        assert!(reg.entities_for_device("other").is_empty());
+        assert_eq!(reg.entities_for_device("other"), [] as [RegistryEntry; 0]);
     }
 
     #[test]
-    fn update_disable_hide_and_rename() {
+    fn update_disable_hide_and_rename() -> TestResult {
         let reg = EntityRegistry::new();
         let e = reg.get_or_create("light", "hue", "u1", EntityCreate::default());
-        let u = reg
-            .update(
-                &e.entity_id,
-                EntityUpdate {
-                    name: Some(Some("Reading light".into())),
-                    disabled_by: Some(Some(DisabledBy::User)),
-                    hidden_by: Some(Some(HiddenBy::Integration)),
-                    ..EntityUpdate::default()
-                },
-            )
-            .expect("update");
+        let u = reg.update(
+            &e.entity_id,
+            EntityUpdate {
+                name: Some(Some("Reading light".into())),
+                disabled_by: Some(Some(DisabledBy::User)),
+                hidden_by: Some(Some(HiddenBy::Integration)),
+                ..EntityUpdate::default()
+            },
+        )?;
         assert_eq!(u.name.as_deref(), Some("Reading light"));
         assert!(u.disabled());
         assert_eq!(u.disabled_by, Some(DisabledBy::User));
         assert!(u.hidden());
 
         // clearing a disabler with Some(None)
-        let cleared = reg
-            .update(
-                &e.entity_id,
-                EntityUpdate {
-                    disabled_by: Some(None),
-                    ..EntityUpdate::default()
-                },
-            )
-            .expect("clear");
+        let cleared = reg.update(
+            &e.entity_id,
+            EntityUpdate {
+                disabled_by: Some(None),
+                ..EntityUpdate::default()
+            },
+        )?;
         assert!(!cleared.disabled());
         // name untouched by this update (None leaves it)
         assert_eq!(cleared.name.as_deref(), Some("Reading light"));
 
         assert_eq!(
             reg.update("light.ghost", EntityUpdate::default())
-                .unwrap_err(),
+                .err()
+                .ok_or("expected an error")?,
             EntityRegistryError::UnknownEntityId("light.ghost".into())
         );
+        Ok(())
     }
 
     #[test]

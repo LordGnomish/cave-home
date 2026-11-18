@@ -192,12 +192,14 @@ mod tests {
 
     #[test]
     fn denied_origin_gets_no_headers() {
-        assert!(
-            policy()
-                .preflight_headers("https://evil.example")
-                .is_empty()
+        assert_eq!(
+            policy().preflight_headers("https://evil.example"),
+            [] as [(String, String); 0]
         );
-        assert!(policy().actual_headers("https://evil.example").is_empty());
+        assert_eq!(
+            policy().actual_headers("https://evil.example"),
+            [] as [(String, String); 0]
+        );
     }
 
     #[test]

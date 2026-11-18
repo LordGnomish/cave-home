@@ -174,17 +174,20 @@ pub fn server_config(resolver: Arc<SniResolver>) -> Result<ServerConfig, TlsErro
 mod tests {
     use super::*;
 
-    fn cert_for(host: &str) -> Arc<CertifiedKey> {
-        let (cert_pem, key_pem) = self_signed(&[host.to_string()]).unwrap();
-        certified_key(cert_pem.as_bytes(), key_pem.as_bytes()).unwrap()
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn cert_for(host: &str) -> Result<Arc<CertifiedKey>, TlsError> {
+        let (cert_pem, key_pem) = self_signed(&[host.to_string()])?;
+        certified_key(cert_pem.as_bytes(), key_pem.as_bytes())
     }
 
     #[test]
-    fn self_signed_pem_loads_back() {
-        let (cert_pem, key_pem) = self_signed(&["cave.local".to_string()]).unwrap();
-        assert_eq!(load_certs(cert_pem.as_bytes()).unwrap().len(), 1);
+    fn self_signed_pem_loads_back() -> TestResult {
+        let (cert_pem, key_pem) = self_signed(&["cave.local".to_string()])?;
+        assert_eq!(load_certs(cert_pem.as_bytes())?.len(), 1);
         assert!(load_private_key(key_pem.as_bytes()).is_ok());
         assert!(certified_key(cert_pem.as_bytes(), key_pem.as_bytes()).is_ok());
+        Ok(())
     }
 
     #[test]
@@ -194,40 +197,53 @@ mod tests {
     }
 
     #[test]
-    fn exact_sni_match_wins() {
-        let default = cert_for("default.local");
-        let a = cert_for("a.example");
-        let mut r = SniResolver::new(Some(default.clone()));
+    fn exact_sni_match_wins() -> TestResult {
+        let default = cert_for("default.local")?;
+        let a = cert_for("a.example")?;
+        let mut r = SniResolver::new(Some(default));
         r.insert("a.example", a.clone());
-        assert!(Arc::ptr_eq(&r.select_cert(Some("a.example")).unwrap(), &a));
+        assert!(Arc::ptr_eq(
+            &r.select_cert(Some("a.example"))
+                .ok_or("r.select_cert(Some('a.example')) is None")?,
+            &a
+        ));
+        Ok(())
     }
 
     #[test]
-    fn wildcard_sni_match() {
-        let default = cert_for("default.local");
-        let wild = cert_for("wild.example");
+    fn wildcard_sni_match() -> TestResult {
+        let default = cert_for("default.local")?;
+        let wild = cert_for("wild.example")?;
         let mut r = SniResolver::new(Some(default));
         r.insert("*.example.com", wild.clone());
         assert!(Arc::ptr_eq(
-            &r.select_cert(Some("api.example.com")).unwrap(),
+            &r.select_cert(Some("api.example.com"))
+                .ok_or("r.select_cert(Some('api.example.com')) is None")?,
             &wild
         ));
         // wildcard matches exactly one label, not the bare domain
         assert!(!Arc::ptr_eq(
-            &r.select_cert(Some("example.com")).unwrap(),
+            &r.select_cert(Some("example.com"))
+                .ok_or("r.select_cert(Some('example.com')) is None")?,
             &wild
         ));
+        Ok(())
     }
 
     #[test]
-    fn unknown_sni_falls_back_to_default() {
-        let default = cert_for("default.local");
+    fn unknown_sni_falls_back_to_default() -> TestResult {
+        let default = cert_for("default.local")?;
         let r = SniResolver::new(Some(default.clone()));
         assert!(Arc::ptr_eq(
-            &r.select_cert(Some("nope.example")).unwrap(),
+            &r.select_cert(Some("nope.example"))
+                .ok_or("r.select_cert(Some('nope.example')) is None")?,
             &default
         ));
-        assert!(Arc::ptr_eq(&r.select_cert(None).unwrap(), &default));
+        assert!(Arc::ptr_eq(
+            &r.select_cert(None).ok_or("r.select_cert(None) is None")?,
+            &default
+        ));
+        Ok(())
     }
 
     #[test]
@@ -237,9 +253,10 @@ mod tests {
     }
 
     #[test]
-    fn server_config_builds() {
-        let r = Arc::new(SniResolver::new(Some(cert_for("cave.local"))));
-        let cfg = server_config(r).unwrap();
+    fn server_config_builds() -> TestResult {
+        let r = Arc::new(SniResolver::new(Some(cert_for("cave.local")?)));
+        let cfg = server_config(r)?;
         assert!(cfg.alpn_protocols.iter().any(|p| p == b"http/1.1"));
+        Ok(())
     }
 }

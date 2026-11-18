@@ -124,8 +124,10 @@ pub fn apply_response_headers(dst: &mut HeaderMap, resp: &ResponseDescriptor) {
 mod tests {
     use super::*;
 
-    fn hv(s: &str) -> HeaderValue {
-        HeaderValue::from_str(s).unwrap()
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn hv(s: &str) -> Result<HeaderValue, http::header::InvalidHeaderValue> {
+        HeaderValue::from_str(s)
     }
 
     #[test]
@@ -141,68 +143,85 @@ mod tests {
     }
 
     #[test]
-    fn descriptor_extracts_method_path_scheme() {
+    fn descriptor_extracts_method_path_scheme() -> TestResult {
         let mut h = HeaderMap::new();
-        h.insert(http::header::HOST, hv("Example.COM:443"));
-        let uri: Uri = "/api/users?q=1".parse().unwrap();
+        h.insert(http::header::HOST, hv("Example.COM:443")?);
+        let uri: Uri = "/api/users?q=1".parse()?;
         let d = descriptor_from_parts(&Method::POST, &uri, &h, "https");
         assert_eq!(d.method, "POST");
         assert_eq!(d.host, "example.com"); // host header wins, port stripped, lower-cased
         assert_eq!(d.path, "/api/users"); // query excluded
         assert_eq!(d.scheme, "https");
+        Ok(())
     }
 
     #[test]
-    fn descriptor_host_header_beats_uri_authority() {
+    fn descriptor_host_header_beats_uri_authority() -> TestResult {
         let mut h = HeaderMap::new();
-        h.insert(http::header::HOST, hv("from-header.com"));
-        let uri: Uri = "http://from-uri.com/x".parse().unwrap();
+        h.insert(http::header::HOST, hv("from-header.com")?);
+        let uri: Uri = "http://from-uri.com/x".parse()?;
         let d = descriptor_from_parts(&Method::GET, &uri, &h, "http");
         assert_eq!(d.host, "from-header.com");
+        Ok(())
     }
 
     #[test]
-    fn descriptor_lowercases_and_joins_duplicate_headers() {
+    fn descriptor_lowercases_and_joins_duplicate_headers() -> TestResult {
         let mut h = HeaderMap::new();
-        h.insert(http::header::HOST, hv("h"));
-        h.append(HeaderName::from_static("x-tag"), hv("a"));
-        h.append(HeaderName::from_static("x-tag"), hv("b"));
-        let uri: Uri = "/".parse().unwrap();
+        h.insert(http::header::HOST, hv("h")?);
+        h.append(HeaderName::from_static("x-tag"), hv("a")?);
+        h.append(HeaderName::from_static("x-tag"), hv("b")?);
+        let uri: Uri = "/".parse()?;
         let d = descriptor_from_parts(&Method::GET, &uri, &h, "http");
         assert_eq!(d.header("X-Tag"), Some("a, b"));
+        Ok(())
     }
 
     #[test]
-    fn cookie_value_finds_named_cookie() {
+    fn cookie_value_finds_named_cookie() -> TestResult {
         let mut h = HeaderMap::new();
         h.insert(
             http::header::COOKIE,
-            hv("sid=abc; srv=http://b:80; theme=dark"),
+            hv("sid=abc; srv=http://b:80; theme=dark")?,
         );
         assert_eq!(cookie_value(&h, "srv").as_deref(), Some("http://b:80"));
         assert_eq!(cookie_value(&h, "missing"), None);
+        Ok(())
     }
 
     #[test]
-    fn short_circuit_parts_carries_status_and_location() {
-        let mut resp = ResponseDescriptor::default();
-        resp.status = Some(302);
+    fn short_circuit_parts_carries_status_and_location() -> TestResult {
+        let mut resp = ResponseDescriptor {
+            status: Some(302),
+            ..ResponseDescriptor::default()
+        };
         resp.headers
             .insert("location".to_string(), "https://x/y".to_string());
         let (status, headers) = short_circuit_parts(&resp);
         assert_eq!(status, StatusCode::FOUND);
-        assert_eq!(headers.get("location").unwrap(), "https://x/y");
+        assert_eq!(
+            headers
+                .get("location")
+                .ok_or("headers.get('location') is None")?,
+            "https://x/y"
+        );
+        Ok(())
     }
 
     #[test]
-    fn apply_response_headers_merges_onto_existing() {
+    fn apply_response_headers_merges_onto_existing() -> TestResult {
         let mut dst = HeaderMap::new();
-        dst.insert(HeaderName::from_static("x-keep"), hv("1"));
+        dst.insert(HeaderName::from_static("x-keep"), hv("1")?);
         let mut resp = ResponseDescriptor::default();
         resp.headers
             .insert("x-frame-options".to_string(), "DENY".to_string());
         apply_response_headers(&mut dst, &resp);
-        assert_eq!(dst.get("x-keep").unwrap(), "1");
-        assert_eq!(dst.get("x-frame-options").unwrap(), "DENY");
+        assert_eq!(dst.get("x-keep").ok_or("dst.get('x-keep') is None")?, "1");
+        assert_eq!(
+            dst.get("x-frame-options")
+                .ok_or("dst.get('x-frame-options') is None")?,
+            "DENY"
+        );
+        Ok(())
     }
 }

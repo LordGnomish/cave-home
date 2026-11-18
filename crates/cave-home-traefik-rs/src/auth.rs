@@ -111,6 +111,8 @@ impl BasicAuthChecker {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn sha_entry(user: &str, password: &str) -> String {
         let mut h = Sha1::new();
         h.update(password.as_bytes());
@@ -145,11 +147,12 @@ mod tests {
     }
 
     #[test]
-    fn verify_sha_password() {
+    fn verify_sha_password() -> TestResult {
         let entry = sha_entry("bob", "s3cret");
-        let hash = entry.split_once(':').unwrap().1;
+        let hash = entry.split_once(':').ok_or("entry has no colon")?.1;
         assert!(verify_password("s3cret", hash));
         assert!(!verify_password("nope", hash));
+        Ok(())
     }
 
     #[test]
@@ -166,7 +169,7 @@ mod tests {
     }
 
     #[test]
-    fn checker_rejects_bad_password_and_missing_header() {
+    fn checker_rejects_bad_password_and_missing_header() -> TestResult {
         let checker = BasicAuthChecker::new("cave", &[sha_entry("alice", "open")]);
         assert!(matches!(
             checker.check(Some(&basic_header("alice", "wrong"))),
@@ -174,7 +177,8 @@ mod tests {
         ));
         match checker.check(None) {
             AuthResult::Unauthorized(ch) => assert!(ch.contains("realm=\"cave\"")),
-            AuthResult::Authorized(_) => panic!("should be unauthorized"),
+            AuthResult::Authorized(_) => return Err("should be unauthorized".into()),
         }
+        Ok(())
     }
 }

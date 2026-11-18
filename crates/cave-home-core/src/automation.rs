@@ -344,11 +344,13 @@ mod tests {
     use crate::state::StateAttributes;
     use serde_json::json;
 
-    fn light(object: &str) -> EntityId {
-        EntityId::new("light", object).expect("id")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn light(object: &str) -> Result<EntityId, crate::state::EntityIdError> {
+        EntityId::new("light", object)
     }
 
-    /// Build a state_changed event the way the StateMachine fires one.
+    /// Build a `state_changed` event the way the `StateMachine` fires one.
     fn state_changed(entity: &str, old: Option<&str>, new: &str) -> Event {
         let old_state = old.map(|o| json!({"entity_id": entity, "state": o, "attributes": {}}));
         Event::new(
@@ -382,9 +384,9 @@ mod tests {
     }
 
     #[test]
-    fn state_trigger_honours_from_to_filters() {
+    fn state_trigger_honours_from_to_filters() -> TestResult {
         let to_on = Trigger::State {
-            entity_id: light("kitchen"),
+            entity_id: light("kitchen")?,
             from: None,
             to: Some("on".into()),
         };
@@ -395,19 +397,20 @@ mod tests {
         assert!(!to_on.matches(&state_changed("light.hall", Some("off"), "on")));
 
         let off_to_on = Trigger::State {
-            entity_id: light("kitchen"),
+            entity_id: light("kitchen")?,
             from: Some("off".into()),
             to: Some("on".into()),
         };
         assert!(off_to_on.matches(&state_changed("light.kitchen", Some("off"), "on")));
         // from filter fails (was unavailable, not off)
         assert!(!off_to_on.matches(&state_changed("light.kitchen", Some("unavailable"), "on")));
+        Ok(())
     }
 
     #[test]
-    fn state_trigger_no_filters_fires_on_real_change_only() {
+    fn state_trigger_no_filters_fires_on_real_change_only() -> TestResult {
         let any = Trigger::State {
-            entity_id: light("kitchen"),
+            entity_id: light("kitchen")?,
             from: None,
             to: None,
         };
@@ -416,12 +419,13 @@ mod tests {
         assert!(!any.matches(&state_changed("light.kitchen", Some("on"), "on")));
         // a non-state_changed event never matches a state trigger
         assert!(!any.matches(&Event::local("other", json!({}))));
+        Ok(())
     }
 
     #[test]
-    fn numeric_state_trigger_fires_on_crossing() {
+    fn numeric_state_trigger_fires_on_crossing() -> TestResult {
         // The trigger reads both old and new values from the event payload.
-        let temp = EntityId::new("sensor", "temp").expect("id");
+        let temp = EntityId::new("sensor", "temp")?;
         let t = Trigger::NumericState {
             entity_id: temp,
             above: Some(20.0),
@@ -433,23 +437,24 @@ mod tests {
         assert!(!t.matches(&state_changed("sensor.temp", Some("21"), "22")));
         // 18 -> 19 never enters the band
         assert!(!t.matches(&state_changed("sensor.temp", Some("18"), "19")));
+        Ok(())
     }
 
     #[test]
-    fn conditions_state_numeric_template_and_bool_ops() {
+    fn conditions_state_numeric_template_and_bool_ops() -> TestResult {
         let states = StateMachine::new(EventBus::new());
         let tmpl = TemplateEngine::new(states.clone());
         states.set(
-            light("kitchen"),
+            light("kitchen")?,
             "on",
             StateAttributes::new(),
             Context::new(),
         );
-        let temp = EntityId::new("sensor", "temp").expect("id");
+        let temp = EntityId::new("sensor", "temp")?;
         states.set(temp.clone(), "23.5", StateAttributes::new(), Context::new());
 
         let c_state = Condition::State {
-            entity_id: light("kitchen"),
+            entity_id: light("kitchen")?,
             state: "on".into(),
         };
         assert!(c_state.evaluate(&states, &tmpl));
@@ -473,32 +478,33 @@ mod tests {
         assert!(c_tmpl.evaluate(&states, &tmpl));
 
         // and / or / not composition
-        let and = Condition::And(vec![c_state.clone(), c_num.clone()]);
+        let and = Condition::And(vec![c_state.clone(), c_num]);
         assert!(and.evaluate(&states, &tmpl));
         let not = Condition::Not(Box::new(Condition::State {
-            entity_id: light("kitchen"),
+            entity_id: light("kitchen")?,
             state: "off".into(),
         }));
         assert!(not.evaluate(&states, &tmpl));
         let or = Condition::Or(vec![
             Condition::State {
-                entity_id: light("kitchen"),
+                entity_id: light("kitchen")?,
                 state: "off".into(),
             },
             c_state,
         ]);
         assert!(or.evaluate(&states, &tmpl));
+        Ok(())
     }
 
     #[test]
-    fn basic_if_then_produces_service_call() {
+    fn basic_if_then_produces_service_call() -> TestResult {
         let states = StateMachine::new(EventBus::new());
-        let mut engine = AutomationEngine::new(states.clone());
+        let mut engine = AutomationEngine::new(states);
         // "turn on the fan when the kitchen light comes on"
         engine.add_rule(AutomationRule::new(
             "fan_on_light",
             Trigger::State {
-                entity_id: light("kitchen"),
+                entity_id: light("kitchen")?,
                 from: None,
                 to: Some("on".into()),
             },
@@ -506,13 +512,13 @@ mod tests {
                 domain: "fan".into(),
                 service: "turn_on".into(),
                 data: json!({}),
-                target: Some(EntityId::new("fan", "kitchen").expect("id")),
+                target: Some(EntityId::new("fan", "kitchen")?),
             },
         ));
 
         // a non-matching event yields nothing
         let none = engine.handle_event(&state_changed("light.kitchen", Some("on"), "off"));
-        assert!(none.is_empty());
+        assert_eq!(none, [] as [ServiceCall; 0]);
 
         // the matching transition yields exactly the configured call
         let calls = engine.handle_event(&state_changed("light.kitchen", Some("off"), "on"));
@@ -521,15 +527,16 @@ mod tests {
         assert_eq!(calls[0].service, "turn_on");
         // target entity is folded into the call data as entity_id
         assert_eq!(calls[0].data["entity_id"], "fan.kitchen");
+        Ok(())
     }
 
     #[test]
-    fn conditions_gate_the_action() {
+    fn conditions_gate_the_action() -> TestResult {
         let states = StateMachine::new(EventBus::new());
         let mut engine = AutomationEngine::new(states.clone());
         // night-mode flag is off
         states.set(
-            EntityId::new("input_boolean", "night").expect("id"),
+            EntityId::new("input_boolean", "night")?,
             "off",
             StateAttributes::new(),
             Context::new(),
@@ -537,25 +544,25 @@ mod tests {
         let mut rule = AutomationRule::new(
             "notify_at_night",
             Trigger::State {
-                entity_id: light("kitchen"),
+                entity_id: light("kitchen")?,
                 from: None,
                 to: Some("on".into()),
             },
             notify_action(),
         );
         rule.conditions = vec![Condition::State {
-            entity_id: EntityId::new("input_boolean", "night").expect("id"),
+            entity_id: EntityId::new("input_boolean", "night")?,
             state: "on".into(),
         }];
         engine.add_rule(rule);
 
         // trigger matches but condition (night == on) fails → no call
         let calls = engine.handle_event(&state_changed("light.kitchen", Some("off"), "on"));
-        assert!(calls.is_empty());
+        assert_eq!(calls, [] as [ServiceCall; 0]);
 
         // flip night on; same event now passes the condition
         states.set(
-            EntityId::new("input_boolean", "night").expect("id"),
+            EntityId::new("input_boolean", "night")?,
             "on",
             StateAttributes::new(),
             Context::new(),
@@ -565,6 +572,7 @@ mod tests {
         assert_eq!(calls[0].domain, "notify");
         // the produced call's context descends from the triggering event
         assert!(calls[0].context.parent_id.is_some());
+        Ok(())
     }
 
     #[test]

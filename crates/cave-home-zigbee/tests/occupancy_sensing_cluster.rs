@@ -9,6 +9,8 @@ use cave_home_zigbee::occupancy_sensing::{
     attribute_id,
 };
 
+type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
 #[test]
 fn cluster_id_matches_spec() {
     assert_eq!(OCCUPANCY_SENSING_CLUSTER_ID, 0x0406);
@@ -50,7 +52,7 @@ fn occupancy_constructor_round_trips() {
 }
 
 #[test]
-fn sensor_type_round_trips() {
+fn sensor_type_round_trips() -> TestResult {
     // §3.5.2.2.2 OccupancySensorType enum8.
     for (v, e) in [
         (0x00u8, OccupancySensorType::Pir),
@@ -58,10 +60,11 @@ fn sensor_type_round_trips() {
         (0x02, OccupancySensorType::PirAndUltrasonic),
         (0x03, OccupancySensorType::PhysicalContact),
     ] {
-        assert_eq!(OccupancySensorType::from_u8(v).unwrap(), e);
+        assert_eq!(OccupancySensorType::from_u8(v)?, e);
         assert_eq!(e.to_u8(), v);
     }
     assert!(OccupancySensorType::from_u8(0x04).is_err());
+    Ok(())
 }
 
 #[test]

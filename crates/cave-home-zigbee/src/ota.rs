@@ -39,7 +39,7 @@ pub struct OtaJob {
     pub image_type: u16,
     /// Current firmware version reported by the device.
     pub current_file_version: u32,
-    /// Status of the job (Pending → InFlight → Complete / Failed).
+    /// Status of the job (Pending → `InFlight` → Complete / Failed).
     pub status: OtaJobStatus,
 }
 
@@ -52,7 +52,7 @@ pub enum OtaJobStatus {
     InFlight,
     /// Device sent Upgrade End Request with SUCCESS.
     Complete,
-    /// Aborted (timeout, NO_IMAGE_AVAILABLE, signature failure).
+    /// Aborted (timeout, `NO_IMAGE_AVAILABLE`, signature failure).
     Failed,
 }
 
@@ -159,17 +159,19 @@ impl OtaQueue {
         }
     }
 
-    /// Drain completed jobs (returns them in insertion order).
+    /// Remove every completed job from the queue and return them.
+    ///
+    /// The jobs come back in the iteration order of the underlying
+    /// `HashMap`, which is unspecified — it is *not* the insertion order.
+    #[must_use]
     pub fn drain_completed(&self) -> Vec<OtaJob> {
         let mut guard = self.inner.lock();
-        let keys: Vec<u64> = guard
-            .iter()
-            .filter(|(_, j)| j.status == OtaJobStatus::Complete)
-            .map(|(k, _)| *k)
-            .collect();
-        keys.into_iter()
-            .map(|k| guard.remove(&k).expect("just collected"))
-            .collect()
+        let (completed, remaining): (Vec<_>, Vec<_>) = std::mem::take(&mut *guard)
+            .into_iter()
+            .partition(|(_, job)| job.status == OtaJobStatus::Complete);
+        *guard = remaining.into_iter().collect();
+        drop(guard);
+        completed.into_iter().map(|(_, job)| job).collect()
     }
 
     /// Handle an incoming ZCL Query Next Image Request — consult the
@@ -209,6 +211,8 @@ impl OtaQueue {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     struct AlwaysNewer;
 
     #[async_trait]
@@ -246,44 +250,38 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn no_image_provider_returns_none() {
+    async fn no_image_provider_returns_none() -> TestResult {
         let q = OtaQueue::no_image();
-        let resp = q
-            .on_query_next_image(0xaaaa, 0x100b, 0x0001, 1)
-            .await
-            .unwrap();
+        let resp = q.on_query_next_image(0xaaaa, 0x100b, 0x0001, 1).await?;
         assert!(resp.is_none());
         assert_eq!(q.in_flight(), 0);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn always_newer_provider_enqueues_job() {
+    async fn always_newer_provider_enqueues_job() -> TestResult {
         let q = OtaQueue::new(Arc::new(AlwaysNewer));
-        let resp = q
-            .on_query_next_image(0xaaaa, 0x100b, 0x0001, 5)
-            .await
-            .unwrap();
+        let resp = q.on_query_next_image(0xaaaa, 0x100b, 0x0001, 5).await?;
         assert!(resp.is_some());
         assert_eq!(q.in_flight(), 1);
-        let job = q.get(0xaaaa).unwrap();
+        let job = q.get(0xaaaa).ok_or("q.get(0xaaaa) is None")?;
         assert_eq!(job.status, OtaJobStatus::Pending);
         assert_eq!(job.current_file_version, 5);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn always_older_provider_does_not_enqueue() {
+    async fn always_older_provider_does_not_enqueue() -> TestResult {
         let q = OtaQueue::new(Arc::new(AlwaysOlder));
-        let _ = q
-            .on_query_next_image(0xaaaa, 0x100b, 0x0001, 5)
-            .await
-            .unwrap();
+        let _ = q.on_query_next_image(0xaaaa, 0x100b, 0x0001, 5).await?;
         assert_eq!(q.in_flight(), 0);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn set_status_transitions_through_lifecycle() {
+    async fn set_status_transitions_through_lifecycle() -> TestResult {
         let q = OtaQueue::new(Arc::new(AlwaysNewer));
-        q.on_query_next_image(0xaaaa, 0, 0, 1).await.unwrap();
+        q.on_query_next_image(0xaaaa, 0, 0, 1).await?;
         q.set_status(0xaaaa, OtaJobStatus::InFlight);
         assert_eq!(q.in_flight(), 1);
         q.set_status(0xaaaa, OtaJobStatus::Complete);
@@ -291,13 +289,62 @@ mod tests {
         let drained = q.drain_completed();
         assert_eq!(drained.len(), 1);
         assert_eq!(drained[0].device_ieee, 0xaaaa);
+        Ok(())
+    }
+
+    fn job(device_ieee: u64, status: OtaJobStatus) -> OtaJob {
+        OtaJob {
+            device_ieee,
+            manufacturer_code: 0x100b,
+            image_type: 1,
+            current_file_version: 7,
+            status,
+        }
+    }
+
+    #[test]
+    fn drain_completed_takes_exactly_the_completed_jobs() {
+        let q = OtaQueue::no_image();
+        q.enqueue(job(1, OtaJobStatus::Complete));
+        q.enqueue(job(2, OtaJobStatus::Pending));
+        q.enqueue(job(3, OtaJobStatus::Complete));
+        q.enqueue(job(4, OtaJobStatus::InFlight));
+        q.enqueue(job(5, OtaJobStatus::Failed));
+        let mut drained = q.drain_completed();
+        drained.sort_by_key(|j| j.device_ieee);
+        assert_eq!(
+            drained,
+            vec![
+                job(1, OtaJobStatus::Complete),
+                job(3, OtaJobStatus::Complete)
+            ]
+        );
+        // the drained jobs are gone, every other job is untouched
+        assert_eq!(q.get(1), None);
+        assert_eq!(q.get(3), None);
+        assert_eq!(q.get(2), Some(job(2, OtaJobStatus::Pending)));
+        assert_eq!(q.get(4), Some(job(4, OtaJobStatus::InFlight)));
+        assert_eq!(q.get(5), Some(job(5, OtaJobStatus::Failed)));
+        assert_eq!(q.in_flight(), 2);
+        // nothing is left to drain
+        assert_eq!(q.drain_completed(), [] as [OtaJob; 0]);
+    }
+
+    #[test]
+    fn drain_completed_without_completed_jobs_is_empty() {
+        let q = OtaQueue::no_image();
+        assert_eq!(q.drain_completed(), [] as [OtaJob; 0]);
+        q.enqueue(job(9, OtaJobStatus::Pending));
+        assert_eq!(q.drain_completed(), [] as [OtaJob; 0]);
+        assert_eq!(q.get(9), Some(job(9, OtaJobStatus::Pending)));
     }
 
     #[tokio::test]
-    async fn failed_jobs_do_not_show_up_in_flight() {
+    async fn failed_jobs_do_not_show_up_in_flight() -> TestResult {
         let q = OtaQueue::new(Arc::new(AlwaysNewer));
-        q.on_query_next_image(0xaaaa, 0, 0, 1).await.unwrap();
+        q.on_query_next_image(0xaaaa, 0, 0, 1).await?;
         q.set_status(0xaaaa, OtaJobStatus::Failed);
         assert_eq!(q.in_flight(), 0);
+        Ok(())
     }
 }

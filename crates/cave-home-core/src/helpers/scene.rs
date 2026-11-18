@@ -117,6 +117,7 @@ impl SceneRegistry {
             entity_states,
         };
         guard.scenes.insert(id, scene.clone());
+        drop(guard);
         Ok(scene)
     }
 
@@ -152,32 +153,35 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn light(object: &str) -> EntityId {
-        EntityId::new("light", object).expect("id")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn light(object: &str) -> Result<EntityId, crate::state::EntityIdError> {
+        EntityId::new("light", object)
     }
 
-    fn movie_targets() -> BTreeMap<EntityId, SceneEntityState> {
+    fn movie_targets() -> Result<BTreeMap<EntityId, SceneEntityState>, crate::state::EntityIdError>
+    {
         let mut m = BTreeMap::new();
-        m.insert(light("kitchen"), SceneEntityState::new("off"));
+        m.insert(light("kitchen")?, SceneEntityState::new("off"));
         m.insert(
-            light("lounge"),
+            light("lounge")?,
             SceneEntityState::new("on").with_attr("brightness", json!(40)),
         );
-        m
+        Ok(m)
     }
 
     #[test]
-    fn apply_writes_targets_and_shares_context() {
+    fn apply_writes_targets_and_shares_context() -> TestResult {
         let states = StateMachine::new(crate::event_bus::EventBus::new());
         // seed initial states
         states.set(
-            light("kitchen"),
+            light("kitchen")?,
             "on",
             StateAttributes::new(),
             Context::new(),
         );
         states.set(
-            light("lounge"),
+            light("lounge")?,
             "off",
             StateAttributes::new(),
             Context::new(),
@@ -186,18 +190,18 @@ mod tests {
         let scene = Scene {
             id: "movie".into(),
             name: "Movie".into(),
-            entity_states: movie_targets(),
+            entity_states: movie_targets()?,
         };
         let parent = Context::with_user("alice");
         let changes = scene.apply(&states, &parent);
 
         // both entities changed
         assert_eq!(changes.len(), 2);
-        assert!(states.is_state(&light("kitchen"), "off"));
-        assert!(states.is_state(&light("lounge"), "on"));
+        assert!(states.is_state(&light("kitchen")?, "off"));
+        assert!(states.is_state(&light("lounge")?, "on"));
         assert_eq!(
             states
-                .get(&light("lounge"))
+                .get(&light("lounge")?)
                 .map(|s| s.attributes["brightness"].clone()),
             Some(json!(40))
         );
@@ -210,20 +214,21 @@ mod tests {
             .map(|c| c.new_state.context.id.clone())
             .collect();
         assert_eq!(ctx_ids.len(), 1, "all writes share one context id");
+        Ok(())
     }
 
     #[test]
-    fn apply_skips_entities_already_in_target_state() {
+    fn apply_skips_entities_already_in_target_state() -> TestResult {
         let states = StateMachine::new(crate::event_bus::EventBus::new());
         // kitchen is already off — applying its "off" target is a no-op
         states.set(
-            light("kitchen"),
+            light("kitchen")?,
             "off",
             StateAttributes::new(),
             Context::new(),
         );
         states.set(
-            light("lounge"),
+            light("lounge")?,
             "off",
             StateAttributes::new(),
             Context::new(),
@@ -232,40 +237,45 @@ mod tests {
         let scene = Scene {
             id: "movie".into(),
             name: "Movie".into(),
-            entity_states: movie_targets(),
+            entity_states: movie_targets()?,
         };
         let changes = scene.apply(&states, &Context::new());
         // only lounge changed (kitchen was already off)
         assert_eq!(changes.len(), 1);
-        assert_eq!(changes[0].entity_id, light("lounge"));
+        assert_eq!(changes[0].entity_id, light("lounge")?);
+        Ok(())
     }
 
     #[test]
-    fn registry_create_and_activate() {
+    fn registry_create_and_activate() -> TestResult {
         let reg = SceneRegistry::new();
-        let scene = reg.create("Movie Night", movie_targets()).expect("create");
+        let scene = reg.create("Movie Night", movie_targets()?)?;
         assert_eq!(scene.id, "movie_night");
 
         let states = StateMachine::new(crate::event_bus::EventBus::new());
-        let changes = reg
-            .activate(&scene.id, &states, &Context::new())
-            .expect("activate");
+        let changes = reg.activate(&scene.id, &states, &Context::new())?;
         // both targets were fresh writes
         assert_eq!(changes.len(), 2);
-        assert!(states.is_state(&light("kitchen"), "off"));
+        assert!(states.is_state(&light("kitchen")?, "off"));
 
         assert_eq!(
-            reg.activate("ghost", &states, &Context::new()).unwrap_err(),
+            reg.activate("ghost", &states, &Context::new())
+                .err()
+                .ok_or("expected an error")?,
             SceneError::UnknownId("ghost".into())
         );
+        Ok(())
     }
 
     #[test]
-    fn empty_name_rejected() {
+    fn empty_name_rejected() -> TestResult {
         let reg = SceneRegistry::new();
         assert_eq!(
-            reg.create("  ", BTreeMap::new()).unwrap_err(),
+            reg.create("  ", BTreeMap::new())
+                .err()
+                .ok_or("expected an error")?,
             SceneError::EmptyName
         );
+        Ok(())
     }
 }

@@ -10,6 +10,8 @@ use cave_home_zigbee::ias_zone::{
     ZoneStatusChangeNotification, ZoneType, attribute_id, command_id, notification_id,
 };
 
+type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
 #[test]
 fn cluster_and_ids_match_spec() {
     assert_eq!(IAS_ZONE_CLUSTER_ID, 0x0500);
@@ -89,16 +91,17 @@ fn zone_status_builder_round_trips() {
 }
 
 #[test]
-fn parse_zone_status_change_notification() {
+fn parse_zone_status_change_notification() -> TestResult {
     // §8.2.2.5.1: zone_status (u16 LE) + extended_status (u8) + zone_id (u8) + delay (u16 LE).
     // status = 0x0001 (Alarm1), extended = 0x00, zone_id = 0x0a, delay = 0x0000.
-    let n = ZoneStatusChangeNotification::parse(&[0x01, 0x00, 0x00, 0x0a, 0x00, 0x00]).unwrap();
+    let n = ZoneStatusChangeNotification::parse(&[0x01, 0x00, 0x00, 0x0a, 0x00, 0x00])?;
     assert!(n.zone_status.alarm1());
     assert_eq!(n.extended_status, 0x00);
     assert_eq!(n.zone_id, 0x0a);
     assert_eq!(n.delay, 0);
     // round-trip
-    assert_eq!(ZoneStatusChangeNotification::parse(&n.encode()).unwrap(), n);
+    assert_eq!(ZoneStatusChangeNotification::parse(&n.encode())?, n);
+    Ok(())
 }
 
 #[test]
@@ -107,17 +110,18 @@ fn parse_zone_status_change_notification_rejects_truncated() {
 }
 
 #[test]
-fn parse_zone_enroll_request() {
+fn parse_zone_enroll_request() -> TestResult {
     // §8.2.2.5.2: zone_type (u16 LE) + manufacturer_code (u16 LE).
     // type = 0x000d (motion), mfr = 0x100b.
-    let r = ZoneEnrollRequest::parse(&[0x0d, 0x00, 0x0b, 0x10]).unwrap();
+    let r = ZoneEnrollRequest::parse(&[0x0d, 0x00, 0x0b, 0x10])?;
     assert_eq!(r.zone_type, ZoneType::MotionSensor);
     assert_eq!(r.manufacturer_code, 0x100b);
-    assert_eq!(ZoneEnrollRequest::parse(&r.encode()).unwrap(), r);
+    assert_eq!(ZoneEnrollRequest::parse(&r.encode())?, r);
+    Ok(())
 }
 
 #[test]
-fn enroll_response_code_round_trips() {
+fn enroll_response_code_round_trips() -> TestResult {
     // §8.2.2.4.1 Table 8-8.
     for (v, e) in [
         (0x00u8, EnrollResponseCode::Success),
@@ -125,16 +129,17 @@ fn enroll_response_code_round_trips() {
         (0x02, EnrollResponseCode::NoEnrollPermit),
         (0x03, EnrollResponseCode::TooManyZones),
     ] {
-        assert_eq!(EnrollResponseCode::from_u8(v).unwrap(), e);
+        assert_eq!(EnrollResponseCode::from_u8(v)?, e);
         assert_eq!(e.to_u8(), v);
     }
     assert!(EnrollResponseCode::from_u8(0x04).is_err());
+    Ok(())
 }
 
 #[test]
-fn parse_received_commands() {
+fn parse_received_commands() -> TestResult {
     // Zone Enroll Response: code (u8) + zone_id (u8).
-    let cmd = IasZoneCommand::parse(command_id::ZONE_ENROLL_RESPONSE, &[0x00, 0x0a]).unwrap();
+    let cmd = IasZoneCommand::parse(command_id::ZONE_ENROLL_RESPONSE, &[0x00, 0x0a])?;
     assert_eq!(
         cmd,
         IasZoneCommand::ZoneEnrollResponse {
@@ -145,12 +150,12 @@ fn parse_received_commands() {
 
     // Initiate Normal Operation Mode: no payload.
     assert_eq!(
-        IasZoneCommand::parse(command_id::INITIATE_NORMAL_OPERATION_MODE, &[]).unwrap(),
+        IasZoneCommand::parse(command_id::INITIATE_NORMAL_OPERATION_MODE, &[])?,
         IasZoneCommand::InitiateNormalOperationMode
     );
 
     // Initiate Test Mode: duration (u8) + sensitivity (u8).
-    let cmd = IasZoneCommand::parse(command_id::INITIATE_TEST_MODE, &[0x1e, 0x02]).unwrap();
+    let cmd = IasZoneCommand::parse(command_id::INITIATE_TEST_MODE, &[0x1e, 0x02])?;
     assert_eq!(
         cmd,
         IasZoneCommand::InitiateTestMode {
@@ -158,10 +163,11 @@ fn parse_received_commands() {
             current_zone_sensitivity_level: 0x02,
         }
     );
+    Ok(())
 }
 
 #[test]
-fn received_command_round_trips() {
+fn received_command_round_trips() -> TestResult {
     for cmd in [
         IasZoneCommand::ZoneEnrollResponse {
             code: EnrollResponseCode::TooManyZones,
@@ -175,8 +181,9 @@ fn received_command_round_trips() {
     ] {
         let id = cmd.command_id();
         let payload = cmd.encode_payload();
-        assert_eq!(IasZoneCommand::parse(id, &payload).unwrap(), cmd);
+        assert_eq!(IasZoneCommand::parse(id, &payload)?, cmd);
     }
+    Ok(())
 }
 
 #[test]

@@ -428,39 +428,45 @@ mod tests {
     use super::*;
     use std::cell::RefCell;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn account_thumbprint_is_stable_across_reload() {
-        let key = AcmeAccountKey::generate().unwrap();
+    fn account_thumbprint_is_stable_across_reload() -> TestResult {
+        let key = AcmeAccountKey::generate()?;
         let t1 = key.thumbprint();
         let t2 = key.thumbprint();
         assert_eq!(t1, t2);
-        assert!(!t1.is_empty());
-        let reloaded = AcmeAccountKey::from_pkcs8(key.pkcs8_bytes()).unwrap();
+        assert_ne!(t1, "");
+        let reloaded = AcmeAccountKey::from_pkcs8(key.pkcs8_bytes())?;
         assert_eq!(reloaded.thumbprint(), t1);
+        Ok(())
     }
 
     #[test]
-    fn jwk_is_ec_p256() {
-        let key = AcmeAccountKey::generate().unwrap();
+    fn jwk_is_ec_p256() -> TestResult {
+        let key = AcmeAccountKey::generate()?;
         let jwk = key.jwk();
         assert_eq!(jwk["kty"], "EC");
         assert_eq!(jwk["crv"], "P-256");
         assert!(jwk["x"].as_str().is_some());
         assert!(jwk["y"].as_str().is_some());
+        Ok(())
     }
 
     #[test]
-    fn es256_signature_is_64_bytes() {
-        let key = AcmeAccountKey::generate().unwrap();
-        let sig = key.sign(b"hello").unwrap();
+    fn es256_signature_is_64_bytes() -> TestResult {
+        let key = AcmeAccountKey::generate()?;
+        let sig = key.sign(b"hello")?;
         assert_eq!(sig.len(), 64);
+        Ok(())
     }
 
     #[test]
-    fn key_authorization_is_token_dot_thumbprint() {
-        let key = AcmeAccountKey::generate().unwrap();
+    fn key_authorization_is_token_dot_thumbprint() -> TestResult {
+        let key = AcmeAccountKey::generate()?;
         let ka = key_authorization("tok123", &key);
         assert_eq!(ka, format!("tok123.{}", key.thumbprint()));
+        Ok(())
     }
 
     #[test]
@@ -514,9 +520,14 @@ mod tests {
                     serde_json::from_slice(b).map_err(|e| AcmeError::Json(e.to_string()))?;
                 assert!(v.get("protected").is_some(), "JWS missing protected header");
                 assert!(v.get("signature").is_some(), "JWS missing signature");
-                let prot = v["protected"].as_str().unwrap();
-                let decoded = URL_SAFE_NO_PAD.decode(prot).unwrap();
-                let ph: serde_json::Value = serde_json::from_slice(&decoded).unwrap();
+                let prot = v["protected"].as_str().ok_or_else(|| {
+                    AcmeError::Protocol("JWS protected header is not a string".into())
+                })?;
+                let decoded = URL_SAFE_NO_PAD
+                    .decode(prot)
+                    .map_err(|e| AcmeError::Protocol(e.to_string()))?;
+                let ph: serde_json::Value =
+                    serde_json::from_slice(&decoded).map_err(|e| AcmeError::Json(e.to_string()))?;
                 assert_eq!(ph["url"], url, "JWS url must match request url");
                 assert_eq!(ph["alg"], "ES256");
             }
@@ -575,18 +586,17 @@ mod tests {
     }
 
     #[test]
-    fn mock_issuance_full_flow() {
+    fn mock_issuance_full_flow() -> TestResult {
         let directory = Directory {
             new_nonce: "https://acme/newNonce".to_string(),
             new_account: "https://acme/newAccount".to_string(),
             new_order: "https://acme/newOrder".to_string(),
         };
-        let key = AcmeAccountKey::generate().unwrap();
+        let key = AcmeAccountKey::generate()?;
         let mock = MockAcme::new();
         let mut client = AcmeClient::new(mock, directory, key);
-        let pem = client
-            .obtain_certificate(&["app.cave.local".to_string()], b"fake-csr-der")
-            .unwrap();
+        let pem = client.obtain_certificate(&["app.cave.local".to_string()], b"fake-csr-der")?;
         assert!(pem.contains("BEGIN CERTIFICATE"));
+        Ok(())
     }
 }

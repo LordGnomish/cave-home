@@ -48,10 +48,12 @@ pub fn is_valid_slug(s: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
-/// Descriptor for a registered service — the metadata half of upstream's
-/// `Service` object. The callable/job is intentionally omitted (it belongs
-/// to the deferred execution layer); what remains is what the registry and
-/// the websocket/`describe_services` API expose.
+/// Descriptor for a registered service.
+///
+/// This is the metadata half of upstream's `Service` object. The
+/// callable/job is intentionally omitted (it belongs to the deferred
+/// execution layer); what remains is what the registry and the
+/// websocket/`describe_services` API expose.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Service {
     /// Whether the service accepts a `target:` selector (entities/devices/
@@ -66,7 +68,7 @@ impl Service {
     }
 
     #[must_use]
-    pub fn with_target(mut self, supports_target: bool) -> Self {
+    pub const fn with_target(mut self, supports_target: bool) -> Self {
         self.supports_target = supports_target;
         self
     }
@@ -77,7 +79,7 @@ impl Service {
 /// The immutable record handed to a service handler: which `domain.service`
 /// to run, the validated call `data`, and the [`Context`] threading
 /// causality from whatever originated the call.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServiceCall {
     pub domain: String,
     pub service: String,
@@ -88,6 +90,11 @@ pub struct ServiceCall {
 impl ServiceCall {
     /// Build a call, validating that `domain` and `service` are well-formed
     /// slugs (upstream rejects malformed names before dispatch).
+    ///
+    /// # Errors
+    /// [`ServiceError::InvalidName`] carrying the rejected name if `domain`
+    /// or `service` is not a valid slug (see [`is_valid_slug`]); `domain` is
+    /// checked first.
     pub fn new(
         domain: impl Into<String>,
         service: impl Into<String>,
@@ -135,6 +142,11 @@ impl ServiceRegistry {
     /// Register `domain.service`. Re-registering an existing pair overwrites
     /// its descriptor (upstream behaviour) but still fires the event.
     /// Returns the previous descriptor if one was replaced.
+    ///
+    /// # Errors
+    /// [`ServiceError::InvalidName`] carrying the rejected name if `domain`
+    /// or `service` is not a valid slug (see [`is_valid_slug`]); `domain` is
+    /// checked first. Nothing is registered and no event fires in that case.
     pub fn register(
         &self,
         domain: impl Into<String>,
@@ -220,6 +232,8 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn registry() -> (EventBus, ServiceRegistry) {
         let bus = EventBus::new();
         let reg = ServiceRegistry::new(bus.clone());
@@ -251,62 +265,60 @@ mod tests {
     }
 
     #[test]
-    fn service_call_threads_context_and_data() {
+    fn service_call_threads_context_and_data() -> TestResult {
         let parent = Context::with_user("alice");
         let ctx = Context::child_of(&parent);
-        let call = ServiceCall::new("light", "turn_on", json!({"brightness": 200}), ctx.clone())
-            .expect("valid call");
+        let call = ServiceCall::new("light", "turn_on", json!({"brightness": 200}), ctx.clone())?;
         assert_eq!(call.domain, "light");
         assert_eq!(call.service, "turn_on");
         assert_eq!(call.data["brightness"], 200);
         assert_eq!(call.context.parent_id, ctx.parent_id);
         assert_eq!(call.context.user_id.as_deref(), Some("alice"));
+        Ok(())
     }
 
     #[test]
-    fn register_has_remove_round_trip() {
+    fn register_has_remove_round_trip() -> TestResult {
         let (_bus, reg) = registry();
         assert!(!reg.has_service("light", "turn_on"));
 
-        let prev = reg
-            .register("light", "turn_on", Service::new().with_target(true))
-            .expect("register");
+        let prev = reg.register("light", "turn_on", Service::new().with_target(true))?;
         assert!(prev.is_none());
         assert!(reg.has_service("light", "turn_on"));
         assert!(!reg.has_service("light", "turn_off"));
         assert!(!reg.has_service("lock", "turn_on"));
 
-        let removed = reg.remove("light", "turn_on").expect("removed descriptor");
+        let removed = reg.remove("light", "turn_on").ok_or("removed descriptor")?;
         assert!(removed.supports_target);
         assert!(!reg.has_service("light", "turn_on"));
         // domain bucket is dropped once empty
-        assert!(reg.services().get("light").is_none());
+        assert!(!reg.services().contains_key("light"));
         // removing a missing service yields None
         assert!(reg.remove("light", "turn_on").is_none());
+        Ok(())
     }
 
     #[test]
-    fn re_register_overwrites_and_returns_previous() {
+    fn re_register_overwrites_and_returns_previous() -> TestResult {
         let (_bus, reg) = registry();
         reg.register(
             "climate",
             "set_temperature",
             Service::new().with_target(false),
-        )
-        .expect("first");
+        )?;
         let prev = reg
             .register(
                 "climate",
                 "set_temperature",
                 Service::new().with_target(true),
-            )
-            .expect("second")
-            .expect("previous descriptor");
+            )?
+            .ok_or("previous descriptor")?;
         assert!(!prev.supports_target);
         assert!(
             reg.services_for_domain("climate")
                 .contains("set_temperature")
         );
+        Ok(())
     }
 
     #[test]
@@ -324,12 +336,11 @@ mod tests {
     }
 
     #[test]
-    fn services_snapshot_and_per_domain_listing() {
+    fn services_snapshot_and_per_domain_listing() -> TestResult {
         let (_bus, reg) = registry();
-        reg.register("light", "turn_on", Service::new()).expect("a");
-        reg.register("light", "turn_off", Service::new())
-            .expect("b");
-        reg.register("lock", "lock", Service::new()).expect("c");
+        reg.register("light", "turn_on", Service::new())?;
+        reg.register("light", "turn_off", Service::new())?;
+        reg.register("lock", "lock", Service::new())?;
 
         let snap = reg.services();
         assert_eq!(snap["light"].len(), 2);
@@ -339,27 +350,28 @@ mod tests {
         assert!(light_svcs.contains("turn_on"));
         assert!(light_svcs.contains("turn_off"));
         assert!(reg.services_for_domain("does_not_exist").is_empty());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn register_and_remove_fire_bus_events() {
+    async fn register_and_remove_fire_bus_events() -> TestResult {
         let (bus, reg) = registry();
         let (_id_reg, mut rx_reg) = bus.listen(EVENT_SERVICE_REGISTERED);
         let (_id_rem, mut rx_rem) = bus.listen(EVENT_SERVICE_REMOVED);
 
-        reg.register("light", "turn_on", Service::new())
-            .expect("register");
-        let evt = rx_reg.recv().await.expect("registered event");
+        reg.register("light", "turn_on", Service::new())?;
+        let evt = rx_reg.recv().await.ok_or("registered event")?;
         assert_eq!(evt.data["domain"], "light");
         assert_eq!(evt.data["service"], "turn_on");
 
-        reg.remove("light", "turn_on").expect("removed");
-        let evt = rx_rem.recv().await.expect("removed event");
+        reg.remove("light", "turn_on").ok_or("removed")?;
+        let evt = rx_rem.recv().await.ok_or("removed event")?;
         assert_eq!(evt.data["domain"], "light");
         assert_eq!(evt.data["service"], "turn_on");
 
         // a no-op remove fires nothing
         assert!(reg.remove("light", "turn_on").is_none());
         assert!(rx_rem.try_recv().is_err());
+        Ok(())
     }
 }

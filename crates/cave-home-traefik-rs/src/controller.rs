@@ -99,6 +99,9 @@ mod tests {
     use super::*;
     use crate::ingress::{HttpPath, IngressRule, PathType};
     use crate::request::RequestDescriptor;
+    use crate::router::Router;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     fn ingress_for(host: &str, service: &str, port: u16) -> Ingress {
         let backend = IngressBackend::numeric(service, port);
@@ -114,38 +117,41 @@ mod tests {
     }
 
     #[test]
-    fn reconcile_builds_routable_config() {
+    fn reconcile_builds_routable_config() -> TestResult {
         let ingresses = vec![ingress_for("app.example", "web-svc", 80)];
         let config = reconcile(&ingresses, None, |backend| {
             assert_eq!(backend.service_name, "web-svc");
             vec![Server::new("http://10.0.0.1:80")]
-        })
-        .unwrap();
+        })?;
         let req = RequestDescriptor::new("GET", "http", "app.example", "/");
-        let route = config.route(&req, None).expect("a route matches");
+        let route = config.route(&req, None).ok_or("a route matches")?;
         assert_eq!(route.service.servers[0].url, "http://10.0.0.1:80");
+        Ok(())
     }
 
     #[test]
-    fn reconcile_propagates_empty_backend_as_error() {
+    fn reconcile_propagates_empty_backend_as_error() -> TestResult {
         let ingresses = vec![ingress_for("app.example", "web-svc", 80)];
         // A resolver that returns no servers must surface a validation error,
         // not silently produce an empty service.
-        let err = reconcile(&ingresses, None, |_| Vec::new()).unwrap_err();
+        let err = reconcile(&ingresses, None, |_| Vec::new())
+            .err()
+            .ok_or("expected an error")?;
         assert!(matches!(err, ReconcileError::Build(_)));
+        Ok(())
     }
 
     #[test]
-    fn config_holder_swaps_atomically() {
+    fn config_holder_swaps_atomically() -> TestResult {
         let empty = DynamicConfig::default();
         let holder = ConfigHolder::new(empty);
-        assert!(holder.load().routers().is_empty());
+        assert_eq!(holder.load().routers(), [] as [Router; 0]);
 
         let cfg = reconcile(&[ingress_for("a.example", "svc", 80)], None, |_| {
             vec![Server::new("http://1.1.1.1:80")]
-        })
-        .unwrap();
+        })?;
         holder.store(cfg);
         assert_eq!(holder.load().routers().len(), 1);
+        Ok(())
     }
 }

@@ -108,12 +108,11 @@ impl AttributeValue {
     pub fn encode_value(&self) -> Vec<u8> {
         match self {
             Self::Boolean(b) => vec![u8::from(*b)],
-            Self::Uint8(v) => vec![*v],
+            Self::Uint8(v) | Self::Enum8(v) => vec![*v],
             Self::Uint16(v) => v.to_le_bytes().to_vec(),
             Self::Uint32(v) => v.to_le_bytes().to_vec(),
-            Self::Int8(v) => vec![*v as u8],
+            Self::Int8(v) => v.to_le_bytes().to_vec(),
             Self::Int16(v) => v.to_le_bytes().to_vec(),
-            Self::Enum8(v) => vec![*v],
             Self::CharString(s) => {
                 let bytes = s.as_bytes();
                 let len = u8::try_from(bytes.len()).unwrap_or(u8::MAX);
@@ -147,7 +146,7 @@ impl AttributeValue {
                 Self::Uint32(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])),
                 4,
             ),
-            ZclDataType::Int8 => (Self::Int8(bytes[0] as i8), 1),
+            ZclDataType::Int8 => (Self::Int8(i8::from_le_bytes([bytes[0]])), 1),
             ZclDataType::Int16 => (Self::Int16(i16::from_le_bytes([bytes[0], bytes[1]])), 2),
             ZclDataType::Enum8 => (Self::Enum8(bytes[0]), 1),
             ZclDataType::CharString => {
@@ -161,7 +160,7 @@ impl AttributeValue {
                         have: bytes.len(),
                     });
                 }
-                let s = std::str::from_utf8(&bytes[1..1 + len])
+                let s = std::str::from_utf8(&bytes[1..=len])
                     .map_err(|e| ZigbeeError::Zcl(format!("string not utf8: {e}")))?
                     .to_owned();
                 (Self::CharString(s), 1 + len)
@@ -174,55 +173,121 @@ impl AttributeValue {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn boolean_round_trip() {
+    fn boolean_round_trip() -> TestResult {
         for b in [true, false] {
             let v = AttributeValue::Boolean(b);
             let bytes = v.encode_value();
-            let (decoded, used) = AttributeValue::decode(ZclDataType::Boolean, &bytes).unwrap();
+            let (decoded, used) = AttributeValue::decode(ZclDataType::Boolean, &bytes)?;
             assert_eq!(decoded, v);
             assert_eq!(used, 1);
         }
+        Ok(())
     }
 
     #[test]
-    fn uint16_le_round_trip() {
+    fn uint16_le_round_trip() -> TestResult {
         let v = AttributeValue::Uint16(0xbeef);
         let bytes = v.encode_value();
         assert_eq!(bytes, vec![0xef, 0xbe]);
-        let (decoded, used) = AttributeValue::decode(ZclDataType::Uint16, &bytes).unwrap();
+        let (decoded, used) = AttributeValue::decode(ZclDataType::Uint16, &bytes)?;
         assert_eq!(decoded, v);
         assert_eq!(used, 2);
+        Ok(())
     }
 
     #[test]
-    fn int16_negative_round_trip() {
+    fn int16_negative_round_trip() -> TestResult {
         let v = AttributeValue::Int16(-42);
         let bytes = v.encode_value();
-        let (decoded, used) = AttributeValue::decode(ZclDataType::Int16, &bytes).unwrap();
+        let (decoded, used) = AttributeValue::decode(ZclDataType::Int16, &bytes)?;
         assert_eq!(decoded, v);
         assert_eq!(used, 2);
+        Ok(())
     }
 
     #[test]
-    fn char_string_round_trip() {
+    fn char_string_round_trip() -> TestResult {
         let v = AttributeValue::CharString("hello".into());
         let bytes = v.encode_value();
         assert_eq!(bytes, b"\x05hello");
-        let (decoded, used) = AttributeValue::decode(ZclDataType::CharString, &bytes).unwrap();
+        let (decoded, used) = AttributeValue::decode(ZclDataType::CharString, &bytes)?;
         assert_eq!(decoded, v);
         assert_eq!(used, 6);
+        Ok(())
     }
 
     #[test]
-    fn truncated_uint32_rejected() {
-        let err = AttributeValue::decode(ZclDataType::Uint32, &[0x01, 0x02]).unwrap_err();
+    fn int8_is_one_twos_complement_byte() -> TestResult {
+        for (value, byte) in [
+            (0i8, 0x00u8),
+            (1, 0x01),
+            (i8::MAX, 0x7f),
+            (-1, 0xff),
+            (-42, 0xd6),
+            (i8::MIN, 0x80),
+        ] {
+            let v = AttributeValue::Int8(value);
+            assert_eq!(v.encode_value(), vec![byte]);
+            let (decoded, used) = AttributeValue::decode(ZclDataType::Int8, &[byte])?;
+            assert_eq!(decoded, v);
+            assert_eq!(used, 1);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn uint8_and_enum8_encode_as_their_single_byte() -> TestResult {
+        for byte in [0x00u8, 0x01, 0x7f, 0x80, 0xff] {
+            assert_eq!(AttributeValue::Uint8(byte).encode_value(), vec![byte]);
+            assert_eq!(AttributeValue::Enum8(byte).encode_value(), vec![byte]);
+            assert_eq!(
+                AttributeValue::decode(ZclDataType::Uint8, &[byte])?,
+                (AttributeValue::Uint8(byte), 1)
+            );
+            assert_eq!(
+                AttributeValue::decode(ZclDataType::Enum8, &[byte])?,
+                (AttributeValue::Enum8(byte), 1)
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn char_string_decode_consumes_only_its_own_bytes() -> TestResult {
+        // length 2, "ok", then bytes that belong to whatever follows
+        let (decoded, used) = AttributeValue::decode(ZclDataType::CharString, b"\x02ok\xff\xff")?;
+        assert_eq!(decoded, AttributeValue::CharString("ok".into()));
+        assert_eq!(used, 3);
+        // an empty string is just its length byte
+        let (decoded, used) = AttributeValue::decode(ZclDataType::CharString, b"\x00rest")?;
+        assert_eq!(decoded, AttributeValue::CharString(String::new()));
+        assert_eq!(used, 1);
+        // one byte short of the announced length
+        let err = AttributeValue::decode(ZclDataType::CharString, b"\x03ok")
+            .err()
+            .ok_or("expected an error")?;
+        assert!(matches!(err, ZigbeeError::Truncated { need: 4, have: 3 }));
+        Ok(())
+    }
+
+    #[test]
+    fn truncated_uint32_rejected() -> TestResult {
+        let err = AttributeValue::decode(ZclDataType::Uint32, &[0x01, 0x02])
+            .err()
+            .ok_or("expected an error")?;
         assert!(matches!(err, ZigbeeError::Truncated { .. }));
+        Ok(())
     }
 
     #[test]
-    fn unknown_data_type_byte_rejected() {
-        let err = ZclDataType::from_byte(0xab).unwrap_err();
+    fn unknown_data_type_byte_rejected() -> TestResult {
+        let err = ZclDataType::from_byte(0xab)
+            .err()
+            .ok_or("expected an error")?;
         assert!(matches!(err, ZigbeeError::Zcl(_)));
+        Ok(())
     }
 }

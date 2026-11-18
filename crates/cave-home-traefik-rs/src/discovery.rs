@@ -174,7 +174,7 @@ mod tests {
     #[test]
     fn unresolvable_port_yields_no_servers() {
         let servers = endpoints_to_servers(&[slice()], &PortRef::Name("nope".to_string()), "http");
-        assert!(servers.is_empty());
+        assert_eq!(servers, [] as [Server; 0]);
     }
 
     #[test]

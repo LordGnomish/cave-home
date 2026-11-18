@@ -10,6 +10,8 @@ use cave_home_zigbee::level_control::{
     StepMode, attribute_id, command_id,
 };
 
+type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
 #[test]
 fn cluster_and_command_ids_match_spec() {
     assert_eq!(LEVEL_CONTROL_CLUSTER_ID, 0x0008);
@@ -35,27 +37,29 @@ fn attribute_ids_match_spec() {
 }
 
 #[test]
-fn move_mode_round_trips() {
+fn move_mode_round_trips() -> TestResult {
     // §3.10.2.4.2: 0x00 = up, 0x01 = down.
-    assert_eq!(MoveMode::from_u8(0x00).unwrap(), MoveMode::Up);
-    assert_eq!(MoveMode::from_u8(0x01).unwrap(), MoveMode::Down);
+    assert_eq!(MoveMode::from_u8(0x00)?, MoveMode::Up);
+    assert_eq!(MoveMode::from_u8(0x01)?, MoveMode::Down);
     assert_eq!(MoveMode::Up.to_u8(), 0x00);
     assert_eq!(MoveMode::Down.to_u8(), 0x01);
     assert!(MoveMode::from_u8(0x02).is_err());
+    Ok(())
 }
 
 #[test]
-fn step_mode_round_trips() {
-    assert_eq!(StepMode::from_u8(0x00).unwrap(), StepMode::Up);
-    assert_eq!(StepMode::from_u8(0x01).unwrap(), StepMode::Down);
+fn step_mode_round_trips() -> TestResult {
+    assert_eq!(StepMode::from_u8(0x00)?, StepMode::Up);
+    assert_eq!(StepMode::from_u8(0x01)?, StepMode::Down);
     assert!(StepMode::from_u8(0x02).is_err());
+    Ok(())
 }
 
 #[test]
-fn parse_move_to_level() {
+fn parse_move_to_level() -> TestResult {
     // §3.10.2.4.1: level (u8) + transition_time (u16 LE).
     // level = 0x80 = 128, transition = 0x000a = 10 (1.0 s).
-    let cmd = LevelCommand::parse(command_id::MOVE_TO_LEVEL, &[0x80, 0x0a, 0x00]).unwrap();
+    let cmd = LevelCommand::parse(command_id::MOVE_TO_LEVEL, &[0x80, 0x0a, 0x00])?;
     assert_eq!(
         cmd,
         LevelCommand::MoveToLevel {
@@ -65,8 +69,7 @@ fn parse_move_to_level() {
         }
     );
     // The with-on/off variant carries the same payload but a different id.
-    let cmd2 =
-        LevelCommand::parse(command_id::MOVE_TO_LEVEL_WITH_ON_OFF, &[0x80, 0x0a, 0x00]).unwrap();
+    let cmd2 = LevelCommand::parse(command_id::MOVE_TO_LEVEL_WITH_ON_OFF, &[0x80, 0x0a, 0x00])?;
     assert_eq!(
         cmd2,
         LevelCommand::MoveToLevel {
@@ -75,12 +78,13 @@ fn parse_move_to_level() {
             with_on_off: true,
         }
     );
+    Ok(())
 }
 
 #[test]
-fn parse_move() {
+fn parse_move() -> TestResult {
     // §3.10.2.4.2: move_mode (u8) + rate (u8).
-    let cmd = LevelCommand::parse(command_id::MOVE, &[0x00, 0x32]).unwrap();
+    let cmd = LevelCommand::parse(command_id::MOVE, &[0x00, 0x32])?;
     assert_eq!(
         cmd,
         LevelCommand::Move {
@@ -89,12 +93,13 @@ fn parse_move() {
             with_on_off: false,
         }
     );
+    Ok(())
 }
 
 #[test]
-fn parse_step() {
+fn parse_step() -> TestResult {
     // §3.10.2.4.3: step_mode (u8) + step_size (u8) + transition_time (u16 LE).
-    let cmd = LevelCommand::parse(command_id::STEP, &[0x01, 0x10, 0x05, 0x00]).unwrap();
+    let cmd = LevelCommand::parse(command_id::STEP, &[0x01, 0x10, 0x05, 0x00])?;
     assert_eq!(
         cmd,
         LevelCommand::Step {
@@ -104,18 +109,20 @@ fn parse_step() {
             with_on_off: false,
         }
     );
+    Ok(())
 }
 
 #[test]
-fn parse_stop() {
+fn parse_stop() -> TestResult {
     assert_eq!(
-        LevelCommand::parse(command_id::STOP, &[]).unwrap(),
+        LevelCommand::parse(command_id::STOP, &[])?,
         LevelCommand::Stop { with_on_off: false }
     );
     assert_eq!(
-        LevelCommand::parse(command_id::STOP_WITH_ON_OFF, &[]).unwrap(),
+        LevelCommand::parse(command_id::STOP_WITH_ON_OFF, &[])?,
         LevelCommand::Stop { with_on_off: true }
     );
+    Ok(())
 }
 
 #[test]
@@ -131,7 +138,7 @@ fn parse_rejects_unknown_command() {
 }
 
 #[test]
-fn command_round_trips() {
+fn command_round_trips() -> TestResult {
     for cmd in [
         LevelCommand::MoveToLevel {
             level: 200,
@@ -158,8 +165,9 @@ fn command_round_trips() {
     ] {
         let id = cmd.command_id();
         let payload = cmd.encode_payload();
-        assert_eq!(LevelCommand::parse(id, &payload).unwrap(), cmd);
+        assert_eq!(LevelCommand::parse(id, &payload)?, cmd);
     }
+    Ok(())
 }
 
 #[test]

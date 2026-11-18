@@ -117,13 +117,14 @@ mod tests {
     use crate::loadbalancer::{LoadBalancer, Server, Service};
     use crate::router::Router;
 
-    fn config() -> DynamicConfig {
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn config() -> Result<DynamicConfig, Box<dyn std::error::Error>> {
         let router = Router::new(
             "api",
             "Host(`app.example`) && PathPrefix(`/api`)",
             "api-svc",
-        )
-        .unwrap()
+        )?
         .with_tls(true);
         let service = Service::new(
             "api-svc",
@@ -133,12 +134,12 @@ mod tests {
             ],
             LoadBalancer::WeightedRoundRobin,
         );
-        DynamicConfig::build(vec![router], vec![service], vec![]).unwrap()
+        Ok(DynamicConfig::build(vec![router], vec![service], vec![])?)
     }
 
     #[test]
-    fn snapshot_lists_routers_and_services() {
-        let snap = Snapshot::from_config(&config());
+    fn snapshot_lists_routers_and_services() -> TestResult {
+        let snap = Snapshot::from_config(&config()?);
         assert_eq!(snap.routers.len(), 1);
         assert_eq!(snap.routers[0].name, "api");
         assert!(snap.routers[0].tls);
@@ -148,13 +149,15 @@ mod tests {
         assert_eq!(snap.services[0].name, "api-svc");
         assert_eq!(snap.services[0].total, 2);
         assert_eq!(snap.services[0].healthy, 1);
+        Ok(())
     }
 
     #[test]
-    fn snapshot_serializes_to_json() {
-        let json = Snapshot::from_config(&config()).to_json().unwrap();
+    fn snapshot_serializes_to_json() -> TestResult {
+        let json = Snapshot::from_config(&config()?).to_json()?;
         assert!(json.contains("\"api\""));
         assert!(json.contains("\"api-svc\""));
         assert!(json.contains("http://10.0.0.1:80"));
+        Ok(())
     }
 }

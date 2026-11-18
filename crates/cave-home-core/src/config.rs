@@ -321,23 +321,28 @@ mod tests {
     use super::*;
     use serde_yaml::Value;
 
-    fn parse(yaml: &str) -> Value {
-        serde_yaml::from_str(yaml).expect("yaml")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn parse(yaml: &str) -> Result<Value, serde_yaml::Error> {
+        serde_yaml::from_str(yaml)
     }
 
     #[test]
-    fn schema_applies_defaults_and_checks_required() {
+    fn schema_applies_defaults_and_checks_required() -> TestResult {
         let schema = Schema::new(vec![
             Field::required("name", FieldType::Str),
             Field::optional("port", FieldType::Int).with_default(Value::from(8123)),
         ]);
-        let out = schema.validate(&parse("name: cave")).expect("valid");
+        let out = schema.validate(&parse("name: cave")?)?;
         assert_eq!(out["name"], Value::from("cave"));
         // default applied for the missing optional
         assert_eq!(out["port"], Value::from(8123));
 
         // missing required -> error
-        let err = schema.validate(&parse("port: 80")).unwrap_err();
+        let err = schema
+            .validate(&parse("port: 80")?)
+            .err()
+            .ok_or("expected an error")?;
         assert_eq!(
             err,
             ConfigError::Validation(vec![ValidationError::new(
@@ -345,51 +350,64 @@ mod tests {
                 "required key is missing"
             )])
         );
+        Ok(())
     }
 
     #[test]
-    fn schema_type_mismatch_is_reported() {
+    fn schema_type_mismatch_is_reported() -> TestResult {
         let schema = Schema::new(vec![Field::required("port", FieldType::Int)]);
-        let err = schema.validate(&parse("port: not_a_number")).unwrap_err();
+        let err = schema
+            .validate(&parse("port: not_a_number")?)
+            .err()
+            .ok_or("expected an error")?;
         assert!(matches!(err, ConfigError::Validation(ref v) if v[0].key == "port"));
+        Ok(())
     }
 
     #[test]
-    fn schema_extra_keys_rejected_unless_allowed() {
+    fn schema_extra_keys_rejected_unless_allowed() -> TestResult {
         let schema = Schema::new(vec![Field::optional("a", FieldType::Str)]);
-        let err = schema.validate(&parse("a: x\nb: y")).unwrap_err();
+        let err = schema
+            .validate(&parse("a: x\nb: y")?)
+            .err()
+            .ok_or("expected an error")?;
         assert_eq!(
             err,
             ConfigError::Validation(vec![ValidationError::new("b", "extra key not allowed")])
         );
         // allow_extra passes the unknown key through
         let lax = Schema::new(vec![Field::optional("a", FieldType::Str)]).allow_extra();
-        let out = lax.validate(&parse("a: x\nb: y")).expect("valid");
+        let out = lax.validate(&parse("a: x\nb: y")?)?;
         assert_eq!(out["b"], Value::from("y"));
+        Ok(())
     }
 
     #[test]
-    fn schema_float_accepts_integer_input() {
+    fn schema_float_accepts_integer_input() -> TestResult {
         let schema = Schema::new(vec![Field::required("lat", FieldType::Float)]);
-        let out = schema.validate(&parse("lat: 52")).expect("valid");
+        let out = schema.validate(&parse("lat: 52")?)?;
         assert_eq!(out["lat"].as_f64(), Some(52.0));
+        Ok(())
     }
 
     #[test]
-    fn schema_rejects_non_mapping() {
+    fn schema_rejects_non_mapping() -> TestResult {
         let schema = Schema::new(vec![]);
         assert_eq!(
-            schema.validate(&parse("- 1\n- 2")).unwrap_err(),
+            schema
+                .validate(&parse("- 1\n- 2")?)
+                .err()
+                .ok_or("expected an error")?,
             ConfigError::NotAMapping
         );
+        Ok(())
     }
 
     #[test]
-    fn core_config_parses_and_defaults() {
+    fn core_config_parses_and_defaults() -> TestResult {
         let cfg = CoreConfig::from_yaml(
             "name: Cave\nlatitude: 52.37\nlongitude: 4.90\nelevation: 3\nunit_system: metric\ntime_zone: Europe/Amsterdam",
-        )
-        .expect("config");
+        )?;
         assert_eq!(cfg.name, "Cave");
         assert!((cfg.latitude - 52.37).abs() < 1e-9);
         assert_eq!(cfg.elevation, 3);
@@ -399,45 +417,59 @@ mod tests {
         assert_eq!(cfg.currency, "USD");
         assert_eq!(cfg.language, "en");
         assert!(cfg.country.is_none());
+        Ok(())
     }
 
     #[test]
-    fn core_config_empty_block_is_all_defaults() {
-        let cfg = CoreConfig::from_yaml("{}").expect("config");
+    fn core_config_empty_block_is_all_defaults() -> TestResult {
+        let cfg = CoreConfig::from_yaml("{}")?;
         assert_eq!(cfg, CoreConfig::default());
+        Ok(())
     }
 
     #[test]
-    fn core_config_imperial_aliases_us_customary() {
-        let cfg = CoreConfig::from_yaml("unit_system: imperial").expect("config");
+    fn core_config_imperial_aliases_us_customary() -> TestResult {
+        let cfg = CoreConfig::from_yaml("unit_system: imperial")?;
         assert_eq!(cfg.unit_system, UnitSystem::UsCustomary);
-        let cfg2 = CoreConfig::from_yaml("unit_system: us_customary").expect("config");
+        let cfg2 = CoreConfig::from_yaml("unit_system: us_customary")?;
         assert_eq!(cfg2.unit_system, UnitSystem::UsCustomary);
+        Ok(())
     }
 
     #[test]
-    fn core_config_rejects_out_of_range_coordinates() {
-        let err = CoreConfig::from_yaml("latitude: 999\nlongitude: 4.0").unwrap_err();
+    fn core_config_rejects_out_of_range_coordinates() -> TestResult {
+        let err = CoreConfig::from_yaml("latitude: 999\nlongitude: 4.0")
+            .err()
+            .ok_or("expected an error")?;
         assert!(
             matches!(err, ConfigError::Validation(ref v) if v.iter().any(|e| e.key == "latitude"))
         );
-        let err2 = CoreConfig::from_yaml("longitude: -500").unwrap_err();
+        let err2 = CoreConfig::from_yaml("longitude: -500")
+            .err()
+            .ok_or("expected an error")?;
         assert!(
             matches!(err2, ConfigError::Validation(ref v) if v.iter().any(|e| e.key == "longitude"))
         );
+        Ok(())
     }
 
     #[test]
-    fn core_config_rejects_unknown_unit_system() {
-        let err = CoreConfig::from_yaml("unit_system: furlongs").unwrap_err();
+    fn core_config_rejects_unknown_unit_system() -> TestResult {
+        let err = CoreConfig::from_yaml("unit_system: furlongs")
+            .err()
+            .ok_or("expected an error")?;
         assert!(matches!(err, ConfigError::Validation(ref v) if v[0].key == "unit_system"));
+        Ok(())
     }
 
     #[test]
-    fn core_config_bad_yaml_errors() {
+    fn core_config_bad_yaml_errors() -> TestResult {
         assert!(matches!(
-            CoreConfig::from_yaml("name: : :").unwrap_err(),
+            CoreConfig::from_yaml("name: : :")
+                .err()
+                .ok_or("expected an error")?,
             ConfigError::Yaml(_)
         ));
+        Ok(())
     }
 }

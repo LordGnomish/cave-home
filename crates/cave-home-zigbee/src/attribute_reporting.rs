@@ -29,7 +29,7 @@ pub struct Reported {
 /// Report Attributes payload — ZCL §2.4.11.1.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReportAttributes {
-    /// (attribute_id, value) tuples.
+    /// (`attribute_id`, value) tuples.
     pub records: Vec<(u16, AttributeValue)>,
 }
 
@@ -99,10 +99,7 @@ impl ReportDeduper {
         value: AttributeValue,
     ) -> Option<Reported> {
         let key = (device_ieee, cluster_id, attribute_id);
-        let changed = match self.last.get(&key) {
-            Some(prev) => prev != &value,
-            None => true,
-        };
+        let changed = self.last.get(&key) != Some(&value);
         if changed {
             self.last.insert(key, value.clone());
             Some(Reported {
@@ -138,8 +135,10 @@ impl ReportDeduper {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn report_attributes_round_trip() {
+    fn report_attributes_round_trip() -> TestResult {
         let r = ReportAttributes {
             records: vec![
                 (0x0000, AttributeValue::Uint8(7)),
@@ -147,8 +146,9 @@ mod tests {
             ],
         };
         let bytes = r.encode();
-        let decoded = ReportAttributes::decode(&bytes).unwrap();
+        let decoded = ReportAttributes::decode(&bytes)?;
         assert_eq!(decoded, r);
+        Ok(())
     }
 
     #[test]

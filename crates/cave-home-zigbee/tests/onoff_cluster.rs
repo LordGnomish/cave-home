@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // CLEAN-ROOM: Zigbee Cluster Library §3.8 (CSA public PDF) only; Z2M source NOT consulted.
-//! OnOff cluster (0x0006) — ZCL §3.8.
+//! `OnOff` cluster (0x0006) — ZCL §3.8.
 //!
 //! RED: references `cave_home_zigbee::onoff` (`OnOffCommand`, `OnOffState`,
 //! `StartUpOnOff`, `command_id`, `attribute_id`, `ON_OFF_CLUSTER_ID`) which
@@ -10,6 +10,8 @@
 use cave_home_zigbee::onoff::{
     ON_OFF_CLUSTER_ID, OnOffCommand, OnOffState, StartUpOnOff, attribute_id, command_id,
 };
+
+type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
 
 #[test]
 fn cluster_and_command_ids_match_spec() {
@@ -35,29 +37,27 @@ fn attribute_ids_match_spec() {
 }
 
 #[test]
-fn parse_payloadless_commands() {
+fn parse_payloadless_commands() -> TestResult {
     assert_eq!(
-        OnOffCommand::parse(command_id::OFF, &[]).unwrap(),
+        OnOffCommand::parse(command_id::OFF, &[])?,
         OnOffCommand::Off
     );
+    assert_eq!(OnOffCommand::parse(command_id::ON, &[])?, OnOffCommand::On);
     assert_eq!(
-        OnOffCommand::parse(command_id::ON, &[]).unwrap(),
-        OnOffCommand::On
-    );
-    assert_eq!(
-        OnOffCommand::parse(command_id::TOGGLE, &[]).unwrap(),
+        OnOffCommand::parse(command_id::TOGGLE, &[])?,
         OnOffCommand::Toggle
     );
     assert_eq!(
-        OnOffCommand::parse(command_id::ON_WITH_RECALL_GLOBAL_SCENE, &[]).unwrap(),
+        OnOffCommand::parse(command_id::ON_WITH_RECALL_GLOBAL_SCENE, &[])?,
         OnOffCommand::OnWithRecallGlobalScene
     );
+    Ok(())
 }
 
 #[test]
-fn parse_off_with_effect() {
+fn parse_off_with_effect() -> TestResult {
     // §3.8.2.3.4: effect identifier (u8) + effect variant (u8).
-    let cmd = OnOffCommand::parse(command_id::OFF_WITH_EFFECT, &[0x00, 0x01]).unwrap();
+    let cmd = OnOffCommand::parse(command_id::OFF_WITH_EFFECT, &[0x00, 0x01])?;
     assert_eq!(
         cmd,
         OnOffCommand::OffWithEffect {
@@ -65,17 +65,17 @@ fn parse_off_with_effect() {
             effect_variant: 0x01,
         }
     );
+    Ok(())
 }
 
 #[test]
-fn parse_on_with_timed_off() {
+fn parse_on_with_timed_off() -> TestResult {
     // §3.8.2.3.6: on_off_control (u8) + on_time (u16 LE) + off_wait_time (u16 LE).
     // on_time = 0x012c = 300 (30 s), off_wait_time = 0x0064 = 100 (10 s).
     let cmd = OnOffCommand::parse(
         command_id::ON_WITH_TIMED_OFF,
         &[0x00, 0x2c, 0x01, 0x64, 0x00],
-    )
-    .unwrap();
+    )?;
     assert_eq!(
         cmd,
         OnOffCommand::OnWithTimedOff {
@@ -84,6 +84,7 @@ fn parse_on_with_timed_off() {
             off_wait_time: 100,
         }
     );
+    Ok(())
 }
 
 #[test]
@@ -98,7 +99,7 @@ fn parse_rejects_unknown_command() {
 }
 
 #[test]
-fn command_id_round_trips() {
+fn command_id_round_trips() -> TestResult {
     for cmd in [
         OnOffCommand::Off,
         OnOffCommand::On,
@@ -116,8 +117,9 @@ fn command_id_round_trips() {
     ] {
         let id = cmd.command_id();
         let payload = cmd.encode_payload();
-        assert_eq!(OnOffCommand::parse(id, &payload).unwrap(), cmd);
+        assert_eq!(OnOffCommand::parse(id, &payload)?, cmd);
     }
+    Ok(())
 }
 
 #[test]
@@ -183,7 +185,7 @@ fn timed_off_accept_only_when_on_is_ignored_while_off() {
 }
 
 #[test]
-fn start_up_on_off_round_trips() {
+fn start_up_on_off_round_trips() -> TestResult {
     // §3.8.2.2.5 StartUpOnOff enum: 0=Off, 1=On, 2=Toggle, 0xff=Previous.
     for (v, e) in [
         (0x00u8, StartUpOnOff::Off),
@@ -191,10 +193,11 @@ fn start_up_on_off_round_trips() {
         (0x02, StartUpOnOff::Toggle),
         (0xff, StartUpOnOff::Previous),
     ] {
-        assert_eq!(StartUpOnOff::from_u8(v).unwrap(), e);
+        assert_eq!(StartUpOnOff::from_u8(v)?, e);
         assert_eq!(e.to_u8(), v);
     }
     assert!(StartUpOnOff::from_u8(0x03).is_err());
+    Ok(())
 }
 
 #[test]
