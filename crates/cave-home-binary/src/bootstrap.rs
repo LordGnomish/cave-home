@@ -144,10 +144,12 @@ impl Plan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, ConfigLayer, Layer, NodeRole};
+    use crate::config::{Config, ConfigError, ConfigLayer, Layer, NodeRole};
     use std::collections::BTreeSet;
 
-    fn config_with(components: BTreeSet<Component>) -> Config {
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn config_with(components: BTreeSet<Component>) -> Result<Config, ConfigError> {
         let mut flags = ConfigLayer::empty(Layer::Flags);
         flags.role = Some(NodeRole::Hub);
         flags.components = Some(components);
@@ -156,34 +158,40 @@ mod tests {
             &ConfigLayer::empty(Layer::Env),
             &flags,
         )
-        .expect("config valid")
     }
 
-    fn hub_config() -> Config {
-        Config::from_layers(&[ConfigLayer::defaults()]).expect("defaults valid")
+    fn hub_config() -> Result<Config, ConfigError> {
+        Config::from_layers(&[ConfigLayer::defaults()])
     }
 
     #[test]
-    fn hub_plan_starts_orchestration_first_and_portal_last() {
-        let plan = Plan::compute(&hub_config()).expect("plan");
+    fn hub_plan_starts_orchestration_first_and_portal_last() -> TestResult {
+        let plan = Plan::compute(&hub_config()?)?;
         assert_eq!(plan.steps().first(), Some(&Component::Orchestration));
         assert_eq!(plan.steps().last(), Some(&Component::Portal));
+        Ok(())
     }
 
     #[test]
-    fn broker_precedes_core_which_precedes_pillars() {
-        let plan = Plan::compute(&hub_config()).expect("plan");
+    fn broker_precedes_core_which_precedes_pillars() -> TestResult {
+        let plan = Plan::compute(&hub_config()?)?;
         let steps = plan.steps();
-        let pos = |c: Component| steps.iter().position(|x| *x == c).expect("present");
-        assert!(pos(Component::Orchestration) < pos(Component::Broker));
-        assert!(pos(Component::Broker) < pos(Component::Core));
-        assert!(pos(Component::Core) < pos(Component::Integrations));
-        assert!(pos(Component::Core) < pos(Component::Portal));
+        let pos = |c: Component| {
+            steps
+                .iter()
+                .position(|x| *x == c)
+                .ok_or_else(|| format!("{c:?} is missing from the plan"))
+        };
+        assert!(pos(Component::Orchestration)? < pos(Component::Broker)?);
+        assert!(pos(Component::Broker)? < pos(Component::Core)?);
+        assert!(pos(Component::Core)? < pos(Component::Integrations)?);
+        assert!(pos(Component::Core)? < pos(Component::Portal)?);
+        Ok(())
     }
 
     #[test]
-    fn full_hub_plan_has_every_component_once() {
-        let plan = Plan::compute(&hub_config()).expect("plan");
+    fn full_hub_plan_has_every_component_once() -> TestResult {
+        let plan = Plan::compute(&hub_config()?)?;
         assert_eq!(plan.len(), Component::ALL.len());
         for c in Component::ALL {
             assert_eq!(
@@ -192,35 +200,39 @@ mod tests {
                 "{c:?} should appear exactly once"
             );
         }
+        Ok(())
     }
 
     #[test]
-    fn single_binary_invariant_holds_for_hub() {
-        let plan = Plan::compute(&hub_config()).expect("plan");
+    fn single_binary_invariant_holds_for_hub() -> TestResult {
+        let plan = Plan::compute(&hub_config()?)?;
         assert!(plan.is_single_binary());
+        Ok(())
     }
 
     #[test]
-    fn minimal_plan_orchestration_only_is_single_binary() {
-        let cfg = config_with([Component::Orchestration].into_iter().collect());
-        let plan = Plan::compute(&cfg).expect("plan");
+    fn minimal_plan_orchestration_only_is_single_binary() -> TestResult {
+        let cfg = config_with(BTreeSet::from([Component::Orchestration]))?;
+        let plan = Plan::compute(&cfg)?;
         assert_eq!(plan.steps(), &[Component::Orchestration]);
         assert!(plan.is_single_binary());
+        Ok(())
     }
 
     #[test]
-    fn subset_plan_keeps_relative_order() {
+    fn subset_plan_keeps_relative_order() -> TestResult {
         let cfg = config_with(
             [Component::Orchestration, Component::Core, Component::Portal]
                 .into_iter()
                 .collect(),
-        );
-        let plan = Plan::compute(&cfg).expect("plan");
+        )?;
+        let plan = Plan::compute(&cfg)?;
         assert_eq!(
             plan.steps(),
             &[Component::Orchestration, Component::Core, Component::Portal]
         );
         assert!(plan.is_single_binary());
+        Ok(())
     }
 
     #[test]
@@ -236,7 +248,7 @@ mod tests {
             bind_port: 1,
             log_level: crate::config::LogLevel::Info,
         };
-        assert_eq!(Plan::compute(&cfg).unwrap_err(), PlanError::Empty);
+        assert_eq!(Plan::compute(&cfg).err(), Some(PlanError::Empty));
     }
 
     #[test]
@@ -244,31 +256,31 @@ mod tests {
         let cfg = Config {
             node_name: "x".to_string(),
             role: NodeRole::Hub,
-            components: [Component::Core].into_iter().collect(),
+            components: BTreeSet::from([Component::Core]),
             data_dir: "/x".to_string(),
             bind_addr: "0.0.0.0".to_string(),
             bind_port: 1,
             log_level: crate::config::LogLevel::Info,
         };
         assert_eq!(
-            Plan::compute(&cfg).unwrap_err(),
-            PlanError::MissingOrchestration
+            Plan::compute(&cfg).err(),
+            Some(PlanError::MissingOrchestration)
         );
     }
 
     #[test]
-    fn ml_node_plan_brings_up_cameras() {
+    fn ml_node_plan_brings_up_cameras() -> TestResult {
         let mut flags = ConfigLayer::empty(Layer::Flags);
         flags.role = Some(NodeRole::Ml);
         let cfg = Config::resolve_standard(
             &ConfigLayer::empty(Layer::File),
             &ConfigLayer::empty(Layer::Env),
             &flags,
-        )
-        .expect("ml valid");
-        let plan = Plan::compute(&cfg).expect("plan");
+        )?;
+        let plan = Plan::compute(&cfg)?;
         assert_eq!(plan.steps().first(), Some(&Component::Orchestration));
         assert!(plan.steps().contains(&Component::Cameras));
         assert!(plan.is_single_binary());
+        Ok(())
     }
 }

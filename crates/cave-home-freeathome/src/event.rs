@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn empty_frame_yields_no_events() {
         let evs = parse_ws_frame(r#"{ "u": {} }"#).expect("parse");
-        assert!(evs.is_empty());
+        assert_eq!(evs, [] as [FreeAtHomeEvent; 0]);
     }
 
     #[test]

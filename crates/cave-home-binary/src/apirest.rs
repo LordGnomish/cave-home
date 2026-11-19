@@ -612,89 +612,102 @@ mod tests {
     use crate::node::LocalNode;
     use cave_home_apiserver_rs::gvk::GroupVersionResource;
 
-    fn get(path: &str) -> HttpRequest {
-        HttpRequest::parse(format!("GET {path} HTTP/1.1\r\n\r\n").as_bytes()).expect("parse")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn get(path: &str) -> Result<HttpRequest, crate::http::ParseError> {
+        HttpRequest::parse(format!("GET {path} HTTP/1.1\r\n\r\n").as_bytes())
     }
 
-    fn seed_node(reg: &mut Registry, name: &str) {
+    fn seed_node(reg: &mut Registry, name: &str) -> TestResult {
         let nodes = GroupVersionResource::new("", "v1", "nodes");
-        reg.create(&nodes, LocalNode::new(name, "10.0.0.5").to_object())
-            .expect("seed");
+        reg.create(&nodes, LocalNode::new(name, "10.0.0.5").to_object())?;
+        Ok(())
     }
 
     #[test]
-    fn healthz_is_ok() {
+    fn healthz_is_ok() -> TestResult {
         let mut reg = Registry::new();
-        let resp = handle(&mut reg, &get("/healthz"));
+        let resp = handle(&mut reg, &get("/healthz")?);
         assert_eq!(resp.status, 200);
         assert_eq!(resp.body, b"ok");
+        Ok(())
     }
 
     #[test]
-    fn list_nodes_empty_returns_nodelist() {
+    fn list_nodes_empty_returns_nodelist() -> TestResult {
         let mut reg = Registry::new();
-        let resp = handle(&mut reg, &get("/api/v1/nodes"));
+        let resp = handle(&mut reg, &get("/api/v1/nodes")?);
         assert_eq!(resp.status, 200);
-        let body = String::from_utf8(resp.body).unwrap();
+        let body = String::from_utf8(resp.body)?;
         assert!(body.contains("\"kind\":\"NodeList\""), "{body}");
         assert!(body.contains("\"items\":[]"), "{body}");
+        Ok(())
     }
 
     #[test]
-    fn list_nodes_after_seed_includes_it() {
+    fn list_nodes_after_seed_includes_it() -> TestResult {
         let mut reg = Registry::new();
-        seed_node(&mut reg, "hub-01");
-        let resp = handle(&mut reg, &get("/api/v1/nodes"));
+        seed_node(&mut reg, "hub-01")?;
+        let resp = handle(&mut reg, &get("/api/v1/nodes")?);
         assert_eq!(resp.status, 200);
-        let body = String::from_utf8(resp.body).unwrap();
+        let body = String::from_utf8(resp.body)?;
         assert!(body.contains("\"kind\":\"NodeList\""), "{body}");
         assert!(body.contains("hub-01"), "{body}");
+        Ok(())
     }
 
     #[test]
-    fn get_named_node_returns_it() {
+    fn get_named_node_returns_it() -> TestResult {
         let mut reg = Registry::new();
-        seed_node(&mut reg, "hub-01");
-        let resp = handle(&mut reg, &get("/api/v1/nodes/hub-01"));
+        seed_node(&mut reg, "hub-01")?;
+        let resp = handle(&mut reg, &get("/api/v1/nodes/hub-01")?);
         assert_eq!(resp.status, 200);
-        let body = String::from_utf8(resp.body).unwrap();
+        let body = String::from_utf8(resp.body)?;
         assert!(body.contains("\"kind\":\"Node\""), "{body}");
         assert!(body.contains("hub-01"), "{body}");
+        Ok(())
     }
 
     #[test]
-    fn get_missing_node_is_404_status() {
+    fn get_missing_node_is_404_status() -> TestResult {
         let mut reg = Registry::new();
-        let resp = handle(&mut reg, &get("/api/v1/nodes/ghost"));
+        let resp = handle(&mut reg, &get("/api/v1/nodes/ghost")?);
         assert_eq!(resp.status, 404);
-        let body = String::from_utf8(resp.body).unwrap();
+        let body = String::from_utf8(resp.body)?;
         assert!(body.contains("\"kind\":\"Status\""), "{body}");
         assert!(body.contains("\"reason\":\"NotFound\""), "{body}");
+        Ok(())
     }
 
     #[test]
-    fn list_pods_empty_returns_podlist() {
+    fn list_pods_empty_returns_podlist() -> TestResult {
         let mut reg = Registry::new();
-        let resp = handle(&mut reg, &get("/api/v1/pods"));
+        let resp = handle(&mut reg, &get("/api/v1/pods")?);
         assert_eq!(resp.status, 200);
-        let body = String::from_utf8(resp.body).unwrap();
+        let body = String::from_utf8(resp.body)?;
         assert!(body.contains("\"kind\":\"PodList\""), "{body}");
         assert!(body.contains("\"items\":[]"), "{body}");
+        Ok(())
     }
 
     /// Build a request with a method, path and JSON body.
-    fn req_body(method: &str, path: &str, ctype: &str, body: &str) -> HttpRequest {
+    fn req_body(
+        method: &str,
+        path: &str,
+        ctype: &str,
+        body: &str,
+    ) -> Result<HttpRequest, crate::http::ParseError> {
         let raw = format!(
             "{method} {path} HTTP/1.1\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\n\r\n{body}",
             body.len()
         );
-        HttpRequest::parse(raw.as_bytes()).expect("parse")
+        HttpRequest::parse(raw.as_bytes())
     }
 
     const POD_JSON: &str = r#"{"apiVersion":"v1","kind":"Pod","metadata":{"name":"nginx"},"spec":{"containers":[{"name":"web","image":"nginx:1.27"}]}}"#;
 
     #[test]
-    fn post_creates_a_pod_and_returns_201() {
+    fn post_creates_a_pod_and_returns_201() -> TestResult {
         let mut reg = Registry::new();
         let resp = handle(
             &mut reg,
@@ -703,21 +716,22 @@ mod tests {
                 "/api/v1/namespaces/default/pods",
                 "application/json",
                 POD_JSON,
-            ),
+            )?,
         );
         assert_eq!(resp.status, 201, "{}", String::from_utf8_lossy(&resp.body));
-        let body = String::from_utf8(resp.body).unwrap();
+        let body = String::from_utf8(resp.body)?;
         assert!(body.contains("\"name\":\"nginx\""), "{body}");
         // namespace from the path was injected, server stamped uid + rv.
         assert!(body.contains("\"namespace\":\"default\""), "{body}");
         assert!(body.contains("\"uid\":\"uid-"), "{body}");
         // and it is now retrievable.
-        let got = handle(&mut reg, &get("/api/v1/namespaces/default/pods/nginx"));
+        let got = handle(&mut reg, &get("/api/v1/namespaces/default/pods/nginx")?);
         assert_eq!(got.status, 200);
+        Ok(())
     }
 
     #[test]
-    fn post_duplicate_is_409() {
+    fn post_duplicate_is_409() -> TestResult {
         let mut reg = Registry::new();
         let make = || {
             req_body(
@@ -727,12 +741,13 @@ mod tests {
                 POD_JSON,
             )
         };
-        assert_eq!(handle(&mut reg, &make()).status, 201);
-        assert_eq!(handle(&mut reg, &make()).status, 409);
+        assert_eq!(handle(&mut reg, &make()?).status, 201);
+        assert_eq!(handle(&mut reg, &make()?).status, 409);
+        Ok(())
     }
 
     #[test]
-    fn post_malformed_json_is_400() {
+    fn post_malformed_json_is_400() -> TestResult {
         let mut reg = Registry::new();
         let resp = handle(
             &mut reg,
@@ -741,13 +756,14 @@ mod tests {
                 "/api/v1/namespaces/default/pods",
                 "application/json",
                 "{not json",
-            ),
+            )?,
         );
         assert_eq!(resp.status, 400);
+        Ok(())
     }
 
     #[test]
-    fn delete_removes_the_pod() {
+    fn delete_removes_the_pod() -> TestResult {
         let mut reg = Registry::new();
         let _ = handle(
             &mut reg,
@@ -756,21 +772,21 @@ mod tests {
                 "/api/v1/namespaces/default/pods",
                 "application/json",
                 POD_JSON,
-            ),
+            )?,
         );
         let del =
-            HttpRequest::parse(b"DELETE /api/v1/namespaces/default/pods/nginx HTTP/1.1\r\n\r\n")
-                .unwrap();
+            HttpRequest::parse(b"DELETE /api/v1/namespaces/default/pods/nginx HTTP/1.1\r\n\r\n")?;
         let resp = handle(&mut reg, &del);
         assert_eq!(resp.status, 200, "{}", String::from_utf8_lossy(&resp.body));
         assert_eq!(
-            handle(&mut reg, &get("/api/v1/namespaces/default/pods/nginx")).status,
+            handle(&mut reg, &get("/api/v1/namespaces/default/pods/nginx")?).status,
             404
         );
+        Ok(())
     }
 
     #[test]
-    fn patch_merge_updates_a_field() {
+    fn patch_merge_updates_a_field() -> TestResult {
         let mut reg = Registry::new();
         let _ = handle(
             &mut reg,
@@ -779,7 +795,7 @@ mod tests {
                 "/api/v1/namespaces/default/pods",
                 "application/json",
                 POD_JSON,
-            ),
+            )?,
         );
         let patch = r#"{"metadata":{"labels":{"tier":"frontend"}}}"#;
         let resp = handle(
@@ -789,81 +805,87 @@ mod tests {
                 "/api/v1/namespaces/default/pods/nginx",
                 "application/merge-patch+json",
                 patch,
-            ),
+            )?,
         );
         assert_eq!(resp.status, 200, "{}", String::from_utf8_lossy(&resp.body));
-        let body = String::from_utf8(resp.body).unwrap();
+        let body = String::from_utf8(resp.body)?;
         assert!(body.contains("\"tier\":\"frontend\""), "{body}");
+        Ok(())
     }
 
     #[test]
-    fn discovery_api_lists_v1() {
+    fn discovery_api_lists_v1() -> TestResult {
         let mut reg = Registry::new();
-        let resp = handle(&mut reg, &get("/api"));
+        let resp = handle(&mut reg, &get("/api")?);
         assert_eq!(resp.status, 200);
-        let body = String::from_utf8(resp.body).unwrap();
+        let body = String::from_utf8(resp.body)?;
         assert!(body.contains("\"kind\":\"APIVersions\""), "{body}");
         assert!(body.contains("\"v1\""), "{body}");
+        Ok(())
     }
 
     #[test]
-    fn discovery_apis_lists_groups() {
+    fn discovery_apis_lists_groups() -> TestResult {
         let mut reg = Registry::new();
-        let resp = handle(&mut reg, &get("/apis"));
+        let resp = handle(&mut reg, &get("/apis")?);
         assert_eq!(resp.status, 200);
-        let body = String::from_utf8(resp.body).unwrap();
+        let body = String::from_utf8(resp.body)?;
         assert!(body.contains("\"kind\":\"APIGroupList\""), "{body}");
         assert!(body.contains("apps/v1"), "{body}");
         assert!(body.contains("batch/v1"), "{body}");
+        Ok(())
     }
 
     #[test]
-    fn discovery_core_resourcelist_maps_pods() {
+    fn discovery_core_resourcelist_maps_pods() -> TestResult {
         let mut reg = Registry::new();
-        let resp = handle(&mut reg, &get("/api/v1"));
+        let resp = handle(&mut reg, &get("/api/v1")?);
         assert_eq!(resp.status, 200);
-        let body = String::from_utf8(resp.body).unwrap();
+        let body = String::from_utf8(resp.body)?;
         assert!(body.contains("\"kind\":\"APIResourceList\""), "{body}");
         assert!(body.contains("\"groupVersion\":\"v1\""), "{body}");
         assert!(body.contains("\"name\":\"pods\""), "{body}");
         assert!(body.contains("\"kind\":\"Pod\""), "{body}");
         assert!(body.contains("\"namespaced\":true"), "{body}");
+        Ok(())
     }
 
     #[test]
-    fn discovery_grouped_resourcelist() {
+    fn discovery_grouped_resourcelist() -> TestResult {
         let mut reg = Registry::new();
-        let resp = handle(&mut reg, &get("/apis/apps/v1"));
+        let resp = handle(&mut reg, &get("/apis/apps/v1")?);
         assert_eq!(resp.status, 200);
-        let body = String::from_utf8(resp.body).unwrap();
+        let body = String::from_utf8(resp.body)?;
         assert!(body.contains("\"groupVersion\":\"apps/v1\""), "{body}");
         assert!(body.contains("\"name\":\"deployments\""), "{body}");
+        Ok(())
     }
 
     #[test]
-    fn openapi_v3_root_lists_every_group_version() {
+    fn openapi_v3_root_lists_every_group_version() -> TestResult {
         // kubectl downloads the OpenAPI v3 root before `apply`; each served
         // group/version must point at its schema document.
         let mut reg = Registry::new();
-        let resp = handle(&mut reg, &get("/openapi/v3"));
+        let resp = handle(&mut reg, &get("/openapi/v3")?);
         assert_eq!(resp.status, 200);
-        let body = String::from_utf8(resp.body).unwrap();
+        let body = String::from_utf8(resp.body)?;
         assert!(body.contains("\"api/v1\""), "{body}");
         assert!(body.contains("\"apis/apps/v1\""), "{body}");
         assert!(body.contains("serverRelativeURL"), "{body}");
         assert!(body.contains("/openapi/v3/api/v1"), "{body}");
+        Ok(())
     }
 
     #[test]
-    fn openapi_v3_gv_doc_tags_each_kind_with_its_gvk() {
+    fn openapi_v3_gv_doc_tags_each_kind_with_its_gvk() -> TestResult {
         // The per-GV document resolves a kind by its x-kubernetes-group-version-kind
         // extension; the schema itself is permissive (we model no field rules),
         // so client-side validation passes for any well-formed object.
         let mut reg = Registry::new();
         // kubectl appends a ?hash= query — the codec strips it to the bare path.
-        let resp = handle(&mut reg, &get("/openapi/v3/api/v1"));
+        let resp = handle(&mut reg, &get("/openapi/v3/api/v1")?);
         assert_eq!(resp.status, 200);
-        let body = String::from_utf8(resp.body).unwrap();
+        let body = String::from_utf8(resp.body)?;
         assert!(body.contains("\"openapi\":\"3.0.0\""), "{body}");
         assert!(body.contains("x-kubernetes-group-version-kind"), "{body}");
         assert!(body.contains("\"kind\":\"Pod\""), "{body}");
@@ -874,23 +896,21 @@ mod tests {
         );
         assert!(body.contains("fieldValidation"), "{body}");
         // grouped GV resolves too
-        let g = handle(&mut reg, &get("/openapi/v3/apis/apps/v1"));
+        let g = handle(&mut reg, &get("/openapi/v3/apis/apps/v1")?);
         assert_eq!(g.status, 200);
-        assert!(
-            String::from_utf8(g.body)
-                .unwrap()
-                .contains("\"kind\":\"Deployment\"")
-        );
+        assert!(String::from_utf8(g.body)?.contains("\"kind\":\"Deployment\""));
+        Ok(())
     }
 
     #[test]
-    fn openapi_v2_swagger_stays_absent() {
+    fn openapi_v2_swagger_stays_absent() -> TestResult {
         let mut reg = Registry::new();
-        assert_eq!(handle(&mut reg, &get("/openapi/v2")).status, 404);
+        assert_eq!(handle(&mut reg, &get("/openapi/v2")?).status, 404);
+        Ok(())
     }
 
     #[test]
-    fn pod_log_returns_text_for_an_existing_pod() {
+    fn pod_log_returns_text_for_an_existing_pod() -> TestResult {
         let mut reg = Registry::new();
         let _ = handle(
             &mut reg,
@@ -899,71 +919,78 @@ mod tests {
                 "/api/v1/namespaces/default/pods",
                 "application/json",
                 POD_JSON,
-            ),
+            )?,
         );
-        let resp = handle(&mut reg, &get("/api/v1/namespaces/default/pods/nginx/log"));
+        let resp = handle(&mut reg, &get("/api/v1/namespaces/default/pods/nginx/log")?);
         assert_eq!(resp.status, 200, "{}", String::from_utf8_lossy(&resp.body));
         assert!(
             resp.headers
                 .iter()
                 .any(|(k, v)| k == "Content-Type" && v.starts_with("text/plain"))
         );
-        let body = String::from_utf8(resp.body).unwrap();
+        let body = String::from_utf8(resp.body)?;
         assert!(body.contains("web"), "{body}");
         assert!(body.contains("mock-cri"), "{body}");
+        Ok(())
     }
 
     #[test]
-    fn pod_log_for_missing_pod_is_404() {
+    fn pod_log_for_missing_pod_is_404() -> TestResult {
         let mut reg = Registry::new();
-        let resp = handle(&mut reg, &get("/api/v1/namespaces/default/pods/ghost/log"));
+        let resp = handle(&mut reg, &get("/api/v1/namespaces/default/pods/ghost/log")?);
         assert_eq!(resp.status, 404);
+        Ok(())
     }
 
     #[test]
-    fn post_on_named_path_is_405() {
+    fn post_on_named_path_is_405() -> TestResult {
         let mut reg = Registry::new();
         let req = req_body(
             "POST",
             "/api/v1/namespaces/default/pods/nginx",
             "application/json",
             POD_JSON,
-        );
+        )?;
         assert_eq!(handle(&mut reg, &req).status, 405);
+        Ok(())
     }
 
     #[test]
-    fn unsupported_method_on_resource_is_405() {
+    fn unsupported_method_on_resource_is_405() -> TestResult {
         let mut reg = Registry::new();
-        let req = HttpRequest::parse(b"TRACE /api/v1/nodes HTTP/1.1\r\n\r\n").unwrap();
+        let req = HttpRequest::parse(b"TRACE /api/v1/nodes HTTP/1.1\r\n\r\n")?;
         let resp = handle(&mut reg, &req);
         assert_eq!(resp.status, 405);
+        Ok(())
     }
 
     #[test]
-    fn unknown_path_is_400() {
+    fn unknown_path_is_400() -> TestResult {
         let mut reg = Registry::new();
-        let resp = handle(&mut reg, &get("/nonsense"));
+        let resp = handle(&mut reg, &get("/nonsense")?);
         assert_eq!(resp.status, 400);
+        Ok(())
     }
 
     #[test]
-    fn version_endpoint_reports_build() {
+    fn version_endpoint_reports_build() -> TestResult {
         let mut reg = Registry::new();
-        let resp = handle(&mut reg, &get("/version"));
+        let resp = handle(&mut reg, &get("/version")?);
         assert_eq!(resp.status, 200);
-        let body = String::from_utf8(resp.body).unwrap();
+        let body = String::from_utf8(resp.body)?;
         assert!(body.contains("gitVersion"), "{body}");
+        Ok(())
     }
 
     #[test]
-    fn metrics_endpoint_reports_object_counts() {
+    fn metrics_endpoint_reports_object_counts() -> TestResult {
         let mut reg = Registry::new();
-        seed_node(&mut reg, "hub-01");
-        let resp = handle(&mut reg, &get("/metrics"));
+        seed_node(&mut reg, "hub-01")?;
+        let resp = handle(&mut reg, &get("/metrics")?);
         assert_eq!(resp.status, 200);
-        let body = String::from_utf8(resp.body).unwrap();
+        let body = String::from_utf8(resp.body)?;
         assert!(body.contains("cave_home_apiserver_objects"), "{body}");
         assert!(body.contains("resource=\"nodes\""), "{body}");
+        Ok(())
     }
 }

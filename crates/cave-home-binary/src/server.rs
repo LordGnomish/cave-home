@@ -822,31 +822,35 @@ mod tests {
     use super::*;
     use cave_home_apiserver_rs::registry::ListOptions;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn node() -> LocalNode {
         LocalNode::new("hub-01", "10.0.0.5")
     }
 
     #[test]
-    fn bring_up_order_starts_storage_before_apiserver() {
-        let order = planned_order(NodeIntent::PrimaryHub).expect("plan");
+    fn bring_up_order_starts_storage_before_apiserver() -> TestResult {
+        let order = planned_order(NodeIntent::PrimaryHub)?;
         let kine = order
             .iter()
             .position(|c| *c == Component::Kine)
-            .expect("kine");
+            .ok_or("kine is not in the bring-up order")?;
         let api = order
             .iter()
             .position(|c| *c == Component::Apiserver)
-            .expect("apiserver");
+            .ok_or("apiserver is not in the bring-up order")?;
         assert!(kine < api, "kine must precede apiserver: {order:?}");
+        Ok(())
     }
 
     #[test]
-    fn seeded_registry_contains_local_node() {
+    fn seeded_registry_contains_local_node() -> TestResult {
         let reg = seeded_registry(&node());
-        let reg = reg.try_lock().expect("uncontended");
         let nodes = GroupVersionResource::new("", "v1", "nodes");
-        let list = reg.list(&nodes, &ListOptions::default()).expect("list");
+        // Nothing else holds the lock, and the guard lives for this statement only.
+        let list = reg.try_lock()?.list(&nodes, &ListOptions::default())?;
         assert_eq!(list.items.len(), 1);
+        Ok(())
     }
 
     #[test]
@@ -868,26 +872,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn serves_nodes_and_pods_over_a_real_socket() {
+    async fn serves_nodes_and_pods_over_a_real_socket() -> TestResult {
         let registry = seeded_registry(&node());
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let addr = listener.local_addr().expect("addr");
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
         let (_tx, rx) = watch::channel(false);
         let server = tokio::spawn(serve(listener, registry, rx, None));
 
-        let nodes_body = http_get(addr, "/api/v1/nodes").await;
+        let nodes_body = http_get(addr, "/api/v1/nodes").await?;
         assert!(nodes_body.contains("\"kind\":\"NodeList\""), "{nodes_body}");
         assert!(nodes_body.contains("hub-01"), "{nodes_body}");
 
-        let pods_body = http_get(addr, "/api/v1/pods").await;
+        let pods_body = http_get(addr, "/api/v1/pods").await?;
         assert!(pods_body.contains("\"kind\":\"PodList\""), "{pods_body}");
         assert!(pods_body.contains("\"items\":[]"), "{pods_body}");
 
         server.abort();
+        Ok(())
     }
 
     #[tokio::test]
-    async fn run_until_boots_then_shuts_down_cleanly() {
+    async fn run_until_boots_then_shuts_down_cleanly() -> TestResult {
         // Port 0 lets the OS pick a free port; an already-ready shutdown future
         // exercises the full bring-up → serve → ordered-teardown path.
         let cfg = RuntimeConfig {
@@ -904,14 +909,12 @@ mod tests {
             result.is_ok(),
             "run_until did not return within the timeout"
         );
-        assert!(
-            result.expect("timed out").is_ok(),
-            "run_until returned an error"
-        );
+        assert!(result?.is_ok(), "run_until returned an error");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn supervised_component_restarts_after_panics_without_losing_the_store() {
+    async fn supervised_component_restarts_after_panics_without_losing_the_store() -> TestResult {
         use std::sync::Arc as StdArc;
         use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -942,9 +945,8 @@ mod tests {
                     async move {
                         let task = tokio::spawn(async move {
                             let n = runs.fetch_add(1, Ordering::SeqCst);
-                            if n < 2 {
-                                panic!("simulated reconcile panic");
-                            }
+                            // The first two runs really panic inside the task.
+                            assert!(n >= 2, "simulated reconcile panic");
                             // Steady run: record a marker, then idle until shutdown.
                             {
                                 let mut reg = registry.lock().await;
@@ -984,9 +986,8 @@ mod tests {
                             }
                         });
                         match task.await {
-                            Ok(()) => Ok(()),
                             Err(j) if j.is_panic() => Err("panicked"),
-                            Err(_) => Ok(()),
+                            Ok(()) | Err(_) => Ok(()),
                         }
                     }
                 },
@@ -1009,30 +1010,25 @@ mod tests {
 
         // The store survived every restart: the seeded node is still present, and
         // the steady run's marker landed in the *same* registry.
-        {
-            let reg = registry.lock().await;
-            assert!(
-                reg.get(&nodes, "", "hub-01").is_ok(),
-                "seeded node lost across restarts"
-            );
-            let pods = GroupVersionResource::new("", "v1", "pods");
-            assert!(
-                reg.get(&pods, "default", "marker").is_ok(),
-                "steady run did not see the shared store"
-            );
-        }
+        let pods = GroupVersionResource::new("", "v1", "pods");
+        let reg = registry.lock().await;
+        let node_kept = reg.get(&nodes, "", "hub-01").is_ok();
+        let marker_seen = reg.get(&pods, "default", "marker").is_ok();
+        drop(reg);
+        assert!(node_kept, "seeded node lost across restarts");
+        assert!(marker_seen, "steady run did not see the shared store");
         assert!(!sup.is_finished(), "supervisor stays up after recovering");
 
         let _ = tx.send(true);
         let exit = tokio::time::timeout(Duration::from_secs(2), sup)
             .await
-            .expect("supervisor stops on shutdown")
-            .expect("join");
+            .map_err(|_| "supervisor did not stop within 2s of the shutdown request")??;
         assert_eq!(exit, crate::supervisor::SupervisedExit::ShutdownRequested);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn ordered_teardown_stops_components_in_reverse_one_at_a_time() {
+    async fn ordered_teardown_stops_components_in_reverse_one_at_a_time() -> TestResult {
         use std::sync::Arc as StdArc;
         use tokio::sync::Mutex as TokioMutex;
 
@@ -1076,11 +1072,11 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // Teardown exactly as `run_until` does: reverse order, signal then await.
-        for (_id, stop_tx, handle) in supervisors.into_iter().rev() {
+        for (id, stop_tx, handle) in supervisors.into_iter().rev() {
             let _ = stop_tx.send(true);
             let _ = tokio::time::timeout(Duration::from_secs(1), handle)
                 .await
-                .expect("stops");
+                .map_err(|_| format!("component {id} did not stop within 1s"))?;
         }
 
         let log = stop_log.lock().await;
@@ -1089,37 +1085,37 @@ mod tests {
             vec!["c", "b", "a"],
             "components must stop in reverse bring-up order"
         );
+        Ok(())
     }
 
     #[test]
-    fn query_param_parses_and_detects_watch() {
+    fn query_param_parses_and_detects_watch() -> TestResult {
         assert_eq!(
             query_param("watch=true&resourceVersion=8", "resourceVersion"),
             Some("8")
         );
         assert_eq!(query_param("watch=true", "watch"), Some("true"));
         assert_eq!(query_param("a=1&b=2", "c"), None);
-        let watch_req =
-            http::HttpRequest::parse(b"GET /api/v1/pods?watch=true HTTP/1.1\r\n\r\n").unwrap();
+        let watch_req = http::HttpRequest::parse(b"GET /api/v1/pods?watch=true HTTP/1.1\r\n\r\n")?;
         assert!(is_watch_request(&watch_req));
-        let plain = http::HttpRequest::parse(b"GET /api/v1/pods HTTP/1.1\r\n\r\n").unwrap();
+        let plain = http::HttpRequest::parse(b"GET /api/v1/pods HTTP/1.1\r\n\r\n")?;
         assert!(!is_watch_request(&plain));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn watch_streams_a_created_pod_as_an_added_event() {
+    async fn watch_streams_a_created_pod_as_an_added_event() -> TestResult {
         let registry = seeded_registry(&node());
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let addr = listener.local_addr().expect("addr");
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
         let (tx, rx) = watch::channel(false);
         let server = tokio::spawn(serve(listener, registry.clone(), rx, None));
 
         // Open a watch on pods starting from the current (empty) history.
-        let mut stream = TcpStream::connect(addr).await.expect("connect");
+        let mut stream = TcpStream::connect(addr).await?;
         stream
             .write_all(b"GET /api/v1/pods?watch=true&resourceVersion=0 HTTP/1.1\r\nHost: t\r\n\r\n")
-            .await
-            .expect("write");
+            .await?;
 
         // After the watch is open, create a pod through the same registry.
         {
@@ -1145,7 +1141,7 @@ mod tests {
                     ]),
                 ),
             ]);
-            reg.create(&pods, pod).expect("create");
+            reg.create(&pods, pod)?;
         }
 
         // Accumulate the chunked stream until the ADDED frame arrives. The first
@@ -1155,7 +1151,7 @@ mod tests {
             let mut acc = String::new();
             let mut buf = [0u8; 4096];
             loop {
-                let n = stream.read(&mut buf).await.expect("read");
+                let n = stream.read(&mut buf).await?;
                 if n == 0 {
                     break;
                 }
@@ -1164,32 +1160,32 @@ mod tests {
                     break;
                 }
             }
-            acc
+            Ok::<_, std::io::Error>(acc)
         })
         .await
-        .expect("watch event within timeout");
+        .map_err(|_| "no ADDED watch event for the pod within 5s")??;
         assert!(collected.contains("\"type\":\"ADDED\""), "{collected}");
         assert!(collected.contains("watchpod"), "{collected}");
 
         let _ = tx.send(true);
         server.abort();
+        Ok(())
     }
 
     #[tokio::test]
-    async fn watch_keeps_streaming_subsequent_modifications() {
+    async fn watch_keeps_streaming_subsequent_modifications() -> TestResult {
         use cave_home_apiserver_rs::json::{Value, obj};
         let registry = seeded_registry(&node());
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let addr = listener.local_addr().expect("addr");
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
         let (tx, rx) = watch::channel(false);
         let server = tokio::spawn(serve(listener, registry.clone(), rx, None));
         let pods = GroupVersionResource::new("", "v1", "pods");
 
-        let mut stream = TcpStream::connect(addr).await.expect("connect");
+        let mut stream = TcpStream::connect(addr).await?;
         stream
             .write_all(b"GET /api/v1/pods?watch=true&resourceVersion=0 HTTP/1.1\r\nHost: t\r\n\r\n")
-            .await
-            .expect("write");
+            .await?;
 
         // Create, then mutate the pod twice — exactly the create→bind→run shape.
         {
@@ -1208,8 +1204,7 @@ mod tests {
                     ),
                     ("spec", obj([])),
                 ]),
-            )
-            .expect("create");
+            )?;
         }
         // Mimic the live supervisor cadence: ADDED, then bind, then run, each
         // separated by more than one watch poll interval, so each must be picked
@@ -1222,8 +1217,7 @@ mod tests {
                 "default",
                 "p1",
                 &obj([("spec", obj([("nodeName", Value::from("hub-01"))]))]),
-            )
-            .expect("bind");
+            )?;
         }
         tokio::time::sleep(Duration::from_millis(400)).await;
         {
@@ -1233,15 +1227,14 @@ mod tests {
                 "default",
                 "p1",
                 &obj([("status", obj([("phase", Value::from("Running"))]))]),
-            )
-            .expect("run");
+            )?;
         }
 
         let collected = tokio::time::timeout(Duration::from_secs(5), async {
             let mut acc = String::new();
             let mut buf = [0u8; 4096];
             loop {
-                let n = stream.read(&mut buf).await.expect("read");
+                let n = stream.read(&mut buf).await?;
                 if n == 0 {
                     break;
                 }
@@ -1250,10 +1243,10 @@ mod tests {
                     break;
                 }
             }
-            acc
+            Ok::<_, std::io::Error>(acc)
         })
         .await
-        .expect("modifications within timeout");
+        .map_err(|_| "fewer than two MODIFIED watch events within 5s")??;
         assert!(collected.contains("\"type\":\"ADDED\""), "{collected}");
         assert!(
             collected.matches("\"type\":\"MODIFIED\"").count() >= 2,
@@ -1263,17 +1256,21 @@ mod tests {
 
         let _ = tx.send(true);
         server.abort();
+        Ok(())
     }
 
     /// Minimal client: open, send a GET, read the whole response, return the body.
-    async fn http_get(addr: std::net::SocketAddr, path: &str) -> String {
-        let mut stream = TcpStream::connect(addr).await.expect("connect");
+    async fn http_get(
+        addr: std::net::SocketAddr,
+        path: &str,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        let mut stream = TcpStream::connect(addr).await?;
         let req = format!("GET {path} HTTP/1.1\r\nHost: test\r\n\r\n");
-        stream.write_all(req.as_bytes()).await.expect("write");
+        stream.write_all(req.as_bytes()).await?;
         let mut buf = Vec::new();
-        stream.read_to_end(&mut buf).await.expect("read");
-        let text = String::from_utf8(buf).expect("utf8");
+        stream.read_to_end(&mut buf).await?;
+        let text = String::from_utf8(buf)?;
         let (_head, body) = text.split_once("\r\n\r\n").unwrap_or((&text, ""));
-        body.to_string()
+        Ok(body.to_string())
     }
 }

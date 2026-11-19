@@ -188,23 +188,28 @@ pub fn acceptor(cfg: &TlsConfig) -> Result<TlsAcceptor, TlsError> {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     /// Generate a throwaway self-signed cert+key pair and write them to two
     /// temp files; return the paths (and the temp dir, kept alive by the caller).
-    fn self_signed(dir: &Path, sans: &[&str]) -> (PathBuf, PathBuf) {
+    fn self_signed(
+        dir: &Path,
+        sans: &[&str],
+    ) -> Result<(PathBuf, PathBuf), Box<dyn std::error::Error>> {
         let subjects: Vec<String> = sans.iter().map(|s| (*s).to_string()).collect();
-        let key = rcgen::generate_simple_self_signed(subjects).expect("gen self-signed");
+        let key = rcgen::generate_simple_self_signed(subjects)?;
         let cert_path = dir.join("tls.crt");
         let key_path = dir.join("tls.key");
-        std::fs::write(&cert_path, key.cert.pem()).expect("write cert");
-        std::fs::write(&key_path, key.key_pair.serialize_pem()).expect("write key");
-        (cert_path, key_path)
+        std::fs::write(&cert_path, key.cert.pem())?;
+        std::fs::write(&key_path, key.key_pair.serialize_pem())?;
+        Ok((cert_path, key_path))
     }
 
-    fn tmpdir() -> PathBuf {
+    fn tmpdir() -> std::io::Result<PathBuf> {
         let d = std::env::temp_dir().join(format!("cavehome-tls-{}", std::process::id()));
         let d = d.join(format!("{:?}", std::time::SystemTime::now()));
-        std::fs::create_dir_all(&d).expect("mkdir");
-        d
+        std::fs::create_dir_all(&d)?;
+        Ok(d)
     }
 
     #[test]
@@ -217,58 +222,67 @@ mod tests {
     }
 
     #[test]
-    fn loads_a_server_config_from_self_signed_pem() {
-        let dir = tmpdir();
-        let (cert, key) = self_signed(&dir, &["localhost"]);
+    fn loads_a_server_config_from_self_signed_pem() -> TestResult {
+        let dir = tmpdir()?;
+        let (cert, key) = self_signed(&dir, &["localhost"])?;
         let cfg = TlsConfig::new(cert, key);
         assert!(!cfg.is_mutual());
         // A server-auth config builds from a valid leaf cert + key.
-        load_server_config(&cfg).expect("server-auth config builds");
+        load_server_config(&cfg)?;
+        Ok(())
     }
 
     #[test]
-    fn loads_a_mutual_tls_config_with_a_client_ca() {
-        let dir = tmpdir();
-        let (cert, key) = self_signed(&dir, &["localhost"]);
+    fn loads_a_mutual_tls_config_with_a_client_ca() -> TestResult {
+        let dir = tmpdir()?;
+        let (cert, key) = self_signed(&dir, &["localhost"])?;
         // Reuse the same self-signed cert as a (degenerate) client CA bundle —
         // it parses into one anchor, which is all the verifier needs to build.
         // The mTLS branch of load_server_config (client-cert verifier) must build.
         let cfg = TlsConfig::new(cert.clone(), key).with_client_ca(cert);
         assert!(cfg.is_mutual());
-        load_server_config(&cfg).expect("mTLS config builds with a client-cert verifier");
+        load_server_config(&cfg)?;
+        Ok(())
     }
 
     #[test]
-    fn missing_cert_file_is_an_io_error() {
-        let dir = tmpdir();
-        let (_cert, key) = self_signed(&dir, &["localhost"]);
+    fn missing_cert_file_is_an_io_error() -> TestResult {
+        let dir = tmpdir()?;
+        let (_cert, key) = self_signed(&dir, &["localhost"])?;
         let cfg = TlsConfig::new(dir.join("does-not-exist.crt"), key);
-        let err = load_server_config(&cfg).expect_err("missing cert must error");
+        let err = load_server_config(&cfg)
+            .err()
+            .ok_or("a missing cert file was accepted")?;
         assert!(matches!(err, TlsError::Io(_, _)), "got {err:?}");
+        Ok(())
     }
 
     #[test]
-    fn empty_cert_file_reports_no_certificates() {
-        let dir = tmpdir();
-        let (_cert, key) = self_signed(&dir, &["localhost"]);
+    fn empty_cert_file_reports_no_certificates() -> TestResult {
+        let dir = tmpdir()?;
+        let (_cert, key) = self_signed(&dir, &["localhost"])?;
         let empty = dir.join("empty.crt");
-        std::fs::write(&empty, b"# no certs here\n").expect("write");
+        std::fs::write(&empty, b"# no certs here\n")?;
         let cfg = TlsConfig::new(empty.clone(), key);
-        let err = load_server_config(&cfg).expect_err("empty cert must error");
+        let err = load_server_config(&cfg)
+            .err()
+            .ok_or("an empty cert file was accepted")?;
         assert!(
             matches!(&err, TlsError::NoCertificates(p) if *p == empty),
             "got {err:?}"
         );
+        Ok(())
     }
 
     #[test]
-    fn an_acceptor_is_constructible_from_a_valid_config() {
-        let dir = tmpdir();
-        let (cert, key) = self_signed(&dir, &["localhost"]);
+    fn an_acceptor_is_constructible_from_a_valid_config() -> TestResult {
+        let dir = tmpdir()?;
+        let (cert, key) = self_signed(&dir, &["localhost"])?;
         let cfg = TlsConfig::new(cert, key);
         assert!(
             acceptor(&cfg).is_ok(),
             "acceptor builds from valid material"
         );
+        Ok(())
     }
 }

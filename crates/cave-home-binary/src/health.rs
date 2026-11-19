@@ -155,7 +155,7 @@ mod tests {
         let agg = Health::aggregate(&reports);
         assert_eq!(agg.state(), HealthState::Up);
         assert!(agg.is_ready());
-        assert!(agg.unhealthy().is_empty());
+        assert_eq!(agg.unhealthy(), [] as [Component; 0]);
     }
 
     #[test]

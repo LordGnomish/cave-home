@@ -379,64 +379,69 @@ impl Config {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn flags_layer() -> ConfigLayer {
         ConfigLayer::empty(Layer::Flags)
     }
 
     #[test]
-    fn defaults_alone_resolve_to_a_valid_hub() {
-        let cfg = Config::from_layers(&[ConfigLayer::defaults()]).expect("defaults valid");
+    fn defaults_alone_resolve_to_a_valid_hub() -> TestResult {
+        let cfg = Config::from_layers(&[ConfigLayer::defaults()])?;
         assert_eq!(cfg.node_name, "cave-home");
         assert_eq!(cfg.role, NodeRole::Hub);
         assert_eq!(cfg.bind_port, 8123);
         assert_eq!(cfg.log_level, LogLevel::Info);
         // Hub enables every pillar.
         assert_eq!(cfg.components, Component::ALL.into_iter().collect());
+        Ok(())
     }
 
     #[test]
-    fn file_overrides_defaults() {
+    fn file_overrides_defaults() -> TestResult {
         let mut file = ConfigLayer::empty(Layer::File);
         file.node_name = Some("livingroom".to_string());
         file.bind_port = Some(9000);
-        let cfg = Config::resolve_standard(&file, &ConfigLayer::empty(Layer::Env), &flags_layer())
-            .expect("valid");
+        let cfg = Config::resolve_standard(&file, &ConfigLayer::empty(Layer::Env), &flags_layer())?;
         assert_eq!(cfg.node_name, "livingroom");
         assert_eq!(cfg.bind_port, 9000);
         // Untouched fields fall back to defaults.
         assert_eq!(cfg.log_level, LogLevel::Info);
+        Ok(())
     }
 
     #[test]
-    fn env_overrides_file() {
+    fn env_overrides_file() -> TestResult {
         let mut file = ConfigLayer::empty(Layer::File);
         file.bind_port = Some(9000);
         file.log_level = Some(LogLevel::Warn);
         let mut env = ConfigLayer::empty(Layer::Env);
         env.bind_port = Some(9100);
-        let cfg = Config::resolve_standard(&file, &env, &flags_layer()).expect("valid");
+        let cfg = Config::resolve_standard(&file, &env, &flags_layer())?;
         assert_eq!(cfg.bind_port, 9100, "env beats file");
         assert_eq!(
             cfg.log_level,
             LogLevel::Warn,
             "file value kept where env silent"
         );
+        Ok(())
     }
 
     #[test]
-    fn flags_override_everything() {
+    fn flags_override_everything() -> TestResult {
         let mut file = ConfigLayer::empty(Layer::File);
         file.bind_port = Some(9000);
         let mut env = ConfigLayer::empty(Layer::Env);
         env.bind_port = Some(9100);
         let mut flags = flags_layer();
         flags.bind_port = Some(9200);
-        let cfg = Config::resolve_standard(&file, &env, &flags).expect("valid");
+        let cfg = Config::resolve_standard(&file, &env, &flags)?;
         assert_eq!(cfg.bind_port, 9200, "flags are the highest layer");
+        Ok(())
     }
 
     #[test]
-    fn full_four_layer_precedence_chain() {
+    fn full_four_layer_precedence_chain() -> TestResult {
         // Each layer sets a distinct field plus a contested one; assert the
         // contested field tracks the highest layer that set it.
         let mut file = ConfigLayer::empty(Layer::File);
@@ -452,42 +457,43 @@ mod tests {
         flags.log_level = Some(LogLevel::Debug);
         flags.bind_port = Some(3);
 
-        let cfg = Config::resolve_standard(&file, &env, &flags).expect("valid");
+        let cfg = Config::resolve_standard(&file, &env, &flags)?;
         assert_eq!(cfg.node_name, "from-file"); // only file set it
         assert_eq!(cfg.data_dir, "/data/file"); // only file set it
         assert_eq!(cfg.bind_addr, "10.0.0.1"); // only env set it
         assert_eq!(cfg.log_level, LogLevel::Debug); // only flags set it
         assert_eq!(cfg.bind_port, 3); // contested -> flags wins
+        Ok(())
     }
 
     #[test]
-    fn unset_higher_layer_field_does_not_clear_lower() {
+    fn unset_higher_layer_field_does_not_clear_lower() -> TestResult {
         let mut file = ConfigLayer::empty(Layer::File);
         file.node_name = Some("keepme".to_string());
         // env + flags silent on node_name.
-        let cfg = Config::resolve_standard(&file, &ConfigLayer::empty(Layer::Env), &flags_layer())
-            .expect("valid");
+        let cfg = Config::resolve_standard(&file, &ConfigLayer::empty(Layer::Env), &flags_layer())?;
         assert_eq!(cfg.node_name, "keepme");
+        Ok(())
     }
 
     #[test]
-    fn role_can_be_overridden_by_a_layer() {
+    fn role_can_be_overridden_by_a_layer() -> TestResult {
         let mut flags = flags_layer();
         flags.role = Some(NodeRole::Secondary);
         let cfg = Config::resolve_standard(
             &ConfigLayer::empty(Layer::File),
             &ConfigLayer::empty(Layer::Env),
             &flags,
-        )
-        .expect("valid");
+        )?;
         assert_eq!(cfg.role, NodeRole::Secondary);
         // Secondary's default component set is a strict subset.
         assert!(cfg.components.contains(&Component::Core));
         assert!(!cfg.components.contains(&Component::Cameras));
+        Ok(())
     }
 
     #[test]
-    fn explicit_components_override_role_defaults() {
+    fn explicit_components_override_role_defaults() -> TestResult {
         let mut flags = flags_layer();
         flags.role = Some(NodeRole::Hub);
         flags.components = Some(
@@ -499,31 +505,31 @@ mod tests {
             &ConfigLayer::empty(Layer::File),
             &ConfigLayer::empty(Layer::Env),
             &flags,
-        )
-        .expect("valid");
+        )?;
         assert_eq!(
             cfg.components,
             [Component::Orchestration, Component::Core]
                 .into_iter()
                 .collect()
         );
+        Ok(())
     }
 
     #[test]
-    fn ml_role_defaults_include_cameras() {
+    fn ml_role_defaults_include_cameras() -> TestResult {
         let mut flags = flags_layer();
         flags.role = Some(NodeRole::Ml);
         let cfg = Config::resolve_standard(
             &ConfigLayer::empty(Layer::File),
             &ConfigLayer::empty(Layer::Env),
             &flags,
-        )
-        .expect("ml valid");
+        )?;
         assert!(cfg.components.contains(&Component::Cameras));
+        Ok(())
     }
 
     #[test]
-    fn bad_node_name_rejected() {
+    fn bad_node_name_rejected() -> TestResult {
         let mut flags = flags_layer();
         flags.node_name = Some("living room!".to_string());
         let err = Config::resolve_standard(
@@ -531,12 +537,14 @@ mod tests {
             &ConfigLayer::empty(Layer::Env),
             &flags,
         )
-        .unwrap_err();
+        .err()
+        .ok_or("the invalid configuration was accepted")?;
         assert!(matches!(err, ConfigError::BadNodeName(_)));
+        Ok(())
     }
 
     #[test]
-    fn empty_node_name_rejected() {
+    fn empty_node_name_rejected() -> TestResult {
         let mut flags = flags_layer();
         flags.node_name = Some("   ".to_string());
         let err = Config::resolve_standard(
@@ -544,12 +552,14 @@ mod tests {
             &ConfigLayer::empty(Layer::Env),
             &flags,
         )
-        .unwrap_err();
+        .err()
+        .ok_or("the invalid configuration was accepted")?;
         assert!(matches!(err, ConfigError::BadNodeName(_)));
+        Ok(())
     }
 
     #[test]
-    fn relative_data_dir_rejected() {
+    fn relative_data_dir_rejected() -> TestResult {
         let mut flags = flags_layer();
         flags.data_dir = Some("relative/path".to_string());
         let err = Config::resolve_standard(
@@ -557,12 +567,14 @@ mod tests {
             &ConfigLayer::empty(Layer::Env),
             &flags,
         )
-        .unwrap_err();
+        .err()
+        .ok_or("the invalid configuration was accepted")?;
         assert!(matches!(err, ConfigError::BadDataDir(_)));
+        Ok(())
     }
 
     #[test]
-    fn zero_port_rejected() {
+    fn zero_port_rejected() -> TestResult {
         let mut flags = flags_layer();
         flags.bind_port = Some(0);
         let err = Config::resolve_standard(
@@ -570,12 +582,14 @@ mod tests {
             &ConfigLayer::empty(Layer::Env),
             &flags,
         )
-        .unwrap_err();
+        .err()
+        .ok_or("the invalid configuration was accepted")?;
         assert_eq!(err, ConfigError::BadPort);
+        Ok(())
     }
 
     #[test]
-    fn empty_components_rejected() {
+    fn empty_components_rejected() -> TestResult {
         let mut flags = flags_layer();
         flags.components = Some(BTreeSet::new());
         let err = Config::resolve_standard(
@@ -583,12 +597,14 @@ mod tests {
             &ConfigLayer::empty(Layer::Env),
             &flags,
         )
-        .unwrap_err();
+        .err()
+        .ok_or("the invalid configuration was accepted")?;
         assert_eq!(err, ConfigError::NoComponents);
+        Ok(())
     }
 
     #[test]
-    fn pillars_without_orchestration_rejected() {
+    fn pillars_without_orchestration_rejected() -> TestResult {
         let mut flags = flags_layer();
         flags.components = Some([Component::Core, Component::Portal].into_iter().collect());
         let err = Config::resolve_standard(
@@ -596,22 +612,26 @@ mod tests {
             &ConfigLayer::empty(Layer::Env),
             &flags,
         )
-        .unwrap_err();
+        .err()
+        .ok_or("the invalid configuration was accepted")?;
         assert_eq!(err, ConfigError::MissingOrchestration);
+        Ok(())
     }
 
     #[test]
-    fn ml_role_without_cameras_rejected() {
+    fn ml_role_without_cameras_rejected() -> TestResult {
         let mut flags = flags_layer();
         flags.role = Some(NodeRole::Ml);
-        flags.components = Some([Component::Orchestration].into_iter().collect());
+        flags.components = Some(BTreeSet::from([Component::Orchestration]));
         let err = Config::resolve_standard(
             &ConfigLayer::empty(Layer::File),
             &ConfigLayer::empty(Layer::Env),
             &flags,
         )
-        .unwrap_err();
+        .err()
+        .ok_or("the invalid configuration was accepted")?;
         assert_eq!(err, ConfigError::MlNodeWithoutCameras);
+        Ok(())
     }
 
     #[test]

@@ -288,6 +288,8 @@ const fn as_i64(v: &Value) -> Option<i64> {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn rfc3339_round_trips_through_epoch() {
         // A known instant: 2021-01-01T00:00:00Z = 1609459200.
@@ -354,30 +356,47 @@ mod tests {
         ])
     }
 
-    #[test]
-    fn pod_table_has_kubectl_columns_and_cells() {
-        let gvr = GroupVersionResource::new("", "v1", "pods");
-        let table = to_table(&gvr, &[pod("nginx", "Running", true)], 130);
-        let cols: Vec<&str> = table
+    /// The `name` of every column definition, in order.
+    fn column_names(table: &Value) -> Result<Vec<&str>, &'static str> {
+        table
             .pointer("columnDefinitions")
             .and_then(Value::as_array)
-            .unwrap()
+            .ok_or("columnDefinitions is not an array")?
             .iter()
-            .map(|c| c.get("name").and_then(Value::as_str).unwrap())
-            .collect();
-        assert_eq!(cols, ["Name", "Ready", "Status", "Restarts", "Age"]);
-        let cells: Vec<&str> = table.pointer("rows").and_then(Value::as_array).unwrap()[0]
+            .map(|c| c.get("name").and_then(Value::as_str))
+            .collect::<Option<_>>()
+            .ok_or("a column definition has no string name")
+    }
+
+    /// The cells of the table's first row.
+    fn first_row_cells(table: &Value) -> Result<&[Value], &'static str> {
+        table
+            .pointer("rows")
+            .and_then(Value::as_array)
+            .and_then(<[Value]>::first)
+            .ok_or("the table has no rows")?
             .pointer("cells")
             .and_then(Value::as_array)
-            .unwrap()
-            .iter()
-            .map(|c| c.as_str().unwrap())
-            .collect();
-        assert_eq!(cells, ["nginx", "1/1", "Running", "2", "30s"]);
+            .ok_or("the first row has no cells array")
     }
 
     #[test]
-    fn pod_without_status_is_pending_zero_ready() {
+    fn pod_table_has_kubectl_columns_and_cells() -> TestResult {
+        let gvr = GroupVersionResource::new("", "v1", "pods");
+        let table = to_table(&gvr, &[pod("nginx", "Running", true)], 130);
+        let cols = column_names(&table)?;
+        assert_eq!(cols, ["Name", "Ready", "Status", "Restarts", "Age"]);
+        let cells: Vec<&str> = first_row_cells(&table)?
+            .iter()
+            .map(Value::as_str)
+            .collect::<Option<_>>()
+            .ok_or("a cell is not a string")?;
+        assert_eq!(cells, ["nginx", "1/1", "Running", "2", "30s"]);
+        Ok(())
+    }
+
+    #[test]
+    fn pod_without_status_is_pending_zero_ready() -> TestResult {
         let gvr = GroupVersionResource::new("", "v1", "pods");
         let p = obj([
             ("metadata", obj([("name", Value::from("x"))])),
@@ -390,26 +409,19 @@ mod tests {
             ),
         ]);
         let table = to_table(&gvr, &[p], 0);
-        let cells = table.pointer("rows").and_then(Value::as_array).unwrap()[0]
-            .pointer("cells")
-            .and_then(Value::as_array)
-            .unwrap();
+        let cells = first_row_cells(&table)?;
         assert_eq!(cells[1].as_str(), Some("0/1"));
         assert_eq!(cells[2].as_str(), Some("Pending"));
+        Ok(())
     }
 
     #[test]
-    fn unknown_kind_falls_back_to_name_age() {
+    fn unknown_kind_falls_back_to_name_age() -> TestResult {
         let gvr = GroupVersionResource::new("apps", "v1", "deployments");
         let d = obj([("metadata", obj([("name", Value::from("site"))]))]);
         let table = to_table(&gvr, &[d], 0);
-        let cols: Vec<&str> = table
-            .pointer("columnDefinitions")
-            .and_then(Value::as_array)
-            .unwrap()
-            .iter()
-            .map(|c| c.get("name").and_then(Value::as_str).unwrap())
-            .collect();
+        let cols = column_names(&table)?;
         assert_eq!(cols, ["Name", "Age"]);
+        Ok(())
     }
 }

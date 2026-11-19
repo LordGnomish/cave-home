@@ -300,6 +300,8 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU32, Ordering};
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn backoff_doubles_then_clamps() {
         let p = RestartPolicy::default()
@@ -374,7 +376,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn supervisor_restarts_a_failing_body_then_stays_up() {
+    async fn supervisor_restarts_a_failing_body_then_stays_up() -> TestResult {
         // A body that fails its first 2 invocations then blocks forever (a
         // component that finally comes up). The supervisor must invoke it 3
         // times total: fail, fail, then the steady run.
@@ -414,6 +416,7 @@ mod tests {
         );
         assert!(!sup.is_finished(), "steady run keeps the supervisor alive");
         sup.abort();
+        Ok(())
     }
 
     #[tokio::test(start_paused = true)]
@@ -445,7 +448,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn supervisor_stops_promptly_on_shutdown() {
+    async fn supervisor_stops_promptly_on_shutdown() -> TestResult {
         let (tx, rx) = watch::channel(false);
         let body_started = Arc::new(AtomicU32::new(0));
         let started2 = body_started.clone();
@@ -466,21 +469,21 @@ mod tests {
         });
         // Let the body start, then ask for shutdown.
         tokio::time::sleep(Duration::from_millis(50)).await;
-        tx.send(true).expect("send shutdown");
+        tx.send(true)?;
         let exit = tokio::time::timeout(Duration::from_secs(1), sup)
             .await
-            .expect("supervisor returns promptly")
-            .expect("join");
+            .map_err(|_| "supervisor did not return within 1s of the shutdown request")??;
         assert_eq!(exit, SupervisedExit::ShutdownRequested);
         assert_eq!(
             body_started.load(Ordering::SeqCst),
             1,
             "body ran exactly once"
         );
+        Ok(())
     }
 
     #[tokio::test(start_paused = true)]
-    async fn supervisor_cuts_backoff_short_on_shutdown() {
+    async fn supervisor_cuts_backoff_short_on_shutdown() -> TestResult {
         // A body that always fails; shutdown should interrupt the backoff sleep
         // rather than waiting it out.
         let (tx, rx) = watch::channel(false);
@@ -495,13 +498,13 @@ mod tests {
         });
         // First failure happens immediately; we're now inside a 30s backoff.
         tokio::time::sleep(Duration::from_millis(10)).await;
-        tx.send(true).expect("send");
+        tx.send(true)?;
         // Without backoff interruption this would hang for 30 (paused) seconds;
         // a real timeout of 5s of paused time proves it returns early.
         let exit = tokio::time::timeout(Duration::from_secs(5), sup)
             .await
-            .expect("returns before the 30s backoff elapses")
-            .expect("join");
+            .map_err(|_| "supervisor waited out the 30s backoff instead of stopping")??;
         assert_eq!(exit, SupervisedExit::ShutdownRequested);
+        Ok(())
     }
 }

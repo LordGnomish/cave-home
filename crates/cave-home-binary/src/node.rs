@@ -78,6 +78,8 @@ mod tests {
     use cave_home_apiserver_rs::gvk::GroupVersionResource;
     use cave_home_apiserver_rs::registry::{ListOptions, Registry};
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn node() -> Value {
         LocalNode::new("hub-01", "10.0.0.5").to_object()
     }
@@ -99,33 +101,34 @@ mod tests {
     }
 
     #[test]
-    fn reports_ready_condition() {
+    fn reports_ready_condition() -> TestResult {
         let n = node();
         let conditions = n
             .pointer("status.conditions")
             .and_then(Value::as_array)
-            .expect("conditions");
+            .ok_or("status.conditions is not an array")?;
         let ready = conditions
             .iter()
             .find(|c| c.pointer("type").and_then(Value::as_str) == Some("Ready"))
-            .expect("Ready condition present");
+            .ok_or("no Ready condition")?;
         assert_eq!(
             ready.pointer("status").and_then(Value::as_str),
             Some("True")
         );
+        Ok(())
     }
 
     #[test]
-    fn advertises_internal_ip_and_hostname() {
+    fn advertises_internal_ip_and_hostname() -> TestResult {
         let n = node();
         let addrs = n
             .pointer("status.addresses")
             .and_then(Value::as_array)
-            .expect("addresses");
+            .ok_or("status.addresses is not an array")?;
         let internal = addrs
             .iter()
             .find(|a| a.pointer("type").and_then(Value::as_str) == Some("InternalIP"))
-            .expect("InternalIP");
+            .ok_or("no InternalIP address")?;
         assert_eq!(
             internal.pointer("address").and_then(Value::as_str),
             Some("10.0.0.5")
@@ -135,15 +138,16 @@ mod tests {
                 .iter()
                 .any(|a| a.pointer("type").and_then(Value::as_str) == Some("Hostname"))
         );
+        Ok(())
     }
 
     #[test]
-    fn registers_into_the_apiserver_registry() {
+    fn registers_into_the_apiserver_registry() -> TestResult {
         // The object must survive an actual apiserver create+list round-trip.
         let nodes = GroupVersionResource::new("", "v1", "nodes");
         let mut reg = Registry::new();
-        reg.create(&nodes, node()).expect("create node");
-        let list = reg.list(&nodes, &ListOptions::default()).expect("list");
+        reg.create(&nodes, node())?;
+        let list = reg.list(&nodes, &ListOptions::default())?;
         assert_eq!(list.items.len(), 1);
         assert_eq!(
             list.items[0]
@@ -151,5 +155,6 @@ mod tests {
                 .and_then(Value::as_str),
             Some("hub-01")
         );
+        Ok(())
     }
 }

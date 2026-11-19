@@ -289,6 +289,8 @@ mod tests {
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn pod(name: &str, node: &str) -> Value {
         let mut spec = obj([(
             "containers",
@@ -314,49 +316,48 @@ mod tests {
         ])
     }
 
-    fn seed(reg: &mut Registry, p: Value) {
-        reg.create(&pods_gvr(), p).expect("create pod");
+    fn seed(reg: &mut Registry, p: Value) -> TestResult {
+        reg.create(&pods_gvr(), p)?;
+        Ok(())
     }
 
     #[test]
-    fn binds_an_unscheduled_pod_to_the_node() {
+    fn binds_an_unscheduled_pod_to_the_node() -> TestResult {
         let mut reg = Registry::new();
-        seed(&mut reg, pod("nginx", ""));
+        seed(&mut reg, pod("nginx", ""))?;
         assert_eq!(bind_pending_pods(&mut reg, "hub-01"), 1);
-        let got = reg.get(&pods_gvr(), "default", "nginx").expect("get");
+        let got = reg.get(&pods_gvr(), "default", "nginx")?;
         assert_eq!(node_name_of(&got), "hub-01");
         // idempotent: already bound → nothing to do.
         assert_eq!(bind_pending_pods(&mut reg, "hub-01"), 0);
+        Ok(())
     }
 
     #[test]
-    fn does_not_rebind_an_already_scheduled_pod() {
+    fn does_not_rebind_an_already_scheduled_pod() -> TestResult {
         let mut reg = Registry::new();
-        seed(&mut reg, pod("nginx", "other-node"));
+        seed(&mut reg, pod("nginx", "other-node"))?;
         assert_eq!(bind_pending_pods(&mut reg, "hub-01"), 0);
-        let got = reg.get(&pods_gvr(), "default", "nginx").expect("get");
+        let got = reg.get(&pods_gvr(), "default", "nginx")?;
         assert_eq!(node_name_of(&got), "other-node");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn kubelet_runs_a_bound_pod_to_running() {
+    async fn kubelet_runs_a_bound_pod_to_running() -> TestResult {
         let mut reg = Registry::new();
-        seed(&mut reg, pod("nginx", "hub-01"));
+        seed(&mut reg, pod("nginx", "hub-01"))?;
         let shared: SharedRegistry = Arc::new(Mutex::new(reg));
 
         let runtime = PodRuntime::new();
         assert_eq!(runtime.reconcile(&shared, "hub-01").await, 1);
 
-        let got = shared
-            .lock()
-            .await
-            .get(&pods_gvr(), "default", "nginx")
-            .expect("get");
+        let got = shared.lock().await.get(&pods_gvr(), "default", "nginx")?;
         assert_eq!(phase_of(&got), "Running");
         let statuses = got
             .pointer("status.containerStatuses")
             .and_then(Value::as_array)
-            .expect("statuses");
+            .ok_or("status.containerStatuses is not an array")?;
         assert_eq!(statuses.len(), 1);
         assert_eq!(
             statuses[0].get("ready").and_then(Value::as_bool),
@@ -365,38 +366,33 @@ mod tests {
 
         // A second pass is a no-op: the pod is already Running.
         assert_eq!(runtime.reconcile(&shared, "hub-01").await, 0);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn kubelet_ignores_pods_bound_to_other_nodes() {
+    async fn kubelet_ignores_pods_bound_to_other_nodes() -> TestResult {
         let mut reg = Registry::new();
-        seed(&mut reg, pod("nginx", "other-node"));
+        seed(&mut reg, pod("nginx", "other-node"))?;
         let shared: SharedRegistry = Arc::new(Mutex::new(reg));
         let runtime = PodRuntime::new();
         assert_eq!(runtime.reconcile(&shared, "hub-01").await, 0);
-        let got = shared
-            .lock()
-            .await
-            .get(&pods_gvr(), "default", "nginx")
-            .expect("get");
+        let got = shared.lock().await.get(&pods_gvr(), "default", "nginx")?;
         assert_eq!(phase_of(&got), "");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn schedule_then_run_is_end_to_end() {
+    async fn schedule_then_run_is_end_to_end() -> TestResult {
         // Mirrors `kubectl apply`: an unscheduled pod becomes Running after one
         // scheduler bind followed by one kubelet sync.
         let mut reg = Registry::new();
-        seed(&mut reg, pod("nginx", ""));
+        seed(&mut reg, pod("nginx", ""))?;
         assert_eq!(bind_pending_pods(&mut reg, "hub-01"), 1);
         let shared: SharedRegistry = Arc::new(Mutex::new(reg));
         let runtime = PodRuntime::new();
         assert_eq!(runtime.reconcile(&shared, "hub-01").await, 1);
-        let got = shared
-            .lock()
-            .await
-            .get(&pods_gvr(), "default", "nginx")
-            .expect("get");
+        let got = shared.lock().await.get(&pods_gvr(), "default", "nginx")?;
         assert_eq!(phase_of(&got), "Running");
+        Ok(())
     }
 }
