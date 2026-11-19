@@ -118,7 +118,7 @@ mod tests {
             assert_eq!(info.git_sha, UNKNOWN_SHA);
         } else {
             // If a real sha was injected it must be non-empty and not the word.
-            assert!(!info.git_sha.is_empty());
+            assert_ne!(info.git_sha, "");
             assert_ne!(info.git_sha, UNKNOWN_SHA);
         }
         assert_eq!(info.version, env!("CARGO_PKG_VERSION"));

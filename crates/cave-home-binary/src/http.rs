@@ -214,40 +214,46 @@ pub const fn reason_phrase(status: u16) -> &'static str {
 mod tests {
     use super::*;
 
-    fn req(s: &str) -> HttpRequest {
-        HttpRequest::parse(s.as_bytes()).expect("parse")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn req(s: &str) -> Result<HttpRequest, ParseError> {
+        HttpRequest::parse(s.as_bytes())
     }
 
     #[test]
-    fn parses_method_path_and_query() {
-        let r = req("GET /api/v1/nodes?limit=5 HTTP/1.1\r\nHost: x\r\n\r\n");
+    fn parses_method_path_and_query() -> TestResult {
+        let r = req("GET /api/v1/nodes?limit=5 HTTP/1.1\r\nHost: x\r\n\r\n")?;
         assert_eq!(r.method, "GET");
         assert_eq!(r.path, "/api/v1/nodes");
         assert_eq!(r.query, "limit=5");
-        assert!(r.body.is_empty());
+        assert_eq!(r.body, b"");
+        Ok(())
     }
 
     #[test]
-    fn path_without_query_has_empty_query() {
-        let r = req("GET /healthz HTTP/1.1\r\n\r\n");
+    fn path_without_query_has_empty_query() -> TestResult {
+        let r = req("GET /healthz HTTP/1.1\r\n\r\n")?;
         assert_eq!(r.path, "/healthz");
         assert_eq!(r.query, "");
+        Ok(())
     }
 
     #[test]
-    fn header_lookup_is_case_insensitive() {
-        let r = req("GET / HTTP/1.1\r\nContent-Type: application/json\r\n\r\n");
+    fn header_lookup_is_case_insensitive() -> TestResult {
+        let r = req("GET / HTTP/1.1\r\nContent-Type: application/json\r\n\r\n")?;
         assert_eq!(r.header("content-type"), Some("application/json"));
         assert_eq!(r.header("CONTENT-TYPE"), Some("application/json"));
         assert_eq!(r.header("missing"), None);
+        Ok(())
     }
 
     #[test]
-    fn parses_body_per_content_length() {
-        let r = req("POST /x HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello");
+    fn parses_body_per_content_length() -> TestResult {
+        let r = req("POST /x HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello")?;
         assert_eq!(r.method, "POST");
         assert_eq!(r.body, b"hello");
-        assert_eq!(r.content_length().unwrap(), Some(5));
+        assert_eq!(r.content_length()?, Some(5));
+        Ok(())
     }
 
     #[test]
@@ -260,10 +266,11 @@ mod tests {
     }
 
     #[test]
-    fn head_end_points_past_blank_line() {
+    fn head_end_points_past_blank_line() -> TestResult {
         let buf = b"GET / HTTP/1.1\r\n\r\nBODY";
-        let end = head_end(buf).expect("head end");
+        let end = head_end(buf).ok_or("head_end found no blank line")?;
         assert_eq!(&buf[end..], b"BODY");
+        Ok(())
     }
 
     #[test]
@@ -275,21 +282,23 @@ mod tests {
     }
 
     #[test]
-    fn bad_content_length_is_rejected() {
-        let r = req("GET / HTTP/1.1\r\nContent-Length: abc\r\n\r\n");
+    fn bad_content_length_is_rejected() -> TestResult {
+        let r = req("GET / HTTP/1.1\r\nContent-Length: abc\r\n\r\n")?;
         assert_eq!(r.content_length(), Err(ParseError::BadContentLength));
+        Ok(())
     }
 
     #[test]
-    fn response_serializes_status_headers_and_body() {
+    fn response_serializes_status_headers_and_body() -> TestResult {
         let resp = HttpResponse::json(200, "{\"ok\":true}");
         let bytes = resp.to_bytes();
-        let text = String::from_utf8(bytes).expect("utf8");
+        let text = String::from_utf8(bytes)?;
         assert!(text.starts_with("HTTP/1.1 200 OK\r\n"), "got: {text:?}");
         assert!(text.contains("Content-Type: application/json\r\n"));
         assert!(text.contains("Content-Length: 11\r\n"));
         assert!(text.contains("Connection: close\r\n"));
         assert!(text.ends_with("\r\n\r\n{\"ok\":true}"));
+        Ok(())
     }
 
     #[test]

@@ -43,6 +43,29 @@ async fn get(addr: std::net::SocketAddr, path: &str) -> (String, String) {
     .await
 }
 
+/// Poll `/healthz` over the wire until the apiserver answers 200. Returns
+/// `false` if it has not done so within five seconds.
+async fn wait_until_ready(addr: std::net::SocketAddr) -> bool {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Ok(mut s) = TcpStream::connect(addr).await {
+                let _ = s
+                    .write_all(b"GET /healthz HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
+                    .await;
+                let mut buf = Vec::new();
+                if s.read_to_end(&mut buf).await.is_ok()
+                    && String::from_utf8_lossy(&buf).contains("200")
+                {
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .is_ok()
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pod_created_over_the_wire_is_persisted_and_reconciled_to_running() {
     // Bind first so the test learns the ephemeral port, then hand the listener
@@ -72,25 +95,7 @@ async fn pod_created_over_the_wire_is_persisted_and_reconciled_to_running() {
     };
     let server = tokio::spawn(run_until_on_listener(cfg, listener, shutdown));
 
-    // Wait until the apiserver answers readiness over the wire.
-    let ready = tokio::time::timeout(Duration::from_secs(5), async {
-        loop {
-            if let Ok(mut s) = TcpStream::connect(addr).await {
-                let _ = s
-                    .write_all(b"GET /healthz HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
-                    .await;
-                let mut buf = Vec::new();
-                if s.read_to_end(&mut buf).await.is_ok()
-                    && String::from_utf8_lossy(&buf).contains("200")
-                {
-                    break;
-                }
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await;
-    assert!(ready.is_ok(), "apiserver never became ready");
+    assert!(wait_until_ready(addr).await, "apiserver never became ready");
 
     // 1. Create a Pod via the JSON write path (POST to the collection) — exactly
     //    what `kubectl apply`/`kubectl run` does. No nodeName, no status: the

@@ -397,73 +397,80 @@ cave-home — your home, in one place
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn argv(parts: &[&str]) -> Vec<String> {
         parts.iter().map(|s| (*s).to_string()).collect()
     }
 
     #[test]
     fn empty_argv_is_no_command() {
-        assert_eq!(parse(&[]).unwrap_err(), ParseError::NoCommand);
+        assert_eq!(parse(&[]).err(), Some(ParseError::NoCommand));
     }
 
     #[test]
-    fn run_with_no_flags_parses() {
-        let cmd = parse(&argv(&["run"])).expect("run parses");
+    fn run_with_no_flags_parses() -> TestResult {
+        let cmd = parse(&argv(&["run"]))?;
         match cmd {
             Command::Run { flags } => assert_eq!(*flags, ConfigLayer::empty(Layer::Flags)),
-            other => panic!("expected Run, got {other:?}"),
+            other => return Err(format!("expected Run, got {other:?}").into()),
         }
+        Ok(())
     }
 
     #[test]
-    fn server_boots_the_control_plane_role() {
+    fn server_boots_the_control_plane_role() -> TestResult {
         assert!(matches!(
-            parse(&argv(&["server"])).unwrap(),
+            parse(&argv(&["server"]))?,
             Command::Serve {
                 role: ServeRole::Server,
                 ..
             }
         ));
+        Ok(())
     }
 
     #[test]
-    fn serve_is_an_alias_for_server() {
+    fn serve_is_an_alias_for_server() -> TestResult {
         assert!(matches!(
-            parse(&argv(&["serve"])).unwrap(),
+            parse(&argv(&["serve"]))?,
             Command::Serve {
                 role: ServeRole::Server,
                 ..
             }
         ));
+        Ok(())
     }
 
     #[test]
-    fn agent_and_etcd_roles_parse() {
+    fn agent_and_etcd_roles_parse() -> TestResult {
         assert!(matches!(
-            parse(&argv(&["agent"])).unwrap(),
+            parse(&argv(&["agent"]))?,
             Command::Serve {
                 role: ServeRole::Agent,
                 ..
             }
         ));
         assert!(matches!(
-            parse(&argv(&["etcd"])).unwrap(),
+            parse(&argv(&["etcd"]))?,
             Command::Serve {
                 role: ServeRole::Etcd,
                 ..
             }
         ));
+        Ok(())
     }
 
     #[test]
-    fn server_accepts_the_shared_flags() {
-        let cmd = parse(&argv(&["server", "--port", "6443", "--bind", "0.0.0.0"])).expect("parses");
+    fn server_accepts_the_shared_flags() -> TestResult {
+        let cmd = parse(&argv(&["server", "--port", "6443", "--bind", "0.0.0.0"]))?;
         let Command::Serve { role, flags } = cmd else {
-            panic!("expected Serve");
+            return Err("expected Serve".into());
         };
         assert_eq!(role, ServeRole::Server);
         assert_eq!(flags.bind_port, Some(6443));
         assert_eq!(flags.bind_addr.as_deref(), Some("0.0.0.0"));
+        Ok(())
     }
 
     #[test]
@@ -472,7 +479,7 @@ mod tests {
     }
 
     #[test]
-    fn run_parses_all_flags() {
+    fn run_parses_all_flags() -> TestResult {
         let cmd = parse(&argv(&[
             "run",
             "--name",
@@ -487,10 +494,9 @@ mod tests {
             "9001",
             "--log-level",
             "debug",
-        ]))
-        .expect("parses");
+        ]))?;
         let Command::Run { flags } = cmd else {
-            panic!("expected run");
+            return Err("expected run".into());
         };
         assert_eq!(flags.node_name.as_deref(), Some("home1"));
         assert_eq!(flags.role, Some(NodeRole::Secondary));
@@ -498,17 +504,23 @@ mod tests {
         assert_eq!(flags.bind_addr.as_deref(), Some("127.0.0.1"));
         assert_eq!(flags.bind_port, Some(9001));
         assert_eq!(flags.log_level, Some(LogLevel::Debug));
+        Ok(())
     }
 
     #[test]
-    fn run_missing_flag_value_errors() {
-        let err = parse(&argv(&["run", "--name"])).unwrap_err();
+    fn run_missing_flag_value_errors() -> TestResult {
+        let err = parse(&argv(&["run", "--name"]))
+            .err()
+            .ok_or("parse accepted an invalid command line")?;
         assert_eq!(err, ParseError::MissingValue("--name".to_string()));
+        Ok(())
     }
 
     #[test]
-    fn run_bad_port_errors() {
-        let err = parse(&argv(&["run", "--port", "notaport"])).unwrap_err();
+    fn run_bad_port_errors() -> TestResult {
+        let err = parse(&argv(&["run", "--port", "notaport"]))
+            .err()
+            .ok_or("parse accepted an invalid command line")?;
         assert_eq!(
             err,
             ParseError::BadValue {
@@ -516,155 +528,161 @@ mod tests {
                 value: "notaport".to_string()
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn run_bad_role_errors() {
-        let err = parse(&argv(&["run", "--role", "worker"])).unwrap_err();
+    fn run_bad_role_errors() -> TestResult {
+        let err = parse(&argv(&["run", "--role", "worker"]))
+            .err()
+            .ok_or("parse accepted an invalid command line")?;
         assert!(matches!(err, ParseError::BadValue { .. }));
+        Ok(())
     }
 
     #[test]
-    fn run_unknown_flag_errors() {
-        let err = parse(&argv(&["run", "--turbo"])).unwrap_err();
+    fn run_unknown_flag_errors() -> TestResult {
+        let err = parse(&argv(&["run", "--turbo"]))
+            .err()
+            .ok_or("parse accepted an invalid command line")?;
         assert_eq!(err, ParseError::UnknownFlag("--turbo".to_string()));
+        Ok(())
     }
 
     #[test]
-    fn status_and_version_parse() {
-        assert_eq!(parse(&argv(&["status"])).unwrap(), Command::Status);
-        assert_eq!(parse(&argv(&["version"])).unwrap(), Command::Version);
+    fn status_and_version_parse() -> TestResult {
+        assert_eq!(parse(&argv(&["status"]))?, Command::Status);
+        assert_eq!(parse(&argv(&["version"]))?, Command::Version);
+        Ok(())
     }
 
     #[test]
-    fn status_rejects_extra_argument() {
-        let err = parse(&argv(&["status", "now"])).unwrap_err();
+    fn status_rejects_extra_argument() -> TestResult {
+        let err = parse(&argv(&["status", "now"]))
+            .err()
+            .ok_or("parse accepted an invalid command line")?;
         assert_eq!(err, ParseError::UnexpectedArgument("now".to_string()));
+        Ok(())
     }
 
     #[test]
-    fn config_check_and_show_parse() {
-        assert_eq!(
-            parse(&argv(&["config", "check"])).unwrap(),
-            Command::ConfigCheck
-        );
-        assert_eq!(
-            parse(&argv(&["config", "show"])).unwrap(),
-            Command::ConfigShow
-        );
+    fn config_check_and_show_parse() -> TestResult {
+        assert_eq!(parse(&argv(&["config", "check"]))?, Command::ConfigCheck);
+        assert_eq!(parse(&argv(&["config", "show"]))?, Command::ConfigShow);
+        Ok(())
     }
 
     #[test]
     fn config_without_subcommand_errors() {
         assert!(matches!(
-            parse(&argv(&["config"])).unwrap_err(),
-            ParseError::MissingArgument(_)
+            parse(&argv(&["config"])),
+            Err(ParseError::MissingArgument(_))
         ));
     }
 
     #[test]
     fn config_unknown_subcommand_errors() {
         assert!(matches!(
-            parse(&argv(&["config", "edit"])).unwrap_err(),
-            ParseError::UnknownCommand(_)
+            parse(&argv(&["config", "edit"])),
+            Err(ParseError::UnknownCommand(_))
         ));
     }
 
     #[test]
-    fn node_list_and_join_parse() {
-        assert_eq!(parse(&argv(&["node", "list"])).unwrap(), Command::NodeList);
+    fn node_list_and_join_parse() -> TestResult {
+        assert_eq!(parse(&argv(&["node", "list"]))?, Command::NodeList);
         assert_eq!(
-            parse(&argv(&["node", "join", "INVITE-123"])).unwrap(),
+            parse(&argv(&["node", "join", "INVITE-123"]))?,
             Command::NodeJoin {
                 invite: "INVITE-123".to_string()
             }
         );
+        Ok(())
     }
 
     #[test]
     fn node_join_without_invite_errors() {
         assert!(matches!(
-            parse(&argv(&["node", "join"])).unwrap_err(),
-            ParseError::MissingArgument(_)
+            parse(&argv(&["node", "join"])),
+            Err(ParseError::MissingArgument(_))
         ));
     }
 
     #[test]
-    fn node_join_extra_argument_errors() {
-        let err = parse(&argv(&["node", "join", "a", "b"])).unwrap_err();
+    fn node_join_extra_argument_errors() -> TestResult {
+        let err = parse(&argv(&["node", "join", "a", "b"]))
+            .err()
+            .ok_or("parse accepted an invalid command line")?;
         assert_eq!(err, ParseError::UnexpectedArgument("b".to_string()));
+        Ok(())
     }
 
     #[test]
-    fn backup_with_and_without_dest() {
+    fn backup_with_and_without_dest() -> TestResult {
+        assert_eq!(parse(&argv(&["backup"]))?, Command::Backup { dest: None });
         assert_eq!(
-            parse(&argv(&["backup"])).unwrap(),
-            Command::Backup { dest: None }
-        );
-        assert_eq!(
-            parse(&argv(&["backup", "/tmp/b"])).unwrap(),
+            parse(&argv(&["backup", "/tmp/b"]))?,
             Command::Backup {
                 dest: Some("/tmp/b".to_string())
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn restore_requires_source() {
+    fn restore_requires_source() -> TestResult {
         assert!(matches!(
-            parse(&argv(&["restore"])).unwrap_err(),
-            ParseError::MissingArgument(_)
+            parse(&argv(&["restore"])),
+            Err(ParseError::MissingArgument(_))
         ));
         assert_eq!(
-            parse(&argv(&["restore", "/tmp/b"])).unwrap(),
+            parse(&argv(&["restore", "/tmp/b"]))?,
             Command::Restore {
                 src: "/tmp/b".to_string()
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn unknown_command_errors() {
-        let err = parse(&argv(&["frobnicate"])).unwrap_err();
+    fn unknown_command_errors() -> TestResult {
+        let err = parse(&argv(&["frobnicate"]))
+            .err()
+            .ok_or("parse accepted an invalid command line")?;
         assert_eq!(err, ParseError::UnknownCommand("frobnicate".to_string()));
+        Ok(())
     }
 
     #[test]
-    fn top_level_help_and_version_flags() {
-        assert_eq!(
-            parse(&argv(&["--help"])).unwrap(),
-            Command::Help { topic: None }
-        );
-        assert_eq!(
-            parse(&argv(&["-h"])).unwrap(),
-            Command::Help { topic: None }
-        );
-        assert_eq!(parse(&argv(&["--version"])).unwrap(), Command::Version);
-        assert_eq!(parse(&argv(&["-V"])).unwrap(), Command::Version);
+    fn top_level_help_and_version_flags() -> TestResult {
+        assert_eq!(parse(&argv(&["--help"]))?, Command::Help { topic: None });
+        assert_eq!(parse(&argv(&["-h"]))?, Command::Help { topic: None });
+        assert_eq!(parse(&argv(&["--version"]))?, Command::Version);
+        assert_eq!(parse(&argv(&["-V"]))?, Command::Version);
+        Ok(())
     }
 
     #[test]
-    fn help_with_topic_parses() {
+    fn help_with_topic_parses() -> TestResult {
         assert_eq!(
-            parse(&argv(&["help", "run"])).unwrap(),
+            parse(&argv(&["help", "run"]))?,
             Command::Help {
                 topic: Some("run".to_string())
             }
         );
-        assert_eq!(
-            parse(&argv(&["help"])).unwrap(),
-            Command::Help { topic: None }
-        );
+        assert_eq!(parse(&argv(&["help"]))?, Command::Help { topic: None });
+        Ok(())
     }
 
     #[test]
-    fn per_command_help_flag_routes_to_help() {
+    fn per_command_help_flag_routes_to_help() -> TestResult {
         assert_eq!(
-            parse(&argv(&["run", "--help"])).unwrap(),
+            parse(&argv(&["run", "--help"]))?,
             Command::Help {
                 topic: Some("run".to_string())
             }
         );
+        Ok(())
     }
 
     #[test]

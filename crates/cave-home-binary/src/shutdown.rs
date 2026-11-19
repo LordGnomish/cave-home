@@ -49,35 +49,40 @@ mod tests {
     use super::*;
     use crate::config::{Config, ConfigLayer};
 
-    fn hub_plan() -> Plan {
-        let cfg = Config::from_layers(&[ConfigLayer::defaults()]).expect("valid");
-        Plan::compute(&cfg).expect("plan")
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn hub_plan() -> Result<Plan, Box<dyn std::error::Error>> {
+        let cfg = Config::from_layers(&[ConfigLayer::defaults()])?;
+        Ok(Plan::compute(&cfg)?)
     }
 
     #[test]
-    fn shutdown_is_the_exact_reverse_of_bootstrap() {
-        let boot = hub_plan();
+    fn shutdown_is_the_exact_reverse_of_bootstrap() -> TestResult {
+        let boot = hub_plan()?;
         let down = ShutdownPlan::from_bootstrap(&boot);
         let mut expected = boot.steps().to_vec();
         expected.reverse();
         assert_eq!(down.steps(), expected.as_slice());
         assert_eq!(down.len(), boot.len());
+        Ok(())
     }
 
     #[test]
-    fn portal_stops_first_and_orchestration_last() {
-        let down = ShutdownPlan::from_bootstrap(&hub_plan());
+    fn portal_stops_first_and_orchestration_last() -> TestResult {
+        let down = ShutdownPlan::from_bootstrap(&hub_plan()?);
         assert_eq!(down.steps().first(), Some(&Component::Portal));
         assert_eq!(down.steps().last(), Some(&Component::Orchestration));
+        Ok(())
     }
 
     #[test]
-    fn double_reverse_returns_to_bootstrap_order() {
-        let boot = hub_plan();
+    fn double_reverse_returns_to_bootstrap_order() -> TestResult {
+        let boot = hub_plan()?;
         let down = ShutdownPlan::from_bootstrap(&boot);
         // Reversing the shutdown plan reconstructs the bring-up order.
         let mut roundtrip = down.steps().to_vec();
         roundtrip.reverse();
         assert_eq!(roundtrip.as_slice(), boot.steps());
+        Ok(())
     }
 }
