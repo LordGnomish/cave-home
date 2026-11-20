@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Condition AST — port of `homeassistant/helpers/condition.py`.
 //!
-//! # Upstream: home-assistant/core@456202325ac4:homeassistant/helpers/condition.py
+//! # Upstream: `home-assistant/core@456202325ac4:homeassistant/helpers/condition.py`
 
 use std::sync::Arc;
 
@@ -10,18 +10,19 @@ use serde_json::Value;
 use time::OffsetDateTime;
 
 use crate::error::{HassError, HassResult};
+use crate::num::{is_above, is_below};
 use crate::state::StateMachine;
 use crate::template::Template;
 
 /// AST of a condition expression.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/helpers/condition.py
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/helpers/condition.py`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "condition", rename_all = "snake_case")]
 pub enum Condition {
     /// Entity is in one of the given states.
     ///
-    /// # Upstream: homeassistant/helpers/condition.py::async_state
+    /// # Upstream: `homeassistant/helpers/condition.py::async_state`
     State {
         entity_id: String,
         /// State value (or list of accepted values).
@@ -30,7 +31,7 @@ pub enum Condition {
 
     /// Entity numeric state is within bounds.
     ///
-    /// # Upstream: homeassistant/helpers/condition.py::async_numeric_state
+    /// # Upstream: `homeassistant/helpers/condition.py::async_numeric_state`
     NumericState {
         entity_id: String,
         #[serde(default)]
@@ -41,12 +42,12 @@ pub enum Condition {
 
     /// Template renders truthy.
     ///
-    /// # Upstream: homeassistant/helpers/condition.py::async_template
+    /// # Upstream: `homeassistant/helpers/condition.py::async_template`
     Template { value_template: String },
 
     /// Now is between two clock times "HH:MM[:SS]".
     ///
-    /// # Upstream: homeassistant/helpers/condition.py::time
+    /// # Upstream: `homeassistant/helpers/condition.py::time`
     Time {
         #[serde(default)]
         after: Option<String>,
@@ -56,18 +57,18 @@ pub enum Condition {
 
     /// All children must evaluate true.
     ///
-    /// # Upstream: homeassistant/helpers/condition.py::async_and_from_config
-    And { conditions: Vec<Condition> },
+    /// # Upstream: `homeassistant/helpers/condition.py::async_and_from_config`
+    And { conditions: Vec<Self> },
 
     /// Any child evaluating true is enough.
     ///
-    /// # Upstream: homeassistant/helpers/condition.py::async_or_from_config
-    Or { conditions: Vec<Condition> },
+    /// # Upstream: `homeassistant/helpers/condition.py::async_or_from_config`
+    Or { conditions: Vec<Self> },
 
     /// Negate the inner condition.
     ///
-    /// # Upstream: homeassistant/helpers/condition.py::async_not_from_config
-    Not { conditions: Vec<Condition> },
+    /// # Upstream: `homeassistant/helpers/condition.py::async_not_from_config`
+    Not { conditions: Vec<Self> },
 }
 
 /// "state" condition accepts either a single value or a list.
@@ -109,12 +110,12 @@ impl Condition {
                     ))
                 })?;
                 if let Some(a) = above {
-                    if !(v > *a) {
+                    if !is_above(v, *a) {
                         return Ok(false);
                     }
                 }
                 if let Some(b) = below {
-                    if !(v < *b) {
+                    if !is_below(v, *b) {
                         return Ok(false);
                     }
                 }
@@ -132,14 +133,14 @@ impl Condition {
                 if let Some(a) = after.as_deref() {
                     let a_sec = hms_to_seconds(a)
                         .ok_or_else(|| HassError::ConditionError(format!("bad after: {a}")))?;
-                    if !(now_sec >= a_sec) {
+                    if now_sec < a_sec {
                         return Ok(false);
                     }
                 }
                 if let Some(b) = before.as_deref() {
                     let b_sec = hms_to_seconds(b)
                         .ok_or_else(|| HassError::ConditionError(format!("bad before: {b}")))?;
-                    if !(now_sec < b_sec) {
+                    if now_sec >= b_sec {
                         return Ok(false);
                     }
                 }
@@ -187,40 +188,42 @@ mod tests {
     use crate::event_bus::InMemoryEventBus;
     use std::collections::BTreeMap;
 
-    fn machine_with(entity_id: &str, state: &str) -> Arc<StateMachine> {
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn machine_with(entity_id: &str, state: &str) -> HassResult<Arc<StateMachine>> {
         let sm = Arc::new(StateMachine::new(Arc::new(InMemoryEventBus::new())));
-        sm.async_set(entity_id, state, BTreeMap::new(), false, None)
-            .unwrap();
-        sm
+        sm.async_set(entity_id, state, BTreeMap::new(), false, None)?;
+        Ok(sm)
     }
 
     /// Upstream-test: `tests/helpers/test_condition.py::test_state_raises`
     #[test]
-    fn state_condition_matches() {
-        let sm = machine_with("light.kitchen", "on");
+    fn state_condition_matches() -> TestResult {
+        let sm = machine_with("light.kitchen", "on")?;
         let c = Condition::State {
             entity_id: "light.kitchen".into(),
             state: ConditionStateValue::Single("on".into()),
         };
-        assert!(c.evaluate(&sm).unwrap());
+        assert!(c.evaluate(&sm)?);
 
         let c_off = Condition::State {
             entity_id: "light.kitchen".into(),
             state: ConditionStateValue::Single("off".into()),
         };
-        assert!(!c_off.evaluate(&sm).unwrap());
+        assert!(!c_off.evaluate(&sm)?);
 
         let c_many = Condition::State {
             entity_id: "light.kitchen".into(),
             state: ConditionStateValue::Many(vec!["off".into(), "on".into()]),
         };
-        assert!(c_many.evaluate(&sm).unwrap());
+        assert!(c_many.evaluate(&sm)?);
+        Ok(())
     }
 
     /// Upstream-test: `tests/helpers/test_condition.py::test_and_condition`
     #[test]
-    fn and_condition_short_circuits() {
-        let sm = machine_with("light.kitchen", "on");
+    fn and_condition_short_circuits() -> TestResult {
+        let sm = machine_with("light.kitchen", "on")?;
         let c = Condition::And {
             conditions: vec![
                 Condition::State {
@@ -233,7 +236,7 @@ mod tests {
                 },
             ],
         };
-        assert!(c.evaluate(&sm).unwrap());
+        assert!(c.evaluate(&sm)?);
 
         let c_no = Condition::And {
             conditions: vec![
@@ -247,13 +250,14 @@ mod tests {
                 },
             ],
         };
-        assert!(!c_no.evaluate(&sm).unwrap());
+        assert!(!c_no.evaluate(&sm)?);
+        Ok(())
     }
 
     /// Upstream-test: `tests/helpers/test_condition.py::test_or_condition`
     #[test]
-    fn or_condition_short_circuits() {
-        let sm = machine_with("light.kitchen", "off");
+    fn or_condition_short_circuits() -> TestResult {
+        let sm = machine_with("light.kitchen", "off")?;
         let c = Condition::Or {
             conditions: vec![
                 Condition::State {
@@ -266,30 +270,76 @@ mod tests {
                 },
             ],
         };
-        assert!(c.evaluate(&sm).unwrap());
+        assert!(c.evaluate(&sm)?);
+        Ok(())
     }
 
     /// Upstream-test: `tests/helpers/test_condition.py::test_not_condition`
     #[test]
-    fn not_condition_negates() {
-        let sm = machine_with("light.kitchen", "on");
+    fn not_condition_negates() -> TestResult {
+        let sm = machine_with("light.kitchen", "on")?;
         let c = Condition::Not {
             conditions: vec![Condition::State {
                 entity_id: "light.kitchen".into(),
                 state: ConditionStateValue::Single("off".into()),
             }],
         };
-        assert!(c.evaluate(&sm).unwrap());
+        assert!(c.evaluate(&sm)?);
+        Ok(())
     }
 
     #[test]
-    fn numeric_state_condition_evaluates() {
-        let sm = machine_with("sensor.temp", "22");
+    fn numeric_state_condition_evaluates() -> TestResult {
+        let sm = machine_with("sensor.temp", "22")?;
         let c = Condition::NumericState {
             entity_id: "sensor.temp".into(),
             above: Some(20.0),
             below: Some(30.0),
         };
-        assert!(c.evaluate(&sm).unwrap());
+        assert!(c.evaluate(&sm)?);
+        Ok(())
+    }
+
+    #[test]
+    fn numeric_state_condition_bounds_are_strict() -> TestResult {
+        let sm = machine_with("sensor.temp", "20")?;
+        let above = Condition::NumericState {
+            entity_id: "sensor.temp".into(),
+            above: Some(20.0),
+            below: None,
+        };
+        assert!(!above.evaluate(&sm)?);
+        let below = Condition::NumericState {
+            entity_id: "sensor.temp".into(),
+            above: None,
+            below: Some(20.0),
+        };
+        assert!(!below.evaluate(&sm)?);
+        let window = Condition::NumericState {
+            entity_id: "sensor.temp".into(),
+            above: Some(19.5),
+            below: Some(20.5),
+        };
+        assert!(window.evaluate(&sm)?);
+        Ok(())
+    }
+
+    #[test]
+    fn numeric_state_condition_never_matches_nan() -> TestResult {
+        // "NaN" parses as a number but is neither above nor below anything.
+        let sm = machine_with("sensor.temp", "NaN")?;
+        let above = Condition::NumericState {
+            entity_id: "sensor.temp".into(),
+            above: Some(20.0),
+            below: None,
+        };
+        assert!(!above.evaluate(&sm)?);
+        let below = Condition::NumericState {
+            entity_id: "sensor.temp".into(),
+            above: None,
+            below: Some(20.0),
+        };
+        assert!(!below.evaluate(&sm)?);
+        Ok(())
     }
 }

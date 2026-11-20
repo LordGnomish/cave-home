@@ -4,7 +4,7 @@
 //! A scene is a named snapshot of entity states; activating it
 //! re-applies that snapshot via the state machine.
 //!
-//! # Upstream: home-assistant/core@456202325ac4:homeassistant/components/scene/__init__.py
+//! # Upstream: `home-assistant/core@456202325ac4:homeassistant/components/scene/__init__.py`
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -28,7 +28,7 @@ pub struct SceneEntry {
 /// Named snapshot of entity states. The grandma-friendly Portal calls
 /// these **"Sahne"** (Scene).
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/components/scene/__init__.py::Scene
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/components/scene/__init__.py::Scene`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Scene {
     pub id: String,
@@ -63,7 +63,7 @@ impl Scene {
 
     /// Activate the scene — push every entry through the state machine.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/components/scene/__init__.py::Scene.async_activate
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/components/scene/__init__.py::Scene.async_activate`
     pub fn activate(&self, sm: &Arc<StateMachine>, context: Option<Context>) -> HassResult<()> {
         let ctx = context.unwrap_or_default();
         for entry in &self.entries {
@@ -127,13 +127,15 @@ mod tests {
     use super::*;
     use crate::event_bus::InMemoryEventBus;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn machine() -> Arc<StateMachine> {
         Arc::new(StateMachine::new(Arc::new(InMemoryEventBus::new())))
     }
 
     /// Upstream-test: `tests/components/scene/test_init.py::test_apply_service`
     #[test]
-    fn scene_activate_sets_states() {
+    fn scene_activate_sets_states() -> TestResult {
         let sm = machine();
         let mut scene = Scene::new("evening", "Akşam");
         scene.add("light.kitchen", "on", BTreeMap::new());
@@ -142,10 +144,13 @@ mod tests {
             a.insert("brightness".into(), Value::from(120));
             a
         });
-        scene.activate(&sm, None).unwrap();
+        scene.activate(&sm, None)?;
         assert!(sm.is_state("light.kitchen", "on"));
-        let lr = sm.get("light.living_room").unwrap();
+        let lr = sm
+            .get("light.living_room")
+            .ok_or("sm.get(light.living_room) should return the activated state")?;
         assert_eq!(lr.state, "on");
         assert_eq!(lr.attributes.get("brightness"), Some(&Value::from(120)));
+        Ok(())
     }
 }

@@ -2,7 +2,7 @@
 //! Entity state machine — port of `homeassistant/core.py::State` /
 //! `StateMachine`.
 //!
-//! # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py
+//! # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py`
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -18,7 +18,7 @@ use crate::event_bus::{EVENT_STATE_CHANGED, EVENT_STATE_REPORTED, Event, EventBu
 
 /// HA's `MAX_LENGTH_STATE_STATE` (255 chars).
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/const.py::MAX_LENGTH_STATE_STATE
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/const.py::MAX_LENGTH_STATE_STATE`
 pub const MAX_LENGTH_STATE_STATE: usize = 255;
 
 /// Sentinel state strings.
@@ -27,7 +27,7 @@ pub const STATE_UNAVAILABLE: &str = "unavailable";
 
 /// Split `light.kitchen` -> `("light", "kitchen")`.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::split_entity_id
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::split_entity_id`
 pub fn split_entity_id(entity_id: &str) -> HassResult<(String, String)> {
     let (domain, object_id) = entity_id
         .split_once('.')
@@ -40,7 +40,7 @@ pub fn split_entity_id(entity_id: &str) -> HassResult<(String, String)> {
 
 /// Validate domain — lower-case alpha plus underscore.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::valid_domain
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::valid_domain`
 #[must_use]
 pub fn valid_domain(domain: &str) -> bool {
     !domain.is_empty()
@@ -51,7 +51,7 @@ pub fn valid_domain(domain: &str) -> bool {
 
 /// Validate entity id (`<domain>.<object_id>` shape).
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::valid_entity_id
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::valid_entity_id`
 #[must_use]
 pub fn valid_entity_id(entity_id: &str) -> bool {
     let Some((domain, object_id)) = entity_id.split_once('.') else {
@@ -68,7 +68,7 @@ pub fn valid_entity_id(entity_id: &str) -> bool {
 
 /// Validate state value — length and absence of control chars.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::validate_state
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::validate_state`
 pub fn validate_state(state: &str) -> HassResult<String> {
     if state.len() > MAX_LENGTH_STATE_STATE {
         return Err(HassError::InvalidState(format!(
@@ -81,7 +81,7 @@ pub fn validate_state(state: &str) -> HassResult<String> {
 /// Object representing the state of a single entity in the state
 /// machine.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::State
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::State`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct State {
     pub entity_id: String,
@@ -98,7 +98,7 @@ pub struct State {
 impl State {
     /// Build a new state, validating the entity id.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::State.__init__
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::State.__init__`
     pub fn new(
         entity_id: impl Into<String>,
         state: impl Into<String>,
@@ -129,7 +129,7 @@ impl State {
     /// "Friendly name" — `attributes.friendly_name` or the object id with
     /// underscores replaced by spaces.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::State.name
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::State.name`
     #[must_use]
     pub fn name(&self) -> String {
         if let Some(Value::String(name)) = self.attributes.get("friendly_name") {
@@ -140,7 +140,7 @@ impl State {
 
     /// JSON-ish dictionary representation.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::State.as_dict
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::State.as_dict`
     #[must_use]
     pub fn as_dict(&self) -> serde_json::Map<String, Value> {
         let mut map = serde_json::Map::new();
@@ -176,7 +176,7 @@ impl State {
 
     /// Reconstruct a `State` from its JSON dict representation.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::State.from_dict
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::State.from_dict`
     pub fn from_dict(map: &serde_json::Map<String, Value>) -> HassResult<Self> {
         let entity_id = map
             .get("entity_id")
@@ -229,7 +229,7 @@ impl State {
     /// Replace the context with a clone of the same id so the original can
     /// be garbage collected — Python's `Context(user_id, parent_id, id)`.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::State.expire
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::State.expire`
     pub fn expire(&mut self) {
         self.context = Context {
             id: self.context.id.clone(),
@@ -251,7 +251,7 @@ fn parse_iso8601(s: &str) -> Option<OffsetDateTime> {
 /// Inner state container with an additional `domain -> entity_id` index,
 /// mirroring HA core's `States(UserDict)`.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::States
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::States`
 #[derive(Debug, Default)]
 pub struct States {
     by_entity: HashMap<String, State>,
@@ -267,6 +267,7 @@ impl States {
         self.by_entity.insert(state.entity_id.clone(), state);
     }
 
+    #[must_use]
     pub fn get(&self, entity_id: &str) -> Option<&State> {
         self.by_entity.get(entity_id)
     }
@@ -285,10 +286,12 @@ impl States {
         }
     }
 
+    #[must_use]
     pub fn all(&self) -> Vec<State> {
         self.by_entity.values().cloned().collect()
     }
 
+    #[must_use]
     pub fn domain_entity_ids(&self, domain: &str) -> Vec<String> {
         self.by_domain
             .get(domain)
@@ -296,6 +299,7 @@ impl States {
             .unwrap_or_default()
     }
 
+    #[must_use]
     pub fn entity_ids(&self) -> Vec<String> {
         self.by_entity.keys().cloned().collect()
     }
@@ -314,7 +318,7 @@ impl States {
 /// Helper class tracking the state of all entities and firing
 /// `state_changed` / `state_reported` events on mutations.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine`
 #[derive(Debug)]
 pub struct StateMachine {
     states: RwLock<States>,
@@ -324,7 +328,7 @@ pub struct StateMachine {
 
 /// Payload of `EVENT_STATE_CHANGED`.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::EventStateChangedData
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::EventStateChangedData`
 #[derive(Debug, Clone, Serialize)]
 pub struct StateChangedData {
     pub entity_id: String,
@@ -334,7 +338,7 @@ pub struct StateChangedData {
 
 /// Payload of `EVENT_STATE_REPORTED`.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::EventStateReportedData
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::EventStateReportedData`
 #[derive(Debug, Clone, Serialize)]
 pub struct StateReportedData {
     pub entity_id: String,
@@ -346,7 +350,7 @@ pub struct StateReportedData {
 impl StateMachine {
     /// New state machine wired to a shared event bus.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.__init__
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.__init__`
     #[must_use]
     pub fn new(bus: Arc<dyn EventBus>) -> Self {
         Self {
@@ -358,7 +362,7 @@ impl StateMachine {
 
     /// Retrieve state of `entity_id` or `None`.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.get
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.get`
     #[must_use]
     pub fn get(&self, entity_id: &str) -> Option<State> {
         let states = self.states.read();
@@ -370,42 +374,44 @@ impl StateMachine {
 
     /// Test if entity exists and is in `state`.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.is_state
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.is_state`
     pub fn is_state(&self, entity_id: &str, state: &str) -> bool {
         self.get(entity_id).is_some_and(|s| s.state == state)
     }
 
     /// List all entity ids, optionally filtered to a single domain.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.async_entity_ids
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.async_entity_ids`
     #[must_use]
     pub fn entity_ids(&self, domain_filter: Option<&str>) -> Vec<String> {
         let states = self.states.read();
-        match domain_filter {
-            Some(d) => states.domain_entity_ids(&d.to_ascii_lowercase()),
-            None => states.entity_ids(),
-        }
+        domain_filter.map_or_else(
+            || states.entity_ids(),
+            |d| states.domain_entity_ids(&d.to_ascii_lowercase()),
+        )
     }
 
     /// All states, optionally filtered to a single domain.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.async_all
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.async_all`
     #[must_use]
     pub fn all(&self, domain_filter: Option<&str>) -> Vec<State> {
         let states = self.states.read();
-        match domain_filter {
-            Some(d) => states
-                .domain_entity_ids(&d.to_ascii_lowercase())
-                .into_iter()
-                .filter_map(|id| states.get(&id).cloned())
-                .collect(),
-            None => states.all(),
-        }
+        domain_filter.map_or_else(
+            || states.all(),
+            |d| {
+                states
+                    .domain_entity_ids(&d.to_ascii_lowercase())
+                    .into_iter()
+                    .filter_map(|id| states.get(&id).cloned())
+                    .collect()
+            },
+        )
     }
 
     /// Remove the state of `entity_id`. Fires `state_changed`.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.async_remove
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.async_remove`
     pub fn async_remove(&self, entity_id: &str, context: Option<Context>) -> bool {
         let entity_id = entity_id.to_ascii_lowercase();
         let mut states = self.states.write();
@@ -417,7 +423,7 @@ impl StateMachine {
         old_state.expire();
         let ctx = context.unwrap_or_else(|| old_state.context.clone());
         let payload = StateChangedData {
-            entity_id: entity_id.clone(),
+            entity_id,
             old_state: Some(old_state),
             new_state: None,
         };
@@ -434,7 +440,7 @@ impl StateMachine {
 
     /// Reserve an entity id so a concurrent caller can't take it.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.async_reserve
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.async_reserve`
     pub fn async_reserve(&self, entity_id: &str) -> HassResult<()> {
         let states = self.states.read();
         let mut reservations = self.reservations.write();
@@ -444,12 +450,14 @@ impl StateMachine {
             ));
         }
         reservations.insert(entity_id.to_owned());
+        drop(reservations);
+        drop(states);
         Ok(())
     }
 
     /// True iff `entity_id` is free (not reserved and no current state).
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.async_available
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.async_available`
     pub fn async_available(&self, entity_id: &str) -> bool {
         let entity_id = entity_id.to_ascii_lowercase();
         let states = self.states.read();
@@ -459,7 +467,7 @@ impl StateMachine {
 
     /// Set / replace the state of an entity.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.async_set
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.async_set`
     pub fn async_set(
         &self,
         entity_id: &str,
@@ -477,7 +485,7 @@ impl StateMachine {
     /// Internal set — mirrors HA's `async_set_internal` semantics around
     /// `state_changed` vs `state_reported`.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.async_set_internal
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::StateMachine.async_set_internal`
     pub fn async_set_internal(
         &self,
         entity_id: &str,
@@ -492,32 +500,31 @@ impl StateMachine {
                 target: "cave_home_automation::state",
                 "state %s for {entity_id} longer than {MAX_LENGTH_STATE_STATE}, falling back to {STATE_UNKNOWN}"
             );
-            effective_state = STATE_UNKNOWN.to_owned();
+            STATE_UNKNOWN.clone_into(&mut effective_state);
         }
         let now = OffsetDateTime::now_utc();
         let context = context.unwrap_or_default();
 
         let mut states = self.states.write();
         let old_state = states.get(entity_id).cloned();
-        let (same_state, same_attr, last_changed) = match &old_state {
-            Some(prev) => (
-                prev.state == effective_state && !force_update,
-                prev.attributes == attributes,
-                if prev.state == effective_state && !force_update {
-                    Some(prev.last_changed)
-                } else {
-                    None
-                },
-            ),
-            None => (false, false, None),
-        };
+        let (same_state, same_attr, last_changed) =
+            old_state.as_ref().map_or((false, false, None), |prev| {
+                let same_state = prev.state == effective_state && !force_update;
+                (
+                    same_state,
+                    prev.attributes == attributes,
+                    same_state.then_some(prev.last_changed),
+                )
+            });
 
-        if same_state && same_attr {
-            // No change → fire state_reported, mutate last_reported in-place.
-            let mut existing = states
-                .get(entity_id)
-                .cloned()
-                .expect("same_state implies old_state present");
+        // No change → fire state_reported, mutate last_reported in-place.
+        // `same_state` is only ever true when a previous state exists, and
+        // `old_state` is that state as read under the write lock held here.
+        let unchanged = old_state
+            .as_ref()
+            .filter(|_| same_state && same_attr)
+            .cloned();
+        if let Some(mut existing) = unchanged {
             let old_last_reported = existing.last_reported;
             existing.last_reported = now;
             states.set(existing.clone());
@@ -585,19 +592,22 @@ mod tests {
     use crate::event_bus::InMemoryEventBus;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn make_machine() -> Arc<StateMachine> {
         Arc::new(StateMachine::new(Arc::new(InMemoryEventBus::new())))
     }
 
     /// Upstream-test: `tests/test_core.py::test_state_basics`
     #[test]
-    fn state_basics() {
+    fn state_basics() -> TestResult {
         let attrs: BTreeMap<String, Value> = BTreeMap::new();
-        let s = State::new("light.kitchen", "on", attrs, None).unwrap();
+        let s = State::new("light.kitchen", "on", attrs, None)?;
         assert_eq!(s.entity_id, "light.kitchen");
         assert_eq!(s.domain, "light");
         assert_eq!(s.object_id, "kitchen");
         assert_eq!(s.state, "on");
+        Ok(())
     }
 
     /// Upstream-test: `tests/test_core.py::test_invalid_entity_id`
@@ -615,44 +625,45 @@ mod tests {
 
     /// Upstream-test: `tests/test_core.py::test_state_as_dict`
     #[test]
-    fn as_dict_round_trip() {
+    fn as_dict_round_trip() -> TestResult {
         let mut attrs: BTreeMap<String, Value> = BTreeMap::new();
         attrs.insert("brightness".into(), Value::from(200));
         attrs.insert("friendly_name".into(), Value::String("Kitchen".into()));
-        let s = State::new("light.kitchen", "on", attrs, None).unwrap();
+        let s = State::new("light.kitchen", "on", attrs, None)?;
         let map = s.as_dict();
-        assert_eq!(map.get("entity_id").unwrap(), &Value::from("light.kitchen"));
-        assert_eq!(map.get("state").unwrap(), &Value::from("on"));
+        assert_eq!(map.get("entity_id"), Some(&Value::from("light.kitchen")));
+        assert_eq!(map.get("state"), Some(&Value::from("on")));
         assert_eq!(
-            map.get("attributes").unwrap().get("brightness").unwrap(),
-            &Value::from(200)
+            map.get("attributes").and_then(|a| a.get("brightness")),
+            Some(&Value::from(200))
         );
 
-        let back = State::from_dict(&map).unwrap();
+        let back = State::from_dict(&map)?;
         assert_eq!(back.entity_id, s.entity_id);
         assert_eq!(back.state, s.state);
         assert_eq!(back.name(), "Kitchen");
+        Ok(())
     }
 
     /// Upstream-test: `tests/test_core.py::test_state_machine`
     #[test]
-    fn state_machine_set_get_remove() {
+    fn state_machine_set_get_remove() -> TestResult {
         let sm = make_machine();
-        sm.async_set("light.kitchen", "on", BTreeMap::new(), false, None)
-            .unwrap();
+        sm.async_set("light.kitchen", "on", BTreeMap::new(), false, None)?;
         assert!(sm.is_state("light.kitchen", "on"));
         assert!(sm.entity_ids(None).contains(&"light.kitchen".into()));
         assert!(
             sm.entity_ids(Some("light"))
                 .contains(&"light.kitchen".into())
         );
-        assert!(sm.entity_ids(Some("switch")).is_empty());
+        assert_eq!(sm.entity_ids(Some("switch")), Vec::<String>::new());
         assert!(sm.async_remove("light.kitchen", None));
         assert!(sm.get("light.kitchen").is_none());
+        Ok(())
     }
 
     #[test]
-    fn state_machine_fires_state_changed_on_set() {
+    fn state_machine_fires_state_changed_on_set() -> TestResult {
         let bus = Arc::new(InMemoryEventBus::new());
         let sm = StateMachine::new(bus.clone());
         let counter = Arc::new(AtomicUsize::new(0));
@@ -660,15 +671,14 @@ mod tests {
         let _handle = bus.async_listen(EVENT_STATE_CHANGED, move |_event| {
             c.fetch_add(1, Ordering::SeqCst);
         });
-        sm.async_set("light.kitchen", "on", BTreeMap::new(), false, None)
-            .unwrap();
-        sm.async_set("light.kitchen", "off", BTreeMap::new(), false, None)
-            .unwrap();
+        sm.async_set("light.kitchen", "on", BTreeMap::new(), false, None)?;
+        sm.async_set("light.kitchen", "off", BTreeMap::new(), false, None)?;
         assert_eq!(counter.load(Ordering::SeqCst), 2);
+        Ok(())
     }
 
     #[test]
-    fn state_machine_fires_state_reported_when_unchanged() {
+    fn state_machine_fires_state_reported_when_unchanged() -> TestResult {
         let bus = Arc::new(InMemoryEventBus::new());
         let sm = StateMachine::new(bus.clone());
         let changed = Arc::new(AtomicUsize::new(0));
@@ -681,40 +691,44 @@ mod tests {
         let _h2 = bus.async_listen(EVENT_STATE_REPORTED, move |_e| {
             c2.fetch_add(1, Ordering::SeqCst);
         });
-        sm.async_set("light.kitchen", "on", BTreeMap::new(), false, None)
-            .unwrap();
-        sm.async_set("light.kitchen", "on", BTreeMap::new(), false, None)
-            .unwrap();
+        sm.async_set("light.kitchen", "on", BTreeMap::new(), false, None)?;
+        sm.async_set("light.kitchen", "on", BTreeMap::new(), false, None)?;
         assert_eq!(changed.load(Ordering::SeqCst), 1);
         assert_eq!(reported.load(Ordering::SeqCst), 1);
+        Ok(())
     }
 
     #[test]
-    fn long_state_value_falls_back_to_unknown() {
+    fn long_state_value_falls_back_to_unknown() -> TestResult {
         let sm = make_machine();
         let long = "x".repeat(MAX_LENGTH_STATE_STATE + 5);
         // async_set validates length first; async_set_internal demonstrates fallback.
-        sm.async_set_internal("sensor.test", long, BTreeMap::new(), false, None)
-            .unwrap();
-        assert_eq!(sm.get("sensor.test").unwrap().state, STATE_UNKNOWN);
+        sm.async_set_internal("sensor.test", long, BTreeMap::new(), false, None)?;
+        let stored = sm
+            .get("sensor.test")
+            .ok_or("sm.get(sensor.test) should return the stored state")?;
+        assert_eq!(stored.state, STATE_UNKNOWN);
+        Ok(())
     }
 
     #[test]
-    fn reserve_blocks_double_register() {
+    fn reserve_blocks_double_register() -> TestResult {
         let sm = make_machine();
-        sm.async_reserve("light.kitchen").unwrap();
+        sm.async_reserve("light.kitchen")?;
         assert!(!sm.async_available("light.kitchen"));
         assert!(sm.async_reserve("light.kitchen").is_err());
+        Ok(())
     }
 
     #[test]
-    fn split_entity_id_works() {
+    fn split_entity_id_works() -> TestResult {
         assert_eq!(
-            split_entity_id("light.kitchen").unwrap(),
+            split_entity_id("light.kitchen")?,
             ("light".into(), "kitchen".into())
         );
         assert!(split_entity_id("no_dot").is_err());
         assert!(split_entity_id(".empty_domain").is_err());
+        Ok(())
     }
 
     #[test]
@@ -724,5 +738,96 @@ mod tests {
         assert!(!valid_entity_id("light"));
         assert!(valid_domain("light"));
         assert!(!valid_domain("LIGHT"));
+    }
+
+    #[test]
+    fn force_update_fires_state_changed_for_an_unchanged_value() -> TestResult {
+        let bus = Arc::new(InMemoryEventBus::new());
+        let sm = StateMachine::new(bus.clone());
+        let changed = Arc::new(AtomicUsize::new(0));
+        let reported = Arc::new(AtomicUsize::new(0));
+        let c1 = changed.clone();
+        let c2 = reported.clone();
+        let _h1 = bus.async_listen(EVENT_STATE_CHANGED, move |_e| {
+            c1.fetch_add(1, Ordering::SeqCst);
+        });
+        let _h2 = bus.async_listen(EVENT_STATE_REPORTED, move |_e| {
+            c2.fetch_add(1, Ordering::SeqCst);
+        });
+        sm.async_set("light.kitchen", "on", BTreeMap::new(), false, None)?;
+        sm.async_set("light.kitchen", "on", BTreeMap::new(), true, None)?;
+        assert_eq!(changed.load(Ordering::SeqCst), 2);
+        assert_eq!(reported.load(Ordering::SeqCst), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn attribute_change_keeps_last_changed_and_report_keeps_the_state() -> TestResult {
+        let sm = make_machine();
+        sm.async_set("light.kitchen", "on", BTreeMap::new(), false, None)?;
+        let first = sm
+            .get("light.kitchen")
+            .ok_or("sm.get(light.kitchen) should return the first state")?;
+
+        // Same state value, new attributes: state_changed, last_changed kept.
+        let mut attrs: BTreeMap<String, Value> = BTreeMap::new();
+        attrs.insert("brightness".into(), Value::from(200));
+        sm.async_set("light.kitchen", "on", attrs.clone(), false, None)?;
+        let second = sm
+            .get("light.kitchen")
+            .ok_or("sm.get(light.kitchen) should return the second state")?;
+        assert_eq!(second.last_changed, first.last_changed);
+        assert_eq!(second.attributes, attrs);
+
+        // Nothing changes: only last_reported moves, the state is kept.
+        sm.async_set("light.kitchen", "on", attrs.clone(), false, None)?;
+        let third = sm
+            .get("light.kitchen")
+            .ok_or("sm.get(light.kitchen) should return the third state")?;
+        assert_eq!(third.state, "on");
+        assert_eq!(third.attributes, attrs);
+        assert_eq!(third.last_changed, first.last_changed);
+        assert_eq!(third.last_updated, second.last_updated);
+        assert!(third.last_reported >= second.last_reported);
+        Ok(())
+    }
+
+    #[test]
+    fn all_and_entity_ids_filter_by_domain() -> TestResult {
+        let sm = make_machine();
+        sm.async_set("light.kitchen", "on", BTreeMap::new(), false, None)?;
+        sm.async_set("switch.fan", "off", BTreeMap::new(), false, None)?;
+        assert_eq!(sm.all(None).len(), 2);
+        let lights = sm.all(Some("LIGHT"));
+        assert_eq!(lights.len(), 1);
+        assert_eq!(
+            lights.first().map(|s| s.entity_id.as_str()),
+            Some("light.kitchen")
+        );
+        assert_eq!(sm.all(Some("sensor")).len(), 0);
+        assert_eq!(sm.entity_ids(None).len(), 2);
+        assert_eq!(sm.entity_ids(Some("switch")), vec!["switch.fan".to_owned()]);
+        Ok(())
+    }
+
+    #[test]
+    fn remove_fires_state_changed_and_reports_unknown_entities() -> TestResult {
+        let bus = Arc::new(InMemoryEventBus::new());
+        let sm = StateMachine::new(bus.clone());
+        sm.async_set("light.kitchen", "on", BTreeMap::new(), false, None)?;
+        let removed = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let sink = removed.clone();
+        let _h = bus.async_listen(EVENT_STATE_CHANGED, move |event| {
+            sink.lock().push(event.data.clone());
+        });
+        assert!(sm.async_remove("Light.Kitchen", None));
+        assert!(!sm.async_remove("light.kitchen", None));
+        let events = removed.lock().clone();
+        assert_eq!(events.len(), 1);
+        let payload = events.first().ok_or("one state_changed payload")?;
+        assert_eq!(payload["entity_id"], "light.kitchen");
+        assert_eq!(payload["old_state"]["state"], "on");
+        assert!(payload["new_state"].is_null());
+        Ok(())
     }
 }

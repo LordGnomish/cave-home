@@ -7,7 +7,7 @@
 //! - condition list evaluated in declaration order,
 //! - action sequence executed via [`crate::script::Script`].
 //!
-//! # Upstream: home-assistant/core@456202325ac4:homeassistant/components/automation/__init__.py
+//! # Upstream: `home-assistant/core@456202325ac4:homeassistant/components/automation/__init__.py`
 
 use std::sync::Arc;
 
@@ -25,7 +25,7 @@ use crate::state::StateMachine;
 
 /// YAML-equivalent declaration of a single automation rule.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/components/automation/__init__.py::CONF_AUTOMATION
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/components/automation/__init__.py::CONF_AUTOMATION`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutomationConfig {
     /// Stable id — what cavectl + portal use to refer to this automation.
@@ -53,7 +53,7 @@ const fn yes_default() -> bool {
 
 /// Live record of a registered automation.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/components/automation/__init__.py::AutomationEntity
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/components/automation/__init__.py::AutomationEntity`
 #[derive(Debug, Clone, Serialize)]
 pub struct Automation {
     pub config: AutomationConfig,
@@ -71,7 +71,7 @@ pub struct AutomationHandle {
 
 /// The automation runtime.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/components/automation/__init__.py::AutomationManager
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/components/automation/__init__.py::AutomationManager`
 pub struct AutomationEngine {
     automations: Arc<RwLock<std::collections::HashMap<String, Automation>>>,
     sm: Arc<StateMachine>,
@@ -87,7 +87,7 @@ impl std::fmt::Debug for AutomationEngine {
                 "automations",
                 &self.automations.read().keys().cloned().collect::<Vec<_>>(),
             )
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -113,7 +113,7 @@ impl AutomationEngine {
     /// Register an automation; returns an [`AutomationHandle`] whose
     /// `Drop` unsubscribes the triggers.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/components/automation/__init__.py::async_setup_entry
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/components/automation/__init__.py::async_setup_entry`
     pub fn register(&self, config: AutomationConfig) -> HassResult<AutomationHandle> {
         let automation = Automation {
             enabled: config.enabled,
@@ -127,12 +127,11 @@ impl AutomationEngine {
             .insert(config.id.clone(), automation);
 
         let mut handles = Vec::new();
-        for trigger in &config.triggers {
+        for trigger in config.triggers {
             let event_type = trigger
                 .subscribed_event_type()
                 .unwrap_or(MATCH_ALL)
                 .to_owned();
-            let trigger = trigger.clone();
             let id = config.id.clone();
             let automations = self.automations.clone();
             let sm = self.sm.clone();
@@ -143,11 +142,7 @@ impl AutomationEngine {
             let actions = config.actions.clone();
             let alias = config.alias.clone().unwrap_or_else(|| id.clone());
             let cb: ListenerFn = Arc::new(move |event: &Event| {
-                let enabled = automations
-                    .read()
-                    .get(&id)
-                    .map(|a| a.enabled)
-                    .unwrap_or(false);
+                let enabled = automations.read().get(&id).is_some_and(|a| a.enabled);
                 if !enabled {
                     return;
                 }
@@ -193,27 +188,24 @@ impl AutomationEngine {
     }
 
     /// Disable an automation by id. Returns true if found.
+    #[must_use]
     pub fn disable(&self, id: &str) -> bool {
-        self.automations
-            .write()
-            .get_mut(id)
-            .map(|a| {
-                a.enabled = false;
-                true
-            })
-            .unwrap_or(false)
+        self.set_enabled(id, false)
     }
 
     /// Enable an automation by id. Returns true if found.
+    #[must_use]
     pub fn enable(&self, id: &str) -> bool {
-        self.automations
-            .write()
-            .get_mut(id)
-            .map(|a| {
-                a.enabled = true;
-                true
-            })
-            .unwrap_or(false)
+        self.set_enabled(id, true)
+    }
+
+    /// Set the `enabled` flag of automation `id`; `false` when no
+    /// automation has that id.
+    fn set_enabled(&self, id: &str, enabled: bool) -> bool {
+        self.automations.write().get_mut(id).is_some_and(|a| {
+            a.enabled = enabled;
+            true
+        })
     }
 
     /// Snapshot of registered automations.
@@ -236,18 +228,17 @@ impl AutomationEngine {
         id: &str,
         context: Option<crate::context::Context>,
     ) -> HassResult<()> {
-        let (actions, alias) = {
-            let g = self.automations.read();
-            let Some(a) = g.get(id) else {
-                return Err(crate::error::HassError::Other(format!(
-                    "unknown automation: {id}"
-                )));
-            };
-            (
-                a.config.actions.clone(),
-                a.config.alias.clone().unwrap_or_else(|| id.to_owned()),
-            )
-        };
+        let (actions, alias) = self
+            .automations
+            .read()
+            .get(id)
+            .map(|a| {
+                (
+                    a.config.actions.clone(),
+                    a.config.alias.clone().unwrap_or_else(|| id.to_owned()),
+                )
+            })
+            .ok_or_else(|| crate::error::HassError::Other(format!("unknown automation: {id}")))?;
         let rctx = ScriptContext::new(
             self.sm.clone(),
             self.services.clone(),
@@ -267,6 +258,8 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     fn make_engine() -> (
         Arc<AutomationEngine>,
@@ -289,7 +282,7 @@ mod tests {
     /// Upstream-test: `tests/components/automation/test_init.py::test_service_data_not_a_dict`
     /// (conceptually re-ported: a state trigger fires the action sequence).
     #[tokio::test]
-    async fn engine_runs_actions_on_state_trigger() {
+    async fn engine_runs_actions_on_state_trigger() -> TestResult {
         let (engine, sm, services) = make_engine();
         let count = Arc::new(AtomicUsize::new(0));
         let c = count.clone();
@@ -318,7 +311,7 @@ mod tests {
             }],
             enabled: true,
         };
-        let _handle = engine.register(cfg).unwrap();
+        let _handle = engine.register(cfg)?;
 
         sm.async_set(
             "binary_sensor.doorbell",
@@ -326,21 +319,23 @@ mod tests {
             BTreeMap::new(),
             false,
             None,
-        )
-        .unwrap();
-        sm.async_set("binary_sensor.doorbell", "on", BTreeMap::new(), false, None)
-            .unwrap();
+        )?;
+        sm.async_set("binary_sensor.doorbell", "on", BTreeMap::new(), false, None)?;
 
         // Give the spawned task a moment to run.
         tokio::time::sleep(Duration::from_millis(20)).await;
         assert_eq!(count.load(Ordering::SeqCst), 1);
         let listed = engine.list();
-        let item = listed.iter().find(|a| a.config.id == "doorbell").unwrap();
+        let item = listed
+            .iter()
+            .find(|a| a.config.id == "doorbell")
+            .ok_or("engine.list() should contain the doorbell automation")?;
         assert_eq!(item.run_count, 1);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn engine_skips_when_condition_fails() {
+    async fn engine_skips_when_condition_fails() -> TestResult {
         let (engine, sm, services) = make_engine();
         let count = Arc::new(AtomicUsize::new(0));
         let c = count.clone();
@@ -372,29 +367,25 @@ mod tests {
             }],
             enabled: true,
         };
-        let _handle = engine.register(cfg).unwrap();
+        let _handle = engine.register(cfg)?;
 
         // Switch is off → condition fails → no service call.
-        sm.async_set("switch.guard", "off", BTreeMap::new(), false, None)
-            .unwrap();
-        sm.async_set("binary_sensor.motion", "on", BTreeMap::new(), false, None)
-            .unwrap();
+        sm.async_set("switch.guard", "off", BTreeMap::new(), false, None)?;
+        sm.async_set("binary_sensor.motion", "on", BTreeMap::new(), false, None)?;
         tokio::time::sleep(Duration::from_millis(20)).await;
         assert_eq!(count.load(Ordering::SeqCst), 0);
 
         // Now turn the switch on — next motion should fire.
-        sm.async_set("switch.guard", "on", BTreeMap::new(), false, None)
-            .unwrap();
-        sm.async_set("binary_sensor.motion", "off", BTreeMap::new(), false, None)
-            .unwrap();
-        sm.async_set("binary_sensor.motion", "on", BTreeMap::new(), false, None)
-            .unwrap();
+        sm.async_set("switch.guard", "on", BTreeMap::new(), false, None)?;
+        sm.async_set("binary_sensor.motion", "off", BTreeMap::new(), false, None)?;
+        sm.async_set("binary_sensor.motion", "on", BTreeMap::new(), false, None)?;
         tokio::time::sleep(Duration::from_millis(20)).await;
         assert_eq!(count.load(Ordering::SeqCst), 1);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn disable_stops_triggering() {
+    async fn disable_stops_triggering() -> TestResult {
         let (engine, sm, services) = make_engine();
         let count = Arc::new(AtomicUsize::new(0));
         let c = count.clone();
@@ -423,11 +414,71 @@ mod tests {
             }],
             enabled: true,
         };
-        let _handle = engine.register(cfg).unwrap();
-        engine.disable("toggle");
-        sm.async_set("binary_sensor.motion", "on", BTreeMap::new(), false, None)
-            .unwrap();
+        let _handle = engine.register(cfg)?;
+        assert!(engine.disable("toggle"));
+        sm.async_set("binary_sensor.motion", "on", BTreeMap::new(), false, None)?;
         tokio::time::sleep(Duration::from_millis(20)).await;
         assert_eq!(count.load(Ordering::SeqCst), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn enable_and_disable_report_whether_the_id_exists() -> TestResult {
+        let (engine, _sm, _services) = make_engine();
+        assert!(!engine.disable("ghost"));
+        assert!(!engine.enable("ghost"));
+        let cfg = AutomationConfig {
+            id: "toggle".into(),
+            alias: None,
+            triggers: vec![],
+            conditions: vec![],
+            actions: vec![],
+            enabled: true,
+        };
+        let _handle = engine.register(cfg)?;
+        assert!(engine.disable("toggle"));
+        assert_eq!(engine.get("toggle").map(|a| a.enabled), Some(false));
+        assert!(engine.enable("toggle"));
+        assert_eq!(engine.get("toggle").map(|a| a.enabled), Some(true));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn run_manual_runs_actions_and_rejects_unknown_ids() -> TestResult {
+        let (engine, _sm, services) = make_engine();
+        let count = Arc::new(AtomicUsize::new(0));
+        let c = count.clone();
+        let handler = service_handler(move |_call| {
+            let c = c.clone();
+            async move {
+                c.fetch_add(1, Ordering::SeqCst);
+                Ok(None)
+            }
+        });
+        services.register("test", "tick", handler, None, SupportsResponse::None);
+        let cfg = AutomationConfig {
+            id: "manual".into(),
+            alias: None,
+            triggers: vec![],
+            conditions: vec![],
+            actions: vec![Action::Service {
+                domain: "test".into(),
+                service: "tick".into(),
+                data: serde_json::Value::Null,
+            }],
+            enabled: true,
+        };
+        let _handle = engine.register(cfg)?;
+        engine.run_manual("manual", None).await?;
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+
+        let err = engine
+            .run_manual("ghost", None)
+            .await
+            .err()
+            .ok_or("run_manual(ghost) should fail for an unknown id")?;
+        assert_eq!(err.to_string(), "unknown automation: ghost");
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        Ok(())
     }
 }

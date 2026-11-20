@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Causal `Context` — ported from `homeassistant/core.py`.
 //!
-//! # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::Context
+//! # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::Context`
 
 use serde::{Deserialize, Serialize};
 
 /// The context that triggered something — every state change, every
 /// service call, every event carries one.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::Context
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::Context`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Context {
     /// ULID-style monotonic identifier; the Python implementation uses
@@ -25,7 +25,7 @@ pub struct Context {
 impl Context {
     /// New `Context` with a freshly-generated id.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::Context.__init__
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::Context.__init__`
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -65,7 +65,7 @@ impl Default for Context {
 impl PartialEq for Context {
     /// Equality is by `id` alone — matches HA core's `Context.__eq__`.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::Context.__eq__
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::Context.__eq__`
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
@@ -76,6 +76,8 @@ impl Eq for Context {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[test]
     fn context_ids_are_unique() {
@@ -94,12 +96,13 @@ mod tests {
     }
 
     #[test]
-    fn context_serializes_with_id() {
+    fn context_serializes_with_id() -> TestResult {
         let ctx = Context::with_id("01H").with_links_helper("user-1", "parent-1");
-        let json = serde_json::to_value(&ctx).unwrap();
+        let json = serde_json::to_value(&ctx)?;
         assert_eq!(json["id"], "01H");
         assert_eq!(json["user_id"], "user-1");
         assert_eq!(json["parent_id"], "parent-1");
+        Ok(())
     }
 
     impl Context {

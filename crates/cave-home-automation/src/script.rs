@@ -4,7 +4,7 @@
 //! A script is a sequence of [`Action`]s executed in order; each
 //! action variant maps 1:1 to one of HA's `_async_step_*` methods.
 //!
-//! # Upstream: home-assistant/core@456202325ac4:homeassistant/helpers/script.py
+//! # Upstream: `home-assistant/core@456202325ac4:homeassistant/helpers/script.py`
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,7 +24,7 @@ use crate::state::StateMachine;
 
 /// Sequence of [`Action`]s.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/helpers/script.py::Script
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/helpers/script.py::Script`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Script {
     pub name: String,
@@ -33,14 +33,14 @@ pub struct Script {
 
 /// One step inside a [`Script`] sequence.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/helpers/script.py
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/helpers/script.py`
 ///   (`_async_step_*` methods)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum Action {
     /// Call a service.
     ///
-    /// # Upstream: homeassistant/helpers/script.py::_async_step_call_service
+    /// # Upstream: `homeassistant/helpers/script.py::_async_step_call_service`
     Service {
         domain: String,
         service: String,
@@ -50,17 +50,17 @@ pub enum Action {
 
     /// Activate a scene by id.
     ///
-    /// # Upstream: homeassistant/helpers/script.py::_async_step_scene
+    /// # Upstream: `homeassistant/helpers/script.py::_async_step_scene`
     Scene { scene_id: String },
 
     /// Sleep for `milliseconds` ms.
     ///
-    /// # Upstream: homeassistant/helpers/script.py::_async_step_delay
+    /// # Upstream: `homeassistant/helpers/script.py::_async_step_delay`
     Delay { milliseconds: u64 },
 
     /// Wait until a [`Trigger`] fires (or `timeout_ms` elapses).
     ///
-    /// # Upstream: homeassistant/helpers/script.py::_async_step_wait_for_trigger
+    /// # Upstream: `homeassistant/helpers/script.py::_async_step_wait_for_trigger`
     WaitForTrigger {
         trigger: Trigger,
         #[serde(default)]
@@ -69,28 +69,28 @@ pub enum Action {
 
     /// Repeat the body `count` times.
     ///
-    /// # Upstream: homeassistant/helpers/script.py::_async_step_repeat
-    Repeat { count: u32, sequence: Vec<Action> },
+    /// # Upstream: `homeassistant/helpers/script.py::_async_step_repeat`
+    Repeat { count: u32, sequence: Vec<Self> },
 
     /// First branch whose `conditions` pass runs its sequence; if none
     /// matches and `default` is set, that runs.
     ///
-    /// # Upstream: homeassistant/helpers/script.py::_async_step_choose
+    /// # Upstream: `homeassistant/helpers/script.py::_async_step_choose`
     Choose {
         choose: Vec<ChooseBranch>,
         #[serde(default)]
-        default: Vec<Action>,
+        default: Vec<Self>,
     },
 
     /// Conditional execution.
     ///
-    /// # Upstream: homeassistant/helpers/script.py::_async_step_if
+    /// # Upstream: `homeassistant/helpers/script.py::_async_step_if`
     If {
         #[serde(rename = "if")]
         condition: Condition,
-        then: Vec<Action>,
+        then: Vec<Self>,
         #[serde(default)]
-        otherwise: Vec<Action>,
+        otherwise: Vec<Self>,
     },
 }
 
@@ -139,7 +139,7 @@ impl Script {
 
     /// Run the script to completion.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/helpers/script.py::Script.async_run
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/helpers/script.py::Script.async_run`
     pub async fn run(&self, ctx: &ScriptContext, context: Option<Context>) -> HassResult<()> {
         let cx = context.unwrap_or_default();
         run_sequence(&self.sequence, ctx, &cx).await
@@ -250,7 +250,10 @@ async fn wait_for_trigger(
                 .matches(event, Some(&sm_for_listener))
                 .unwrap_or(false)
             {
-                if let Some(send) = tx_for_cb.lock().take() {
+                // Take the sender out first so the lock is released before
+                // the waiter is woken.
+                let sender = tx_for_cb.lock().take();
+                if let Some(send) = sender {
                     let _ = send.send(());
                 }
             }
@@ -280,6 +283,8 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn make_ctx() -> ScriptContext {
         let bus: Arc<dyn EventBus> = Arc::new(InMemoryEventBus::new());
         let sm = Arc::new(StateMachine::new(bus.clone()));
@@ -290,7 +295,7 @@ mod tests {
 
     /// Upstream-test: `tests/helpers/test_script.py::test_calling_service_basic`
     #[tokio::test]
-    async fn script_runs_service_action() {
+    async fn script_runs_service_action() -> TestResult {
         let ctx = make_ctx();
         let counter = Arc::new(AtomicUsize::new(0));
         let c = counter.clone();
@@ -311,13 +316,14 @@ mod tests {
                 data: Value::Null,
             }],
         );
-        script.run(&ctx, None).await.unwrap();
+        script.run(&ctx, None).await?;
         assert_eq!(counter.load(Ordering::SeqCst), 1);
+        Ok(())
     }
 
     /// Upstream-test: `tests/helpers/test_script.py::test_delay_basic`
     #[tokio::test(start_paused = true)]
-    async fn script_delay_waits() {
+    async fn script_delay_waits() -> TestResult {
         let ctx = make_ctx();
         let script = Script::new(
             "Wait",
@@ -329,19 +335,18 @@ mod tests {
         let fut = script.run(&ctx, None);
         tokio::pin!(fut);
         let advance = tokio::time::advance(Duration::from_secs(5));
-        tokio::join!(advance, async {
-            fut.as_mut().await.unwrap();
-        });
+        let ((), outcome) = tokio::join!(advance, fut.as_mut());
+        outcome?;
         assert!(start.elapsed() >= Duration::from_secs(5));
+        Ok(())
     }
 
     /// Upstream-test: `tests/helpers/test_script.py::test_choose`
     #[tokio::test]
-    async fn script_choose_picks_branch() {
+    async fn script_choose_picks_branch() -> TestResult {
         let ctx = make_ctx();
         ctx.sm
-            .async_set("light.kitchen", "on", BTreeMap::new(), false, None)
-            .unwrap();
+            .async_set("light.kitchen", "on", BTreeMap::new(), false, None)?;
         let flag = Arc::new(AtomicUsize::new(0));
         let f = flag.clone();
         let handler = service_handler(move |_call| {
@@ -372,13 +377,14 @@ mod tests {
                 default: vec![],
             }],
         );
-        script.run(&ctx, None).await.unwrap();
+        script.run(&ctx, None).await?;
         assert_eq!(flag.load(Ordering::SeqCst), 1);
+        Ok(())
     }
 
     /// Upstream-test: `tests/helpers/test_script.py::test_repeat_count`
     #[tokio::test]
-    async fn script_repeat_iterates() {
+    async fn script_repeat_iterates() -> TestResult {
         let ctx = make_ctx();
         let count = Arc::new(AtomicUsize::new(0));
         let c = count.clone();
@@ -402,17 +408,17 @@ mod tests {
                 }],
             }],
         );
-        script.run(&ctx, None).await.unwrap();
+        script.run(&ctx, None).await?;
         assert_eq!(count.load(Ordering::SeqCst), 4);
+        Ok(())
     }
 
     /// Upstream-test: `tests/helpers/test_script.py::test_if_action`
     #[tokio::test]
-    async fn script_if_branches() {
+    async fn script_if_branches() -> TestResult {
         let ctx = make_ctx();
         ctx.sm
-            .async_set("light.kitchen", "off", BTreeMap::new(), false, None)
-            .unwrap();
+            .async_set("light.kitchen", "off", BTreeMap::new(), false, None)?;
         let count = Arc::new(AtomicUsize::new(0));
         let c = count.clone();
         let handler = service_handler(move |_call| {
@@ -439,7 +445,59 @@ mod tests {
                 }],
             }],
         );
-        script.run(&ctx, None).await.unwrap();
+        script.run(&ctx, None).await?;
         assert_eq!(count.load(Ordering::SeqCst), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn script_wait_for_trigger_resumes_on_matching_event() -> TestResult {
+        let ctx = make_ctx();
+        let script = Script::new(
+            "Wait",
+            vec![Action::WaitForTrigger {
+                trigger: Trigger::State {
+                    entity_id: "light.kitchen".into(),
+                    from: None,
+                    to: Some("on".into()),
+                },
+                timeout_ms: Some(5_000),
+            }],
+        );
+        let sm = ctx.sm.clone();
+        // `run` is polled first and subscribes; the state change then wakes it.
+        let run = script.run(&ctx, None);
+        let fire = async move {
+            tokio::task::yield_now().await;
+            sm.async_set("light.kitchen", "off", BTreeMap::new(), false, None)?;
+            sm.async_set("light.kitchen", "on", BTreeMap::new(), false, None)
+        };
+        let (ran, fired) = tokio::join!(run, fire);
+        fired?;
+        ran?;
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn script_wait_for_trigger_times_out() -> TestResult {
+        let ctx = make_ctx();
+        let script = Script::new(
+            "Wait",
+            vec![Action::WaitForTrigger {
+                trigger: Trigger::State {
+                    entity_id: "light.kitchen".into(),
+                    from: None,
+                    to: Some("on".into()),
+                },
+                timeout_ms: Some(50),
+            }],
+        );
+        let err = script
+            .run(&ctx, None)
+            .await
+            .err()
+            .ok_or("waiting for a trigger that never fires should time out")?;
+        assert_eq!(err.to_string(), "wait_for_trigger timed out");
+        Ok(())
     }
 }
