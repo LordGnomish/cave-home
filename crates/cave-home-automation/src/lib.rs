@@ -19,7 +19,7 @@
 //!   `SupportsResponse`.
 //! - [`automation`] — triggers, conditions, actions, engine.
 //! - [`script`] — sequence runner (delay / choose / repeat / if /
-//!   wait_for_trigger / service / scene).
+//!   `wait_for_trigger` / service / scene).
 //! - [`scene`] — snapshot + activate.
 //! - [`template`] — minijinja-based template environment with HA's
 //!   custom filters and functions (`is_state`, `states`, `state_attr`,
@@ -35,6 +35,7 @@ pub mod config_entry;
 pub mod context;
 pub mod error;
 pub mod event_bus;
+mod num;
 pub mod scene;
 pub mod script;
 pub mod service;

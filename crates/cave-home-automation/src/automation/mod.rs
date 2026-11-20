@@ -3,7 +3,7 @@
 //! `homeassistant/components/automation/__init__.py` plus the
 //! associated triggers / conditions / actions modules.
 //!
-//! # Upstream: home-assistant/core@456202325ac4:homeassistant/components/automation/__init__.py
+//! # Upstream: `home-assistant/core@456202325ac4:homeassistant/components/automation/__init__.py`
 
 pub mod conditions;
 pub mod engine;

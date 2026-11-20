@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Service registry — port of `homeassistant/core.py::ServiceRegistry`.
 //!
-//! # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::ServiceRegistry
+//! # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::ServiceRegistry`
 
 use std::collections::HashMap;
 use std::fmt;
@@ -21,7 +21,7 @@ use crate::event_bus::{
 
 /// Whether and how a service returns response data.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::SupportsResponse
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::SupportsResponse`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SupportsResponse {
@@ -50,7 +50,7 @@ pub type ServiceSchema = Arc<dyn Fn(&Value) -> HassResult<Value> + Send + Sync +
 
 /// Representation of a callable service.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::Service
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::Service`
 #[derive(Clone)]
 pub struct Service {
     pub domain: String,
@@ -67,13 +67,13 @@ impl fmt::Debug for Service {
             .field("name", &self.name)
             .field("supports_response", &self.supports_response)
             .field("has_schema", &self.schema.is_some())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
 /// Representation of a call to a service.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::ServiceCall
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::ServiceCall`
 #[derive(Debug, Clone, Serialize)]
 pub struct ServiceCall {
     pub domain: String,
@@ -85,7 +85,7 @@ pub struct ServiceCall {
 
 /// Service registry — offers services over the event bus.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::ServiceRegistry
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::ServiceRegistry`
 #[derive(Debug)]
 pub struct ServiceRegistry {
     services: RwLock<HashMap<String, HashMap<String, Service>>>,
@@ -103,7 +103,7 @@ impl ServiceRegistry {
 
     /// Test if `domain.service` is registered.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::ServiceRegistry.has_service
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::ServiceRegistry.has_service`
     pub fn has_service(&self, domain: &str, service: &str) -> bool {
         let services = self.services.read();
         services
@@ -113,7 +113,7 @@ impl ServiceRegistry {
 
     /// Register a new service.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::ServiceRegistry.async_register
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::ServiceRegistry.async_register`
     pub fn register(
         &self,
         domain: &str,
@@ -148,7 +148,7 @@ impl ServiceRegistry {
 
     /// Remove a registered service.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::ServiceRegistry.async_remove
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::ServiceRegistry.async_remove`
     pub fn remove(&self, domain: &str, service: &str) {
         let domain = domain.to_ascii_lowercase();
         let service = service.to_ascii_lowercase();
@@ -176,14 +176,14 @@ impl ServiceRegistry {
 
     /// Return a snapshot of all registered services.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::ServiceRegistry.async_services
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::ServiceRegistry.async_services`
     pub fn services(&self) -> HashMap<String, HashMap<String, Service>> {
         self.services.read().clone()
     }
 
     /// Async-call a service.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::ServiceRegistry.async_call
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::ServiceRegistry.async_call`
     pub async fn call(
         &self,
         domain: &str,
@@ -217,7 +217,7 @@ impl ServiceRegistry {
             )));
         }
 
-        let raw = data.unwrap_or(Value::Object(serde_json::Map::new()));
+        let raw = data.unwrap_or_else(|| Value::Object(serde_json::Map::new()));
         let validated = if let Some(schema) = handler.schema.as_ref() {
             schema(&raw)?
         } else {
@@ -276,13 +276,15 @@ mod tests {
     use crate::event_bus::InMemoryEventBus;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn make() -> Arc<ServiceRegistry> {
         Arc::new(ServiceRegistry::new(Arc::new(InMemoryEventBus::new())))
     }
 
     /// Upstream-test: `tests/test_core.py::test_service_registry_register_call`
     #[tokio::test]
-    async fn register_and_call_runs_handler() {
+    async fn register_and_call_runs_handler() -> TestResult {
         let reg = make();
         let counter = Arc::new(AtomicUsize::new(0));
         let c = counter.clone();
@@ -295,41 +297,41 @@ mod tests {
         });
         reg.register("light", "turn_on", handler, None, SupportsResponse::None);
         assert!(reg.has_service("light", "turn_on"));
-        reg.call("light", "turn_on", None, None, false)
-            .await
-            .unwrap();
-        reg.call("LIGHT", "TURN_ON", None, None, false)
-            .await
-            .unwrap();
+        reg.call("light", "turn_on", None, None, false).await?;
+        reg.call("LIGHT", "TURN_ON", None, None, false).await?;
         assert_eq!(counter.load(Ordering::SeqCst), 2);
+        Ok(())
     }
 
     /// Upstream-test: `tests/test_core.py::test_service_registry_not_found`
     #[tokio::test]
-    async fn call_unknown_service_errors() {
+    async fn call_unknown_service_errors() -> TestResult {
         let reg = make();
         let err = reg
             .call("ghost", "noop", None, None, false)
             .await
-            .unwrap_err();
+            .err()
+            .ok_or("calling the unregistered ghost.noop should fail")?;
         assert!(matches!(err, HassError::ServiceNotFound { .. }));
+        Ok(())
     }
 
     /// Upstream-test: `tests/test_core.py::test_service_call_blocks_until_handler_returns`
     #[tokio::test]
-    async fn blocking_call_waits_for_handler() {
+    async fn blocking_call_waits_for_handler() -> TestResult {
         let reg = make();
         let handler = service_handler(|_call| async move {
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
             Ok(Some(Value::from(42)))
         });
         reg.register("test", "echo", handler, None, SupportsResponse::Only);
-        let response = reg.call("test", "echo", None, None, true).await.unwrap();
+        let response = reg.call("test", "echo", None, None, true).await?;
         assert_eq!(response, Some(Value::from(42)));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn schema_runs_before_handler() {
+    async fn schema_runs_before_handler() -> TestResult {
         let reg = make();
         let schema: ServiceSchema = Arc::new(|data: &Value| {
             if data.get("brightness").is_none() {
@@ -359,23 +361,29 @@ mod tests {
                 None,
                 true,
             )
-            .await
-            .unwrap();
+            .await?;
         assert_eq!(r, Some(Value::from(100)));
         let err = reg
             .call("light", "turn_on", Some(serde_json::json!({})), None, true)
             .await
-            .unwrap_err();
+            .err()
+            .ok_or("light.turn_on without brightness should fail the schema")?;
         assert!(matches!(err, HassError::ServiceValidationError(_)));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn return_response_only_requires_request() {
+    async fn return_response_only_requires_request() -> TestResult {
         let reg = make();
         let handler = service_handler(|_call| async move { Ok(Some(Value::from(1))) });
         reg.register("test", "ro", handler, None, SupportsResponse::Only);
-        let err = reg.call("test", "ro", None, None, false).await.unwrap_err();
+        let err = reg
+            .call("test", "ro", None, None, false)
+            .await
+            .err()
+            .ok_or("test.ro without return_response should be rejected")?;
         assert!(matches!(err, HassError::ServiceValidationError(_)));
+        Ok(())
     }
 
     #[tokio::test]

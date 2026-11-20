@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Config entries / flow scaffold — port of
-//! `homeassistant/config_entries.py` (data model + flow handler API
-//! only; the full Python class is 4 kLOC and most of it is HTTP
-//! plumbing that lives in cave-home-portal in our port).
+//! Config entries / flow scaffold — port of `homeassistant/config_entries.py`.
 //!
-//! # Upstream: home-assistant/core@456202325ac4:homeassistant/config_entries.py
+//! Only the data model and the flow handler API are ported; the full
+//! Python class is 4 kLOC and most of it is HTTP plumbing that lives in
+//! cave-home-portal in our port.
+//!
+//! # Upstream: `home-assistant/core@456202325ac4:homeassistant/config_entries.py`
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -19,7 +20,7 @@ use crate::error::{HassError, HassResult};
 
 /// Lifecycle states of a [`ConfigEntry`].
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/config_entries.py::ConfigEntryState
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/config_entries.py::ConfigEntryState`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConfigEntryState {
@@ -50,7 +51,7 @@ pub enum ConfigEntrySource {
 
 /// A single config entry — a configured instance of an integration.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/config_entries.py::ConfigEntry
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/config_entries.py::ConfigEntry`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigEntry {
     pub entry_id: String,
@@ -88,7 +89,7 @@ impl ConfigEntry {
 
 /// A step in a config flow returned by [`ConfigFlowHandler::step`].
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/data_entry_flow.py::FlowResult
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/data_entry_flow.py::FlowResult`
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FlowResult {
@@ -106,7 +107,7 @@ pub enum FlowResult {
 
 /// Trait implemented by per-integration config flow handlers.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/config_entries.py::ConfigFlow
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/config_entries.py::ConfigFlow`
 #[async_trait]
 pub trait ConfigFlowHandler: Send + Sync {
     /// Domain this flow handles — must match the eventual entry's `domain`.
@@ -114,14 +115,14 @@ pub trait ConfigFlowHandler: Send + Sync {
 
     /// Run a single step of the flow.
     ///
-    /// `step_id` selects the step ("user", "discovery_confirm", ...);
+    /// `step_id` selects the step (`"user"`, `"discovery_confirm"`, ...);
     /// `user_input` carries form data (may be `None` on first invocation).
     async fn step(&self, step_id: &str, user_input: Option<Value>) -> HassResult<FlowResult>;
 }
 
 /// The collection of all known config entries.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/config_entries.py::ConfigEntries
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/config_entries.py::ConfigEntries`
 #[derive(Debug, Default)]
 pub struct ConfigEntries {
     by_id: RwLock<HashMap<String, ConfigEntry>>,
@@ -136,7 +137,7 @@ impl ConfigEntries {
 
     /// Add a new entry.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/config_entries.py::ConfigEntries.async_add
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/config_entries.py::ConfigEntries.async_add`
     pub fn add(&self, entry: ConfigEntry) {
         self.by_domain
             .write()
@@ -148,11 +149,11 @@ impl ConfigEntries {
 
     /// Update an existing entry's state.
     pub fn set_state(&self, entry_id: &str, state: ConfigEntryState) -> HassResult<()> {
-        let mut g = self.by_id.write();
-        let e = g
+        self.by_id
+            .write()
             .get_mut(entry_id)
-            .ok_or_else(|| HassError::UnknownConfigEntry(entry_id.to_owned()))?;
-        e.state = state;
+            .ok_or_else(|| HassError::UnknownConfigEntry(entry_id.to_owned()))?
+            .state = state;
         Ok(())
     }
 
@@ -222,9 +223,11 @@ impl ConfigFlowRegistry {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     /// Upstream-test: `tests/test_config_entries.py::test_call_async_migrate_entry`
     #[test]
-    fn config_entry_lifecycle() {
+    fn config_entry_lifecycle() -> TestResult {
         let entries = ConfigEntries::new();
         let entry = ConfigEntry::new(
             "hue",
@@ -235,18 +238,21 @@ mod tests {
         let id = entry.entry_id.clone();
         entries.add(entry);
         assert_eq!(entries.for_domain("hue").len(), 1);
-        entries.set_state(&id, ConfigEntryState::Loaded).unwrap();
-        let stored = entries.get(&id).unwrap();
+        entries.set_state(&id, ConfigEntryState::Loaded)?;
+        let stored = entries
+            .get(&id)
+            .ok_or("entries.get(id) should return the stored entry")?;
         assert_eq!(stored.state, ConfigEntryState::Loaded);
         assert!(entries.remove(&id).is_some());
         assert!(entries.get(&id).is_none());
+        Ok(())
     }
 
     struct DummyFlow;
 
     #[async_trait]
     impl ConfigFlowHandler for DummyFlow {
-        fn domain(&self) -> &str {
+        fn domain(&self) -> &'static str {
             "hue"
         }
 
@@ -269,21 +275,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn flow_handler_two_step_creates_entry() {
+    async fn flow_handler_two_step_creates_entry() -> TestResult {
         let reg = ConfigFlowRegistry::new();
         reg.register(Arc::new(DummyFlow));
-        let handler = reg.get("hue").unwrap();
-        match handler.step("user", None).await.unwrap() {
-            FlowResult::Form { step_id, .. } => assert_eq!(step_id, "user"),
-            _ => panic!("expected form"),
-        }
-        match handler
+        let handler = reg
+            .get("hue")
+            .ok_or("reg.get(hue) should return the registered handler")?;
+        let FlowResult::Form { step_id, .. } = handler.step("user", None).await? else {
+            return Err("handler.step(user, None) should return FlowResult::Form".into());
+        };
+        assert_eq!(step_id, "user");
+        let FlowResult::Create { entry } = handler
             .step("user", Some(serde_json::json!({"host": "1.1.1.1"})))
-            .await
-            .unwrap()
-        {
-            FlowResult::Create { entry } => assert_eq!(entry.domain, "hue"),
-            _ => panic!("expected create"),
-        }
+            .await?
+        else {
+            return Err("handler.step(user, input) should return FlowResult::Create".into());
+        };
+        assert_eq!(entry.domain, "hue");
+        Ok(())
+    }
+
+    #[test]
+    fn set_state_rejects_unknown_entry() {
+        let entries = ConfigEntries::new();
+        assert!(matches!(
+            entries.set_state("ghost", ConfigEntryState::Loaded),
+            Err(HassError::UnknownConfigEntry(id)) if id == "ghost"
+        ));
     }
 }

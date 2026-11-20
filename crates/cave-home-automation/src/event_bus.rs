@@ -12,7 +12,7 @@
 //!   used by [`crate::state::StateMachine`] /
 //!   [`crate::service::ServiceRegistry`] / the automation engine.
 //!
-//! # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::EventBus
+//! # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::EventBus`
 
 use std::sync::Arc;
 
@@ -27,69 +27,64 @@ use crate::context::Context;
 
 /// Fired when state of an entity is added, removed, or changes value.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/const.py::EVENT_STATE_CHANGED
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/const.py::EVENT_STATE_CHANGED`
 pub const EVENT_STATE_CHANGED: &str = "state_changed";
 
 /// Fired when the state is re-reported without value/attribute change.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/const.py::EVENT_STATE_REPORTED
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/const.py::EVENT_STATE_REPORTED`
 pub const EVENT_STATE_REPORTED: &str = "state_reported";
 
 /// Fired when a service is called.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/const.py::EVENT_CALL_SERVICE
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/const.py::EVENT_CALL_SERVICE`
 pub const EVENT_CALL_SERVICE: &str = "call_service";
 
 /// Fired when a service is registered.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/const.py::EVENT_SERVICE_REGISTERED
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/const.py::EVENT_SERVICE_REGISTERED`
 pub const EVENT_SERVICE_REGISTERED: &str = "service_registered";
 
 /// Fired when a service is removed.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/const.py::EVENT_SERVICE_REMOVED
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/const.py::EVENT_SERVICE_REMOVED`
 pub const EVENT_SERVICE_REMOVED: &str = "service_removed";
 
 /// Fired on startup completion.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/const.py::EVENT_HOMEASSISTANT_START
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/const.py::EVENT_HOMEASSISTANT_START`
 pub const EVENT_HASS_START: &str = "homeassistant_start";
 
 /// Fired on shutdown.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/const.py::EVENT_HOMEASSISTANT_STOP
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/const.py::EVENT_HOMEASSISTANT_STOP`
 pub const EVENT_HASS_STOP: &str = "homeassistant_stop";
 
 /// Wildcard event type — matches any event.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/const.py::MATCH_ALL
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/const.py::MATCH_ALL`
 pub const MATCH_ALL: &str = "*";
 
 /// Per HA `_verify_event_type_length_or_raise`, event type strings are
 /// capped at 64 characters.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/const.py::MAX_LENGTH_EVENT_EVENT_TYPE
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/const.py::MAX_LENGTH_EVENT_EVENT_TYPE`
 pub const MAX_LENGTH_EVENT_EVENT_TYPE: usize = 64;
 
 /// Origin of a fired event.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::EventOrigin
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::EventOrigin`
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum EventOrigin {
+    #[default]
     Local,
     Remote,
 }
 
-impl Default for EventOrigin {
-    fn default() -> Self {
-        Self::Local
-    }
-}
-
 /// Concrete event delivered to listeners.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::Event
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::Event`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
     pub event_type: String,
@@ -102,7 +97,7 @@ pub struct Event {
 impl Event {
     /// New event.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::Event.__init__
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::Event.__init__`
     #[must_use]
     pub fn new(event_type: String, data: Value, origin: EventOrigin, context: Context) -> Self {
         Self {
@@ -116,7 +111,7 @@ impl Event {
 
     /// JSON-ish dict representation.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::Event.as_dict
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::Event.as_dict`
     #[must_use]
     pub fn as_dict(&self) -> Value {
         serde_json::json!({
@@ -186,7 +181,7 @@ impl std::fmt::Debug for ListenerHandle {
 /// and [`async_listeners`](Self::async_listeners) — are part of the
 /// public API and won't break without a major-version bump.
 ///
-/// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::EventBus
+/// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::EventBus`
 pub trait EventBus: Send + Sync + std::fmt::Debug {
     /// Fire an event. Returns immediately; listeners run synchronously
     /// on the firing thread (matching HA core's `async_fire_internal`).
@@ -227,7 +222,7 @@ pub trait EventBus: Send + Sync + std::fmt::Debug {
 
     /// Subscribe for exactly one event, then auto-unsubscribe.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::EventBus.async_listen_once
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::EventBus.async_listen_once`
     fn async_listen_once_dyn(&self, event_type: &str, listener: ListenerFn) -> ListenerHandle;
 
     /// Subscribe for exactly one event (generic helper).
@@ -244,7 +239,7 @@ pub trait EventBus: Send + Sync + std::fmt::Debug {
 
     /// Snapshot of `event_type -> listener_count`.
     ///
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::EventBus.async_listeners
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::EventBus.async_listeners`
     fn async_listeners(&self) -> Vec<(String, usize)>;
 }
 
@@ -308,7 +303,7 @@ fn verify_event_type(event_type: &str) {
 }
 
 impl EventBus for InMemoryEventBus {
-    /// # Upstream: home-assistant/core@456202325ac4:homeassistant/core.py::EventBus.async_fire_internal
+    /// # Upstream: `home-assistant/core@456202325ac4:homeassistant/core.py::EventBus.async_fire_internal`
     fn fire(&self, event: Event) {
         verify_event_type(&event.event_type);
         let listeners = {
@@ -354,7 +349,7 @@ impl EventBus for InMemoryEventBus {
                 });
             id
         };
-        let inner_for_drop = inner.clone();
+        let inner_for_drop = inner;
         ListenerHandle::new(move || {
             let mut g = inner_for_drop.lock();
             if let Some(vec) = g.listeners.get_mut(&event_type_owned) {
@@ -389,7 +384,7 @@ impl EventBus for InMemoryEventBus {
                 });
             id
         };
-        let inner_for_drop = inner.clone();
+        let inner_for_drop = inner;
         ListenerHandle::new(move || {
             let mut g = inner_for_drop.lock();
             if let Some(vec) = g.listeners.get_mut(&event_type_owned) {
@@ -579,5 +574,10 @@ mod tests {
         h.remove();
         fire_simple(&bus, "y");
         assert_eq!(count.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn event_origin_defaults_to_local() {
+        assert_eq!(EventOrigin::default(), EventOrigin::Local);
     }
 }
