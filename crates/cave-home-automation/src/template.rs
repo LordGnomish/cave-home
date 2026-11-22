@@ -37,6 +37,23 @@ fn lookup(sm: &Arc<StateMachine>, entity_id: &str) -> Option<crate::state::State
     sm.get(entity_id)
 }
 
+/// Numeric reading of a non-string template value, shared by the `float`
+/// and `as_timestamp` filters.
+///
+/// A value the engine can hand out as an `i64` — an integer in that
+/// range, a boolean (`1`/`0`, as in Python) or a float holding such an
+/// integer — converts through [`i64_to_f64`]. Every other number, that is
+/// a float such as `3.7` or an integer beyond the `i64` range, is the
+/// `f64` the engine holds or derives for it; non-finite floats are
+/// returned as they are. `None` means the value is not a number at all
+/// (a string, `none`, undefined, a sequence, a map).
+fn number_to_f64(value: &JinjaValue) -> Option<f64> {
+    i64::try_from(value.clone())
+        .map(i64_to_f64)
+        .or_else(|_| f64::try_from(value.clone()))
+        .ok()
+}
+
 /// Wrapper around a `minijinja` template string, paired with a state
 /// machine for global lookups.
 ///
@@ -155,7 +172,9 @@ impl Template {
             },
         );
 
-        // as_timestamp(value) -> f64 unix timestamp.
+        // as_timestamp(value) -> f64 unix timestamp. An ISO 8601 string is
+        // parsed; a number (integer or float) or a numeric string already is
+        // seconds since the epoch; anything else is undefined.
         env.add_filter(
             "as_timestamp",
             |value: JinjaValue| -> Result<JinjaValue, JinjaError> {
@@ -170,14 +189,13 @@ impl Template {
                         return Ok(JinjaValue::from(n));
                     }
                 }
-                if let Ok(n) = i64::try_from(value) {
-                    return Ok(JinjaValue::from(i64_to_f64(n)));
-                }
-                Ok(JinjaValue::UNDEFINED)
+                Ok(number_to_f64(&value).map_or(JinjaValue::UNDEFINED, JinjaValue::from))
             },
         );
 
-        // float | int | bool filters with HA semantics (default value on failure).
+        // float filter with HA semantics: numbers (integer or float) and
+        // numeric strings convert, anything else yields the default argument
+        // (`0.0` without one). `int` and `bool` are not overridden here.
         env.add_filter(
             "float",
             |v: JinjaValue, default: Option<f64>| -> JinjaValue {
@@ -186,10 +204,7 @@ impl Template {
                         return JinjaValue::from(parsed);
                     }
                 }
-                if let Ok(n) = i64::try_from(v) {
-                    return JinjaValue::from(i64_to_f64(n));
-                }
-                JinjaValue::from(default.unwrap_or(0.0))
+                JinjaValue::from(number_to_f64(&v).unwrap_or_else(|| default.unwrap_or(0.0)))
             },
         );
     }
