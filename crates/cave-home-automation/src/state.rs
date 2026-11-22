@@ -496,9 +496,11 @@ impl StateMachine {
     ) -> HassResult<()> {
         let mut effective_state = new_state;
         if effective_state.len() > MAX_LENGTH_STATE_STATE {
+            // Report the length, not the value: the value has no upper bound.
+            let state_len = effective_state.len();
             tracing::error!(
                 target: "cave_home_automation::state",
-                "state %s for {entity_id} longer than {MAX_LENGTH_STATE_STATE}, falling back to {STATE_UNKNOWN}"
+                "state of {state_len} bytes for {entity_id} longer than {MAX_LENGTH_STATE_STATE}, falling back to {STATE_UNKNOWN}"
             );
             STATE_UNKNOWN.clone_into(&mut effective_state);
         }
