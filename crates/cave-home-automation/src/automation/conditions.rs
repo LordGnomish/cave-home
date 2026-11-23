@@ -45,7 +45,17 @@ pub enum Condition {
     /// # Upstream: `homeassistant/helpers/condition.py::async_template`
     Template { value_template: String },
 
-    /// Now is between two clock times "HH:MM[:SS]".
+    /// Now is inside a daily window between two clock times "HH:MM[:SS]".
+    ///
+    /// The window starts exactly at `after` and ends just before `before`.
+    /// With only `after` it lasts until midnight, with only `before` it
+    /// starts at midnight, with neither it always holds. When `after` is
+    /// later than `before` the window crosses midnight: `after: "22:00"`
+    /// with `before: "06:00"` holds during the night. Equal bounds give an
+    /// empty window that never holds.
+    ///
+    /// The clock times are compared in UTC, not in a local time zone: this
+    /// crate has no configured time zone.
     ///
     /// # Upstream: `homeassistant/helpers/condition.py::time`
     Time {
@@ -163,28 +173,39 @@ fn seconds_of_day(t: OffsetDateTime) -> u32 {
     u32::from(t.hour()) * 3600 + u32::from(t.minute()) * 60 + u32::from(t.second())
 }
 
-/// `true` when `now_sec` (seconds since midnight) is inside the window of
-/// the `time` condition: at or after `after` and before `before`.
+/// `true` when `now_sec` (seconds since midnight) is inside the daily
+/// window of the `time` condition.
+///
+/// The window starts exactly at `after` and ends just before `before`; a
+/// missing bound is midnight. When `after` is later than `before` the
+/// window crosses midnight, so it holds from `after` to the end of the
+/// day and from the start of the day to `before`. Equal bounds give an
+/// empty window.
+///
+/// Both bounds are read before anything is compared — whether the window
+/// crosses midnight depends on both — so a bad bound is an error at any
+/// time of day, `after` first.
 fn time_window_contains(
     now_sec: u32,
     after: Option<&str>,
     before: Option<&str>,
 ) -> HassResult<bool> {
-    if let Some(a) = after {
-        let a_sec = hms_to_seconds(a)
-            .ok_or_else(|| HassError::ConditionError(format!("bad after: {a}")))?;
-        if now_sec < a_sec {
-            return Ok(false);
-        }
-    }
-    if let Some(b) = before {
-        let b_sec = hms_to_seconds(b)
-            .ok_or_else(|| HassError::ConditionError(format!("bad before: {b}")))?;
-        if now_sec >= b_sec {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+    let after_sec = time_bound("after", after)?;
+    let before_sec = time_bound("before", before)?;
+    Ok(match (after_sec, before_sec) {
+        (Some(a), Some(b)) if a > b => now_sec >= a || now_sec < b,
+        (a, b) => a.is_none_or(|a| now_sec >= a) && b.is_none_or(|b| now_sec < b),
+    })
+}
+
+/// Seconds since midnight of the `after` / `before` bound called `name`,
+/// if it is set; a `"bad <name>: <value>"` error if it is not a time.
+fn time_bound(name: &str, value: Option<&str>) -> HassResult<Option<u32>> {
+    value
+        .map(|v| {
+            hms_to_seconds(v).ok_or_else(|| HassError::ConditionError(format!("bad {name}: {v}")))
+        })
+        .transpose()
 }
 
 fn hms_to_seconds(s: &str) -> Option<u32> {
