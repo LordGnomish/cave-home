@@ -45,7 +45,17 @@ pub enum Condition {
     /// # Upstream: `homeassistant/helpers/condition.py::async_template`
     Template { value_template: String },
 
-    /// Now is between two clock times "HH:MM[:SS]".
+    /// Now is inside a daily window between two clock times "HH:MM[:SS]".
+    ///
+    /// The window starts exactly at `after` and ends just before `before`.
+    /// With only `after` it lasts until midnight, with only `before` it
+    /// starts at midnight, with neither it always holds. When `after` is
+    /// later than `before` the window crosses midnight: `after: "22:00"`
+    /// with `before: "06:00"` holds during the night. Equal bounds give an
+    /// empty window that never holds.
+    ///
+    /// The clock times are compared in UTC, not in a local time zone: this
+    /// crate has no configured time zone.
     ///
     /// # Upstream: `homeassistant/helpers/condition.py::time`
     Time {
@@ -125,27 +135,11 @@ impl Condition {
                 let tmpl = Template::new(value_template, sm.clone());
                 tmpl.render_bool(&Value::Null)
             }
-            Self::Time { after, before } => {
-                let now = OffsetDateTime::now_utc();
-                let now_sec = u32::from(now.hour()) * 3600
-                    + u32::from(now.minute()) * 60
-                    + u32::from(now.second());
-                if let Some(a) = after.as_deref() {
-                    let a_sec = hms_to_seconds(a)
-                        .ok_or_else(|| HassError::ConditionError(format!("bad after: {a}")))?;
-                    if now_sec < a_sec {
-                        return Ok(false);
-                    }
-                }
-                if let Some(b) = before.as_deref() {
-                    let b_sec = hms_to_seconds(b)
-                        .ok_or_else(|| HassError::ConditionError(format!("bad before: {b}")))?;
-                    if now_sec >= b_sec {
-                        return Ok(false);
-                    }
-                }
-                Ok(true)
-            }
+            Self::Time { after, before } => time_window_contains(
+                seconds_of_day(OffsetDateTime::now_utc()),
+                after.as_deref(),
+                before.as_deref(),
+            ),
             Self::And { conditions } => {
                 for c in conditions {
                     if !c.evaluate(sm)? {
@@ -172,6 +166,46 @@ impl Condition {
             }
         }
     }
+}
+
+/// Seconds since midnight on `t`'s own clock (its offset is kept as is).
+fn seconds_of_day(t: OffsetDateTime) -> u32 {
+    u32::from(t.hour()) * 3600 + u32::from(t.minute()) * 60 + u32::from(t.second())
+}
+
+/// `true` when `now_sec` (seconds since midnight) is inside the daily
+/// window of the `time` condition.
+///
+/// The window starts exactly at `after` and ends just before `before`; a
+/// missing bound is midnight. When `after` is later than `before` the
+/// window crosses midnight, so it holds from `after` to the end of the
+/// day and from the start of the day to `before`. Equal bounds give an
+/// empty window.
+///
+/// Both bounds are read before anything is compared — whether the window
+/// crosses midnight depends on both — so a bad bound is an error at any
+/// time of day, `after` first.
+fn time_window_contains(
+    now_sec: u32,
+    after: Option<&str>,
+    before: Option<&str>,
+) -> HassResult<bool> {
+    let after_sec = time_bound("after", after)?;
+    let before_sec = time_bound("before", before)?;
+    Ok(match (after_sec, before_sec) {
+        (Some(a), Some(b)) if a > b => now_sec >= a || now_sec < b,
+        (a, b) => a.is_none_or(|a| now_sec >= a) && b.is_none_or(|b| now_sec < b),
+    })
+}
+
+/// Seconds since midnight of the `after` / `before` bound called `name`,
+/// if it is set; a `"bad <name>: <value>"` error if it is not a time.
+fn time_bound(name: &str, value: Option<&str>) -> HassResult<Option<u32>> {
+    value
+        .map(|v| {
+            hms_to_seconds(v).ok_or_else(|| HassError::ConditionError(format!("bad {name}: {v}")))
+        })
+        .transpose()
 }
 
 fn hms_to_seconds(s: &str) -> Option<u32> {
@@ -340,6 +374,308 @@ mod tests {
             below: Some(20.0),
         };
         assert!(!below.evaluate(&sm)?);
+        Ok(())
+    }
+
+    fn empty_machine() -> Arc<StateMachine> {
+        Arc::new(StateMachine::new(Arc::new(InMemoryEventBus::new())))
+    }
+
+    fn time_condition(after: Option<&str>, before: Option<&str>) -> Condition {
+        Condition::Time {
+            after: after.map(str::to_owned),
+            before: before.map(str::to_owned),
+        }
+    }
+
+    /// The message of a `ConditionError`, if `result` is one.
+    fn condition_error(result: HassResult<bool>) -> Option<String> {
+        match result {
+            Err(HassError::ConditionError(msg)) => Some(msg),
+            _ => None,
+        }
+    }
+
+    /// Check the window at each `(hour, minute, second, expected)` row.
+    #[track_caller]
+    fn assert_window(
+        after: Option<&str>,
+        before: Option<&str>,
+        rows: &[(u32, u32, u32, bool)],
+    ) -> TestResult {
+        for &(h, m, s, expected) in rows {
+            let got = time_window_contains(h * 3600 + m * 60 + s, after, before)?;
+            assert_eq!(
+                got, expected,
+                "after={after:?} before={before:?} at {h:02}:{m:02}:{s:02}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn seconds_of_day_counts_from_midnight_on_the_given_clock() {
+        use time::macros::datetime;
+
+        assert_eq!(seconds_of_day(datetime!(2026-11-23 00:00:00 UTC)), 0);
+        assert_eq!(seconds_of_day(datetime!(2026-11-23 06:00:00 UTC)), 21_600);
+        assert_eq!(seconds_of_day(datetime!(2026-11-23 23:59:59 UTC)), 86_399);
+        // Sub-second precision is dropped, not rounded.
+        assert_eq!(
+            seconds_of_day(datetime!(2026-11-23 21:59:59.999 UTC)),
+            79_199
+        );
+        // The value's own offset is used; nothing is converted to UTC.
+        assert_eq!(seconds_of_day(datetime!(2026-11-23 22:30:15 +1)), 81_015);
+    }
+
+    #[test]
+    fn time_window_same_day_includes_after_and_excludes_before() -> TestResult {
+        assert_window(
+            Some("08:00"),
+            Some("17:00"),
+            &[
+                (0, 0, 0, false),
+                (7, 59, 59, false),
+                (8, 0, 0, true),
+                (12, 0, 0, true),
+                (16, 59, 59, true),
+                (17, 0, 0, false),
+                (23, 59, 59, false),
+            ],
+        )
+    }
+
+    #[test]
+    fn time_window_crossing_midnight_wraps_to_the_next_day() -> TestResult {
+        assert_window(
+            Some("22:00"),
+            Some("06:00"),
+            &[
+                (21, 59, 59, false),
+                (22, 0, 0, true),
+                (23, 59, 59, true),
+                (0, 0, 0, true),
+                (5, 59, 59, true),
+                (6, 0, 0, false),
+                (12, 0, 0, false),
+            ],
+        )
+    }
+
+    #[test]
+    fn time_window_with_only_after_runs_until_midnight() -> TestResult {
+        assert_window(
+            Some("22:00"),
+            None,
+            &[
+                (0, 0, 0, false),
+                (21, 59, 59, false),
+                (22, 0, 0, true),
+                (23, 59, 59, true),
+            ],
+        )
+    }
+
+    #[test]
+    fn time_window_with_only_before_runs_from_midnight() -> TestResult {
+        assert_window(
+            None,
+            Some("06:00"),
+            &[
+                (0, 0, 0, true),
+                (5, 59, 59, true),
+                (6, 0, 0, false),
+                (23, 59, 59, false),
+            ],
+        )
+    }
+
+    #[test]
+    fn time_window_without_bounds_always_matches() -> TestResult {
+        assert_window(
+            None,
+            None,
+            &[(0, 0, 0, true), (12, 0, 0, true), (23, 59, 59, true)],
+        )
+    }
+
+    #[test]
+    fn time_window_with_equal_bounds_never_matches() -> TestResult {
+        let never = [
+            (0, 0, 0, false),
+            (11, 59, 59, false),
+            (12, 0, 0, false),
+            (12, 0, 1, false),
+            (23, 59, 59, false),
+        ];
+        assert_window(Some("12:00"), Some("12:00"), &never)?;
+        // The same instant written with and without seconds.
+        assert_window(Some("12:00"), Some("12:00:00"), &never)?;
+        assert_window(Some("00:00"), Some("00:00"), &never)
+    }
+
+    #[test]
+    fn time_window_same_day_accepts_times_with_and_without_seconds() -> TestResult {
+        assert_window(
+            Some("08:00"),
+            Some("08:00:01"),
+            &[(7, 59, 59, false), (8, 0, 0, true), (8, 0, 1, false)],
+        )?;
+        assert_window(
+            Some("08:00:30"),
+            Some("17:30"),
+            &[
+                (8, 0, 29, false),
+                (8, 0, 30, true),
+                (17, 29, 59, true),
+                (17, 30, 0, false),
+            ],
+        )
+    }
+
+    #[test]
+    fn time_window_crossing_midnight_accepts_times_with_and_without_seconds() -> TestResult {
+        assert_window(
+            Some("22:00:30"),
+            Some("06:00"),
+            &[
+                (22, 0, 29, false),
+                (22, 0, 30, true),
+                (5, 59, 59, true),
+                (6, 0, 0, false),
+            ],
+        )?;
+        assert_window(
+            Some("22:00"),
+            Some("06:00:15"),
+            &[
+                (21, 59, 59, false),
+                (22, 0, 0, true),
+                (6, 0, 14, true),
+                (6, 0, 15, false),
+            ],
+        )
+    }
+
+    #[test]
+    fn time_window_rejects_a_bad_after() {
+        for bad in ["nope", "", "22", "aa:bb", "22:xx", "-1:00"] {
+            for now_sec in [0, 43_200, 86_399] {
+                assert_eq!(
+                    condition_error(time_window_contains(now_sec, Some(bad), None)),
+                    Some(format!("bad after: {bad}")),
+                    "after={bad:?} at second {now_sec}"
+                );
+            }
+        }
+        // `after` is checked first, so it wins when both bounds are bad.
+        assert_eq!(
+            condition_error(time_window_contains(0, Some("nope"), Some("nah"))),
+            Some("bad after: nope".to_owned())
+        );
+    }
+
+    #[test]
+    fn time_window_rejects_a_bad_before() {
+        for bad in ["nope", "", "06", "aa:bb", "06:xx", "-1:00"] {
+            for now_sec in [0, 43_200, 86_399] {
+                assert_eq!(
+                    condition_error(time_window_contains(now_sec, None, Some(bad))),
+                    Some(format!("bad before: {bad}")),
+                    "before={bad:?} at second {now_sec}"
+                );
+            }
+        }
+    }
+
+    /// Whether the window crosses midnight is only known once both bounds
+    /// are read, so a bad `before` is an error at any time of day — also
+    /// while `now` is still ahead of `after`.
+    #[test]
+    fn time_window_rejects_a_bad_before_at_any_time_of_day() {
+        for now_sec in [0, 36_000, 79_199, 79_200, 86_399] {
+            assert_eq!(
+                condition_error(time_window_contains(now_sec, Some("22:00"), Some("nope"))),
+                Some("bad before: nope".to_owned()),
+                "at second {now_sec}"
+            );
+        }
+    }
+
+    /// Both windows cross midnight and together they cover the whole day
+    /// (18:00–12:00 and 10:00–02:00), so one of them holds whenever this
+    /// runs.
+    #[test]
+    fn time_condition_crossing_midnight_matches_through_evaluate() -> TestResult {
+        let sm = empty_machine();
+        let c = Condition::Or {
+            conditions: vec![
+                time_condition(Some("18:00"), Some("12:00")),
+                time_condition(Some("10:00"), Some("02:00")),
+            ],
+        };
+        assert!(c.evaluate(&sm)?);
+        Ok(())
+    }
+
+    /// Results that do not depend on when the test runs.
+    #[test]
+    fn time_condition_fixed_results_through_evaluate() -> TestResult {
+        let sm = empty_machine();
+        assert!(time_condition(None, None).evaluate(&sm)?);
+        assert!(time_condition(Some("00:00"), None).evaluate(&sm)?);
+        assert!(!time_condition(None, Some("00:00")).evaluate(&sm)?);
+        assert!(!time_condition(Some("12:00"), Some("12:00")).evaluate(&sm)?);
+        // Two same-day windows that never overlap.
+        let disjoint = Condition::And {
+            conditions: vec![
+                time_condition(Some("02:00"), Some("10:00")),
+                time_condition(Some("12:00"), Some("18:00")),
+            ],
+        };
+        assert!(!disjoint.evaluate(&sm)?);
+        Ok(())
+    }
+
+    #[test]
+    fn time_condition_reports_bad_bounds_through_evaluate() {
+        let sm = empty_machine();
+        assert_eq!(
+            condition_error(time_condition(Some("nope"), None).evaluate(&sm)),
+            Some("bad after: nope".to_owned())
+        );
+        assert_eq!(
+            condition_error(time_condition(None, Some("nope")).evaluate(&sm)),
+            Some("bad before: nope".to_owned())
+        );
+        assert_eq!(
+            condition_error(time_condition(Some("00:00"), Some("nope")).evaluate(&sm)),
+            Some("bad before: nope".to_owned())
+        );
+        assert_eq!(
+            condition_error(time_condition(Some("nope"), Some("nah")).evaluate(&sm)),
+            Some("bad after: nope".to_owned())
+        );
+    }
+
+    #[test]
+    fn time_condition_serialized_form_is_stable() -> TestResult {
+        let night = time_condition(Some("22:00"), Some("06:00"));
+        assert_eq!(
+            serde_json::to_value(&night)?,
+            serde_json::json!({"condition": "time", "after": "22:00", "before": "06:00"})
+        );
+        assert_eq!(
+            serde_json::to_value(time_condition(None, None))?,
+            serde_json::json!({"condition": "time", "after": null, "before": null})
+        );
+        let parsed: Condition =
+            serde_json::from_value(serde_json::json!({"condition": "time", "after": "22:00"}))?;
+        assert!(matches!(
+            &parsed,
+            Condition::Time { after: Some(a), before: None } if a == "22:00"
+        ));
         Ok(())
     }
 }
