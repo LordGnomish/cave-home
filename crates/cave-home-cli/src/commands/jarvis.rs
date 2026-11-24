@@ -17,6 +17,7 @@
 //! live `listen` loop is Phase-1b.
 
 use clap::{Arg, ArgMatches, Command};
+use std::fmt::Write as _;
 
 use cave_home_jarvis::JarvisConfig;
 use cave_home_jarvis::tools::{builtin_tools, intent_to_tool_call};
@@ -59,10 +60,7 @@ pub fn run() -> i32 {
 pub fn dispatch(matches: &ArgMatches, verbose: bool) -> i32 {
     match matches.subcommand() {
         Some(("ask", m)) => {
-            let text = m
-                .get_one::<String>("text")
-                .map(String::as_str)
-                .unwrap_or("");
+            let text = m.get_one::<String>("text").map_or("", String::as_str);
             print!("{}", render_ask(text, verbose));
             0
         }
@@ -81,9 +79,8 @@ pub fn dispatch(matches: &ArgMatches, verbose: bool) -> i32 {
 /// Run the NLU fast-path on `text` and describe what would happen.
 #[must_use]
 pub fn render_ask(text: &str, verbose: bool) -> String {
-    let intents = match cave_home_voice::intents::builtin_intents() {
-        Ok(i) => i,
-        Err(_) => return "I couldn't load my command set.\n".to_string(),
+    let Ok(intents) = cave_home_voice::intents::builtin_intents() else {
+        return "I couldn't load my command set.\n".to_string();
     };
     let mut out = String::new();
     match understand(text, &intents, Lang::En) {
@@ -92,11 +89,12 @@ pub fn render_ask(text: &str, verbose: bool) -> String {
             out.push('\n');
             if verbose {
                 let call = intent_to_tool_call(&action);
-                out.push_str(&format!(
-                    "[developer] tool={} args={}\n",
+                let _ = writeln!(
+                    out,
+                    "[developer] tool={} args={}",
                     call.name(),
                     call.arguments()
-                ));
+                );
             }
         }
         Understanding::NeedsClarification { .. } => {
@@ -119,9 +117,9 @@ pub fn render_tools(verbose: bool) -> String {
     out.push_str("What I can do\n");
     out.push_str("=============\n");
     for spec in builtin_tools() {
-        out.push_str(&format!("  • {}\n", spec.function.description));
+        let _ = writeln!(out, "  • {}", spec.function.description);
         if verbose {
-            out.push_str(&format!("      [developer] {}\n", spec.function.name));
+            let _ = writeln!(out, "      [developer] {}", spec.function.name);
         }
     }
     out
@@ -134,7 +132,7 @@ pub fn render_wake(config: &JarvisConfig) -> String {
     out.push_str("Wake words\n");
     out.push_str("==========\n");
     for kw in &config.wake_keywords {
-        out.push_str(&format!("  • \"{kw}\"\n"));
+        let _ = writeln!(out, "  • \"{kw}\"");
     }
     out.push_str("Say one of these, then your command.\n");
     out
@@ -203,5 +201,46 @@ mod tests {
     fn dispatch_tools_exits_zero() {
         let m = cmd().get_matches_from(["jarvis", "tools"]);
         assert_eq!(dispatch(&m, false), 0);
+    }
+
+    #[test]
+    fn ask_verbose_is_byte_exact() {
+        let expected = concat!(
+            "Turning on the kitchen light.\n",
+            "[developer] tool=set_light args={\"on\":true,\"target\":\"kitchen\"}\n",
+        );
+        assert_eq!(render_ask("turn the kitchen light on", true), expected);
+    }
+
+    #[test]
+    fn tools_verbose_is_byte_exact() {
+        let expected = concat!(
+            "What I can do\n",
+            "=============\n",
+            "  • Turn a light or a whole room's lights on or off.\n",
+            "      [developer] set_light\n",
+            "  • Set a light's brightness as a percentage from 0 to 100.\n",
+            "      [developer] set_brightness\n",
+            "  • Set a room's target temperature in whole degrees Celsius.\n",
+            "      [developer] set_temperature\n",
+            "  • Open or close a blind, curtain or garage door.\n",
+            "      [developer] set_cover\n",
+            "  • Activate a named scene, e.g. 'movie night'.\n",
+            "      [developer] activate_scene\n",
+            "  • Read back the current state of something (temperature or on/off).\n",
+            "      [developer] query_state\n",
+        );
+        assert_eq!(render_tools(true), expected);
+    }
+
+    #[test]
+    fn wake_is_byte_exact() {
+        let expected = concat!(
+            "Wake words\n",
+            "==========\n",
+            "  • \"jarvis\"\n",
+            "Say one of these, then your command.\n",
+        );
+        assert_eq!(render_wake(&JarvisConfig::default()), expected);
     }
 }

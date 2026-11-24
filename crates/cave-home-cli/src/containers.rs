@@ -6,4 +6,4 @@
 
 /// 4-track placeholder. Will host the `containers ls/get/...` subcommand
 /// surface in M6.
-pub fn placeholder() {}
+pub const fn placeholder() {}

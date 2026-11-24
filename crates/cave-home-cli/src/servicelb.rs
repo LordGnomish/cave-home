@@ -2,13 +2,13 @@
 //! `cavehomectl orchestration servicelb …` command surface — scaffold.
 //!
 //! ADR-005 §2: the CLI is the advanced power-user path onto the orchestration
-//! layer. ServiceLB (K3s svclb / klipper-lb) gets two read verbs:
+//! layer. `ServiceLB` (K3s svclb / klipper-lb) gets two read verbs:
 //!
 //!   cavehomectl orchestration servicelb status            # cluster LB summary
 //!   cavehomectl orchestration servicelb describe <svc>    # one Service's detail
 //!
 //! `status` renders the [`cave_home_klipper_lb_rs::controller::ServiceLbMetrics`]
-//! gauges; `describe` renders one Service's svclb DaemonSet + ingress disposition.
+//! gauges; `describe` renders one Service's svclb `DaemonSet` + ingress disposition.
 //! Like the sibling k3s infra modules (`apiserver`/`scheduler`/`cni`) the live
 //! data source (apiserver client + informer) attaches in Phase 1b; this module
 //! pins the command shape the wiring fills in.
@@ -21,7 +21,7 @@ pub fn servicelb_subcommands() -> Vec<&'static str> {
 
 /// The command path this surface lives at: `orchestration servicelb`.
 #[must_use]
-pub fn command_path() -> [&'static str; 2] {
+pub const fn command_path() -> [&'static str; 2] {
     ["orchestration", "servicelb"]
 }
 
@@ -32,7 +32,7 @@ pub fn subcommand_takes_service(subcommand: &str) -> bool {
     subcommand == "describe"
 }
 
-pub fn placeholder() {}
+pub const fn placeholder() {}
 
 #[cfg(test)]
 mod tests {

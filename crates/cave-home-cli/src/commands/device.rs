@@ -8,6 +8,7 @@
 //! sibling module.
 
 use clap::{Arg, ArgMatches, Command};
+use std::fmt::Write as _;
 
 /// One device row, home-world vocabulary only.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -49,9 +50,9 @@ pub fn render_list(devices: &[Device], verbose: bool) -> String {
     s.push_str("Your devices\n");
     s.push_str("------------\n");
     for d in devices {
-        s.push_str(&format!("  {} ({}, {})\n", d.name, d.room, d.kind));
+        let _ = writeln!(s, "  {} ({}, {})", d.name, d.room, d.kind);
         if verbose {
-            s.push_str(&format!("    id: {}\n", d.technical_id));
+            let _ = writeln!(s, "    id: {}", d.technical_id);
         }
     }
     s
@@ -91,6 +92,7 @@ pub fn cmd() -> Command {
 }
 
 /// Dispatcher entry.
+#[must_use]
 pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
     match matches.subcommand() {
         Some(("list", _sub)) => {
@@ -134,7 +136,7 @@ mod tests {
     #[test]
     fn cmd_has_three_subcommands() {
         let c = cmd();
-        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name()).collect();
+        let names: Vec<_> = c.get_subcommands().map(Command::get_name).collect();
         assert!(names.contains(&"list"));
         assert!(names.contains(&"add"));
         assert!(names.contains(&"remove"));

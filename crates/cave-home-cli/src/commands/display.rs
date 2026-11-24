@@ -32,6 +32,7 @@ pub fn cmd() -> Command {
         .subcommand(Command::new("list").about("List every display"))
 }
 
+#[must_use]
 pub fn run() -> i32 {
     println!("display: backend not yet attached — Phase 2.");
     0

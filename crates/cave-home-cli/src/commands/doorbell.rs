@@ -22,6 +22,7 @@ pub fn cmd() -> Command {
         .subcommand(Command::new("list").about("List every doorbell"))
 }
 
+#[must_use]
 pub fn run() -> i32 {
     println!("doorbell: backend not yet attached — Phase 2.");
     0

@@ -22,6 +22,7 @@ pub fn cmd() -> Command {
         .subcommand(Command::new("status").about("Show armed state + history"))
 }
 
+#[must_use]
 pub fn run() -> i32 {
     println!("alarm: backend not yet attached — Phase 2.");
     0

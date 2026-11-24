@@ -37,6 +37,7 @@ pub const fn live_pod_rows() -> Vec<PodTopRow> {
     Vec::new()
 }
 
+#[must_use]
 pub fn run(matches: &ArgMatches, _verbose: bool) -> i32 {
     match matches.subcommand() {
         Some(("nodes", _)) => {
@@ -72,7 +73,7 @@ mod tests {
 
     #[test]
     fn live_rows_are_empty_until_phase_1b() {
-        assert!(live_node_rows().is_empty());
-        assert!(live_pod_rows().is_empty());
+        assert_eq!(live_node_rows(), Vec::<NodeTopRow>::new());
+        assert_eq!(live_pod_rows(), Vec::<PodTopRow>::new());
     }
 }

@@ -9,6 +9,7 @@
 // grandma-friendly translation lives in the Portal admin module.
 
 use clap::{Arg, ArgMatches, Command};
+use std::fmt::Write as _;
 
 use cave_home_hue::v2::color::xy_to_rgb;
 use cave_home_hue::v2::models::scene::{SceneRecall, SceneRecallAction};
@@ -108,56 +109,51 @@ pub fn run() -> i32 {
     dispatch(&cmd().get_matches_from(after), false)
 }
 
-/// Internal dispatcher — exposed for unit tests. The `list-lights` and
-/// `set-scene` verbs link `cave-home-hue` directly (colour maths + the
-/// `SceneRecallAction` CLI contract); the remaining verbs are Phase-2 stubs
-/// wired through the single binary's IPC surface.
+/// Internal dispatcher — exposed for unit tests.
+///
+/// The `list-lights` and `set-scene` verbs link `cave-home-hue` directly
+/// (colour maths + the `SceneRecallAction` CLI contract); the remaining verbs
+/// are Phase-2 stubs wired through the single binary's IPC surface.
 #[must_use]
 pub fn dispatch(matches: &ArgMatches, verbose: bool) -> i32 {
     match matches.subcommand() {
         Some(("list-lights", _)) => {
             print!("{}", render_lights(&demo_lights(), verbose));
-            0
         }
         Some(("set-scene", m)) => {
-            let id = m.get_one::<String>("id").map(String::as_str).unwrap_or("");
+            let id = m.get_one::<String>("id").map_or("", String::as_str);
             let raw = m
                 .get_one::<String>("action")
                 .map_or("active", String::as_str);
-            match SceneRecallAction::from_cli(raw) {
-                Some(action) => {
-                    // The body the bridge would receive on PUT resource/scene/{id}.
-                    let recall = SceneRecall {
-                        action: Some(action),
-                        ..Default::default()
-                    };
-                    debug_assert!(recall.action.is_some());
-                    println!("Scene {id}: {}.", friendly_action(action));
-                    0
-                }
-                None => {
-                    eprintln!(
-                        "I don't know the scene action '{raw}'. Try active, dynamic, static or off."
-                    );
-                    1
-                }
-            }
+            let Some(action) = SceneRecallAction::from_cli(raw) else {
+                eprintln!(
+                    "I don't know the scene action '{raw}'. Try active, dynamic, static or off."
+                );
+                return 1;
+            };
+            // The body the bridge would receive on PUT resource/scene/{id}.
+            let recall = SceneRecall {
+                action: Some(action),
+                ..Default::default()
+            };
+            debug_assert!(recall.action.is_some());
+            println!("Scene {id}: {}.", friendly_action(action));
         }
         None => {
             println!("Try `cavehomectl hue list-lights` or `cavehomectl hue set-scene --id <id>`.");
-            0
         }
         // Phase-2 verbs (discover/pair/status/light/group/scene/sensor/events/
         // bridge-emu) land with the binary's bridge IPC surface.
         Some(_) => {
             println!("hue: this command lands in Phase 2 binary integration.");
-            0
         }
     }
+    // Every verb that gets here succeeded; the one failure returns early above.
+    0
 }
 
 /// A grandma-friendly label for a recall action (English; Portal renders DE/TR).
-fn friendly_action(action: SceneRecallAction) -> &'static str {
+const fn friendly_action(action: SceneRecallAction) -> &'static str {
     match action {
         SceneRecallAction::Active => "switched on",
         SceneRecallAction::DynamicPalette => "switched on, colours drifting",
@@ -166,9 +162,10 @@ fn friendly_action(action: SceneRecallAction) -> &'static str {
     }
 }
 
-/// ------- render helpers (pure, test-friendly) -----------------------
+// ------- render helpers (pure, test-friendly) -----------------------
 
 /// A demo light row, shown until the bridge transport is wired into the binary.
+///
 /// `xy` is a CIE colour point; the renderer converts it to RGB via the crate's
 /// own colour maths so the CLI and adapter agree on what a colour looks like.
 #[derive(Debug, Clone, Copy)]
@@ -218,21 +215,23 @@ pub fn render_lights(lights: &[DemoLight], verbose: bool) -> String {
         if l.on {
             let (r, g, b) = xy_to_rgb(l.xy.0, l.xy.1, l.bri);
             let pct = (u16::from(l.bri) * 100 / 254).min(100);
-            out.push_str(&format!(
-                "  {:<14} on   {pct:>3}%   #{r:02X}{g:02X}{b:02X}\n",
+            let _ = writeln!(
+                out,
+                "  {:<14} on   {pct:>3}%   #{r:02X}{g:02X}{b:02X}",
                 l.name
-            ));
+            );
         } else {
-            out.push_str(&format!("  {:<14} off\n", l.name));
+            let _ = writeln!(out, "  {:<14} off", l.name);
         }
     }
     if verbose {
         out.push_str("\n[developer] raw xy + brightness:\n");
         for l in lights {
-            out.push_str(&format!(
-                "  {} xy=({:.3},{:.3}) bri={}\n",
+            let _ = writeln!(
+                out,
+                "  {} xy=({:.3},{:.3}) bri={}",
                 l.name, l.xy.0, l.xy.1, l.bri
-            ));
+            );
         }
     }
     out
@@ -241,6 +240,8 @@ pub fn render_lights(lights: &[DemoLight], verbose: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[test]
     fn cmd_has_all_integration_subcommands() {
@@ -256,12 +257,12 @@ mod tests {
     }
 
     #[test]
-    fn cmd_has_bridge_emu_subtree() {
+    fn cmd_has_bridge_emu_subtree() -> TestResult {
         let c = cmd();
         let bridge_emu = c
             .get_subcommands()
             .find(|s| s.get_name() == "bridge-emu")
-            .expect("bridge-emu subcommand");
+            .ok_or("`hue` has no `bridge-emu` subcommand")?;
         for sub in [
             "status", "enable", "disable", "press", "clients", "revoke", "ssdp", "mdns",
         ] {
@@ -270,29 +271,27 @@ mod tests {
                 "bridge-emu subcommand {sub} missing"
             );
         }
+        Ok(())
     }
 
     #[test]
-    fn pair_requires_host_arg() {
+    fn pair_requires_host_arg() -> TestResult {
         let c = cmd();
         let pair = c
             .get_subcommands()
             .find(|s| s.get_name() == "pair")
-            .unwrap();
-        let args: Vec<_> = pair
-            .get_arguments()
-            .map(|a| a.get_id().as_str().to_string())
-            .collect();
-        assert!(args.contains(&"host".into()));
+            .ok_or("`hue` has no `pair` subcommand")?;
+        assert!(pair.get_arguments().any(|a| a.get_id().as_str() == "host"));
+        Ok(())
     }
 
     #[test]
-    fn light_takes_id_plus_optional_state_flags() {
+    fn light_takes_id_plus_optional_state_flags() -> TestResult {
         let c = cmd();
         let light = c
             .get_subcommands()
             .find(|s| s.get_name() == "light")
-            .unwrap();
+            .ok_or("`hue` has no `light` subcommand")?;
         let args: Vec<_> = light
             .get_arguments()
             .map(|a| a.get_id().as_str().to_string())
@@ -300,6 +299,7 @@ mod tests {
         for name in ["id", "on", "bri", "xy", "ct"] {
             assert!(args.contains(&name.into()), "arg {name} missing on `light`");
         }
+        Ok(())
     }
 
     #[test]
@@ -356,19 +356,36 @@ mod tests {
     }
 
     #[test]
-    fn revoke_requires_app_key() {
+    fn revoke_requires_app_key() -> TestResult {
         let c = cmd();
         let revoke = c
             .get_subcommands()
             .find(|s| s.get_name() == "bridge-emu")
-            .unwrap()
+            .ok_or("`hue` has no `bridge-emu` subcommand")?
             .get_subcommands()
             .find(|s| s.get_name() == "revoke")
-            .unwrap();
-        let args: Vec<_> = revoke
-            .get_arguments()
-            .map(|a| a.get_id().as_str().to_string())
-            .collect();
-        assert!(args.contains(&"app-key".into()));
+            .ok_or("`hue bridge-emu` has no `revoke` subcommand")?;
+        assert!(
+            revoke
+                .get_arguments()
+                .any(|a| a.get_id().as_str() == "app-key")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn render_lights_verbose_is_byte_exact() {
+        let expected = concat!(
+            "Your lights\n",
+            "===========\n",
+            "  Living room    on    79%   #FFD37D\n",
+            "  Kitchen        on   100%   #FCFFFE\n",
+            "  Bedroom        off\n",
+            "\n[developer] raw xy + brightness:\n",
+            "  Living room xy=(0.450,0.410) bri=203\n",
+            "  Kitchen xy=(0.320,0.330) bri=254\n",
+            "  Bedroom xy=(0.170,0.700) bri=0\n",
+        );
+        assert_eq!(render_lights(&demo_lights(), true), expected);
     }
 }

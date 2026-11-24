@@ -17,6 +17,7 @@ pub fn cmd() -> Command {
         .subcommand(Command::new("week").about("Show this week's events"))
 }
 
+#[must_use]
 pub fn run() -> i32 {
     println!("calendar: backend not yet attached — Phase 2.");
     0

@@ -17,6 +17,7 @@
 use crate::commands::device;
 use clap::{Arg, ArgMatches, Command};
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 #[must_use]
 pub fn cmd() -> Command {
@@ -33,6 +34,7 @@ pub fn cmd() -> Command {
         )
 }
 
+#[must_use]
 pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
     let devices = device::demo_devices();
     match matches.subcommand() {
@@ -41,9 +43,12 @@ pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
             0
         }
         Some(("show", sub)) => {
-            let name = sub
-                .get_one::<String>("name")
-                .expect("clap enforces required");
+            // clap enforces `name` as required; should it ever be absent, say
+            // so the way the sibling commands do instead of panicking.
+            let Some(name) = sub.get_one::<String>("name") else {
+                eprintln!("Internal: missing room name.");
+                return 2;
+            };
             let (out, code) = render_show(&devices, name, verbose);
             print!("{out}");
             code
@@ -68,10 +73,10 @@ pub fn render_list(devices: &[device::Device], verbose: bool) -> String {
     }
     for (room, n) in &counts {
         let suffix = if *n == 1 { "device" } else { "devices" };
-        s.push_str(&format!("  {room} ({n} {suffix})\n"));
+        let _ = writeln!(s, "  {room} ({n} {suffix})");
     }
     if verbose {
-        s.push_str(&format!("\n  total rooms: {}\n", counts.len()));
+        let _ = writeln!(s, "\n  total rooms: {}", counts.len());
     }
     s
 }
@@ -92,9 +97,9 @@ pub fn render_show(devices: &[device::Device], room: &str, verbose: bool) -> (St
     s.push_str(&"-".repeat(6 + in_room[0].room.len()));
     s.push('\n');
     for d in &in_room {
-        s.push_str(&format!("  {} ({})\n", d.name, d.kind));
+        let _ = writeln!(s, "  {} ({})", d.name, d.kind);
         if verbose {
-            s.push_str(&format!("    id: {}\n", d.technical_id));
+            let _ = writeln!(s, "    id: {}", d.technical_id);
         }
     }
     (s, 0)
@@ -104,15 +109,20 @@ pub fn render_show(devices: &[device::Device], room: &str, verbose: bool) -> (St
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn list_groups_devices_by_room_and_sorts_alphabetically() {
+    fn list_groups_devices_by_room_and_sorts_alphabetically() -> TestResult {
         let out = render_list(&device::demo_devices(), false);
         // Demo data has three rooms: Giriş, Mutfak, Salon — alphabetical.
-        let g = out.find("Giriş").expect("Giriş in list");
-        let m = out.find("Mutfak").expect("Mutfak in list");
-        let sa = out.find("Salon").expect("Salon in list");
+        let g = out.find("Giriş").ok_or("`Giriş` is not in the room list")?;
+        let m = out
+            .find("Mutfak")
+            .ok_or("`Mutfak` is not in the room list")?;
+        let sa = out.find("Salon").ok_or("`Salon` is not in the room list")?;
         assert!(g < m && m < sa, "rooms must render alphabetically");
         assert!(out.contains("1 device"));
+        Ok(())
     }
 
     #[test]
@@ -156,10 +166,28 @@ mod tests {
     }
 
     #[test]
+    fn run_show_without_a_name_exits_two_instead_of_panicking() -> TestResult {
+        // `cmd()` makes `name` required, so build the same shape without that
+        // rule to reach the branch clap normally rules out.
+        let lenient = Command::new("room").subcommand(Command::new("show").arg(Arg::new("name")));
+        let matches = lenient.try_get_matches_from(["room", "show"])?;
+        assert_eq!(run(&matches, false), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn run_show_with_a_name_reports_the_render_exit_code() {
+        let known = cmd().get_matches_from(["room", "show", "Salon"]);
+        assert_eq!(run(&known, false), 0);
+        let unknown = cmd().get_matches_from(["room", "show", "Pavyon"]);
+        assert_eq!(run(&unknown, false), 1);
+    }
+
+    #[test]
     fn cmd_advertises_room_subtree() {
         let c = cmd();
-        let subs: Vec<_> = c.get_subcommands().map(|s| s.get_name()).collect();
-        assert!(subs.iter().any(|n| *n == "list"));
-        assert!(subs.iter().any(|n| *n == "show"));
+        let subs: Vec<_> = c.get_subcommands().map(Command::get_name).collect();
+        assert!(subs.contains(&"list"));
+        assert!(subs.contains(&"show"));
     }
 }

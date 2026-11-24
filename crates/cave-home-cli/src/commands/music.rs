@@ -28,6 +28,7 @@ pub fn cmd() -> Command {
         .subcommand(Command::new("rooms").about("List rooms that are playing"))
 }
 
+#[must_use]
 pub fn run() -> i32 {
     println!("music: backend not yet attached — Phase 2.");
     0

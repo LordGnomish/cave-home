@@ -33,7 +33,8 @@ pub fn cmd() -> Command {
         .subcommand(Command::new("scan").about("Discover KNX/IP devices on the LAN"))
 }
 
-/// Default no-op handler — Phase 2 wires this to cave-home-knx::gateway.
+/// Default no-op handler — Phase 2 wires this to `cave-home-knx::gateway`.
+#[must_use]
 pub fn run() -> i32 {
     println!("knx: gateway not yet attached — Phase 2b.");
     0
@@ -42,6 +43,8 @@ pub fn run() -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[test]
     fn cmd_has_all_phase1_subcommands() {
@@ -55,12 +58,12 @@ mod tests {
     }
 
     #[test]
-    fn group_takes_ga_value_dpt() {
+    fn group_takes_ga_value_dpt() -> TestResult {
         let c = cmd();
         let group = c
             .get_subcommands()
             .find(|s| s.get_name() == "group")
-            .unwrap();
+            .ok_or("`knx` has no `group` subcommand")?;
         let args: Vec<_> = group
             .get_arguments()
             .map(|a| a.get_id().as_str().to_string())
@@ -71,24 +74,26 @@ mod tests {
                 "arg {name} missing on `group`"
             );
         }
+        Ok(())
     }
 
     #[test]
-    fn connect_defaults_to_knx_port_3671() {
+    fn connect_defaults_to_knx_port_3671() -> TestResult {
         let c = cmd();
         let conn = c
             .get_subcommands()
             .find(|s| s.get_name() == "connect")
-            .unwrap();
+            .ok_or("`knx` has no `connect` subcommand")?;
         let port = conn
             .get_arguments()
             .find(|a| a.get_id().as_str() == "port")
-            .unwrap();
+            .ok_or("`knx connect` has no `port` argument")?;
         assert_eq!(
             port.get_default_values()
                 .first()
                 .map(|s| s.to_string_lossy().into_owned()),
             Some("3671".to_string())
         );
+        Ok(())
     }
 }

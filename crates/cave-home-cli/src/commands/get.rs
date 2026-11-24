@@ -15,6 +15,7 @@
 //! cave-home
 //! ```
 
+use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
@@ -132,7 +133,7 @@ fn render(kind: &str, names: &[String], verbose: bool) -> String {
         out.push('\n');
     }
     if verbose {
-        out.push_str(&format!("({} {kind})\n", names.len()));
+        let _ = writeln!(out, "({} {kind})", names.len());
     }
     out
 }
@@ -164,7 +165,7 @@ mod tests {
     #[test]
     fn empty_list_yields_no_names() {
         let body = r#"{"apiVersion":"v1","items":[],"kind":"PodList"}"#;
-        assert!(extract_names(body).is_empty());
+        assert_eq!(extract_names(body), Vec::<String>::new());
     }
 
     #[test]
@@ -187,5 +188,14 @@ mod tests {
             .collect();
         assert!(names.iter().any(|n| n == "nodes"));
         assert!(names.iter().any(|n| n == "pods"));
+    }
+
+    #[test]
+    fn render_verbose_appends_the_count_line() {
+        let names = ["cave-home".to_string(), "worker-2".to_string()];
+        assert_eq!(
+            render("nodes", &names, true),
+            "NAME\ncave-home\nworker-2\n(2 nodes)\n"
+        );
     }
 }

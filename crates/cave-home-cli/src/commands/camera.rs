@@ -31,6 +31,7 @@ pub fn cmd() -> Command {
         .subcommand(Command::new("list").about("List every camera by location"))
 }
 
+#[must_use]
 pub fn run() -> i32 {
     println!("camera: backend not yet attached — Phase 2.");
     0
