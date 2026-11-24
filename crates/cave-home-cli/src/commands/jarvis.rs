@@ -204,4 +204,45 @@ mod tests {
         let m = cmd().get_matches_from(["jarvis", "tools"]);
         assert_eq!(dispatch(&m, false), 0);
     }
+
+    #[test]
+    fn ask_verbose_is_byte_exact() {
+        let expected = concat!(
+            "Turning on the kitchen light.\n",
+            "[developer] tool=set_light args={\"on\":true,\"target\":\"kitchen\"}\n",
+        );
+        assert_eq!(render_ask("turn the kitchen light on", true), expected);
+    }
+
+    #[test]
+    fn tools_verbose_is_byte_exact() {
+        let expected = concat!(
+            "What I can do\n",
+            "=============\n",
+            "  • Turn a light or a whole room's lights on or off.\n",
+            "      [developer] set_light\n",
+            "  • Set a light's brightness as a percentage from 0 to 100.\n",
+            "      [developer] set_brightness\n",
+            "  • Set a room's target temperature in whole degrees Celsius.\n",
+            "      [developer] set_temperature\n",
+            "  • Open or close a blind, curtain or garage door.\n",
+            "      [developer] set_cover\n",
+            "  • Activate a named scene, e.g. 'movie night'.\n",
+            "      [developer] activate_scene\n",
+            "  • Read back the current state of something (temperature or on/off).\n",
+            "      [developer] query_state\n",
+        );
+        assert_eq!(render_tools(true), expected);
+    }
+
+    #[test]
+    fn wake_is_byte_exact() {
+        let expected = concat!(
+            "Wake words\n",
+            "==========\n",
+            "  • \"jarvis\"\n",
+            "Say one of these, then your command.\n",
+        );
+        assert_eq!(render_wake(&JarvisConfig::default()), expected);
+    }
 }

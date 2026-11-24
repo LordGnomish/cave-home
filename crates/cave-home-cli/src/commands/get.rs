@@ -188,4 +188,13 @@ mod tests {
         assert!(names.iter().any(|n| n == "nodes"));
         assert!(names.iter().any(|n| n == "pods"));
     }
+
+    #[test]
+    fn render_verbose_appends_the_count_line() {
+        let names = ["cave-home".to_string(), "worker-2".to_string()];
+        assert_eq!(
+            render("nodes", &names, true),
+            "NAME\ncave-home\nworker-2\n(2 nodes)\n"
+        );
+    }
 }

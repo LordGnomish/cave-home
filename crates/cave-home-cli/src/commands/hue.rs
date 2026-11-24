@@ -371,4 +371,20 @@ mod tests {
             .collect();
         assert!(args.contains(&"app-key".into()));
     }
+
+    #[test]
+    fn render_lights_verbose_is_byte_exact() {
+        let expected = concat!(
+            "Your lights\n",
+            "===========\n",
+            "  Living room    on    79%   #FFD37D\n",
+            "  Kitchen        on   100%   #FCFFFE\n",
+            "  Bedroom        off\n",
+            "\n[developer] raw xy + brightness:\n",
+            "  Living room xy=(0.450,0.410) bri=203\n",
+            "  Kitchen xy=(0.320,0.330) bri=254\n",
+            "  Bedroom xy=(0.170,0.700) bri=0\n",
+        );
+        assert_eq!(render_lights(&demo_lights(), true), expected);
+    }
 }

@@ -441,4 +441,93 @@ mod tests {
         assert!(out.contains("Today"));
         assert!(out.contains("Peak"));
     }
+
+    #[test]
+    fn render_status_verbose_is_byte_exact() {
+        let expected = concat!(
+            "Solar status\n",
+            "=============\n",
+            "  Solar producing  5.2 kW\n",
+            "  Home using       1.4 kW\n",
+            "  Battery          72% full\n",
+            "  Sending to grid  3.8 kW (earning credits)\n",
+            "\n[developer] raw fields:\n",
+            "  grid_w=-3800 pv_w=5200 battery_soc_pct=72\n",
+        );
+        assert_eq!(render_status_summary(&demo_summary(), true), expected);
+    }
+
+    #[test]
+    fn render_status_importing_truncates_raw_fields_toward_zero() {
+        let s = SolarSummary {
+            solar_kw: 0.0009,
+            home_kw: 2.345,
+            battery_soc: 99.9,
+            grid_kw: 1.2345,
+        };
+        let expected = concat!(
+            "Solar status\n",
+            "=============\n",
+            "  Solar producing  0.0 kW\n",
+            "  Home using       2.3 kW\n",
+            "  Battery          100% full\n",
+            "  Taking from grid 1.2 kW\n",
+            "\n[developer] raw fields:\n",
+            "  grid_w=1234 pv_w=0 battery_soc_pct=99\n",
+        );
+        assert_eq!(render_status_summary(&s, true), expected);
+    }
+
+    #[test]
+    fn render_inverter_verbose_is_byte_exact() {
+        let expected = concat!(
+            "Solar inverter\n",
+            "==============\n",
+            "  Currently        producing\n",
+            "  Producing        5.2 kW\n",
+            "\n[developer] raw fields:\n",
+            "  manufacturer  : Fronius\n",
+            "  model         : Symo 8.2-3-M\n",
+            "  dc_voltage_v  : 412.0\n",
+        );
+        assert_eq!(render_inverter(&demo_inverter(), true), expected);
+    }
+
+    #[test]
+    fn render_battery_verbose_is_byte_exact() {
+        let expected = concat!(
+            "Home battery\n",
+            "============\n",
+            "  Status   charging\n",
+            "  Battery  72% full\n",
+            "\n[developer] power_kw=1.40\n",
+        );
+        assert_eq!(render_battery(&demo_battery(), true), expected);
+    }
+
+    #[test]
+    fn render_loadpoints_verbose_is_byte_exact() {
+        let expected = concat!(
+            "EV chargers & heat-pump\n",
+            "=======================\n",
+            "  Garage wallbox        EV charger  mode=pv\n",
+            "    [developer] current_a=12\n",
+            "  Heat pump             Heat pump  mode=minpv\n",
+            "    [developer] current_a=8\n",
+        );
+        assert_eq!(render_loadpoints(&demo_loadpoints(), true), expected);
+    }
+
+    #[test]
+    fn render_forecast_verbose_is_byte_exact() {
+        let expected = concat!(
+            "Solar forecast\n",
+            "==============\n",
+            "  Today      41.2 kWh expected\n",
+            "  Tomorrow   39.1 kWh expected\n",
+            "  Peak hour  7.4 kW\n",
+            "\n[developer] source=forecast.solar\n",
+        );
+        assert_eq!(render_forecast(&demo_forecast_today(), true), expected);
+    }
 }

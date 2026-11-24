@@ -315,4 +315,53 @@ mod tests {
         assert!(out.contains("pv_w="));
         assert!(out.contains("soc_pct="));
     }
+
+    #[test]
+    fn render_status_verbose_is_byte_exact() {
+        let expected = concat!(
+            "Energy right now\n",
+            "================\n",
+            "  Solar making     4.2 kW\n",
+            "  Home using       1.8 kW\n",
+            "  Battery          88% full\n",
+            "  Sending to grid  0.9 kW (earning credits)\n",
+            "\n[developer] raw fields:\n",
+            "  pv_w=4200 load_w=1800 grid_w=-900 soc_pct=88\n",
+        );
+        assert_eq!(render_status(&demo_flow(), true), expected);
+    }
+
+    #[test]
+    fn render_status_importing_truncates_raw_fields_toward_zero() {
+        let f = EnergyFlow {
+            pv_w: 0.9,
+            load_w: 1234.56,
+            grid_w: 1233.66,
+            soc_pct: 12.4,
+        };
+        let expected = concat!(
+            "Energy right now\n",
+            "================\n",
+            "  Solar making     0.0 kW\n",
+            "  Home using       1.2 kW\n",
+            "  Battery          12% full\n",
+            "  Taking from grid 1.2 kW\n",
+            "\n[developer] raw fields:\n",
+            "  pv_w=0 load_w=1234 grid_w=1233 soc_pct=12\n",
+        );
+        assert_eq!(render_status(&f, true), expected);
+    }
+
+    #[test]
+    fn render_history_verbose_is_byte_exact() {
+        let expected = concat!(
+            "Energy history\n",
+            "==============\n",
+            "  Over the last  24h\n",
+            "  Made           38.4 kWh of sunshine\n",
+            "  Used           22.1 kWh at home\n",
+            "\n[developer] produced_kwh=38.4 used_kwh=22.1\n",
+        );
+        assert_eq!(render_history(&demo_history("24h"), true), expected);
+    }
 }
