@@ -22,6 +22,7 @@ pub fn cmd() -> Command {
         .subcommand(Command::new("network").about("Show coordinator + network info"))
 }
 
+#[must_use]
 pub fn run() -> i32 {
     println!("zigbee: backend not yet attached — Phase 2.");
     0

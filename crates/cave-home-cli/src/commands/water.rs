@@ -17,6 +17,7 @@ pub fn cmd() -> Command {
         .subcommand(Command::new("leaks").about("List active leak alerts"))
 }
 
+#[must_use]
 pub fn run() -> i32 {
     println!("water: backend not yet attached — Phase 2.");
     0

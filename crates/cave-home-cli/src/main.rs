@@ -144,10 +144,12 @@ where
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn help_lists_every_subcommand() {
         let cli = build_cli();
-        let names: Vec<_> = cli.get_subcommands().map(|s| s.get_name()).collect();
+        let names: Vec<_> = cli.get_subcommands().map(Command::get_name).collect();
         for required in [
             "init",
             "join",
@@ -191,25 +193,26 @@ mod tests {
             "mobile",
         ] {
             assert!(
-                names.iter().any(|n| *n == required),
+                names.contains(&required),
                 "missing subcommand '{required}' in CLI"
             );
         }
     }
 
     #[test]
-    fn verbose_is_global() {
+    fn verbose_is_global() -> TestResult {
         let cli = build_cli();
         let v = cli
             .get_arguments()
             .find(|a| a.get_id().as_str() == "verbose")
-            .expect("verbose flag");
+            .ok_or("the root command has no `verbose` argument")?;
         assert!(v.is_global_set());
+        Ok(())
     }
 
     #[test]
     fn dispatch_status_exits_zero() {
-        let code = run_with_args(["cavehomectl", "status"].iter().map(|s| s.to_string()));
+        let code = run_with_args(["cavehomectl", "status"].iter().map(ToString::to_string));
         // Demo data has one Warn but no Down, so exit 0.
         assert_eq!(code, 0);
     }
@@ -222,7 +225,7 @@ mod tests {
         let code = run_with_args(
             ["cavehomectl", "device", "list"]
                 .iter()
-                .map(|s| s.to_string()),
+                .map(ToString::to_string),
         );
         assert_eq!(code, 0);
     }
@@ -232,7 +235,7 @@ mod tests {
         let code = run_with_args(
             ["cavehomectl", "scene", "trigger", "Sleep"]
                 .iter()
-                .map(|s| s.to_string()),
+                .map(ToString::to_string),
         );
         assert_eq!(code, 0);
     }
@@ -242,7 +245,7 @@ mod tests {
         let code = run_with_args(
             ["cavehomectl", "scene", "trigger", "nonexistent-scene"]
                 .iter()
-                .map(|s| s.to_string()),
+                .map(ToString::to_string),
         );
         assert_eq!(code, 1);
     }

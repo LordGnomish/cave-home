@@ -27,6 +27,7 @@ pub fn cmd() -> Command {
         )
 }
 
+#[must_use]
 pub fn run() -> i32 {
     println!("history: backend not yet attached — Phase 2.");
     0

@@ -13,7 +13,7 @@ pub fn apiserver_subcommands() -> Vec<&'static str> {
     vec!["get", "describe", "apply", "delete"]
 }
 
-pub fn placeholder() {}
+pub const fn placeholder() {}
 
 #[cfg(test)]
 mod tests {

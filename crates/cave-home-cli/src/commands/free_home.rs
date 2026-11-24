@@ -40,6 +40,7 @@ pub fn cmd() -> Command {
 }
 
 /// Default no-op handler — Phase 2 wires this to cave-home-free-home.
+#[must_use]
 pub fn run() -> i32 {
     println!("free-home: SysAP connection not yet bootstrapped — Phase 2b.");
     0
@@ -48,6 +49,8 @@ pub fn run() -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[test]
     fn cmd_has_all_phase1_subcommands() {
@@ -63,12 +66,12 @@ mod tests {
     }
 
     #[test]
-    fn light_requires_device_channel_value() {
+    fn light_requires_device_channel_value() -> TestResult {
         let c = cmd();
         let light = c
             .get_subcommands()
             .find(|s| s.get_name() == "light")
-            .unwrap();
+            .ok_or("`free-home` has no `light` subcommand")?;
         let args: Vec<_> = light
             .get_arguments()
             .map(|a| a.get_id().as_str().to_string())
@@ -79,5 +82,6 @@ mod tests {
                 "arg {name} missing on `light`"
             );
         }
+        Ok(())
     }
 }

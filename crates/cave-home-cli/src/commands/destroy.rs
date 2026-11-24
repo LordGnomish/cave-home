@@ -34,6 +34,11 @@ pub fn cmd() -> Command {
 
 /// Pure helper for the prompt logic, abstracted over IO so it tests
 /// without a real TTY.
+///
+/// # Errors
+///
+/// Returns the underlying I/O error if the prompt cannot be written to or
+/// flushed on `writer`, or if the answer cannot be read from `reader`.
 pub fn confirm<R: BufRead, W: Write>(reader: &mut R, writer: &mut W) -> std::io::Result<bool> {
     writeln!(
         writer,
@@ -48,6 +53,12 @@ pub fn confirm<R: BufRead, W: Write>(reader: &mut R, writer: &mut W) -> std::io:
 
 /// Actually wipe the config dir. Returns Ok(true) if something was
 /// removed.
+///
+/// # Errors
+///
+/// Returns the I/O error from removing the directory tree if `dir` exists
+/// but cannot be removed (for example for lack of permissions). A `dir`
+/// that does not exist is not an error: that is `Ok(false)`.
 pub fn wipe(dir: &Path) -> std::io::Result<bool> {
     if !dir.exists() {
         return Ok(false);
@@ -60,8 +71,7 @@ pub fn wipe(dir: &Path) -> std::io::Result<bool> {
 pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
     let dir: PathBuf = matches
         .get_one::<String>("config-dir")
-        .map(PathBuf::from)
-        .unwrap_or_else(default_config_dir);
+        .map_or_else(default_config_dir, PathBuf::from);
     let skip_prompt = matches.get_flag("yes");
 
     if !skip_prompt {
@@ -111,47 +121,49 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn confirm_accepts_exact_keyword() {
+    fn confirm_accepts_exact_keyword() -> TestResult {
         let mut reader = Cursor::new(b"DESTROY\n".to_vec());
         let mut writer = Vec::new();
-        let ok = confirm(&mut reader, &mut writer).expect("confirm");
+        let ok = confirm(&mut reader, &mut writer)?;
         assert!(ok);
+        Ok(())
     }
 
     #[test]
-    fn confirm_rejects_anything_else() {
+    fn confirm_rejects_anything_else() -> TestResult {
         for input in [b"yes\n".to_vec(), b"destroy\n".to_vec(), b"\n".to_vec()] {
             let mut reader = Cursor::new(input);
             let mut writer = Vec::new();
-            assert!(!confirm(&mut reader, &mut writer).expect("confirm"));
+            assert!(!confirm(&mut reader, &mut writer)?);
         }
+        Ok(())
     }
 
     #[test]
-    fn wipe_missing_dir_is_ok_false() {
+    fn wipe_missing_dir_is_ok_false() -> TestResult {
         let path = std::env::temp_dir().join("cave-home-destroy-missing-xyz123");
         let _ = std::fs::remove_dir_all(&path);
-        assert!(!wipe(&path).expect("wipe"));
+        assert!(!wipe(&path)?);
+        Ok(())
     }
 
     #[test]
-    fn wipe_existing_dir_removes_it() {
+    fn wipe_existing_dir_removes_it() -> TestResult {
         let path = std::env::temp_dir().join(format!("cave-home-destroy-{}", std::process::id()));
-        std::fs::create_dir_all(&path).expect("mkdir");
-        std::fs::write(path.join("marker"), b"x").expect("write");
-        assert!(wipe(&path).expect("wipe"));
+        std::fs::create_dir_all(&path)?;
+        std::fs::write(path.join("marker"), b"x")?;
+        assert!(wipe(&path)?);
         assert!(!path.exists());
+        Ok(())
     }
 
     #[test]
     fn cmd_name_and_yes_flag() {
         let c = cmd();
         assert_eq!(c.get_name(), "destroy");
-        let names: Vec<_> = c
-            .get_arguments()
-            .map(|a| a.get_id().as_str().to_string())
-            .collect();
-        assert!(names.contains(&"yes".to_string()));
+        assert!(c.get_arguments().any(|a| a.get_id().as_str() == "yes"));
     }
 }

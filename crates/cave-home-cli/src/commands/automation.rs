@@ -4,6 +4,7 @@
 //! `cavehomectl automation {list,enable,disable}` — automation surface.
 
 use clap::{Arg, ArgMatches, Command};
+use std::fmt::Write as _;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Automation {
@@ -41,9 +42,9 @@ pub fn render_list(items: &[Automation], verbose: bool) -> String {
     s.push_str("----------------\n");
     for a in items {
         let mark = if a.enabled { "[ON] " } else { "[OFF]" };
-        s.push_str(&format!("  {mark} {}\n", a.name));
+        let _ = writeln!(s, "  {mark} {}", a.name);
         if verbose {
-            s.push_str(&format!("        id: {}\n", a.technical_id));
+            let _ = writeln!(s, "        id: {}", a.technical_id);
         }
     }
     s
@@ -74,6 +75,7 @@ pub fn cmd() -> Command {
         )
 }
 
+#[must_use]
 pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
     match matches.subcommand() {
         Some(("list", _)) => {
@@ -110,7 +112,7 @@ mod tests {
     #[test]
     fn cmd_subcommands() {
         let c = cmd();
-        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name()).collect();
+        let names: Vec<_> = c.get_subcommands().map(Command::get_name).collect();
         assert!(names.contains(&"list"));
         assert!(names.contains(&"enable"));
         assert!(names.contains(&"disable"));

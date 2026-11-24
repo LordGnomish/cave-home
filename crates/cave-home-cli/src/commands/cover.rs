@@ -37,6 +37,7 @@ pub fn cmd() -> Command {
         .subcommand(Command::new("list").about("List every cover grouped by room"))
 }
 
+#[must_use]
 pub fn run() -> i32 {
     println!("cover: backend not yet attached — Phase 2.");
     0

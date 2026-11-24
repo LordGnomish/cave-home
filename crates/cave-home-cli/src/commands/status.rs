@@ -7,6 +7,7 @@
 //! default. Pod / node / kubelet names live behind `--verbose`.
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
+use std::fmt::Write as _;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Health {
@@ -106,25 +107,22 @@ pub fn render(rows: &[StatusRow], verbose: bool) -> String {
         } else {
             r.health.friendly()
         };
-        out.push_str(&format!("  {:<12}  {}\n", r.label, label));
+        let _ = writeln!(out, "  {:<12}  {}", r.label, label);
         if verbose {
-            out.push_str(&format!("                  {}\n", r.technical));
+            let _ = writeln!(out, "                  {}", r.technical);
         }
     }
     out
 }
 
 /// Dispatcher entry.
+#[must_use]
 pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
     let _watch = matches.get_flag("watch"); // Phase 2b: loop with sleep.
     let rows = gather_demo_status();
     print!("{}", render(&rows, verbose));
     // Exit code: 0 if all rows OK or Warn; 1 if any are Down.
-    if rows.iter().any(|r| r.health == Health::Down) {
-        1
-    } else {
-        0
-    }
+    i32::from(rows.iter().any(|r| r.health == Health::Down))
 }
 
 #[cfg(test)]

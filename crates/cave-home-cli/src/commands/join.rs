@@ -43,15 +43,15 @@ pub fn token_is_well_formed(token: &str) -> bool {
     parts.len() == 3 && parts[1].len() >= 32 && parts[2].len() >= 10
 }
 
-/// Dispatcher entry. The CLI just validates shape and prints a
-/// grandma-friendly progress message — actual cluster wire-up will
-/// route through `cave-home-cluster` once that crate exposes a
-/// public `join()` API (Phase 2b).
+/// Dispatcher entry.
+///
+/// The CLI just validates shape and prints a grandma-friendly progress
+/// message — actual cluster wire-up will route through `cave-home-cluster`
+/// once that crate exposes a public `join()` API (Phase 2b).
 pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
     let token = matches
         .get_one::<String>("token")
-        .map(String::as_str)
-        .unwrap_or("");
+        .map_or("", String::as_str);
     let server = matches.get_one::<String>("server").map(String::as_str);
 
     if !token_is_well_formed(token) {
@@ -80,14 +80,17 @@ pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn cmd_has_token_required() {
+    fn cmd_has_token_required() -> TestResult {
         let c = cmd();
         let token = c
             .get_arguments()
             .find(|a| a.get_id().as_str() == "token")
-            .expect("token arg");
+            .ok_or("`join` has no `token` argument")?;
         assert!(token.is_required_set());
+        Ok(())
     }
 
     #[test]

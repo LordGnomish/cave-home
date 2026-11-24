@@ -81,11 +81,7 @@ mod tests {
             } else {
                 2
             },
-            read_only_key_count: if matches!(phase, RotationPhase::Steady) {
-                0
-            } else {
-                1
-            },
+            read_only_key_count: usize::from(!matches!(phase, RotationPhase::Steady)),
             rotation_phase: phase,
         }
     }

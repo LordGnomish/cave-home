@@ -56,6 +56,11 @@ pub struct InitOutcome {
 }
 
 /// Pure helper, easy to test.
+///
+/// # Errors
+///
+/// Returns the I/O error if `dir` cannot be created or the
+/// `node-initialised` marker file cannot be written into it.
 pub fn init_at(dir: &Path, force: bool) -> std::io::Result<InitOutcome> {
     let existed = dir.exists();
     if existed && !force {
@@ -79,8 +84,7 @@ pub fn init_at(dir: &Path, force: bool) -> std::io::Result<InitOutcome> {
 pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
     let dir: PathBuf = matches
         .get_one::<String>("config-dir")
-        .map(PathBuf::from)
-        .unwrap_or_else(default_config_dir);
+        .map_or_else(default_config_dir, PathBuf::from);
     let force = matches.get_flag("force");
 
     match init_at(&dir, force) {
@@ -117,6 +121,8 @@ mod tests {
     use super::*;
     use std::env;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[allow(clippy::items_after_statements)]
     #[test]
     fn cmd_advertises_name_and_help() {
@@ -129,22 +135,24 @@ mod tests {
     }
 
     #[test]
-    fn init_creates_fresh_dir() {
+    fn init_creates_fresh_dir() -> TestResult {
         let tmp = env::temp_dir().join(format!("cave-home-init-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
-        let outcome = init_at(&tmp, false).expect("init_at");
+        let outcome = init_at(&tmp, false)?;
         assert!(outcome.created);
         assert!(tmp.join("node-initialised").exists());
         let _ = fs::remove_dir_all(&tmp);
+        Ok(())
     }
 
     #[test]
-    fn init_existing_no_force_is_noop() {
+    fn init_existing_no_force_is_noop() -> TestResult {
         let tmp = env::temp_dir().join(format!("cave-home-init-noop-{}", std::process::id()));
-        fs::create_dir_all(&tmp).expect("mkdir");
-        let outcome = init_at(&tmp, false).expect("init_at");
+        fs::create_dir_all(&tmp)?;
+        let outcome = init_at(&tmp, false)?;
         assert!(!outcome.created);
         let _ = fs::remove_dir_all(&tmp);
+        Ok(())
     }
 
     #[test]

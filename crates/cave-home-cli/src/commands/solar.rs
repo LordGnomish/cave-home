@@ -4,7 +4,7 @@
 //! `cavehomectl solar` — solar / EV / battery / forecast operations.
 //!
 //! Subcommands (Charter §6.3 grandma-friendly UX — home-world labels,
-//! Modbus / kW / SunSpec terminology gated behind `--verbose`):
+//! Modbus / kW / `SunSpec` terminology gated behind `--verbose`):
 //!
 //! ```text
 //!   cavehomectl solar status                  # overall summary
@@ -16,6 +16,9 @@
 //! ```
 
 use clap::{Arg, ArgMatches, Command};
+use std::fmt::Write as _;
+
+use crate::num::f64_to_i32;
 
 /// Build the `solar` clap subtree.
 #[must_use]
@@ -53,16 +56,16 @@ pub fn cmd() -> Command {
         )
 }
 
-/// Entry from `main.rs`. The F5 contract uses the simpler signature
-/// `() -> i32` for cross-agent stubs; for solar we re-parse argv here
-/// so we can honour `cavehomectl solar status`, etc. without changing
-/// the F5 dispatch signature.
+/// Entry from `main.rs`.
+///
+/// The F5 contract uses the simpler signature `() -> i32` for cross-agent
+/// stubs; for solar we re-parse argv here so we can honour
+/// `cavehomectl solar status`, etc. without changing the F5 dispatch
+/// signature.
 #[must_use]
 pub fn run() -> i32 {
-    let argv: Vec<std::ffi::OsString> = std::env::args_os().collect();
     // Skip the binary name and the leading "solar" token.
-    let after_solar: Vec<std::ffi::OsString> = argv
-        .into_iter()
+    let after_solar: Vec<std::ffi::OsString> = std::env::args_os()
         .skip_while(|s| s.to_str() != Some("solar"))
         .collect();
     if after_solar.is_empty() {
@@ -98,14 +101,8 @@ pub fn dispatch(matches: &ArgMatches, verbose: bool) -> i32 {
                 0
             }
             Some(("mode", m)) => {
-                let lp = m
-                    .get_one::<String>("loadpoint")
-                    .map(String::as_str)
-                    .unwrap_or("");
-                let mode = m
-                    .get_one::<String>("mode")
-                    .map(String::as_str)
-                    .unwrap_or("");
+                let lp = m.get_one::<String>("loadpoint").map_or("", String::as_str);
+                let mode = m.get_one::<String>("mode").map_or("", String::as_str);
                 if !["off", "now", "minpv", "pv"].contains(&mode) {
                     eprintln!("Unknown mode '{mode}'. Use off, now, minpv or pv.");
                     return 1;
@@ -141,7 +138,7 @@ pub struct SolarSummary {
 }
 
 #[must_use]
-pub fn demo_summary() -> SolarSummary {
+pub const fn demo_summary() -> SolarSummary {
     SolarSummary {
         solar_kw: 5.2,
         home_kw: 1.4,
@@ -155,25 +152,27 @@ pub fn render_status_summary(s: &SolarSummary, verbose: bool) -> String {
     let mut out = String::new();
     out.push_str("Solar status\n");
     out.push_str("=============\n");
-    out.push_str(&format!("  Solar producing  {:.1} kW\n", s.solar_kw));
-    out.push_str(&format!("  Home using       {:.1} kW\n", s.home_kw));
-    out.push_str(&format!("  Battery          {:.0}% full\n", s.battery_soc));
+    let _ = writeln!(out, "  Solar producing  {:.1} kW", s.solar_kw);
+    let _ = writeln!(out, "  Home using       {:.1} kW", s.home_kw);
+    let _ = writeln!(out, "  Battery          {:.0}% full", s.battery_soc);
     if s.grid_kw < 0.0 {
-        out.push_str(&format!(
-            "  Sending to grid  {:.1} kW (earning credits)\n",
+        let _ = writeln!(
+            out,
+            "  Sending to grid  {:.1} kW (earning credits)",
             -s.grid_kw
-        ));
+        );
     } else {
-        out.push_str(&format!("  Taking from grid {:.1} kW\n", s.grid_kw));
+        let _ = writeln!(out, "  Taking from grid {:.1} kW", s.grid_kw);
     }
     if verbose {
         out.push_str("\n[developer] raw fields:\n");
-        out.push_str(&format!(
-            "  grid_w={} pv_w={} battery_soc_pct={}\n",
-            (s.grid_kw * 1000.0) as i32,
-            (s.solar_kw * 1000.0) as i32,
-            s.battery_soc as i32,
-        ));
+        let _ = writeln!(
+            out,
+            "  grid_w={} pv_w={} battery_soc_pct={}",
+            f64_to_i32(s.grid_kw * 1000.0),
+            f64_to_i32(s.solar_kw * 1000.0),
+            f64_to_i32(s.battery_soc),
+        );
     }
     out
 }
@@ -203,13 +202,13 @@ pub fn render_inverter(i: &InverterSnapshot, verbose: bool) -> String {
     let mut out = String::new();
     out.push_str("Solar inverter\n");
     out.push_str("==============\n");
-    out.push_str(&format!("  Currently        {}\n", i.status));
-    out.push_str(&format!("  Producing        {:.1} kW\n", i.ac_power_kw));
+    let _ = writeln!(out, "  Currently        {}", i.status);
+    let _ = writeln!(out, "  Producing        {:.1} kW", i.ac_power_kw);
     if verbose {
         out.push_str("\n[developer] raw fields:\n");
-        out.push_str(&format!("  manufacturer  : {}\n", i.manufacturer));
-        out.push_str(&format!("  model         : {}\n", i.model));
-        out.push_str(&format!("  dc_voltage_v  : {:.1}\n", i.dc_voltage_v));
+        let _ = writeln!(out, "  manufacturer  : {}", i.manufacturer);
+        let _ = writeln!(out, "  model         : {}", i.model);
+        let _ = writeln!(out, "  dc_voltage_v  : {:.1}", i.dc_voltage_v);
     }
     out
 }
@@ -235,10 +234,10 @@ pub fn render_battery(b: &BatterySnapshot, verbose: bool) -> String {
     let mut out = String::new();
     out.push_str("Home battery\n");
     out.push_str("============\n");
-    out.push_str(&format!("  Status   {}\n", b.status));
-    out.push_str(&format!("  Battery  {:.0}% full\n", b.soc_percent));
+    let _ = writeln!(out, "  Status   {}", b.status);
+    let _ = writeln!(out, "  Battery  {:.0}% full", b.soc_percent);
     if verbose {
-        out.push_str(&format!("\n[developer] power_kw={:.2}\n", b.power_kw));
+        let _ = writeln!(out, "\n[developer] power_kw={:.2}", b.power_kw);
     }
     out
 }
@@ -275,9 +274,9 @@ pub fn render_loadpoints(rows: &[LoadpointRow], verbose: bool) -> String {
     out.push_str("EV chargers & heat-pump\n");
     out.push_str("=======================\n");
     for r in rows {
-        out.push_str(&format!("  {:<20}  {}  mode={}\n", r.name, r.kind, r.mode));
+        let _ = writeln!(out, "  {:<20}  {}  mode={}", r.name, r.kind, r.mode);
         if verbose {
-            out.push_str(&format!("    [developer] current_a={}\n", r.current_a));
+            let _ = writeln!(out, "    [developer] current_a={}", r.current_a);
         }
     }
     out
@@ -316,14 +315,11 @@ pub fn render_forecast(f: &ForecastRow, verbose: bool) -> String {
     let mut out = String::new();
     out.push_str("Solar forecast\n");
     out.push_str("==============\n");
-    out.push_str(&format!("  Today      {:.1} kWh expected\n", f.kwh_today));
-    out.push_str(&format!(
-        "  Tomorrow   {:.1} kWh expected\n",
-        f.kwh_tomorrow
-    ));
-    out.push_str(&format!("  Peak hour  {:.1} kW\n", f.peak_kw));
+    let _ = writeln!(out, "  Today      {:.1} kWh expected", f.kwh_today);
+    let _ = writeln!(out, "  Tomorrow   {:.1} kWh expected", f.kwh_tomorrow);
+    let _ = writeln!(out, "  Peak hour  {:.1} kW", f.peak_kw);
     if verbose {
-        out.push_str(&format!("\n[developer] source={}\n", f.source));
+        let _ = writeln!(out, "\n[developer] source={}", f.source);
     }
     out
 }
@@ -340,7 +336,7 @@ mod tests {
     #[test]
     fn cmd_has_all_subcommands() {
         let c = cmd();
-        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name()).collect();
+        let names: Vec<_> = c.get_subcommands().map(Command::get_name).collect();
         for required in ["status", "sunspec", "evcc", "forecast"] {
             assert!(names.contains(&required), "missing solar sub: {required}");
         }

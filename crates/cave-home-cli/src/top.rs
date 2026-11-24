@@ -189,6 +189,8 @@ pub fn render_top_pods(rows: &[PodTopRow], with_namespace: bool) -> String {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn cells_format_with_units() {
         assert_eq!(cpu_cell(250), "250m");
@@ -198,13 +200,18 @@ mod tests {
     }
 
     #[test]
-    fn render_table_pads_non_final_columns() {
+    fn render_table_pads_non_final_columns() -> TestResult {
         let rows = vec![
             vec!["A".to_string(), "B".to_string()],
             vec!["longer".to_string(), "x".to_string()],
         ];
         let out = render_table(&rows);
         // "A" is padded to width 6 ("longer"), then 3 spaces, then "B".
-        assert_eq!(out.lines().next().expect("header"), "A        B");
+        let header = out
+            .lines()
+            .next()
+            .ok_or("the rendered table has no header line")?;
+        assert_eq!(header, "A        B");
+        Ok(())
     }
 }

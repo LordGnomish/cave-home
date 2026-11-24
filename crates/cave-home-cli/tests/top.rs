@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! RED-phase test for the **`cavehomectl top`** surface — the `kubectl top`
-//! equivalent backed by the in-process metrics_server pipeline.
+//! equivalent backed by the in-process `metrics_server` pipeline.
 //!
 //! `cavehomectl top nodes` and `cavehomectl top pods` render the node / pod
 //! CPU + memory tables. This drives the pure table-rendering half (column
@@ -10,6 +10,8 @@
 use cave_home_cli::top::{
     NodeTopRow, PodTopRow, render_top_nodes, render_top_pods, top_subcommands,
 };
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 fn cells(line: &str) -> Vec<&str> {
     line.split_whitespace().collect()
@@ -45,14 +47,19 @@ fn top_nodes_renders_header_and_rows() {
 }
 
 #[test]
-fn top_nodes_unknown_percent_renders_placeholder() {
+fn top_nodes_unknown_percent_renders_placeholder() -> TestResult {
     let rows = vec![NodeTopRow::new("hub-1", 250, None, 128, None)];
     let out = render_top_nodes(&rows);
-    let data = cells(out.lines().nth(1).expect("a data row"));
+    let data = cells(
+        out.lines()
+            .nth(1)
+            .ok_or("the rendered table has no data row")?,
+    );
     assert_eq!(
         data,
         vec!["hub-1", "250m", "<unknown>", "128Mi", "<unknown>"]
     );
+    Ok(())
 }
 
 #[test]
@@ -87,7 +94,7 @@ fn top_pods_empty_says_no_resources() {
 }
 
 #[test]
-fn columns_are_left_aligned_and_padded() {
+fn columns_are_left_aligned_and_padded() -> TestResult {
     // The long name pushes the CPU column right; both data rows must start their
     // CPU cell at the same offset (left-aligned, padded to the widest NAME).
     let rows = vec![
@@ -96,8 +103,11 @@ fn columns_are_left_aligned_and_padded() {
     ];
     let out = render_top_nodes(&rows);
     let lines: Vec<&str> = out.lines().collect();
-    let cpu_col = lines[0].find("CPU(cores)").expect("header has CPU col");
+    let cpu_col = lines[0]
+        .find("CPU(cores)")
+        .ok_or("the header has no `CPU(cores)` column")?;
     // Each data row has "250m"-style value beginning exactly at the header offset.
     assert_eq!(&lines[1][cpu_col..cpu_col + 2], "1m");
     assert_eq!(&lines[2][cpu_col..cpu_col + 2], "2m");
+    Ok(())
 }

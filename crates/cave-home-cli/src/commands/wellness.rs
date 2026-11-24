@@ -21,6 +21,7 @@ pub fn cmd() -> Command {
         )
 }
 
+#[must_use]
 pub fn run() -> i32 {
     println!("wellness: backend not yet attached — Phase 2.");
     0

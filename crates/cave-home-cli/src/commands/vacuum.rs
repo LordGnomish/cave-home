@@ -36,6 +36,7 @@ pub fn cmd() -> Command {
         .subcommand(Command::new("list").about("List every vacuum"))
 }
 
+#[must_use]
 pub fn run() -> i32 {
     println!("vacuum: backend not yet attached — Phase 2.");
     0

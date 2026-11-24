@@ -3,7 +3,7 @@
 //!
 //! Phase 2b CLI surface (planned):
 //!   cavehomectl controllers-status        # queue depth + reconcile rates
-//!   cavehomectl describe-deployment <n>   # ReplicaSet rollout fan-out
+//!   cavehomectl describe-deployment <n>   # `ReplicaSet` rollout fan-out
 //!   cavehomectl describe-job <n>          # completions + parallelism
 
 #[must_use]
@@ -11,7 +11,7 @@ pub fn controller_manager_subcommands() -> Vec<&'static str> {
     vec!["controllers-status", "describe-deployment", "describe-job"]
 }
 
-pub fn placeholder() {}
+pub const fn placeholder() {}
 
 #[cfg(test)]
 mod tests {

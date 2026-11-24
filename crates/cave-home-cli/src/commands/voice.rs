@@ -22,6 +22,7 @@ pub fn cmd() -> Command {
         .subcommand(Command::new("wake").about("Show wake-word state"))
 }
 
+#[must_use]
 pub fn run() -> i32 {
     println!("voice: backend not yet attached — Phase 2.");
     0

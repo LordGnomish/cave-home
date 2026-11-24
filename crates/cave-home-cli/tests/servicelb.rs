@@ -2,9 +2,9 @@
 //! `cavehomectl orchestration servicelb …` command-surface tests
 //! (RED until the `servicelb` CLI module lands).
 //!
-//! The ServiceLB power-user surface (ADR-005 §2): `orchestration servicelb
+//! The `ServiceLB` power-user surface (ADR-005 §2): `orchestration servicelb
 //! status` (cluster-wide LB summary) and `orchestration servicelb describe
-//! <service>` (one Service's svclb DaemonSet + ingress detail). Like the sibling
+//! <service>` (one Service's svclb `DaemonSet` + ingress detail). Like the sibling
 //! k3s infra modules (apiserver/scheduler/cni) this is the scaffolded command
 //! surface; the live backend attaches with the apiserver/informer wiring.
 

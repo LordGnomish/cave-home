@@ -3,14 +3,14 @@
 //!
 //! Phase 2b CLI surface (planned):
 //!   cavehomectl describe-scheduler   # show queue depth + plugin config
-//!   cavehomectl show-decisions       # tail recent ScheduleResult rows
+//!   cavehomectl show-decisions       # tail recent `ScheduleResult` rows
 
 #[must_use]
 pub fn scheduler_subcommands() -> Vec<&'static str> {
     vec!["describe-scheduler", "show-decisions"]
 }
 
-pub fn placeholder() {}
+pub const fn placeholder() {}
 
 #[cfg(test)]
 mod tests {

@@ -7,6 +7,7 @@ pub mod commands;
 pub mod containers;
 pub mod controller_manager;
 pub mod kubelet;
+mod num;
 pub mod proxy;
 pub mod scheduler;
 pub mod secrets_encryption;

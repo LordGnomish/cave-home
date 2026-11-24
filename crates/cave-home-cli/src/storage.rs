@@ -16,7 +16,7 @@ pub fn orchestration_storage_subcommands() -> Vec<&'static str> {
     vec!["list-pvs", "describe"]
 }
 
-pub fn placeholder() {}
+pub const fn placeholder() {}
 
 #[cfg(test)]
 mod tests {

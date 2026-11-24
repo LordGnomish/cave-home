@@ -34,7 +34,7 @@ pub fn resolve<'a>(scenes: &'a [&'a str], query: &str) -> Option<&'a str> {
 }
 
 #[must_use]
-pub fn demo_scenes() -> &'static [&'static str] {
+pub const fn demo_scenes() -> &'static [&'static str] {
     &[
         "Akşam",
         "Romantic Dinner",
@@ -44,6 +44,7 @@ pub fn demo_scenes() -> &'static [&'static str] {
     ]
 }
 
+#[must_use]
 pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
     let Some(("trigger", sub)) = matches.subcommand() else {
         eprintln!("Use: scene trigger <name>");
@@ -53,22 +54,18 @@ pub fn run(matches: &ArgMatches, verbose: bool) -> i32 {
         eprintln!("Internal: missing scene name.");
         return 2;
     };
-    match resolve(demo_scenes(), name) {
-        Some(matched) => {
-            println!("Running scene: {matched}");
-            if verbose {
-                println!("  resolved from query: {name:?}");
-            }
-            0
-        }
-        None => {
-            eprintln!(
-                "No scene called '{name}'. Try one of: {}.",
-                demo_scenes().join(", ")
-            );
-            1
-        }
+    let Some(scene) = resolve(demo_scenes(), name) else {
+        eprintln!(
+            "No scene called '{name}'. Try one of: {}.",
+            demo_scenes().join(", ")
+        );
+        return 1;
+    };
+    println!("Running scene: {scene}");
+    if verbose {
+        println!("  resolved from query: {name:?}");
     }
+    0
 }
 
 #[cfg(test)]
@@ -79,8 +76,7 @@ mod tests {
     fn cmd_requires_trigger_subcommand() {
         let c = cmd();
         assert_eq!(c.get_name(), "scene");
-        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name()).collect();
-        assert!(names.contains(&"trigger"));
+        assert!(c.get_subcommands().any(|s| s.get_name() == "trigger"));
     }
 
     #[test]

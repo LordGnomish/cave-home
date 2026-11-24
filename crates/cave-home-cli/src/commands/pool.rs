@@ -26,6 +26,7 @@ pub fn cmd() -> Command {
         )
 }
 
+#[must_use]
 pub fn run() -> i32 {
     println!("pool: backend not yet attached — Phase 2.");
     0

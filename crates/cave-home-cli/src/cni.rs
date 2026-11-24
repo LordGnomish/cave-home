@@ -5,4 +5,4 @@
 //! `subnet env --check`). For now this exists only so the 4-track scaffold
 //! mandate is satisfied.
 
-pub fn placeholder() {}
+pub const fn placeholder() {}

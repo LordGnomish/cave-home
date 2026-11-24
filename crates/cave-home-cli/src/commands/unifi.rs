@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 //
-//! `cavehomectl unifi` — UniFi ecosystem command surface (ADR-009).
+//! `cavehomectl unifi` — `UniFi` ecosystem command surface (ADR-009).
 //!
 //! Sub-trees mirror the four sub-crates:
 //!   * `cavehomectl unifi network ...` — switches, APs, ports, clients.
@@ -223,8 +223,8 @@ fn dispatch_network(sub: &ArgMatches, verbose: bool) -> i32 {
             println!("  • Salon TV");
             0
         }
-        Some(("block", m)) | Some(("unblock", m)) => {
-            let mac = m.get_one::<String>("mac").map(String::as_str).unwrap_or("");
+        Some(("block" | "unblock", m)) => {
+            let mac = m.get_one::<String>("mac").map_or("", String::as_str);
             let verb = if sub.subcommand_name() == Some("block") {
                 "engellendi"
             } else {
@@ -238,11 +238,8 @@ fn dispatch_network(sub: &ArgMatches, verbose: bool) -> i32 {
         }
         Some(("outlet", m)) => {
             let on = m.get_flag("on");
-            let device = m
-                .get_one::<String>("device")
-                .map(String::as_str)
-                .unwrap_or("");
-            let idx = m.get_one::<String>("idx").map(String::as_str).unwrap_or("");
+            let device = m.get_one::<String>("device").map_or("", String::as_str);
+            let idx = m.get_one::<String>("idx").map_or("", String::as_str);
             println!(
                 "Outlet {} (Phase 1 stub).",
                 if on { "açıldı" } else { "kapandı" }
@@ -285,14 +282,8 @@ fn dispatch_protect(sub: &ArgMatches, verbose: bool) -> i32 {
                 0
             }
             Some(("assign", m)) => {
-                let cam = m
-                    .get_one::<String>("camera")
-                    .map(String::as_str)
-                    .unwrap_or("");
-                let sys = m
-                    .get_one::<String>("subsystem")
-                    .map(String::as_str)
-                    .unwrap_or("");
+                let cam = m.get_one::<String>("camera").map_or("", String::as_str);
+                let sys = m.get_one::<String>("subsystem").map_or("", String::as_str);
                 println!("Kamera '{cam}' → '{sys}' atandı (Phase 1 stub).");
                 if verbose {
                     println!("  persistence: in-memory only, M2 ticket");
@@ -324,10 +315,7 @@ fn dispatch_access(sub: &ArgMatches, verbose: bool) -> i32 {
             0
         }
         Some(("unlock", m)) => {
-            let door = m
-                .get_one::<String>("door")
-                .map(String::as_str)
-                .unwrap_or("");
+            let door = m.get_one::<String>("door").map_or("", String::as_str);
             let minutes = m.get_one::<u32>("minutes").copied().unwrap_or(10);
             println!("Kapı '{door}' {minutes} dakika açık kalacak (Phase 1 stub).");
             if verbose {
@@ -364,14 +352,8 @@ fn dispatch_talk(sub: &ArgMatches, verbose: bool) -> i32 {
             0
         }
         Some(("control", m)) => {
-            let call = m
-                .get_one::<String>("call")
-                .map(String::as_str)
-                .unwrap_or("");
-            let verb = m
-                .get_one::<String>("verb")
-                .map(String::as_str)
-                .unwrap_or("");
+            let call = m.get_one::<String>("call").map_or("", String::as_str);
+            let verb = m.get_one::<String>("verb").map_or("", String::as_str);
             println!("Çağrı '{call}' için '{verb}' isteği gönderildi (Phase 1 stub).");
             if verbose {
                 println!("  Phase 1: TalkClient::control_call returns Unavailable");
@@ -436,8 +418,7 @@ impl LiveConfig {
 fn dispatch_live(sub: &ArgMatches, verbose: bool) -> i32 {
     let target = sub
         .get_one::<String>("target")
-        .map(String::as_str)
-        .unwrap_or("devices");
+        .map_or("devices", String::as_str);
     let cfg = match LiveConfig::from_env() {
         Ok(cfg) => cfg,
         Err(why) => {
@@ -552,51 +533,67 @@ async fn run_live(cfg: &LiveConfig, target: &str, verbose: bool) -> i32 {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn top_level_has_four_sub_pillars() {
         let c = cmd();
-        let names: Vec<_> = c.get_subcommands().map(|s| s.get_name()).collect();
+        let names: Vec<_> = c.get_subcommands().map(Command::get_name).collect();
         for p in ["network", "protect", "access", "talk"] {
             assert!(names.contains(&p), "missing pillar '{p}'");
         }
     }
 
     #[test]
-    fn network_has_block_subcommand() {
+    fn network_has_block_subcommand() -> TestResult {
         let c = cmd();
-        let net = c.find_subcommand("network").unwrap();
-        let names: Vec<_> = net.get_subcommands().map(|s| s.get_name()).collect();
+        let net = c
+            .find_subcommand("network")
+            .ok_or("`unifi` has no `network` subcommand")?;
+        let names: Vec<_> = net.get_subcommands().map(Command::get_name).collect();
         assert!(names.contains(&"block"));
         assert!(names.contains(&"unblock"));
         assert!(names.contains(&"outlet"));
+        Ok(())
     }
 
     #[test]
-    fn protect_has_seam_subcommand() {
+    fn protect_has_seam_subcommand() -> TestResult {
         let c = cmd();
-        let p = c.find_subcommand("protect").unwrap();
-        let seam = p.find_subcommand("seam").unwrap();
-        let names: Vec<_> = seam.get_subcommands().map(|s| s.get_name()).collect();
+        let p = c
+            .find_subcommand("protect")
+            .ok_or("`unifi` has no `protect` subcommand")?;
+        let seam = p
+            .find_subcommand("seam")
+            .ok_or("`unifi protect` has no `seam` subcommand")?;
+        let names: Vec<_> = seam.get_subcommands().map(Command::get_name).collect();
         assert!(names.contains(&"list"));
         assert!(names.contains(&"assign"));
+        Ok(())
     }
 
     #[test]
-    fn access_has_unlock_with_minutes() {
+    fn access_has_unlock_with_minutes() -> TestResult {
         let c = cmd();
-        let a = c.find_subcommand("access").unwrap();
-        let unlock = a.find_subcommand("unlock").unwrap();
+        let a = c
+            .find_subcommand("access")
+            .ok_or("`unifi` has no `access` subcommand")?;
+        let unlock = a
+            .find_subcommand("unlock")
+            .ok_or("`unifi access` has no `unlock` subcommand")?;
         let m = unlock
             .clone()
-            .try_get_matches_from(["unlock", "front", "--minutes", "25"])
-            .unwrap();
+            .try_get_matches_from(["unlock", "front", "--minutes", "25"])?;
         assert_eq!(m.get_one::<u32>("minutes").copied(), Some(25));
+        Ok(())
     }
 
     #[test]
-    fn live_target_is_validated() {
+    fn live_target_is_validated() -> TestResult {
         let c = cmd();
-        let live = c.find_subcommand("live").unwrap();
+        let live = c
+            .find_subcommand("live")
+            .ok_or("`unifi` has no `live` subcommand")?;
         assert!(
             live.clone()
                 .try_get_matches_from(["live", "devices"])
@@ -612,26 +609,30 @@ mod tests {
                 .try_get_matches_from(["live", "teleport"])
                 .is_err()
         );
+        Ok(())
     }
 
     #[test]
-    fn live_without_host_env_reports_config_error() {
+    fn live_without_host_env_reports_config_error() -> TestResult {
         // With no CAVEHOME_UNIFI_HOST set, the live path must fail cleanly (2),
         // never panic — exercising the real cave-home-unifi link.
         if std::env::var("CAVEHOME_UNIFI_HOST").is_err() {
             let c = cmd();
-            let m = c
-                .try_get_matches_from(["unifi", "live", "devices"])
-                .unwrap();
+            let m = c.try_get_matches_from(["unifi", "live", "devices"])?;
             assert_eq!(run_matched(&m, false), 2);
         }
+        Ok(())
     }
 
     #[test]
-    fn talk_control_validates_verb() {
+    fn talk_control_validates_verb() -> TestResult {
         let c = cmd();
-        let t = c.find_subcommand("talk").unwrap();
-        let ctl = t.find_subcommand("control").unwrap();
+        let t = c
+            .find_subcommand("talk")
+            .ok_or("`unifi` has no `talk` subcommand")?;
+        let ctl = t
+            .find_subcommand("control")
+            .ok_or("`unifi talk` has no `control` subcommand")?;
         assert!(
             ctl.clone()
                 .try_get_matches_from(["control", "c1", "answer"])
@@ -642,41 +643,39 @@ mod tests {
                 .try_get_matches_from(["control", "c1", "shoutAtIt"])
                 .is_err()
         );
+        Ok(())
     }
 
     #[test]
-    fn dispatch_network_status_zero() {
+    fn dispatch_network_status_zero() -> TestResult {
         let c = cmd();
-        let m = c
-            .try_get_matches_from(["unifi", "network", "status"])
-            .unwrap();
+        let m = c.try_get_matches_from(["unifi", "network", "status"])?;
         assert_eq!(run_matched(&m, false), 0);
+        Ok(())
     }
 
     #[test]
-    fn dispatch_protect_seam_list() {
+    fn dispatch_protect_seam_list() -> TestResult {
         let c = cmd();
-        let m = c
-            .try_get_matches_from(["unifi", "protect", "seam", "list"])
-            .unwrap();
+        let m = c.try_get_matches_from(["unifi", "protect", "seam", "list"])?;
         assert_eq!(run_matched(&m, false), 0);
+        Ok(())
     }
 
     #[test]
-    fn dispatch_access_unlock_with_minutes() {
+    fn dispatch_access_unlock_with_minutes() -> TestResult {
         let c = cmd();
-        let m = c
-            .try_get_matches_from(["unifi", "access", "unlock", "front", "--minutes", "15"])
-            .unwrap();
+        let m =
+            c.try_get_matches_from(["unifi", "access", "unlock", "front", "--minutes", "15"])?;
         assert_eq!(run_matched(&m, true), 0);
+        Ok(())
     }
 
     #[test]
-    fn dispatch_talk_control() {
+    fn dispatch_talk_control() -> TestResult {
         let c = cmd();
-        let m = c
-            .try_get_matches_from(["unifi", "talk", "control", "c1", "decline"])
-            .unwrap();
+        let m = c.try_get_matches_from(["unifi", "talk", "control", "c1", "decline"])?;
         assert_eq!(run_matched(&m, false), 0);
+        Ok(())
     }
 }
