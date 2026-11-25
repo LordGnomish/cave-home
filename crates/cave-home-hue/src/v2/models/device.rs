@@ -51,8 +51,10 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn device_decodes_signify_light() {
+    fn device_decodes_signify_light() -> TestResult {
         let d: Device = serde_json::from_value(json!({
             "id": "dev-1",
             "product_data": {
@@ -69,9 +71,9 @@ mod tests {
                 {"rid": "zigbee-1", "rtype": "zigbee_connectivity"}
             ],
             "type": "device"
-        }))
-        .unwrap();
+        }))?;
         assert_eq!(d.product_data.model_id, "LCT012");
         assert_eq!(d.services.len(), 2);
+        Ok(())
     }
 }

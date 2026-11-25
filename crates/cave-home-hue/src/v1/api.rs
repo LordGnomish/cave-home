@@ -126,6 +126,14 @@ pub(crate) mod test_support {
     use parking_lot::Mutex;
     use serde_json::Value;
 
+    /// `value` as a raw bridge map; an error if it is not a JSON object.
+    pub fn raw_map(value: Value) -> Result<super::RawItem, &'static str> {
+        match value {
+            Value::Object(map) => Ok(map),
+            _ => Err("the fixture is not a JSON object"),
+        }
+    }
+
     /// Records every PUT so a test can compare path and body exactly.
     #[derive(Default)]
     pub struct RecordingReq {
@@ -152,6 +160,7 @@ pub(crate) mod test_support {
 
 #[cfg(test)]
 mod tests {
+    use super::test_support::raw_map;
     use super::*;
     use serde_json::json;
 
@@ -171,51 +180,43 @@ mod tests {
     }
 
     #[test]
-    fn process_raw_inserts_new_items() {
+    fn process_raw_inserts_new_items() -> TestResult {
         let mut items = ApiItems::<DummyItem>::new("lights");
         let raw = json!({
             "1": {"name": "Mutfak"},
             "2": {"name": "Salon"},
         });
-        items.process_raw(raw.as_object().unwrap().clone());
+        items.process_raw(raw_map(raw)?);
         assert_eq!(items.len(), 2);
         assert!(items.get("1").is_some());
         assert!(items.get("2").is_some());
+        Ok(())
     }
 
     #[test]
-    fn process_raw_removes_disappeared_items() {
+    fn process_raw_removes_disappeared_items() -> TestResult {
         let mut items = ApiItems::<DummyItem>::new("lights");
-        items.process_raw(
-            json!({"1": {"name": "A"}, "2": {"name": "B"}})
-                .as_object()
-                .unwrap()
-                .clone(),
-        );
+        items.process_raw(raw_map(json!({"1": {"name": "A"}, "2": {"name": "B"}}))?);
         // Second fetch drops id "2".
-        items.process_raw(json!({"1": {"name": "A"}}).as_object().unwrap().clone());
+        items.process_raw(raw_map(json!({"1": {"name": "A"}}))?);
         assert_eq!(items.len(), 1);
         assert!(items.get("2").is_none());
+        Ok(())
     }
 
     #[test]
-    fn process_raw_mutates_existing_items_in_place() {
+    fn process_raw_mutates_existing_items_in_place() -> TestResult {
         let mut items = ApiItems::<DummyItem>::new("lights");
-        items.process_raw(json!({"1": {"name": "A"}}).as_object().unwrap().clone());
-        items.process_raw(json!({"1": {"name": "B"}}).as_object().unwrap().clone());
-        let item = items.get("1").unwrap();
-        assert_eq!(item.raw.get("name").unwrap(), "B");
+        items.process_raw(raw_map(json!({"1": {"name": "A"}}))?);
+        items.process_raw(raw_map(json!({"1": {"name": "B"}}))?);
+        let item = items
+            .get("1")
+            .ok_or("item 1 is missing after the refresh")?;
+        assert_eq!(item.raw.get("name").ok_or("item 1 has no `name`")?, "B");
+        Ok(())
     }
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
-
-    /// `value` as a raw bridge map.
-    fn raw_map(value: Value) -> Result<RawItem, &'static str> {
-        match value {
-            Value::Object(map) => Ok(map),
-            _ => Err("the fixture is not a JSON object"),
-        }
-    }
 
     #[test]
     fn process_raw_keeps_an_item_whose_new_value_is_not_an_object() -> TestResult {

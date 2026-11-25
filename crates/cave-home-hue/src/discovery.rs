@@ -137,8 +137,10 @@ pub async fn is_v2_bridge(client: &dyn HueHttpClient, host: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use parking_lot::Mutex;
     use std::collections::HashMap;
-    use std::sync::Mutex;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     /// Programmable stub. Each test pre-loads URLs -> responses.
     #[derive(Default)]
@@ -151,15 +153,11 @@ mod tests {
         fn with_body(self, url: &str, body: &[u8]) -> Self {
             self.body_responses
                 .lock()
-                .unwrap()
                 .insert(url.to_string(), body.to_vec());
             self
         }
         fn with_status(self, url: &str, status: u16) -> Self {
-            self.status_responses
-                .lock()
-                .unwrap()
-                .insert(url.to_string(), status);
+            self.status_responses.lock().insert(url.to_string(), status);
             self
         }
     }
@@ -169,7 +167,6 @@ mod tests {
         async fn get_bytes(&self, url: &str) -> HueResult<Vec<u8>> {
             self.body_responses
                 .lock()
-                .unwrap()
                 .get(url)
                 .cloned()
                 .ok_or_else(|| HueError::Transport(format!("stub: no body for {url}")))
@@ -177,7 +174,6 @@ mod tests {
         async fn get_status(&self, url: &str) -> HueResult<u16> {
             self.status_responses
                 .lock()
-                .unwrap()
                 .get(url)
                 .copied()
                 .ok_or_else(|| HueError::Transport(format!("stub: no status for {url}")))
@@ -185,17 +181,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn discover_bridge_returns_normalised_id_and_v2_flag() {
+    async fn discover_bridge_returns_normalised_id_and_v2_flag() -> TestResult {
         let stub = StubClient::default()
             .with_body(
                 "http://10.0.0.1/api/config",
                 br#"{"bridgeid":"001788FFFEABCDEF","apiversion":"1.66.0"}"#,
             )
             .with_status("https://10.0.0.1/clip/v2/resource", 403);
-        let bridge = discover_bridge(&stub, "10.0.0.1").await.unwrap();
+        let bridge = discover_bridge(&stub, "10.0.0.1").await?;
         assert_eq!(bridge.host, "10.0.0.1");
         assert_eq!(bridge.id, "001788abcdef");
         assert!(bridge.supports_v2);
+        Ok(())
     }
 
     #[tokio::test]
@@ -210,7 +207,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn nupnp_drops_unreachable_entries_but_keeps_reachable() {
+    async fn nupnp_drops_unreachable_entries_but_keeps_reachable() -> TestResult {
         let stub = StubClient::default()
             .with_body(
                 URL_NUPNP,
@@ -222,10 +219,11 @@ mod tests {
             )
             .with_status("https://10.0.0.1/clip/v2/resource", 403);
         // Note: 10.0.0.2 has nothing wired, so probe fails. Result keeps only .1.
-        let bridges = discover_nupnp(&stub).await.unwrap();
+        let bridges = discover_nupnp(&stub).await?;
         assert_eq!(bridges.len(), 1);
         assert_eq!(bridges[0].id, "001788000001");
         assert!(bridges[0].supports_v2);
+        Ok(())
     }
 
     #[tokio::test]

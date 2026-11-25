@@ -149,11 +149,14 @@ pub async fn get_all_lights_group(req: &dyn V1Request) -> HueResult<Group> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::v1::api::test_support::raw_map;
     use async_trait::async_trait;
-    use std::sync::Mutex;
+    use parking_lot::Mutex;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[test]
-    fn group_exposes_lights_and_sensors() {
+    fn group_exposes_lights_and_sensors() -> TestResult {
         let raw = json!({
             "type": "Room",
             "name": "Salon",
@@ -161,7 +164,7 @@ mod tests {
             "sensors": ["s1"],
             "state": {"all_on": false, "any_on": true},
         });
-        let g = Group::from_raw("4".into(), raw.as_object().unwrap().clone());
+        let g = Group::from_raw("4".into(), raw_map(raw)?);
         assert_eq!(g.group_type(), Some("Room"));
         assert_eq!(g.name(), "Salon");
         assert_eq!(g.lights(), vec!["1", "2", "3"]);
@@ -173,19 +176,26 @@ mod tests {
                 any_on: true
             })
         );
+        Ok(())
     }
 
     #[test]
-    fn group_action_with_scene_serialises() {
+    fn group_action_with_scene_serialises() -> TestResult {
         let act = GroupAction {
             on: Some(true),
             scene: Some("Bxx0x".into()),
             ..GroupAction::default()
         };
-        let body = serde_json::to_value(&act).unwrap();
-        let obj = body.as_object().unwrap();
+        let body = serde_json::to_value(&act)?;
+        let obj = body
+            .as_object()
+            .ok_or("the serialised action is not a JSON object")?;
         assert_eq!(obj.len(), 2);
-        assert_eq!(obj.get("scene").unwrap(), &Value::String("Bxx0x".into()));
+        assert_eq!(
+            obj.get("scene").ok_or("the body has no `scene`")?,
+            &Value::String("Bxx0x".into())
+        );
+        Ok(())
     }
 
     struct StubReq {
@@ -195,50 +205,39 @@ mod tests {
     #[async_trait]
     impl V1Request for StubReq {
         async fn get(&self, path: &str) -> HueResult<Value> {
-            self.called
-                .lock()
-                .unwrap()
-                .push(("get".into(), path.into()));
+            self.called.lock().push(("get".into(), path.into()));
             Ok(
                 json!({"name": "All", "state": {"all_on": false, "any_on": false}, "lights": [], "sensors": []}),
             )
         }
         async fn put(&self, path: &str, _body: Value) -> HueResult<Value> {
-            self.called
-                .lock()
-                .unwrap()
-                .push(("put".into(), path.into()));
+            self.called.lock().push(("put".into(), path.into()));
             Ok(Value::Null)
         }
         async fn post(&self, path: &str, _body: Value) -> HueResult<Value> {
-            self.called
-                .lock()
-                .unwrap()
-                .push(("post".into(), path.into()));
+            self.called.lock().push(("post".into(), path.into()));
             Ok(Value::Null)
         }
         async fn delete(&self, path: &str) -> HueResult<Value> {
-            self.called
-                .lock()
-                .unwrap()
-                .push(("delete".into(), path.into()));
+            self.called.lock().push(("delete".into(), path.into()));
             Ok(Value::Null)
         }
     }
 
     #[tokio::test]
-    async fn get_all_lights_group_uses_path_groups_zero() {
+    async fn get_all_lights_group_uses_path_groups_zero() -> TestResult {
         let req = StubReq {
             called: Mutex::new(Vec::new()),
         };
-        let _ = get_all_lights_group(&req).await.unwrap();
-        let calls = req.called.lock().unwrap().clone();
+        let _ = get_all_lights_group(&req).await?;
+        let calls = req.called.lock().clone();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0], ("get".into(), "groups/0".into()));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn set_action_puts_to_groups_id_action() {
+    async fn set_action_puts_to_groups_id_action() -> TestResult {
         let req = StubReq {
             called: Mutex::new(Vec::new()),
         };
@@ -250,14 +249,14 @@ mod tests {
                 ..Default::default()
             },
         )
-        .await
-        .unwrap();
-        let calls = req.called.lock().unwrap().clone();
+        .await?;
+        let calls = req.called.lock().clone();
         assert_eq!(calls[0], ("put".into(), "groups/5/action".into()));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn set_action_puts_exactly_the_set_fields() -> Result<(), Box<dyn std::error::Error>> {
+    async fn set_action_puts_exactly_the_set_fields() -> TestResult {
         use crate::v1::api::test_support::RecordingReq;
 
         let req = RecordingReq::default();

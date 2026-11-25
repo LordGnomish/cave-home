@@ -116,6 +116,8 @@ mod tests {
     use async_trait::async_trait;
     use serde_json::Value;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     struct AlwaysUnauthorized;
     #[async_trait]
     impl V2Request for AlwaysUnauthorized {
@@ -151,7 +153,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unauthorized_returns_ok_false() {
+    async fn unauthorized_returns_ok_false() -> TestResult {
         let mut bridge = HueBridge::new(
             BridgeConfig {
                 host: "10.0.0.1".into(),
@@ -161,8 +163,9 @@ mod tests {
             Arc::new(NeverCalled),
             Arc::new(AlwaysUnauthorized),
         );
-        let outcome = bridge.initialize().await.unwrap();
+        let outcome = bridge.initialize().await?;
         assert!(!outcome);
         assert!(!bridge.authorized);
+        Ok(())
     }
 }

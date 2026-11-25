@@ -8,7 +8,8 @@
 //! end-to-end — URL building, the `hue-application-key` header, request bodies,
 //! status-code mapping and SSE framing all go over a real socket.
 
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -34,11 +35,13 @@ impl CapturedRequest {
 /// Spawn a mock bridge that serves each raw HTTP/1.1 string in `responses`,
 /// one per inbound connection, then stops. Returns the base URL the
 /// [`super::transport::ReqwestTransport`] should target plus the shared capture log.
-pub async fn spawn_mock(responses: Vec<String>) -> (String, Arc<Mutex<Vec<CapturedRequest>>>) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind mock bridge");
-    let addr = listener.local_addr().expect("mock addr");
+///
+/// Fails if the loopback listener cannot be bound or has no local address.
+pub async fn spawn_mock(
+    responses: Vec<String>,
+) -> std::io::Result<(String, Arc<Mutex<Vec<CapturedRequest>>>)> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
     let base = format!("http://{addr}");
     let caps = Arc::new(Mutex::new(Vec::new()));
     let caps2 = Arc::clone(&caps);
@@ -48,14 +51,23 @@ pub async fn spawn_mock(responses: Vec<String>) -> (String, Arc<Mutex<Vec<Captur
                 return;
             };
             if let Some(req) = read_request(&mut sock).await {
-                caps2.lock().expect("lock").push(req);
+                caps2.lock().push(req);
             }
             let _ = sock.write_all(resp.as_bytes()).await;
             let _ = sock.flush().await;
             let _ = sock.shutdown().await;
         }
     });
-    (base, caps)
+    Ok((base, caps))
+}
+
+/// The first request the mock bridge captured (a copy, so the capture log is
+/// not kept locked while the test asserts on it).
+pub fn first_request(caps: &Mutex<Vec<CapturedRequest>>) -> Result<CapturedRequest, &'static str> {
+    caps.lock()
+        .first()
+        .cloned()
+        .ok_or("the mock bridge captured no request")
 }
 
 async fn read_request(sock: &mut TcpStream) -> Option<CapturedRequest> {

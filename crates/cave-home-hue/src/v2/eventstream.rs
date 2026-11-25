@@ -175,8 +175,10 @@ impl EventStream {
 mod tests {
     use super::*;
     use crate::v2::events::EventType;
-    use crate::v2::test_support::{http_sse, spawn_mock};
+    use crate::v2::test_support::{first_request, http_sse, spawn_mock};
     use crate::v2::transport::ReqwestTransport;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[test]
     fn line_buffer_splits_on_newlines_and_keeps_partial() {
@@ -186,7 +188,7 @@ mod tests {
             lb.push(b"ta: x\n\n"),
             vec!["data: x".to_string(), String::new()]
         );
-        assert!(lb.push(b"partial").is_empty());
+        assert_eq!(lb.push(b"partial"), Vec::<String>::new());
     }
 
     #[test]
@@ -196,56 +198,61 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn connect_once_emits_events_from_a_real_sse_body() {
+    async fn connect_once_emits_events_from_a_real_sse_body() -> TestResult {
         let payload = r#"[{"id":"e1","creationtime":"2026-06-07T20:00:00Z","type":"update","data":[{"id":"light-1","type":"light","on":{"on":true}}]}]"#;
         let sse = format!("id: 7\nevent: update\ndata: {payload}\n\n");
-        let (base, caps) = spawn_mock(vec![http_sse(&sse)]).await;
-        let t = ReqwestTransport::with_base_url(base, "k").unwrap();
+        let (base, caps) = spawn_mock(vec![http_sse(&sse)]).await?;
+        let t = ReqwestTransport::with_base_url(base, "k")?;
 
         let es = EventStream::new(t);
         let (tx, mut rx) = tokio::sync::mpsc::channel(16);
-        let last_id = es.connect_once(&tx).await.unwrap();
+        let last_id = es.connect_once(&tx).await?;
         drop(tx);
 
-        let ev = rx.recv().await.expect("one event");
+        let ev = rx.recv().await.ok_or("the stream delivered no event")?;
         assert_eq!(ev.kind, EventType::ResourceUpdated);
         assert_eq!(ev.id, "e1");
         assert_eq!(last_id, "7");
 
-        let log = caps.lock().unwrap();
-        let req = &log[0];
+        let req = first_request(&caps)?;
         assert_eq!(req.path, "/eventstream/clip/v2");
         assert_eq!(req.header("accept"), Some("text/event-stream"));
         assert_eq!(req.header("hue-application-key"), Some("k"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn resume_sends_last_event_id_header() {
-        let (base, caps) = spawn_mock(vec![http_sse("data: []\n\n")]).await;
-        let t = ReqwestTransport::with_base_url(base, "k").unwrap();
+    async fn resume_sends_last_event_id_header() -> TestResult {
+        let (base, caps) = spawn_mock(vec![http_sse("data: []\n\n")]).await?;
+        let t = ReqwestTransport::with_base_url(base, "k")?;
         let es = EventStream::new(t).with_last_event_id("42");
         let (tx, _rx) = tokio::sync::mpsc::channel(4);
-        es.connect_once(&tx).await.unwrap();
-        let log = caps.lock().unwrap();
-        assert_eq!(log[0].header("last-event-id"), Some("42"));
+        es.connect_once(&tx).await?;
+        let req = first_request(&caps)?;
+        assert_eq!(req.header("last-event-id"), Some("42"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn spawn_reconnect_loop_delivers_then_stops_when_receiver_dropped() {
+    async fn spawn_reconnect_loop_delivers_then_stops_when_receiver_dropped() -> TestResult {
         let payload =
             r#"[{"id":"e9","creationtime":"t","type":"add","data":[{"id":"l1","type":"light"}]}]"#;
         let sse = format!("id: 9\ndata: {payload}\n\n");
         // Only one response is served; the reconnect attempt afterward fails,
         // and once the receiver is dropped the loop exits.
-        let (base, _caps) = spawn_mock(vec![http_sse(&sse)]).await;
-        let t = ReqwestTransport::with_base_url(base, "k").unwrap();
+        let (base, _caps) = spawn_mock(vec![http_sse(&sse)]).await?;
+        let t = ReqwestTransport::with_base_url(base, "k")?;
         let es = EventStream::new(t).with_reconnect_delay(std::time::Duration::from_millis(10));
 
         let (mut rx, handle) = es.spawn();
-        let ev = rx.recv().await.expect("event delivered by loop");
+        let ev = rx
+            .recv()
+            .await
+            .ok_or("the reconnect loop delivered no event")?;
         assert_eq!(ev.id, "e9");
         drop(rx);
         // The background task should observe the closed channel and finish.
         let _ = tokio::time::timeout(std::time::Duration::from_secs(2), handle).await;
+        Ok(())
     }
 }

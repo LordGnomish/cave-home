@@ -90,8 +90,10 @@ mod tests {
     use crate::v2::controllers::base::{V2Envelope, V2Request};
     use crate::v2::models::feature::ButtonReportEvent;
     use async_trait::async_trait;
+    use parking_lot::Mutex;
     use serde_json::{Value, json};
-    use std::sync::Mutex;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     struct StubReq {
         gets: Mutex<Vec<V2Envelope>>,
@@ -99,7 +101,7 @@ mod tests {
     #[async_trait]
     impl V2Request for StubReq {
         async fn get(&self, _p: &str) -> HueResult<V2Envelope> {
-            Ok(self.gets.lock().unwrap().pop().unwrap_or_default())
+            Ok(self.gets.lock().pop().unwrap_or_default())
         }
         async fn put(&self, _p: &str, _b: Value) -> HueResult<V2Envelope> {
             Ok(V2Envelope::default())
@@ -123,7 +125,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_loads_buttons() {
+    async fn update_loads_buttons() -> TestResult {
         let env = V2Envelope {
             errors: vec![],
             data: vec![button_json("btn-1", "initial_press")],
@@ -132,26 +134,30 @@ mod tests {
             gets: Mutex::new(vec![env]),
         };
         let mut ctrl = ButtonController::new();
-        ctrl.update(&req).await.unwrap();
+        ctrl.update(&req).await?;
         assert_eq!(ctrl.len(), 1);
-        assert_eq!(ctrl.get("btn-1").unwrap().metadata.control_id, 2);
+        let button = ctrl
+            .get("btn-1")
+            .ok_or("btn-1 is missing after the update")?;
+        assert_eq!(button.metadata.control_id, 2);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn apply_event_updates_last_button_event() {
+    async fn apply_event_updates_last_button_event() -> TestResult {
         // Simulates an SSE button-press event.
         let mut ctrl = ButtonController::new();
-        ctrl.apply_event(button_json("btn-1", "short_release"))
-            .unwrap();
+        ctrl.apply_event(button_json("btn-1", "short_release"))?;
         assert_eq!(
             ctrl.last_event("btn-1"),
             Some(ButtonReportEvent::ShortRelease)
         );
         assert_eq!(ctrl.last_event("missing"), None);
+        Ok(())
     }
 
     #[test]
-    fn is_empty_until_a_button_arrives() -> Result<(), Box<dyn std::error::Error>> {
+    fn is_empty_until_a_button_arrives() -> TestResult {
         let mut ctrl = ButtonController::new();
         assert!(ctrl.is_empty());
         ctrl.apply_event(button_json("btn-1", "initial_press"))?;

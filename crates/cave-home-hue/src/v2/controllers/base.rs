@@ -162,8 +162,10 @@ mod tests {
     use super::*;
     use crate::v2::models::light::Light;
     use async_trait::async_trait;
+    use parking_lot::Mutex;
     use serde_json::json;
-    use std::sync::Mutex;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     struct StubReq {
         responses: Mutex<Vec<V2Envelope>>,
@@ -173,7 +175,6 @@ mod tests {
         async fn get(&self, _path: &str) -> HueResult<V2Envelope> {
             self.responses
                 .lock()
-                .unwrap()
                 .pop()
                 .ok_or_else(|| HueError::Transport("no response".into()))
         }
@@ -201,7 +202,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resources_controller_loads_typed_items() {
+    async fn resources_controller_loads_typed_items() -> TestResult {
         let env = V2Envelope {
             errors: vec![],
             data: vec![json!({
@@ -216,14 +217,17 @@ mod tests {
             responses: Mutex::new(vec![env]),
         };
         let mut ctrl = ResourcesController::<Light>::new("light");
-        ctrl.update(&req).await.unwrap();
+        ctrl.update(&req).await?;
         assert_eq!(ctrl.len(), 1);
-        let light = ctrl.get("11111111-1111-1111-1111-111111111111").unwrap();
+        let light = ctrl
+            .get("11111111-1111-1111-1111-111111111111")
+            .ok_or("the loaded light is missing")?;
         assert!(light.is_on());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn remove_drops_entry() {
+    async fn remove_drops_entry() -> TestResult {
         let mut ctrl = ResourcesController::<Light>::new("light");
         let raw = json!({
             "id": "abc",
@@ -232,14 +236,15 @@ mod tests {
             "mode": "normal",
             "type": "light"
         });
-        ctrl.apply_event(raw).unwrap();
+        ctrl.apply_event(raw)?;
         assert_eq!(ctrl.len(), 1);
         ctrl.remove("abc");
         assert_eq!(ctrl.len(), 0);
+        Ok(())
     }
 
     #[test]
-    fn is_empty_follows_the_item_count() -> Result<(), Box<dyn std::error::Error>> {
+    fn is_empty_follows_the_item_count() -> TestResult {
         let mut ctrl = ResourcesController::<Light>::new("light");
         assert!(ctrl.is_empty());
         assert_eq!(ctrl.len(), 0);

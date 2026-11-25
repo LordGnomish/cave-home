@@ -47,8 +47,10 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn motion_decodes_active_state() {
+    fn motion_decodes_active_state() -> TestResult {
         let m: Motion = serde_json::from_value(json!({
             "id": "motion-1",
             "owner": {"rid": "device-1", "rtype": "device"},
@@ -58,23 +60,23 @@ mod tests {
                 "motion_report": {"changed": "2026-05-17T20:00:00.000Z", "motion": true}
             },
             "type": "motion"
-        }))
-        .unwrap();
+        }))?;
         assert!(m.enabled);
         assert_eq!(m.is_motion(), Some(true));
+        Ok(())
     }
 
     #[test]
-    fn motion_handles_no_report() {
+    fn motion_handles_no_report() -> TestResult {
         let m: Motion = serde_json::from_value(json!({
             "id": "motion-1",
             "owner": {"rid": "device-1", "rtype": "device"},
             "enabled": false,
             "motion": {"motion_valid": false, "motion_report": null},
             "type": "motion"
-        }))
-        .unwrap();
+        }))?;
         assert!(!m.enabled);
         assert_eq!(m.is_motion(), None);
+        Ok(())
     }
 }

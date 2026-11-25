@@ -189,7 +189,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn light_exposes_upstream_fields() {
+    fn light_exposes_upstream_fields() -> TestResult {
         let raw = json!({
             "name": "Mutfak Lambası",
             "uniqueid": "00:17:88:01:00:00:00:01-0b",
@@ -206,7 +206,7 @@ mod tests {
                 }
             }
         });
-        let light = Light::from_raw("1".into(), raw.as_object().unwrap().clone());
+        let light = Light::from_raw("1".into(), raw_map(raw)?);
         assert_eq!(light.name(), "Mutfak Lambası");
         assert_eq!(light.unique_id(), Some("00:17:88:01:00:00:00:01-0b"));
         assert_eq!(light.manufacturer_name(), Some("Signify"));
@@ -214,43 +214,54 @@ mod tests {
         assert_eq!(light.product_name(), Some("Hue color candle"));
         assert_eq!(light.sw_version(), Some("1.50.2"));
         assert_eq!(light.color_gamut_type(), "C");
-        let gamut = light.color_gamut().unwrap();
+        let gamut = light
+            .color_gamut()
+            .ok_or("`color_gamut()` is None for a complete gamut")?;
         assert!((gamut.red.x - 0.6915).abs() < 1e-3);
+        Ok(())
     }
 
     #[test]
-    fn light_state_update_serialises_only_set_fields() {
+    fn light_state_update_serialises_only_set_fields() -> TestResult {
         let upd = LightStateUpdate {
             on: Some(true),
             bri: Some(254),
             ..LightStateUpdate::default()
         };
-        let body = serde_json::to_value(&upd).unwrap();
-        let obj = body.as_object().unwrap();
+        let body = serde_json::to_value(&upd)?;
+        let obj = body
+            .as_object()
+            .ok_or("the serialised update is not a JSON object")?;
         assert_eq!(obj.len(), 2); // only `on` and `bri`
-        assert_eq!(obj.get("on").unwrap(), &Value::Bool(true));
+        assert_eq!(
+            obj.get("on").ok_or("the body has no `on`")?,
+            &Value::Bool(true)
+        );
+        Ok(())
     }
 
     #[test]
-    fn light_state_update_renames_transition_time_to_transitiontime() {
+    fn light_state_update_renames_transition_time_to_transitiontime() -> TestResult {
         let upd = LightStateUpdate {
             transition_time: Some(4),
             ..Default::default()
         };
-        let body = serde_json::to_value(&upd).unwrap();
+        let body = serde_json::to_value(&upd)?;
         assert!(body.get("transitiontime").is_some());
         assert!(body.get("transition_time").is_none());
+        Ok(())
     }
 
     #[test]
-    fn missing_gamut_returns_none() {
+    fn missing_gamut_returns_none() -> TestResult {
         let raw = json!({"name": "x", "capabilities": {"control": {}}});
-        let light = Light::from_raw("9".into(), raw.as_object().unwrap().clone());
+        let light = Light::from_raw("9".into(), raw_map(raw)?);
         assert!(light.color_gamut().is_none());
         assert_eq!(light.color_gamut_type(), "None");
+        Ok(())
     }
 
-    use crate::v1::api::test_support::RecordingReq;
+    use crate::v1::api::test_support::{RecordingReq, raw_map};
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -263,10 +274,7 @@ mod tests {
                 }
             }
         });
-        let Value::Object(map) = raw else {
-            return Err("the light fixture is not a JSON object");
-        };
-        Ok(Light::from_raw("1".into(), map))
+        Ok(Light::from_raw("1".into(), raw_map(raw)?))
     }
 
     /// `f32` bit pattern `color_gamut()` reports for a red x coordinate.

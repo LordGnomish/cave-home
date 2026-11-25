@@ -88,8 +88,10 @@ mod tests {
     use crate::errors::HueResult;
     use crate::v2::controllers::base::{V2Envelope, V2Request};
     use async_trait::async_trait;
+    use parking_lot::Mutex;
     use serde_json::{Value, json};
-    use std::sync::Mutex;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[derive(Default)]
     struct StubReq {
@@ -99,10 +101,10 @@ mod tests {
     #[async_trait]
     impl V2Request for StubReq {
         async fn get(&self, _p: &str) -> HueResult<V2Envelope> {
-            Ok(self.gets.lock().unwrap().pop().unwrap_or_default())
+            Ok(self.gets.lock().pop().unwrap_or_default())
         }
         async fn put(&self, p: &str, b: Value) -> HueResult<V2Envelope> {
-            self.puts.lock().unwrap().push((p.into(), b));
+            self.puts.lock().push((p.into(), b));
             Ok(V2Envelope::default())
         }
         async fn post(&self, _p: &str, _b: Value) -> HueResult<V2Envelope> {
@@ -127,7 +129,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_loads_motion_sensors() {
+    async fn update_loads_motion_sensors() -> TestResult {
         let env = V2Envelope {
             errors: vec![],
             data: vec![motion_json("motion-1", true)],
@@ -137,34 +139,46 @@ mod tests {
             puts: Mutex::new(Vec::new()),
         };
         let mut ctrl = MotionController::new();
-        ctrl.update(&req).await.unwrap();
+        ctrl.update(&req).await?;
         assert_eq!(ctrl.len(), 1);
-        assert_eq!(ctrl.get("motion-1").unwrap().is_motion(), Some(true));
+        let sensor = ctrl
+            .get("motion-1")
+            .ok_or("motion-1 is missing after the update")?;
+        assert_eq!(sensor.is_motion(), Some(true));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn set_enabled_puts_enabled_flag_to_motion_path() {
+    async fn set_enabled_puts_enabled_flag_to_motion_path() -> TestResult {
         let req = StubReq::default();
         let ctrl = MotionController::new();
-        ctrl.set_enabled(&req, "motion-1", false).await.unwrap();
-        let puts = req.puts.lock().unwrap().clone();
+        ctrl.set_enabled(&req, "motion-1", false).await?;
+        let puts = req.puts.lock().clone();
         assert_eq!(puts.len(), 1);
         assert_eq!(puts[0].0, "resource/motion/motion-1");
         assert_eq!(puts[0].1, json!({"enabled": false}));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn apply_event_updates_motion_state() {
+    async fn apply_event_updates_motion_state() -> TestResult {
         // Simulates an SSE `update` event flipping the sensor to "motion".
         let mut ctrl = MotionController::new();
-        ctrl.apply_event(motion_json("motion-1", false)).unwrap();
-        assert_eq!(ctrl.get("motion-1").unwrap().is_motion(), Some(false));
-        ctrl.apply_event(motion_json("motion-1", true)).unwrap();
-        assert_eq!(ctrl.get("motion-1").unwrap().is_motion(), Some(true));
+        ctrl.apply_event(motion_json("motion-1", false))?;
+        let sensor = ctrl
+            .get("motion-1")
+            .ok_or("motion-1 is missing after the first event")?;
+        assert_eq!(sensor.is_motion(), Some(false));
+        ctrl.apply_event(motion_json("motion-1", true))?;
+        let sensor = ctrl
+            .get("motion-1")
+            .ok_or("motion-1 is missing after the second event")?;
+        assert_eq!(sensor.is_motion(), Some(true));
+        Ok(())
     }
 
     #[test]
-    fn is_empty_until_a_motion_sensor_arrives() -> Result<(), Box<dyn std::error::Error>> {
+    fn is_empty_until_a_motion_sensor_arrives() -> TestResult {
         let mut ctrl = MotionController::new();
         assert!(ctrl.is_empty());
         ctrl.apply_event(motion_json("motion-1", false))?;

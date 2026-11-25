@@ -81,8 +81,10 @@ mod tests {
     use super::*;
     use crate::v2::controllers::base::{V2Envelope, V2Error};
     use async_trait::async_trait;
+    use parking_lot::Mutex;
     use serde_json::{Value, json};
-    use std::sync::Mutex;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[derive(Default)]
     struct StubReq {
@@ -92,10 +94,10 @@ mod tests {
     #[async_trait]
     impl V2Request for StubReq {
         async fn get(&self, _path: &str) -> HueResult<V2Envelope> {
-            Ok(self.gets.lock().unwrap().pop().unwrap_or_default())
+            Ok(self.gets.lock().pop().unwrap_or_default())
         }
         async fn put(&self, p: &str, b: Value) -> HueResult<V2Envelope> {
-            self.puts.lock().unwrap().push((p.into(), b));
+            self.puts.lock().push((p.into(), b));
             Ok(V2Envelope::default())
         }
         async fn post(&self, _p: &str, _b: Value) -> HueResult<V2Envelope> {
@@ -107,24 +109,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_state_puts_to_correct_path_with_body() {
+    async fn set_state_puts_to_correct_path_with_body() -> TestResult {
         let req = StubReq::default();
         let ctrl = LightsController::new();
         let put = LightPut {
             on: Some(crate::v2::models::feature::OnFeature { on: true }),
             ..Default::default()
         };
-        ctrl.set_state(&req, "abc", &put).await.unwrap();
-        let puts = req.puts.lock().unwrap().clone();
+        ctrl.set_state(&req, "abc", &put).await?;
+        let puts = req.puts.lock().clone();
         assert_eq!(puts.len(), 1);
         assert_eq!(puts[0].0, "resource/light/abc");
-        let body_obj = puts[0].1.as_object().unwrap();
+        let body_obj = puts[0]
+            .1
+            .as_object()
+            .ok_or("the PUT body is not a JSON object")?;
         assert!(body_obj.get("on").is_some());
         assert!(body_obj.get("dimming").is_none());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn update_loads_lights_from_envelope() {
+    async fn update_loads_lights_from_envelope() -> TestResult {
         let env = V2Envelope {
             errors: vec![],
             data: vec![json!({
@@ -140,9 +146,13 @@ mod tests {
             puts: Mutex::new(Vec::new()),
         };
         let mut ctrl = LightsController::new();
-        ctrl.update(&req).await.unwrap();
+        ctrl.update(&req).await?;
         assert_eq!(ctrl.len(), 1);
-        assert!(!ctrl.get("light-1").unwrap().is_on());
+        let light = ctrl
+            .get("light-1")
+            .ok_or("light-1 is missing after the update")?;
+        assert!(!light.is_on());
+        Ok(())
     }
 
     #[tokio::test]
@@ -162,7 +172,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_state_puts_exactly_the_set_features() -> Result<(), Box<dyn std::error::Error>> {
+    async fn set_state_puts_exactly_the_set_features() -> TestResult {
         use crate::v2::models::feature::{
             ColorFeatureBase, ColorPoint, ColorTemperatureFeatureBase, DimmingDeltaAction,
             DimmingDeltaFeaturePut, DimmingFeatureBase, OnFeature,
@@ -184,7 +194,7 @@ mod tests {
         };
         ctrl.set_state(&req, "abc", &put).await?;
         ctrl.set_state(&req, "abc", &LightPut::default()).await?;
-        let puts = req.puts.lock().map_err(|e| e.to_string())?.clone();
+        let puts = req.puts.lock().clone();
         assert_eq!(
             puts,
             vec![
@@ -205,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn is_empty_until_a_light_arrives() -> Result<(), Box<dyn std::error::Error>> {
+    fn is_empty_until_a_light_arrives() -> TestResult {
         let mut ctrl = LightsController::new();
         assert!(ctrl.is_empty());
         ctrl.apply_event(json!({

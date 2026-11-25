@@ -257,8 +257,8 @@ pub fn new_sensors() -> Sensors {
 mod tests {
     use super::*;
 
-    fn dimmer_switch_raw() -> RawItem {
-        json!({
+    fn dimmer_switch_raw() -> Result<RawItem, &'static str> {
+        raw_map(json!({
             "name": "Salon Dimmer",
             "type": TYPE_ZLL_SWITCH,
             "modelid": "RWL022",
@@ -266,61 +266,62 @@ mod tests {
             "uniqueid": "00:17:88:00:00:00:00:01-02-fc00",
             "state": {"buttonevent": i64::from(ZLL_SWITCH_BUTTON_1_INITIAL_PRESS), "lastupdated": "2026-05-17T20:00:00"},
             "config": {"on": true, "reachable": true, "battery": 90},
-        })
-        .as_object()
-        .unwrap()
-        .clone()
+        }))
     }
 
     #[test]
-    fn zll_switch_exposes_button_event_and_battery() {
-        let s = GenericSensor::from_raw("1".into(), dimmer_switch_raw());
+    fn zll_switch_exposes_button_event_and_battery() -> TestResult {
+        let s = GenericSensor::from_raw("1".into(), dimmer_switch_raw()?);
         assert_eq!(s.sensor_type(), TYPE_ZLL_SWITCH);
         assert_eq!(s.button_event(), Some(1000));
         assert_eq!(s.zll_battery(), Some(90));
         assert_eq!(s.on(), Some(true));
         assert_eq!(s.reachable(), Some(true));
+        Ok(())
     }
 
     #[test]
-    fn motion_sensor_state() {
+    fn motion_sensor_state() -> TestResult {
         let raw = json!({
             "name": "Antre Motion",
             "type": TYPE_ZLL_PRESENCE,
             "state": {"presence": true, "lastupdated": "2026-05-17T20:01:00"},
             "config": {"on": true, "reachable": true, "battery": 80},
         });
-        let s = GenericSensor::from_raw("4".into(), raw.as_object().unwrap().clone());
+        let s = GenericSensor::from_raw("4".into(), raw_map(raw)?);
         assert_eq!(s.presence(), Some(true));
         assert_eq!(s.last_updated(), Some("2026-05-17T20:01:00"));
+        Ok(())
     }
 
     #[test]
-    fn daylight_sensor_exposes_daylight() {
+    fn daylight_sensor_exposes_daylight() -> TestResult {
         let raw = json!({
             "name": "Daylight",
             "type": TYPE_DAYLIGHT,
             "state": {"daylight": false, "lastupdated": "none"},
             "config": {"on": true, "configured": true, "sunriseoffset": 30, "sunsetoffset": -30},
         });
-        let s = GenericSensor::from_raw("1".into(), raw.as_object().unwrap().clone());
+        let s = GenericSensor::from_raw("1".into(), raw_map(raw)?);
         assert_eq!(s.daylight(), Some(false));
+        Ok(())
     }
 
     #[test]
-    fn temperature_value_is_centidegrees() {
+    fn temperature_value_is_centidegrees() -> TestResult {
         let raw = json!({
             "name": "T1",
             "type": TYPE_ZLL_TEMPERATURE,
             "state": {"temperature": 2150, "lastupdated": "2026-05-17T20:00:00"},
             "config": {"on": true, "reachable": true},
         });
-        let s = GenericSensor::from_raw("5".into(), raw.as_object().unwrap().clone());
+        let s = GenericSensor::from_raw("5".into(), raw_map(raw)?);
         // 2150 = 21.50°C — upstream returns the raw int; consumers divide.
         assert_eq!(s.temperature_centi(), Some(2150));
+        Ok(())
     }
 
-    use crate::v1::api::test_support::RecordingReq;
+    use crate::v1::api::test_support::{RecordingReq, raw_map};
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
 

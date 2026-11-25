@@ -56,8 +56,10 @@ mod tests {
     use super::*;
     use crate::v2::controllers::base::V2Envelope;
     use async_trait::async_trait;
+    use parking_lot::Mutex;
     use serde_json::{Value, json};
-    use std::sync::Mutex;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     struct StubReq {
         gets: Mutex<Vec<V2Envelope>>,
@@ -65,7 +67,7 @@ mod tests {
     #[async_trait]
     impl V2Request for StubReq {
         async fn get(&self, _: &str) -> HueResult<V2Envelope> {
-            Ok(self.gets.lock().unwrap().pop().unwrap_or_default())
+            Ok(self.gets.lock().pop().unwrap_or_default())
         }
         async fn put(&self, _: &str, _: Value) -> HueResult<V2Envelope> {
             Ok(V2Envelope::default())
@@ -79,7 +81,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn initialize_pulls_lights_and_scenes() {
+    async fn initialize_pulls_lights_and_scenes() -> TestResult {
         let scenes_env = V2Envelope {
             errors: vec![],
             data: vec![json!({
@@ -104,13 +106,14 @@ mod tests {
             gets: Mutex::new(vec![scenes_env, lights_env]),
         });
         let mut br = HueBridgeV2::new("10.0.0.1".into(), "appkey".into(), req);
-        br.initialize().await.unwrap();
+        br.initialize().await?;
         assert_eq!(br.lights.len(), 1);
         assert_eq!(br.scenes.len(), 1);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn initialize_pulls_all_resource_controllers() {
+    async fn initialize_pulls_all_resource_controllers() -> TestResult {
         let mk = |data| V2Envelope {
             errors: vec![],
             data,
@@ -155,11 +158,12 @@ mod tests {
             ]),
         });
         let mut br = HueBridgeV2::new("10.0.0.1".into(), "appkey".into(), req);
-        br.initialize().await.unwrap();
+        br.initialize().await?;
         assert_eq!(br.lights.len(), 1);
         assert_eq!(br.scenes.len(), 1);
         assert_eq!(br.grouped_lights.len(), 1);
         assert_eq!(br.motion.len(), 1);
         assert_eq!(br.buttons.len(), 1);
+        Ok(())
     }
 }

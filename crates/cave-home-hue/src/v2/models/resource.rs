@@ -97,30 +97,35 @@ pub const SENSOR_RESOURCE_TYPES: &[ResourceTypes] = &[
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn resource_types_round_trip() {
+    fn resource_types_round_trip() -> TestResult {
         let original = ResourceTypes::GroupedLight;
-        let s = serde_json::to_string(&original).unwrap();
+        let s = serde_json::to_string(&original)?;
         assert_eq!(s, "\"grouped_light\"");
-        let back: ResourceTypes = serde_json::from_str(&s).unwrap();
+        let back: ResourceTypes = serde_json::from_str(&s)?;
         assert_eq!(back, original);
+        Ok(())
     }
 
     #[test]
-    fn unknown_resource_type_round_trips_to_unknown() {
-        let back: ResourceTypes = serde_json::from_str("\"some_future_type\"").unwrap();
+    fn unknown_resource_type_round_trips_to_unknown() -> TestResult {
+        let back: ResourceTypes = serde_json::from_str("\"some_future_type\"")?;
         assert_eq!(back, ResourceTypes::Unknown);
+        Ok(())
     }
 
     #[test]
-    fn resource_identifier_round_trip() {
+    fn resource_identifier_round_trip() -> TestResult {
         let id = ResourceIdentifier {
             rid: "abc-123".into(),
             rtype: ResourceTypes::Light,
         };
-        let s = serde_json::to_string(&id).unwrap();
-        let back: ResourceIdentifier = serde_json::from_str(&s).unwrap();
+        let s = serde_json::to_string(&id)?;
+        let back: ResourceIdentifier = serde_json::from_str(&s)?;
         assert_eq!(back, id);
+        Ok(())
     }
 
     #[test]

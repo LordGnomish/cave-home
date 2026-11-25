@@ -91,10 +91,13 @@ pub fn new_scenes() -> Scenes {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::v1::api::test_support::raw_map;
     use serde_json::json;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn scene_exposes_upstream_fields() {
+    fn scene_exposes_upstream_fields() -> TestResult {
         let raw = json!({
             "name": "Aksam",
             "lights": ["1", "2"],
@@ -106,12 +109,13 @@ mod tests {
             "lastupdated": "2026-05-17T20:00:00",
             "version": 2,
         });
-        let scene = Scene::from_raw("aaa".into(), raw.as_object().unwrap().clone());
+        let scene = Scene::from_raw("aaa".into(), raw_map(raw)?);
         assert_eq!(scene.name(), Some("Aksam"));
         assert_eq!(scene.lights(), vec!["1", "2"]);
         assert_eq!(scene.recycle(), Some(false));
         assert_eq!(scene.locked(), Some(true));
         assert_eq!(scene.last_updated(), Some("2026-05-17T20:00:00"));
         assert_eq!(scene.version(), Some(2));
+        Ok(())
     }
 }

@@ -84,10 +84,13 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::v1::api::test_support::raw_map;
     use serde_json::json;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn config_exposes_bridge_metadata() {
+    fn config_exposes_bridge_metadata() -> TestResult {
         let raw = json!({
             "bridgeid": "001788FFFEABCDEF",
             "name": "Cave Hue Bridge",
@@ -97,7 +100,7 @@ mod tests {
             "apiversion": "1.66.0",
             "swupdate2": {"bridge": {"state": "noupdates"}}
         });
-        let cfg = Config::from_raw(raw.as_object().unwrap().clone());
+        let cfg = Config::from_raw(raw_map(raw)?);
         assert_eq!(cfg.bridge_id(), Some("001788FFFEABCDEF"));
         assert_eq!(cfg.name(), Some("Cave Hue Bridge"));
         assert_eq!(cfg.mac_address(), Some("00:17:88:ab:cd:ef"));
@@ -105,5 +108,6 @@ mod tests {
         assert_eq!(cfg.software_version(), Some("1958076050"));
         assert_eq!(cfg.api_version(), Some("1.66.0"));
         assert_eq!(cfg.swupdate2_bridge_state(), Some("noupdates"));
+        Ok(())
     }
 }
