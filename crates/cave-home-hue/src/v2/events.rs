@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 // Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v2/controllers/events.py
-//! v2 EventStream — parser + types for the Hue CLIP Server-Sent Events
+//! v2 `EventStream` — parser + types for the Hue CLIP Server-Sent Events
 //! payload. Mirrors `aiohue.v2.controllers.events`.
 //!
 //! The transport (long-lived HTTP/2 GET to `clip/v2/eventstream`) is wired
@@ -63,7 +63,7 @@ pub struct HueEvent {
     pub creationtime: String,
     #[serde(rename = "type")]
     pub kind: EventType,
-    /// Resource payload(s). For `delete`, holds only the ResourceIdentifier
+    /// Resource payload(s). For `delete`, holds only the `ResourceIdentifier`
     /// shape (rid + rtype). For `add`/`update`, partial-resource objects.
     pub data: Vec<Value>,
 }
@@ -88,7 +88,7 @@ pub enum SseLine {
 }
 
 /// Parse one SSE wire line. Lines must already be stripped of the trailing
-/// newline. Matches the W3C EventSource format.
+/// newline. Matches the W3C `EventSource` format.
 #[must_use]
 pub fn parse_sse_line(line: &str) -> SseLine {
     if line.is_empty() {
@@ -105,10 +105,9 @@ pub fn parse_sse_line(line: &str) -> SseLine {
         "event" => SseLine::Event(value.to_string()),
         "data" => SseLine::Data(value.to_string()),
         "id" => SseLine::Id(value.to_string()),
-        "retry" => match value.parse::<u32>() {
-            Ok(ms) => SseLine::Retry(ms),
-            Err(_) => SseLine::Unknown(line.to_string()),
-        },
+        "retry" => value
+            .parse::<u32>()
+            .map_or_else(|_| SseLine::Unknown(line.to_string()), SseLine::Retry),
         _ => SseLine::Unknown(line.to_string()),
     }
 }

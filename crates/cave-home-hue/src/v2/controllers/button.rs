@@ -2,9 +2,11 @@
 // Copyright 2026 cave-home contributors
 // Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v2/controllers/sensors.py (ButtonController)
 //! v2 button controller. Mirrors `aiohue.v2.controllers.sensors`'s
-//! `ButtonController`. Buttons are read/event-only (no PUT surface): the
-//! controller tracks the typed map and folds in live presses delivered over
-//! the EventStream via `apply_event`.
+//! `ButtonController`.
+//!
+//! Buttons are read/event-only (no PUT surface): the controller tracks the
+//! typed map and folds in live presses delivered over the `EventStream` via
+//! `apply_event`.
 
 use crate::errors::HueResult;
 use crate::v2::controllers::base::{ResourcesController, V2Request};
@@ -51,6 +53,12 @@ impl ButtonController {
     #[must_use]
     pub fn len(&self) -> usize {
         self.inner.len()
+    }
+
+    /// True if no buttons are tracked.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
     }
 
     /// The most recent press event reported by a button, if any. This is the
@@ -140,5 +148,17 @@ mod tests {
             Some(ButtonReportEvent::ShortRelease)
         );
         assert_eq!(ctrl.last_event("missing"), None);
+    }
+
+    #[test]
+    fn is_empty_until_a_button_arrives() -> Result<(), Box<dyn std::error::Error>> {
+        let mut ctrl = ButtonController::new();
+        assert!(ctrl.is_empty());
+        ctrl.apply_event(button_json("btn-1", "initial_press"))?;
+        assert!(!ctrl.is_empty());
+        assert_eq!(ctrl.len(), 1);
+        ctrl.remove("btn-1");
+        assert!(ctrl.is_empty());
+        Ok(())
     }
 }

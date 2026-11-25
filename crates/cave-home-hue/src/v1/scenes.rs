@@ -8,7 +8,7 @@ use serde_json::Value;
 
 /// `aiohue.v1.scenes.Scene` — a saved snapshot of light state across a
 /// group, recallable via `groups/{id}/action {"scene": "<id>"}`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Scene {
     pub id: String,
     pub raw: RawItem,

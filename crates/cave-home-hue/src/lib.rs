@@ -8,7 +8,7 @@
 //!   `homeassistant/components/hue/` — the HA "hue" integration glue
 //!   (bridge lifecycle, config flow, errors, migration), and
 //! - `home-assistant-libs/aiohue` v4.8.1 — the underlying Hue API client
-//!   (v1 REST + v2 CLIP / EventStream).
+//!   (v1 REST + v2 CLIP / `EventStream`).
 //!
 //! Upstreams are pinned by release tag, not commit SHA: the previously
 //! recorded SHAs were unverified (one hash had been copied across unrelated
@@ -24,17 +24,17 @@
 //! - [`util`]      — bridge-ID normalisation, MAC parsing.
 //! - [`errors`]    — Hue error taxonomy mirroring `aiohue.errors`.
 //! - [`discovery`] — NUPNP, mDNS-style host probe, v2-capability check
-//!                   (matches `aiohue.discovery`).
+//!   (matches `aiohue.discovery`).
 //! - [`v1`]        — Hue API v1 REST surface (`aiohue.v1`: lights, groups,
-//!                   scenes, sensors, config).
-//! - [`v2`]        — Hue API v2 CLIP surface (`aiohue.v2`: HueBridgeV2,
-//!                   EventStream / SSE, controllers + models).
-//! - [`bridge`]    — high-level HueBridge wrapper that mirrors HA's
-//!                   `homeassistant.components.hue.bridge.HueBridge`.
+//!   scenes, sensors, config).
+//! - [`v2`]        — Hue API v2 CLIP surface (`aiohue.v2`: `HueBridgeV2`,
+//!   `EventStream` / SSE, controllers + models).
+//! - [`bridge`]    — high-level `HueBridge` wrapper that mirrors HA's
+//!   `homeassistant.components.hue.bridge.HueBridge`.
 //!
 //! Out-of-MVP (tracked in [`parity.manifest.toml`](../parity.manifest.toml)):
-//!   Entertainment / DTLS streaming, the HomeKit / Matter bridges, advanced
-//!   v1 rule engine, ConfigFlow re-auth subtleties. See ADR-010 §Open
+//!   Entertainment / DTLS streaming, the `HomeKit` / Matter bridges, advanced
+//!   v1 rule engine, `ConfigFlow` re-auth subtleties. See ADR-010 §Open
 //!   questions.
 //!
 //! ## Charter v6 grandma-friendly (ADR-007)
@@ -52,6 +52,7 @@ pub mod bridge;
 pub mod discovery;
 pub mod errors;
 pub mod metrics;
+mod num;
 pub mod util;
 pub mod v1;
 pub mod v2;

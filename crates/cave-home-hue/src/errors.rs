@@ -21,7 +21,7 @@ pub enum HueError {
     #[error("link button not pressed: {0}")]
     LinkButtonNotPressed(String),
 
-    /// We received an EventStream event we cannot (yet) handle.
+    /// We received an `EventStream` event we cannot (yet) handle.
     /// Upstream: `aiohue.errors.InvalidEvent`.
     #[error("invalid event: {0}")]
     InvalidEvent(String),

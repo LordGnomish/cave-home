@@ -11,7 +11,7 @@ use crate::v2::models::resource::{ResourceIdentifier, ResourceTypes};
 use serde::{Deserialize, Serialize};
 
 /// `aiohue.v2.models.grouped_light.GroupedLight`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GroupedLight {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

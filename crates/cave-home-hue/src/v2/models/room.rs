@@ -6,9 +6,11 @@
 use crate::v2::models::resource::{ResourceIdentifier, ResourceTypes};
 use serde::{Deserialize, Serialize};
 
-/// `aiohue.v2.models.room.RoomArchetype`. Hue archetypes drive default
-/// icons in the official app; we round-trip the value as a string so any
-/// archetype Philips ships in firmware survives without code changes.
+/// `aiohue.v2.models.room.RoomArchetype`.
+///
+/// Hue archetypes drive default icons in the official app; we round-trip the
+/// value as a string so any archetype Philips ships in firmware survives
+/// without code changes.
 pub type RoomArchetype = String;
 
 /// `aiohue.v2.models.room.RoomMetadata`.

@@ -3,7 +3,7 @@
 // Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v2/controllers/sensors.py (MotionController)
 //! v2 motion-sensor controller. Mirrors `aiohue.v2.controllers.sensors`'s
 //! `MotionController`: tracks the typed motion map, the `enabled` PUT, and
-//! ingests live state via the EventStream router (`apply_event`).
+//! ingests live state via the `EventStream` router (`apply_event`).
 
 use crate::errors::HueResult;
 use crate::v2::controllers::base::{ResourcesController, V2Request};
@@ -50,6 +50,12 @@ impl MotionController {
     #[must_use]
     pub fn len(&self) -> usize {
         self.inner.len()
+    }
+
+    /// True if no motion sensors are tracked.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
     }
 
     /// Enable / disable a motion sensor. Source:
@@ -155,5 +161,17 @@ mod tests {
         assert_eq!(ctrl.get("motion-1").unwrap().is_motion(), Some(false));
         ctrl.apply_event(motion_json("motion-1", true)).unwrap();
         assert_eq!(ctrl.get("motion-1").unwrap().is_motion(), Some(true));
+    }
+
+    #[test]
+    fn is_empty_until_a_motion_sensor_arrives() -> Result<(), Box<dyn std::error::Error>> {
+        let mut ctrl = MotionController::new();
+        assert!(ctrl.is_empty());
+        ctrl.apply_event(motion_json("motion-1", false))?;
+        assert!(!ctrl.is_empty());
+        assert_eq!(ctrl.len(), 1);
+        ctrl.remove("motion-1");
+        assert!(ctrl.is_empty());
+        Ok(())
     }
 }

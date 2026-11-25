@@ -15,7 +15,7 @@ use crate::v1::scenes::{Scenes, new_scenes};
 use crate::v1::sensors::{Sensors, new_sensors};
 use std::sync::Arc;
 
-/// v1 HueBridge — host + app-key + the controllers fetched from the bridge.
+/// v1 `HueBridge` — host + app-key + the controllers fetched from the bridge.
 pub struct HueBridgeV1 {
     pub host: String,
     pub app_key: String,

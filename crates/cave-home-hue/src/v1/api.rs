@@ -62,28 +62,20 @@ impl<T: V1Item> ApiItems<T> {
     /// Replace the collection's contents from raw bridge JSON.
     /// Source: `APIItems._process_raw`.
     pub fn process_raw(&mut self, raw: serde_json::Map<String, Value>) {
-        // Update / insert each present id.
-        for (id, raw_item) in raw.iter() {
-            let Some(obj) = raw_item.as_object() else {
+        // Drop ids that are no longer in the bridge response. An id whose
+        // new value is not an object is still "in the response": it is kept
+        // here and left untouched below.
+        self.items.retain(|id, _| raw.contains_key(id.as_str()));
+        // Update / insert each present id, moving its object out of `raw`.
+        for (id, raw_item) in raw {
+            let Value::Object(obj) = raw_item else {
                 continue;
             };
-            match self.items.get_mut(id) {
-                Some(existing) => existing.set_raw(obj.clone()),
-                None => {
-                    self.items
-                        .insert(id.clone(), T::from_raw(id.clone(), obj.clone()));
-                }
+            if let Some(existing) = self.items.get_mut(&id) {
+                existing.set_raw(obj);
+            } else {
+                self.items.insert(id.clone(), T::from_raw(id, obj));
             }
-        }
-        // Drop ids that are no longer in the bridge response.
-        let dead: Vec<String> = self
-            .items
-            .keys()
-            .filter(|id| !raw.contains_key(id.as_str()))
-            .cloned()
-            .collect();
-        for id in dead {
-            self.items.remove(&id);
         }
     }
 
@@ -102,6 +94,7 @@ impl<T: V1Item> ApiItems<T> {
     }
 
     /// Get by id — `aiohue.v1.api.APIItems.__getitem__`.
+    #[must_use]
     pub fn get(&self, id: &str) -> Option<&T> {
         self.items.get(id)
     }
@@ -112,11 +105,13 @@ impl<T: V1Item> ApiItems<T> {
     }
 
     /// Number of items currently held.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
     /// True if the collection is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }

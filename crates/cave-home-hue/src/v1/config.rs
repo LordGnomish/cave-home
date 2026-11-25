@@ -19,7 +19,7 @@ impl Config {
     /// Wrap an already-fetched payload. The upstream constructor takes
     /// `(raw, request)`; we keep the request out (callers pass it to `update`).
     #[must_use]
-    pub fn from_raw(raw: serde_json::Map<String, Value>) -> Self {
+    pub const fn from_raw(raw: serde_json::Map<String, Value>) -> Self {
         Self { raw }
     }
 

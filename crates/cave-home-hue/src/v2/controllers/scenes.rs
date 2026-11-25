@@ -45,6 +45,12 @@ impl ScenesController {
         self.inner.len()
     }
 
+    /// True if no scenes are tracked.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
     /// `aiohue.v2.controllers.scenes.ScenesController.recall` — convenience
     /// that PUTs `{"recall": {"action": "active"}}` to activate a scene.
     pub async fn recall(
@@ -62,7 +68,7 @@ impl ScenesController {
             }),
             ..Default::default()
         };
-        let body = serde_json::to_value(&put).unwrap_or(json!({}));
+        let body = serde_json::to_value(&put).unwrap_or_else(|_| json!({}));
         let _ = req.put(&format!("resource/scene/{id}"), body).await?;
         Ok(())
     }
@@ -142,6 +148,23 @@ mod tests {
                 ),
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn is_empty_until_a_scene_arrives() -> Result<(), Box<dyn std::error::Error>> {
+        let mut ctrl = ScenesController::new();
+        assert!(ctrl.is_empty());
+        ctrl.apply_event(json!({
+            "id": "s1",
+            "metadata": {"name": "Aksam"},
+            "group": {"rid": "r1", "rtype": "room"},
+            "actions": []
+        }))?;
+        assert!(!ctrl.is_empty());
+        assert_eq!(ctrl.len(), 1);
+        ctrl.remove("s1");
+        assert!(ctrl.is_empty());
         Ok(())
     }
 }

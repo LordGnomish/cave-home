@@ -55,7 +55,7 @@ pub struct ColorTemperatureFeatureBase {
 }
 
 /// `aiohue.v2.models.feature.ColorTemperatureFeature` — full state.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ColorTemperatureFeature {
     #[serde(default)]
     pub mirek: Option<u16>,

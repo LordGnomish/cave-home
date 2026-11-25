@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 // Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v1/groups.py
-//! v1 groups controller — Hue "Room" / "Zone" / "Luminaire" / "LightGroup".
+//! v1 groups controller — Hue `Room` / `Zone` / `Luminaire` / `LightGroup`.
 //!
 //! Reference: <https://developers.meethue.com/documentation/groups-api>.
 
@@ -11,7 +11,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 /// `aiohue.v1.groups.GroupState` — readonly aggregate state.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GroupState {
     pub all_on: bool,
     pub any_on: bool,
@@ -53,7 +53,7 @@ pub struct GroupAction {
 }
 
 /// `aiohue.v1.groups.Group`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Group {
     pub id: String,
     pub raw: RawItem,
@@ -123,7 +123,7 @@ impl Group {
     }
     /// `aiohue.v1.groups.Group.set_action` — apply a pending action.
     pub async fn set_action(&self, req: &dyn V1Request, action: &GroupAction) -> HueResult<()> {
-        let body = serde_json::to_value(action).unwrap_or(json!({}));
+        let body = serde_json::to_value(action).unwrap_or_else(|_| json!({}));
         let _ = req.put(&format!("groups/{}/action", self.id), body).await?;
         Ok(())
     }

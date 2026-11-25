@@ -51,10 +51,16 @@ impl LightsController {
         self.inner.len()
     }
 
+    /// True if no lights are tracked.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
     /// `LightsController.set_state` — port. The upstream method takes
     /// keyword args; we accept a pre-built [`LightPut`] for type safety.
     pub async fn set_state(&self, req: &dyn V2Request, id: &str, put: &LightPut) -> HueResult<()> {
-        let body = serde_json::to_value(put).unwrap_or(json!({}));
+        let body = serde_json::to_value(put).unwrap_or_else(|_| json!({}));
         let _ = req.put(&format!("resource/light/{id}"), body).await?;
         Ok(())
     }
@@ -195,6 +201,24 @@ mod tests {
                 ("resource/light/abc".to_string(), json!({})),
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn is_empty_until_a_light_arrives() -> Result<(), Box<dyn std::error::Error>> {
+        let mut ctrl = LightsController::new();
+        assert!(ctrl.is_empty());
+        ctrl.apply_event(json!({
+            "id": "light-1",
+            "owner": {"rid": "dev", "rtype": "device"},
+            "on": {"on": false},
+            "mode": "normal",
+            "type": "light"
+        }))?;
+        assert!(!ctrl.is_empty());
+        assert_eq!(ctrl.len(), 1);
+        ctrl.remove("light-1");
+        assert!(ctrl.is_empty());
         Ok(())
     }
 }

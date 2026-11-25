@@ -9,10 +9,10 @@
 //! objects, motion / button / temperature each get their own resource).
 //!
 //! - [`models`]      — typed resource structs (lights, scenes, devices,
-//!                     motion, buttons, ...). 1:1 with `aiohue.v2.models.*`.
+//!   motion, buttons, ...). 1:1 with `aiohue.v2.models.*`.
 //! - [`controllers`] — request-scoped controllers wrapping `clip/v2/...`
-//!                     endpoints. 1:1 with `aiohue.v2.controllers.*`.
-//! - [`events`]      — typed wrapping of the EventStream payloads.
+//!   endpoints. 1:1 with `aiohue.v2.controllers.*`.
+//! - [`events`]      — typed wrapping of the `EventStream` payloads.
 //! - [`bridge`]      — high-level `HueBridgeV2`.
 
 pub mod bridge;

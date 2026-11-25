@@ -69,13 +69,13 @@ pub const EVENT_TEMPERATURE: &str = "temperature";
 // ----- generic sensor ------------------------------------------------------
 
 /// Shared sensor base. Source: `aiohue.v1.sensors.GenericSensor`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenericSensor {
     pub id: String,
     pub raw: RawItem,
     /// Last event payload (e.g. `{"event": "button", "id": "<id>", ...}`).
     /// Source: `GenericSensor.last_event`. Updated by the bridge poller /
-    /// EventStream router, not by the controller itself.
+    /// `EventStream` router, not by the controller itself.
     pub last_event: Option<Value>,
 }
 
@@ -240,10 +240,7 @@ impl GenericSensor {
     /// only writable knob is `{on: bool}`. Source:
     /// `aiohue.v1.sensors.GenericSwitchSensor.set_config`.
     pub async fn set_switch_on(&self, req: &dyn V1Request, on: Option<bool>) -> HueResult<()> {
-        let body = match on {
-            Some(value) => json!({ "on": value }),
-            None => json!({}),
-        };
+        let body = on.map_or_else(|| json!({}), |value| json!({ "on": value }));
         self.set_config(req, body).await
     }
 }
@@ -267,7 +264,7 @@ mod tests {
             "modelid": "RWL022",
             "manufacturername": "Signify",
             "uniqueid": "00:17:88:00:00:00:00:01-02-fc00",
-            "state": {"buttonevent": ZLL_SWITCH_BUTTON_1_INITIAL_PRESS as i64, "lastupdated": "2026-05-17T20:00:00"},
+            "state": {"buttonevent": i64::from(ZLL_SWITCH_BUTTON_1_INITIAL_PRESS), "lastupdated": "2026-05-17T20:00:00"},
             "config": {"on": true, "reachable": true, "battery": 90},
         })
         .as_object()

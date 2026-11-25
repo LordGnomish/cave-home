@@ -84,7 +84,7 @@ impl Light {
     /// `aiohue.v2.models.light.Light.brightness`. Falls back to 100/0 like
     /// the upstream property when the light doesn't expose dimming.
     #[must_use]
-    pub fn brightness(&self) -> f32 {
+    pub const fn brightness(&self) -> f32 {
         match self.dimming {
             Some(d) => d.brightness,
             None if self.is_on() => 100.0,
@@ -101,7 +101,7 @@ impl Light {
     }
     /// `aiohue.v2.models.light.Light.entertainment_active`.
     #[must_use]
-    pub fn entertainment_active(&self) -> bool {
+    pub const fn entertainment_active(&self) -> bool {
         matches!(self.mode, LightMode::Streaming)
     }
 }

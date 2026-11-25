@@ -8,7 +8,7 @@
 //!
 //! 1. Picks v1 vs v2 based on the entry config.
 //! 2. Calls `api.initialize()` with a timeout.
-//! 3. Catches LinkButtonNotPressed / Unauthorized and re-runs the
+//! 3. Catches `LinkButtonNotPressed` / Unauthorized and re-runs the
 //!    config-flow (we surface those as [`HueError::LinkButtonNotPressed`] /
 //!    [`HueError::Unauthorized`] so the Portal admin module + cavectl can
 //!    drive a re-pair UI).
@@ -85,7 +85,7 @@ impl HueBridge {
     }
 
     /// Source: `HueBridge.async_initialize_bridge`. Returns `Ok(true)` on
-    /// successful setup, `Ok(false)` on LinkButtonNotPressed / Unauthorized
+    /// successful setup, `Ok(false)` on `LinkButtonNotPressed` / Unauthorized
     /// (caller should re-pair), `Err` on transport failure.
     pub async fn initialize(&mut self) -> HueResult<bool> {
         let result = tokio::time::timeout(self.init_timeout, async {

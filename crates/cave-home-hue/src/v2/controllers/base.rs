@@ -60,6 +60,7 @@ pub struct ResourcesController<T> {
 
 impl<T: DeserializeOwned + ResourceIdAccess + Clone> ResourcesController<T> {
     /// Wire up a controller against a `/resource/<segment>` endpoint.
+    #[must_use]
     pub fn new(segment: &str) -> Self {
         Self {
             items: HashMap::new(),
@@ -101,16 +102,25 @@ impl<T: DeserializeOwned + ResourceIdAccess + Clone> ResourcesController<T> {
     }
 
     /// Get by id.
+    #[must_use]
     pub fn get(&self, id: &str) -> Option<&T> {
         self.items.get(id)
     }
 
     /// Number of items.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
+    /// True if no item is held.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
     /// Underlying path (e.g. `resource/light`). Used by sub-controllers.
+    #[must_use]
     pub fn path(&self) -> &str {
         &self.path
     }
@@ -226,5 +236,25 @@ mod tests {
         assert_eq!(ctrl.len(), 1);
         ctrl.remove("abc");
         assert_eq!(ctrl.len(), 0);
+    }
+
+    #[test]
+    fn is_empty_follows_the_item_count() -> Result<(), Box<dyn std::error::Error>> {
+        let mut ctrl = ResourcesController::<Light>::new("light");
+        assert!(ctrl.is_empty());
+        assert_eq!(ctrl.len(), 0);
+        assert_eq!(ctrl.path(), "resource/light");
+        ctrl.apply_event(json!({
+            "id": "abc",
+            "owner": {"rid": "dev", "rtype": "device"},
+            "on": {"on": true},
+            "mode": "normal",
+            "type": "light"
+        }))?;
+        assert!(!ctrl.is_empty());
+        assert_eq!(ctrl.len(), 1);
+        ctrl.remove("abc");
+        assert!(ctrl.is_empty());
+        Ok(())
     }
 }

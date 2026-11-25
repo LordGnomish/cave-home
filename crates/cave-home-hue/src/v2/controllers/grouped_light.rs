@@ -53,6 +53,12 @@ impl GroupedLightController {
         self.inner.len()
     }
 
+    /// True if no grouped lights are tracked.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
     /// PUT a pre-built body. Source: `GroupedLightController.set_state`.
     pub async fn set_state(
         &self,
@@ -60,7 +66,7 @@ impl GroupedLightController {
         id: &str,
         put: &GroupedLightPut,
     ) -> HueResult<()> {
-        let body = serde_json::to_value(put).unwrap_or(json!({}));
+        let body = serde_json::to_value(put).unwrap_or_else(|_| json!({}));
         let _ = req
             .put(&format!("resource/grouped_light/{id}"), body)
             .await?;
@@ -244,6 +250,23 @@ mod tests {
                 ),
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn is_empty_until_a_grouped_light_arrives() -> Result<(), Box<dyn std::error::Error>> {
+        let mut ctrl = GroupedLightController::new();
+        assert!(ctrl.is_empty());
+        ctrl.apply_event(json!({
+            "id": "gl-1",
+            "owner": {"rid": "room-1", "rtype": "room"},
+            "on": {"on": false},
+            "type": "grouped_light"
+        }))?;
+        assert!(!ctrl.is_empty());
+        assert_eq!(ctrl.len(), 1);
+        ctrl.remove("gl-1");
+        assert!(ctrl.is_empty());
         Ok(())
     }
 }

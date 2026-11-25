@@ -60,9 +60,11 @@ pub struct BridgeConfig {
     pub name: Option<String>,
 }
 
-/// Transport abstraction. Implementations bridge to the project's chosen
-/// HTTP client. The aiohttp upstream uses one `ClientSession`; we use a
-/// trait so cave-home can wire reqwest, hyper, or a stub for tests.
+/// Transport abstraction.
+///
+/// Implementations bridge to the project's chosen HTTP client. The aiohttp
+/// upstream uses one `ClientSession`; we use a trait so cave-home can wire
+/// reqwest, hyper, or a stub for tests.
 #[async_trait]
 pub trait HueHttpClient: Send + Sync {
     /// GET a URL and return the raw body bytes.
@@ -129,10 +131,7 @@ pub async fn is_hue_bridge(client: &dyn HueHttpClient, host: &str) -> HueResult<
 /// without an `hue-application-key` header.
 pub async fn is_v2_bridge(client: &dyn HueHttpClient, host: &str) -> bool {
     let url = format!("https://{host}/clip/v2/resource");
-    match client.get_status(&url).await {
-        Ok(403) => true,
-        _ => false,
-    }
+    matches!(client.get_status(&url).await, Ok(403))
 }
 
 #[cfg(test)]

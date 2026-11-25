@@ -6,6 +6,7 @@
 //! Reference: <https://developers.meethue.com/documentation/lights-api>.
 
 use crate::errors::HueResult;
+use crate::num::f64_to_f32;
 use crate::v1::api::{ApiItems, RawItem, V1Item, V1Request};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -66,7 +67,7 @@ pub struct LightStateUpdate {
 }
 
 /// Single v1 light. Source: `aiohue.v1.lights.Light`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Light {
     pub id: String,
     pub raw: RawItem,
@@ -154,8 +155,8 @@ impl Light {
                 return None;
             }
             points[idx] = Some(XYPoint {
-                x: pair[0].as_f64()? as f32,
-                y: pair[1].as_f64()? as f32,
+                x: f64_to_f32(pair[0].as_f64()?),
+                y: f64_to_f32(pair[1].as_f64()?),
             });
         }
         Some(GamutType {
@@ -167,7 +168,7 @@ impl Light {
 
     /// `aiohue.v1.lights.Light.set_state` — change live state.
     pub async fn set_state(&self, req: &dyn V1Request, update: &LightStateUpdate) -> HueResult<()> {
-        let body = serde_json::to_value(update).unwrap_or(json!({}));
+        let body = serde_json::to_value(update).unwrap_or_else(|_| json!({}));
         let _ = req.put(&format!("lights/{}/state", self.id), body).await?;
         Ok(())
     }
