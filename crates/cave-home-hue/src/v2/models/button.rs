@@ -50,8 +50,10 @@ mod tests {
     use crate::v2::models::feature::ButtonReportEvent;
     use serde_json::json;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn button_decodes_with_report() {
+    fn button_decodes_with_report() -> TestResult {
         let b: Button = serde_json::from_value(json!({
             "id": "btn-1",
             "owner": {"rid": "dev-1", "rtype": "device"},
@@ -60,10 +62,13 @@ mod tests {
                 "button_report": {"updated": "2026-05-17T20:00:00Z", "event": "short_release"}
             },
             "type": "button"
-        }))
-        .unwrap();
+        }))?;
         assert_eq!(b.metadata.control_id, 1);
-        let rep = b.button.button_report.unwrap();
+        let rep = b
+            .button
+            .button_report
+            .ok_or("the decoded button has no `button_report`")?;
         assert_eq!(rep.event, ButtonReportEvent::ShortRelease);
+        Ok(())
     }
 }

@@ -173,90 +173,104 @@ mod tests {
     use super::*;
     use crate::v2::models::feature::OnFeature;
     use crate::v2::models::light::LightPut;
-    use crate::v2::test_support::{http_ok, http_status, spawn_mock};
+    use crate::v2::test_support::{first_request, http_ok, http_status, spawn_mock};
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[tokio::test]
-    async fn get_lights_round_trips_over_real_http() {
+    async fn get_lights_round_trips_over_real_http() -> TestResult {
         let body = r#"{"errors":[],"data":[{"id":"l1","owner":{"rid":"d","rtype":"device"},"on":{"on":true},"mode":"normal","type":"light"}]}"#;
-        let (base, caps) = spawn_mock(vec![http_ok(body)]).await;
-        let t = ReqwestTransport::with_base_url(base, "secret-key").unwrap();
+        let (base, caps) = spawn_mock(vec![http_ok(body)]).await?;
+        let t = ReqwestTransport::with_base_url(base, "secret-key")?;
 
-        let env = t.get("resource/light").await.unwrap();
-        let data = env.into_data().unwrap();
+        let env = t.get("resource/light").await?;
+        let data = env.into_data()?;
         assert_eq!(data.len(), 1);
 
-        let log = caps.lock().unwrap();
-        let req = &log[0];
+        let req = first_request(&caps)?;
         assert_eq!(req.method, "GET");
         assert_eq!(req.path, "/clip/v2/resource/light");
         assert_eq!(req.header("hue-application-key"), Some("secret-key"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn put_light_sends_json_body_and_key() {
+    async fn put_light_sends_json_body_and_key() -> TestResult {
         let (base, caps) = spawn_mock(vec![http_ok(
             r#"{"errors":[],"data":[{"rid":"l1","rtype":"light"}]}"#,
         )])
-        .await;
-        let t = ReqwestTransport::with_base_url(base, "k").unwrap();
+        .await?;
+        let t = ReqwestTransport::with_base_url(base, "k")?;
 
         let put = LightPut {
             on: Some(OnFeature { on: false }),
             ..Default::default()
         };
-        t.put("resource/light/l1", serde_json::to_value(&put).unwrap())
-            .await
-            .unwrap();
+        t.put("resource/light/l1", serde_json::to_value(&put)?)
+            .await?;
 
-        let log = caps.lock().unwrap();
-        let req = &log[0];
+        let req = first_request(&caps)?;
         assert_eq!(req.method, "PUT");
         assert_eq!(req.path, "/clip/v2/resource/light/l1");
         assert!(req.body.contains("\"on\":false"), "body={}", req.body);
         assert_eq!(req.header("hue-application-key"), Some("k"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn forbidden_status_maps_to_unauthorized() {
+    async fn forbidden_status_maps_to_unauthorized() -> TestResult {
         let (base, _caps) = spawn_mock(vec![http_status(
             403,
             r#"{"errors":[{"description":"unauthorized user"}]}"#,
         )])
-        .await;
-        let t = ReqwestTransport::with_base_url(base, "k").unwrap();
-        let err = t.get("resource/light").await.unwrap_err();
+        .await?;
+        let t = ReqwestTransport::with_base_url(base, "k")?;
+        let err = t
+            .get("resource/light")
+            .await
+            .err()
+            .ok_or("`get` succeeded against a 403 response")?;
         assert!(matches!(err, HueError::Unauthorized(_)), "got {err:?}");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn service_unavailable_maps_to_bridge_busy() {
-        let (base, _caps) = spawn_mock(vec![http_status(503, "overloaded")]).await;
-        let t = ReqwestTransport::with_base_url(base, "k").unwrap();
-        let err = t.get("resource/light").await.unwrap_err();
+    async fn service_unavailable_maps_to_bridge_busy() -> TestResult {
+        let (base, _caps) = spawn_mock(vec![http_status(503, "overloaded")]).await?;
+        let t = ReqwestTransport::with_base_url(base, "k")?;
+        let err = t
+            .get("resource/light")
+            .await
+            .err()
+            .ok_or("`get` succeeded against a 503 response")?;
         assert!(matches!(err, HueError::BridgeBusy(_)), "got {err:?}");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn envelope_error_in_200_surfaces_via_into_data() {
+    async fn envelope_error_in_200_surfaces_via_into_data() -> TestResult {
         let (base, _caps) = spawn_mock(vec![http_ok(
             r#"{"errors":[{"description":"device busy"}],"data":[]}"#,
         )])
-        .await;
-        let t = ReqwestTransport::with_base_url(base, "k").unwrap();
-        let env = t.get("resource/light").await.unwrap();
+        .await?;
+        let t = ReqwestTransport::with_base_url(base, "k")?;
+        let env = t.get("resource/light").await?;
         assert!(matches!(env.into_data(), Err(HueError::Generic(_))));
+        Ok(())
     }
 
     #[test]
-    fn new_targets_https_self_signed_bridge() {
-        let t = ReqwestTransport::new("10.0.0.5", "k").unwrap();
+    fn new_targets_https_self_signed_bridge() -> TestResult {
+        let t = ReqwestTransport::new("10.0.0.5", "k")?;
         assert_eq!(t.base_url(), "https://10.0.0.5");
         assert_eq!(t.eventstream_url(), "https://10.0.0.5/eventstream/clip/v2");
+        Ok(())
     }
 
     #[test]
-    fn with_base_url_trims_trailing_slash() {
-        let t = ReqwestTransport::with_base_url("http://host:8080/", "k").unwrap();
+    fn with_base_url_trims_trailing_slash() -> TestResult {
+        let t = ReqwestTransport::with_base_url("http://host:8080/", "k")?;
         assert_eq!(t.base_url(), "http://host:8080");
+        Ok(())
     }
 }

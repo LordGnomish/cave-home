@@ -118,8 +118,10 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn scene_decodes_and_recall_round_trips() {
+    fn scene_decodes_and_recall_round_trips() -> TestResult {
         let scene_json = json!({
             "id": "scene-1",
             "metadata": {"name": "Aksam"},
@@ -131,7 +133,7 @@ mod tests {
                 }
             ]
         });
-        let s: Scene = serde_json::from_value(scene_json).unwrap();
+        let s: Scene = serde_json::from_value(scene_json)?;
         assert_eq!(s.metadata.name, "Aksam");
         assert_eq!(s.actions.len(), 1);
         assert!(s.actions[0].action.dimming.is_some());
@@ -144,9 +146,10 @@ mod tests {
             }),
             ..Default::default()
         };
-        let body = serde_json::to_string(&put).unwrap();
+        let body = serde_json::to_string(&put)?;
         assert!(body.contains("\"action\":\"active\""));
         assert!(body.contains("\"duration\":500"));
+        Ok(())
     }
 
     #[test]
@@ -175,15 +178,16 @@ mod tests {
     }
 
     #[test]
-    fn recall_action_as_str_matches_serde_wire_token() {
+    fn recall_action_as_str_matches_serde_wire_token() -> TestResult {
         for action in [
             SceneRecallAction::Active,
             SceneRecallAction::DynamicPalette,
             SceneRecallAction::Static,
             SceneRecallAction::Deactivate,
         ] {
-            let json = serde_json::to_string(&action).unwrap();
+            let json = serde_json::to_string(&action)?;
             assert_eq!(json, format!("\"{}\"", action.as_str()));
         }
+        Ok(())
     }
 }

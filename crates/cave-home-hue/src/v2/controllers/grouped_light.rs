@@ -53,6 +53,12 @@ impl GroupedLightController {
         self.inner.len()
     }
 
+    /// True if no grouped lights are tracked.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
     /// PUT a pre-built body. Source: `GroupedLightController.set_state`.
     pub async fn set_state(
         &self,
@@ -60,7 +66,7 @@ impl GroupedLightController {
         id: &str,
         put: &GroupedLightPut,
     ) -> HueResult<()> {
-        let body = serde_json::to_value(put).unwrap_or(json!({}));
+        let body = serde_json::to_value(put).unwrap_or_else(|_| json!({}));
         let _ = req
             .put(&format!("resource/grouped_light/{id}"), body)
             .await?;
@@ -115,8 +121,10 @@ mod tests {
     use crate::errors::HueResult;
     use crate::v2::controllers::base::{V2Envelope, V2Request};
     use async_trait::async_trait;
+    use parking_lot::Mutex;
     use serde_json::{Value, json};
-    use std::sync::Mutex;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[derive(Default)]
     struct StubReq {
@@ -126,10 +134,10 @@ mod tests {
     #[async_trait]
     impl V2Request for StubReq {
         async fn get(&self, _p: &str) -> HueResult<V2Envelope> {
-            Ok(self.gets.lock().unwrap().pop().unwrap_or_default())
+            Ok(self.gets.lock().pop().unwrap_or_default())
         }
         async fn put(&self, p: &str, b: Value) -> HueResult<V2Envelope> {
-            self.puts.lock().unwrap().push((p.into(), b));
+            self.puts.lock().push((p.into(), b));
             Ok(V2Envelope::default())
         }
         async fn post(&self, _p: &str, _b: Value) -> HueResult<V2Envelope> {
@@ -141,32 +149,40 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_on_puts_on_feature_to_grouped_light_path() {
+    async fn set_on_puts_on_feature_to_grouped_light_path() -> TestResult {
         let req = StubReq::default();
         let ctrl = GroupedLightController::new();
-        ctrl.set_on(&req, "room-1", true).await.unwrap();
-        let puts = req.puts.lock().unwrap().clone();
+        ctrl.set_on(&req, "room-1", true).await?;
+        let puts = req.puts.lock().clone();
         assert_eq!(puts.len(), 1);
         assert_eq!(puts[0].0, "resource/grouped_light/room-1");
-        let body = puts[0].1.as_object().unwrap();
+        let body = puts[0]
+            .1
+            .as_object()
+            .ok_or("the PUT body is not a JSON object")?;
         assert_eq!(body["on"]["on"], json!(true));
         assert!(body.get("dimming").is_none());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn set_brightness_puts_dimming() {
+    async fn set_brightness_puts_dimming() -> TestResult {
         let req = StubReq::default();
         let ctrl = GroupedLightController::new();
-        ctrl.set_brightness(&req, "zone-9", 42.0).await.unwrap();
-        let puts = req.puts.lock().unwrap().clone();
+        ctrl.set_brightness(&req, "zone-9", 42.0).await?;
+        let puts = req.puts.lock().clone();
         assert_eq!(puts[0].0, "resource/grouped_light/zone-9");
-        let body = puts[0].1.as_object().unwrap();
+        let body = puts[0]
+            .1
+            .as_object()
+            .ok_or("the PUT body is not a JSON object")?;
         assert_eq!(body["dimming"]["brightness"], json!(42.0));
         assert!(body.get("on").is_none());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn update_loads_grouped_lights() {
+    async fn update_loads_grouped_lights() -> TestResult {
         let env = V2Envelope {
             errors: vec![],
             data: vec![json!({
@@ -181,21 +197,98 @@ mod tests {
             puts: Mutex::new(Vec::new()),
         };
         let mut ctrl = GroupedLightController::new();
-        ctrl.update(&req).await.unwrap();
+        ctrl.update(&req).await?;
         assert_eq!(ctrl.len(), 1);
-        assert!(ctrl.get("gl-1").unwrap().on.on);
+        assert!(
+            ctrl.get("gl-1")
+                .ok_or("gl-1 is missing after the update")?
+                .on
+                .on
+        );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn apply_event_updates_grouped_light_state() {
+    async fn apply_event_updates_grouped_light_state() -> TestResult {
         let mut ctrl = GroupedLightController::new();
         ctrl.apply_event(json!({
             "id": "gl-1",
             "owner": {"rid": "room-1", "rtype": "room"},
             "on": {"on": false},
             "type": "grouped_light"
-        }))
-        .unwrap();
-        assert!(!ctrl.get("gl-1").unwrap().on.on);
+        }))?;
+        assert!(
+            !ctrl
+                .get("gl-1")
+                .ok_or("gl-1 is missing after the event")?
+                .on
+                .on
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn set_state_puts_exactly_the_set_features() -> TestResult {
+        use crate::v2::models::feature::{
+            AlertEffectType, AlertFeature, ColorFeatureBase, ColorPoint,
+            ColorTemperatureFeatureBase,
+        };
+
+        let req = StubReq::default();
+        let ctrl = GroupedLightController::new();
+        let put = GroupedLightPut {
+            on: Some(OnFeature { on: true }),
+            dimming: Some(DimmingFeatureBase { brightness: 100.0 }),
+            color_temperature: Some(ColorTemperatureFeatureBase { mirek: Some(153) }),
+            color: Some(ColorFeatureBase {
+                xy: ColorPoint { x: 0.5, y: 0.25 },
+            }),
+            alert: Some(AlertFeature {
+                action: AlertEffectType::Breathe,
+            }),
+        };
+        ctrl.set_state(&req, "room-1", &put).await?;
+        ctrl.set_state(&req, "room-1", &GroupedLightPut::default())
+            .await?;
+        ctrl.set_brightness(&req, "room-1", 0.0).await?;
+        let puts = req.puts.lock().clone();
+        assert_eq!(
+            puts,
+            vec![
+                (
+                    "resource/grouped_light/room-1".to_string(),
+                    json!({
+                        "on": {"on": true},
+                        "dimming": {"brightness": 100.0},
+                        "color_temperature": {"mirek": 153},
+                        "color": {"xy": {"x": 0.5, "y": 0.25}},
+                        "alert": {"action": "breathe"},
+                    }),
+                ),
+                ("resource/grouped_light/room-1".to_string(), json!({})),
+                (
+                    "resource/grouped_light/room-1".to_string(),
+                    json!({"dimming": {"brightness": 0.0}}),
+                ),
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn is_empty_until_a_grouped_light_arrives() -> TestResult {
+        let mut ctrl = GroupedLightController::new();
+        assert!(ctrl.is_empty());
+        ctrl.apply_event(json!({
+            "id": "gl-1",
+            "owner": {"rid": "room-1", "rtype": "room"},
+            "on": {"on": false},
+            "type": "grouped_light"
+        }))?;
+        assert!(!ctrl.is_empty());
+        assert_eq!(ctrl.len(), 1);
+        ctrl.remove("gl-1");
+        assert!(ctrl.is_empty());
+        Ok(())
     }
 }

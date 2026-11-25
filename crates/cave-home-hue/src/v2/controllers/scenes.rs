@@ -45,6 +45,12 @@ impl ScenesController {
         self.inner.len()
     }
 
+    /// True if no scenes are tracked.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
     /// `aiohue.v2.controllers.scenes.ScenesController.recall` — convenience
     /// that PUTs `{"recall": {"action": "active"}}` to activate a scene.
     pub async fn recall(
@@ -62,7 +68,7 @@ impl ScenesController {
             }),
             ..Default::default()
         };
-        let body = serde_json::to_value(&put).unwrap_or(json!({}));
+        let body = serde_json::to_value(&put).unwrap_or_else(|_| json!({}));
         let _ = req.put(&format!("resource/scene/{id}"), body).await?;
         Ok(())
     }
@@ -81,8 +87,10 @@ mod tests {
     use super::*;
     use crate::v2::controllers::base::V2Envelope;
     use async_trait::async_trait;
+    use parking_lot::Mutex;
     use serde_json::Value;
-    use std::sync::Mutex;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[derive(Default)]
     struct StubReq {
@@ -94,7 +102,7 @@ mod tests {
             Ok(V2Envelope::default())
         }
         async fn put(&self, p: &str, b: Value) -> HueResult<V2Envelope> {
-            self.puts.lock().unwrap().push((p.into(), b));
+            self.puts.lock().push((p.into(), b));
             Ok(V2Envelope::default())
         }
         async fn post(&self, _: &str, _: Value) -> HueResult<V2Envelope> {
@@ -106,17 +114,68 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn recall_puts_to_scene_path_with_recall_block() {
+    async fn recall_puts_to_scene_path_with_recall_block() -> TestResult {
         let req = StubReq::default();
         let ctrl = ScenesController::new();
         ctrl.recall(&req, "scn", SceneRecallAction::Active, Some(800))
-            .await
-            .unwrap();
-        let puts = req.puts.lock().unwrap().clone();
+            .await?;
+        let puts = req.puts.lock().clone();
         assert_eq!(puts.len(), 1);
         assert_eq!(puts[0].0, "resource/scene/scn");
-        let recall = puts[0].1.get("recall").unwrap();
-        assert_eq!(recall.get("action").unwrap(), &Value::from("active"));
-        assert_eq!(recall.get("duration").unwrap(), &Value::from(800));
+        let recall = puts[0]
+            .1
+            .get("recall")
+            .ok_or("the PUT body has no `recall`")?;
+        assert_eq!(
+            recall.get("action").ok_or("`recall` has no `action`")?,
+            &Value::from("active")
+        );
+        assert_eq!(
+            recall.get("duration").ok_or("`recall` has no `duration`")?,
+            &Value::from(800)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn recall_puts_exactly_the_recall_block() -> TestResult {
+        let req = StubReq::default();
+        let ctrl = ScenesController::new();
+        ctrl.recall(&req, "scn", SceneRecallAction::DynamicPalette, Some(0))
+            .await?;
+        ctrl.recall(&req, "scn", SceneRecallAction::Deactivate, None)
+            .await?;
+        let puts = req.puts.lock().clone();
+        assert_eq!(
+            puts,
+            vec![
+                (
+                    "resource/scene/scn".to_string(),
+                    json!({"recall": {"action": "dynamic_palette", "duration": 0}}),
+                ),
+                (
+                    "resource/scene/scn".to_string(),
+                    json!({"recall": {"action": "deactivate"}}),
+                ),
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn is_empty_until_a_scene_arrives() -> TestResult {
+        let mut ctrl = ScenesController::new();
+        assert!(ctrl.is_empty());
+        ctrl.apply_event(json!({
+            "id": "s1",
+            "metadata": {"name": "Aksam"},
+            "group": {"rid": "r1", "rtype": "room"},
+            "actions": []
+        }))?;
+        assert!(!ctrl.is_empty());
+        assert_eq!(ctrl.len(), 1);
+        ctrl.remove("s1");
+        assert!(ctrl.is_empty());
+        Ok(())
     }
 }

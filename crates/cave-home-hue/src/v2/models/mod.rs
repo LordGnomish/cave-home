@@ -6,7 +6,7 @@
 //! Phase 1 MVP includes the modules end-users touch (lights, scenes, motion,
 //! buttons, devices, rooms/zones, grouped lights, bridges, batteries) plus
 //! the generic [`resource`] enum + [`ResourceIdentifier`]. The longer tail
-//! (camera_motion, security_area_motion, ...) is tracked as `[[unmapped]]`
+//! (`camera_motion`, `security_area_motion`, ...) is tracked as `[[unmapped]]`
 //! in the parity manifest.
 
 pub mod button;

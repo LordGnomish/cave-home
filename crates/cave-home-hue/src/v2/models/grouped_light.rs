@@ -11,7 +11,7 @@ use crate::v2::models::resource::{ResourceIdentifier, ResourceTypes};
 use serde::{Deserialize, Serialize};
 
 /// `aiohue.v2.models.grouped_light.GroupedLight`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GroupedLight {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -46,25 +46,28 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn grouped_light_decodes() {
+    fn grouped_light_decodes() -> TestResult {
         let g: GroupedLight = serde_json::from_value(json!({
             "id": "grouped-1",
             "owner": {"rid": "room-1", "rtype": "room"},
             "on": {"on": true},
             "type": "grouped_light"
-        }))
-        .unwrap();
+        }))?;
         assert!(g.on.on);
+        Ok(())
     }
 
     #[test]
-    fn grouped_light_put_omits_unset_fields() {
+    fn grouped_light_put_omits_unset_fields() -> TestResult {
         let put = GroupedLightPut {
             on: Some(OnFeature { on: false }),
             ..Default::default()
         };
-        let s = serde_json::to_string(&put).unwrap();
+        let s = serde_json::to_string(&put)?;
         assert_eq!(s, "{\"on\":{\"on\":false}}");
+        Ok(())
     }
 }

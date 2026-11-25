@@ -32,16 +32,18 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn zone_decodes_with_archetype_and_children() {
+    fn zone_decodes_with_archetype_and_children() -> TestResult {
         let z: Zone = serde_json::from_value(json!({
             "id": "zone-1",
             "children": [{"rid": "light-svc-1", "rtype": "light"}],
             "services": [{"rid": "grouped-light-1", "rtype": "grouped_light"}],
             "metadata": {"name": "Üst kat", "archetype": "upstairs"},
             "type": "zone"
-        }))
-        .unwrap();
+        }))?;
         assert_eq!(z.metadata.name, "Üst kat");
+        Ok(())
     }
 }

@@ -84,7 +84,7 @@ impl Light {
     /// `aiohue.v2.models.light.Light.brightness`. Falls back to 100/0 like
     /// the upstream property when the light doesn't expose dimming.
     #[must_use]
-    pub fn brightness(&self) -> f32 {
+    pub const fn brightness(&self) -> f32 {
         match self.dimming {
             Some(d) => d.brightness,
             None if self.is_on() => 100.0,
@@ -101,7 +101,7 @@ impl Light {
     }
     /// `aiohue.v2.models.light.Light.entertainment_active`.
     #[must_use]
-    pub fn entertainment_active(&self) -> bool {
+    pub const fn entertainment_active(&self) -> bool {
         matches!(self.mode, LightMode::Streaming)
     }
 }
@@ -127,7 +127,9 @@ mod tests {
     use crate::v2::models::feature::{ColorPoint, OnFeature};
     use serde_json::json;
 
-    fn sample_light() -> Light {
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn sample_light() -> Result<Light, serde_json::Error> {
         serde_json::from_value(json!({
             "id": "11111111-1111-1111-1111-111111111111",
             "owner": {"rid": "device-1", "rtype": "device"},
@@ -139,12 +141,11 @@ mod tests {
             "color_temperature": {"mirek": 366, "mirek_valid": true},
             "type": "light"
         }))
-        .unwrap()
     }
 
     #[test]
-    fn light_supports_features_flags() {
-        let l = sample_light();
+    fn light_supports_features_flags() -> TestResult {
+        let l = sample_light()?;
         assert!(l.supports_dimming());
         assert!(l.supports_color());
         assert!(l.supports_color_temperature());
@@ -152,19 +153,21 @@ mod tests {
         assert!((l.brightness() - 60.0).abs() < 1e-3);
         assert!(!l.entertainment_active());
         assert!(!l.is_dynamic());
+        Ok(())
     }
 
     #[test]
-    fn brightness_falls_back_when_no_dimming() {
-        let mut l = sample_light();
+    fn brightness_falls_back_when_no_dimming() -> TestResult {
+        let mut l = sample_light()?;
         l.dimming = None;
         assert!((l.brightness() - 100.0).abs() < 1e-3);
         l.on.on = false;
         assert!((l.brightness() - 0.0).abs() < 1e-3);
+        Ok(())
     }
 
     #[test]
-    fn light_put_serialises_only_present_fields() {
+    fn light_put_serialises_only_present_fields() -> TestResult {
         let put = LightPut {
             on: Some(OnFeature { on: true }),
             dimming: Some(DimmingFeatureBase { brightness: 50.0 }),
@@ -173,15 +176,17 @@ mod tests {
             }),
             ..Default::default()
         };
-        let s = serde_json::to_string(&put).unwrap();
+        let s = serde_json::to_string(&put)?;
         assert!(s.contains("\"on\":{\"on\":true}"));
         assert!(s.contains("\"dimming\":{\"brightness\":50.0}"));
         assert!(!s.contains("color_temperature_delta"));
+        Ok(())
     }
 
     #[test]
-    fn light_id_v1_optional() {
-        let l = sample_light();
+    fn light_id_v1_optional() -> TestResult {
+        let l = sample_light()?;
         assert!(l.id_v1.is_none());
+        Ok(())
     }
 }

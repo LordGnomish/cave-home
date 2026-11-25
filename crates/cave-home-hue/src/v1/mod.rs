@@ -3,7 +3,7 @@
 // Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v1/__init__.py
 //! Philips Hue v1 REST API client. Ports `aiohue.v1` line-by-line.
 //!
-//! v1 is the legacy "ColdRoom" REST API (JSON over HTTP, application-key in
+//! v1 is the legacy `ColdRoom` REST API (JSON over HTTP, application-key in
 //! the URL path). Most modern Hue Bridges (v2 / square) also expose v1; we
 //! keep this surface to support round-bridge / firmware-frozen units.
 //!

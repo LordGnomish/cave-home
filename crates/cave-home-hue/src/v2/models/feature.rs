@@ -55,7 +55,7 @@ pub struct ColorTemperatureFeatureBase {
 }
 
 /// `aiohue.v2.models.feature.ColorTemperatureFeature` — full state.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ColorTemperatureFeature {
     #[serde(default)]
     pub mirek: Option<u16>,
@@ -168,40 +168,46 @@ pub struct AlertFeature {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn dimming_feature_round_trips() {
+    fn dimming_feature_round_trips() -> TestResult {
         let v = DimmingFeature {
             brightness: 75.0,
             min_dim_level: Some(1.0),
         };
-        let s = serde_json::to_string(&v).unwrap();
-        let back: DimmingFeature = serde_json::from_str(&s).unwrap();
+        let s = serde_json::to_string(&v)?;
+        let back: DimmingFeature = serde_json::from_str(&s)?;
         assert_eq!(back, v);
+        Ok(())
     }
 
     #[test]
-    fn color_feature_decodes_minimal_xy_only() {
+    fn color_feature_decodes_minimal_xy_only() -> TestResult {
         let s = r#"{"xy":{"x":0.4,"y":0.5}}"#;
-        let v: ColorFeature = serde_json::from_str(s).unwrap();
+        let v: ColorFeature = serde_json::from_str(s)?;
         assert!(v.gamut.is_none());
         assert!(v.gamut_type.is_none());
         assert!((v.xy.x - 0.4).abs() < 1e-6);
+        Ok(())
     }
 
     #[test]
-    fn button_report_event_round_trip() {
+    fn button_report_event_round_trip() -> TestResult {
         let json = r#"{"updated":"2026-05-17T20:00:00Z","event":"short_release"}"#;
-        let r: ButtonReport = serde_json::from_str(json).unwrap();
+        let r: ButtonReport = serde_json::from_str(json)?;
         assert_eq!(r.event, ButtonReportEvent::ShortRelease);
+        Ok(())
     }
 
     #[test]
-    fn dimming_delta_action_serialises_snake_case() {
+    fn dimming_delta_action_serialises_snake_case() -> TestResult {
         let v = DimmingDeltaFeaturePut {
             action: DimmingDeltaAction::Up,
             brightness_delta: Some(10.0),
         };
-        let s = serde_json::to_string(&v).unwrap();
+        let s = serde_json::to_string(&v)?;
         assert!(s.contains("\"action\":\"up\""));
+        Ok(())
     }
 }

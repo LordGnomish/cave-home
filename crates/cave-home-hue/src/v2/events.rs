@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 // Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v2/controllers/events.py
-//! v2 EventStream — parser + types for the Hue CLIP Server-Sent Events
+//! v2 `EventStream` — parser + types for the Hue CLIP Server-Sent Events
 //! payload. Mirrors `aiohue.v2.controllers.events`.
 //!
 //! The transport (long-lived HTTP/2 GET to `clip/v2/eventstream`) is wired
@@ -63,7 +63,7 @@ pub struct HueEvent {
     pub creationtime: String,
     #[serde(rename = "type")]
     pub kind: EventType,
-    /// Resource payload(s). For `delete`, holds only the ResourceIdentifier
+    /// Resource payload(s). For `delete`, holds only the `ResourceIdentifier`
     /// shape (rid + rtype). For `add`/`update`, partial-resource objects.
     pub data: Vec<Value>,
 }
@@ -88,7 +88,7 @@ pub enum SseLine {
 }
 
 /// Parse one SSE wire line. Lines must already be stripped of the trailing
-/// newline. Matches the W3C EventSource format.
+/// newline. Matches the W3C `EventSource` format.
 #[must_use]
 pub fn parse_sse_line(line: &str) -> SseLine {
     if line.is_empty() {
@@ -105,10 +105,9 @@ pub fn parse_sse_line(line: &str) -> SseLine {
         "event" => SseLine::Event(value.to_string()),
         "data" => SseLine::Data(value.to_string()),
         "id" => SseLine::Id(value.to_string()),
-        "retry" => match value.parse::<u32>() {
-            Ok(ms) => SseLine::Retry(ms),
-            Err(_) => SseLine::Unknown(line.to_string()),
-        },
+        "retry" => value
+            .parse::<u32>()
+            .map_or_else(|_| SseLine::Unknown(line.to_string()), SseLine::Retry),
         _ => SseLine::Unknown(line.to_string()),
     }
 }
@@ -205,9 +204,10 @@ mod tests {
     fn event_stream_parser_handles_one_event() {
         let mut p = EventStreamParser::default();
         let body = r#"[{"id":"e1","creationtime":"2026-05-17T20:00:00Z","type":"add","data":[{"id":"light-1","type":"light"}]}]"#;
-        p.feed(parse_sse_line("id: 42"));
-        p.feed(parse_sse_line("event: add"));
-        p.feed(parse_sse_line(&format!("data: {body}")));
+        // Only the dispatching blank line returns events.
+        assert!(p.feed(parse_sse_line("id: 42")).is_empty());
+        assert!(p.feed(parse_sse_line("event: add")).is_empty());
+        assert!(p.feed(parse_sse_line(&format!("data: {body}"))).is_empty());
         let events = p.feed(parse_sse_line(""));
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0].kind, EventType::ResourceAdded));
@@ -220,5 +220,28 @@ mod tests {
         let mut p = EventStreamParser::default();
         let events = p.feed(parse_sse_line(""));
         assert!(events.is_empty());
+    }
+
+    #[test]
+    fn parse_sse_line_retry_accepts_only_a_u32() {
+        assert_eq!(parse_sse_line("retry:5000"), SseLine::Retry(5000));
+        assert_eq!(parse_sse_line("retry: 0"), SseLine::Retry(0));
+        assert_eq!(
+            parse_sse_line("retry: 4294967295"),
+            SseLine::Retry(u32::MAX)
+        );
+        for line in [
+            "retry: 4294967296",
+            "retry: -1",
+            "retry: soon",
+            "retry: ",
+            "retry:  5",
+        ] {
+            assert_eq!(
+                parse_sse_line(line),
+                SseLine::Unknown(line.to_string()),
+                "line = {line:?}"
+            );
+        }
     }
 }

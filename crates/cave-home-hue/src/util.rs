@@ -99,6 +99,8 @@ pub fn format_utc_timestamp_components(
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn zeroconf_id_is_stripped() {
         // Upstream contract: 17-char colon-separated form (MAC-48) becomes
@@ -127,9 +129,11 @@ mod tests {
     }
 
     #[test]
-    fn mac_from_bridge_id_splits_into_colon_groups() {
-        let mac = mac_from_bridge_id("001788abcdef").expect("valid 12-char id");
+    fn mac_from_bridge_id_splits_into_colon_groups() -> TestResult {
+        let mac = mac_from_bridge_id("001788abcdef")
+            .ok_or("`mac_from_bridge_id` rejected a valid 12-char id")?;
         assert_eq!(mac, "00:17:88:ab:cd:ef");
+        Ok(())
     }
 
     #[test]

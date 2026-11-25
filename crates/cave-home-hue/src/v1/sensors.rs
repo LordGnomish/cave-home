@@ -69,13 +69,13 @@ pub const EVENT_TEMPERATURE: &str = "temperature";
 // ----- generic sensor ------------------------------------------------------
 
 /// Shared sensor base. Source: `aiohue.v1.sensors.GenericSensor`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenericSensor {
     pub id: String,
     pub raw: RawItem,
     /// Last event payload (e.g. `{"event": "button", "id": "<id>", ...}`).
     /// Source: `GenericSensor.last_event`. Updated by the bridge poller /
-    /// EventStream router, not by the controller itself.
+    /// `EventStream` router, not by the controller itself.
     pub last_event: Option<Value>,
 }
 
@@ -240,10 +240,7 @@ impl GenericSensor {
     /// only writable knob is `{on: bool}`. Source:
     /// `aiohue.v1.sensors.GenericSwitchSensor.set_config`.
     pub async fn set_switch_on(&self, req: &dyn V1Request, on: Option<bool>) -> HueResult<()> {
-        let body = match on {
-            Some(value) => json!({ "on": value }),
-            None => json!({}),
-        };
+        let body = on.map_or_else(|| json!({}), |value| json!({ "on": value }));
         self.set_config(req, body).await
     }
 }
@@ -260,66 +257,90 @@ pub fn new_sensors() -> Sensors {
 mod tests {
     use super::*;
 
-    fn dimmer_switch_raw() -> RawItem {
-        json!({
+    fn dimmer_switch_raw() -> Result<RawItem, &'static str> {
+        raw_map(json!({
             "name": "Salon Dimmer",
             "type": TYPE_ZLL_SWITCH,
             "modelid": "RWL022",
             "manufacturername": "Signify",
             "uniqueid": "00:17:88:00:00:00:00:01-02-fc00",
-            "state": {"buttonevent": ZLL_SWITCH_BUTTON_1_INITIAL_PRESS as i64, "lastupdated": "2026-05-17T20:00:00"},
+            "state": {"buttonevent": i64::from(ZLL_SWITCH_BUTTON_1_INITIAL_PRESS), "lastupdated": "2026-05-17T20:00:00"},
             "config": {"on": true, "reachable": true, "battery": 90},
-        })
-        .as_object()
-        .unwrap()
-        .clone()
+        }))
     }
 
     #[test]
-    fn zll_switch_exposes_button_event_and_battery() {
-        let s = GenericSensor::from_raw("1".into(), dimmer_switch_raw());
+    fn zll_switch_exposes_button_event_and_battery() -> TestResult {
+        let s = GenericSensor::from_raw("1".into(), dimmer_switch_raw()?);
         assert_eq!(s.sensor_type(), TYPE_ZLL_SWITCH);
         assert_eq!(s.button_event(), Some(1000));
         assert_eq!(s.zll_battery(), Some(90));
         assert_eq!(s.on(), Some(true));
         assert_eq!(s.reachable(), Some(true));
+        Ok(())
     }
 
     #[test]
-    fn motion_sensor_state() {
+    fn motion_sensor_state() -> TestResult {
         let raw = json!({
             "name": "Antre Motion",
             "type": TYPE_ZLL_PRESENCE,
             "state": {"presence": true, "lastupdated": "2026-05-17T20:01:00"},
             "config": {"on": true, "reachable": true, "battery": 80},
         });
-        let s = GenericSensor::from_raw("4".into(), raw.as_object().unwrap().clone());
+        let s = GenericSensor::from_raw("4".into(), raw_map(raw)?);
         assert_eq!(s.presence(), Some(true));
         assert_eq!(s.last_updated(), Some("2026-05-17T20:01:00"));
+        Ok(())
     }
 
     #[test]
-    fn daylight_sensor_exposes_daylight() {
+    fn daylight_sensor_exposes_daylight() -> TestResult {
         let raw = json!({
             "name": "Daylight",
             "type": TYPE_DAYLIGHT,
             "state": {"daylight": false, "lastupdated": "none"},
             "config": {"on": true, "configured": true, "sunriseoffset": 30, "sunsetoffset": -30},
         });
-        let s = GenericSensor::from_raw("1".into(), raw.as_object().unwrap().clone());
+        let s = GenericSensor::from_raw("1".into(), raw_map(raw)?);
         assert_eq!(s.daylight(), Some(false));
+        Ok(())
     }
 
     #[test]
-    fn temperature_value_is_centidegrees() {
+    fn temperature_value_is_centidegrees() -> TestResult {
         let raw = json!({
             "name": "T1",
             "type": TYPE_ZLL_TEMPERATURE,
             "state": {"temperature": 2150, "lastupdated": "2026-05-17T20:00:00"},
             "config": {"on": true, "reachable": true},
         });
-        let s = GenericSensor::from_raw("5".into(), raw.as_object().unwrap().clone());
+        let s = GenericSensor::from_raw("5".into(), raw_map(raw)?);
         // 2150 = 21.50°C — upstream returns the raw int; consumers divide.
         assert_eq!(s.temperature_centi(), Some(2150));
+        Ok(())
+    }
+
+    use crate::v1::api::test_support::{RecordingReq, raw_map};
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    #[tokio::test]
+    async fn set_switch_on_puts_the_on_flag_or_an_empty_object() -> TestResult {
+        let req = RecordingReq::default();
+        let sensor = GenericSensor::from_raw("7".into(), serde_json::Map::new());
+        sensor.set_switch_on(&req, Some(true)).await?;
+        sensor.set_switch_on(&req, Some(false)).await?;
+        sensor.set_switch_on(&req, None).await?;
+        let puts = req.puts.lock().clone();
+        assert_eq!(
+            puts,
+            vec![
+                ("sensors/7/config".to_string(), json!({"on": true})),
+                ("sensors/7/config".to_string(), json!({"on": false})),
+                ("sensors/7/config".to_string(), json!({})),
+            ]
+        );
+        Ok(())
     }
 }

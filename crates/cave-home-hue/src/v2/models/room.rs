@@ -6,9 +6,11 @@
 use crate::v2::models::resource::{ResourceIdentifier, ResourceTypes};
 use serde::{Deserialize, Serialize};
 
-/// `aiohue.v2.models.room.RoomArchetype`. Hue archetypes drive default
-/// icons in the official app; we round-trip the value as a string so any
-/// archetype Philips ships in firmware survives without code changes.
+/// `aiohue.v2.models.room.RoomArchetype`.
+///
+/// Hue archetypes drive default icons in the official app; we round-trip the
+/// value as a string so any archetype Philips ships in firmware survives
+/// without code changes.
 pub type RoomArchetype = String;
 
 /// `aiohue.v2.models.room.RoomMetadata`.
@@ -40,18 +42,20 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn room_decodes_with_archetype_and_children() {
+    fn room_decodes_with_archetype_and_children() -> TestResult {
         let r: Room = serde_json::from_value(json!({
             "id": "room-1",
             "children": [{"rid": "dev-1", "rtype": "device"}],
             "services": [{"rid": "grouped-light-1", "rtype": "grouped_light"}],
             "metadata": {"name": "Salon", "archetype": "living_room"},
             "type": "room"
-        }))
-        .unwrap();
+        }))?;
         assert_eq!(r.metadata.name, "Salon");
         assert_eq!(r.metadata.archetype, "living_room");
         assert_eq!(r.children.len(), 1);
+        Ok(())
     }
 }

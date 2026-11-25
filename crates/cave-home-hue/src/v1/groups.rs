@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 cave-home contributors
 // Source: home-assistant-libs/aiohue@v4.8.1 aiohue/v1/groups.py
-//! v1 groups controller — Hue "Room" / "Zone" / "Luminaire" / "LightGroup".
+//! v1 groups controller — Hue `Room` / `Zone` / `Luminaire` / `LightGroup`.
 //!
 //! Reference: <https://developers.meethue.com/documentation/groups-api>.
 
@@ -11,7 +11,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 /// `aiohue.v1.groups.GroupState` — readonly aggregate state.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GroupState {
     pub all_on: bool,
     pub any_on: bool,
@@ -53,7 +53,7 @@ pub struct GroupAction {
 }
 
 /// `aiohue.v1.groups.Group`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Group {
     pub id: String,
     pub raw: RawItem,
@@ -123,7 +123,7 @@ impl Group {
     }
     /// `aiohue.v1.groups.Group.set_action` — apply a pending action.
     pub async fn set_action(&self, req: &dyn V1Request, action: &GroupAction) -> HueResult<()> {
-        let body = serde_json::to_value(action).unwrap_or(json!({}));
+        let body = serde_json::to_value(action).unwrap_or_else(|_| json!({}));
         let _ = req.put(&format!("groups/{}/action", self.id), body).await?;
         Ok(())
     }
@@ -149,11 +149,14 @@ pub async fn get_all_lights_group(req: &dyn V1Request) -> HueResult<Group> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::v1::api::test_support::raw_map;
     use async_trait::async_trait;
-    use std::sync::Mutex;
+    use parking_lot::Mutex;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[test]
-    fn group_exposes_lights_and_sensors() {
+    fn group_exposes_lights_and_sensors() -> TestResult {
         let raw = json!({
             "type": "Room",
             "name": "Salon",
@@ -161,7 +164,7 @@ mod tests {
             "sensors": ["s1"],
             "state": {"all_on": false, "any_on": true},
         });
-        let g = Group::from_raw("4".into(), raw.as_object().unwrap().clone());
+        let g = Group::from_raw("4".into(), raw_map(raw)?);
         assert_eq!(g.group_type(), Some("Room"));
         assert_eq!(g.name(), "Salon");
         assert_eq!(g.lights(), vec!["1", "2", "3"]);
@@ -173,19 +176,26 @@ mod tests {
                 any_on: true
             })
         );
+        Ok(())
     }
 
     #[test]
-    fn group_action_with_scene_serialises() {
+    fn group_action_with_scene_serialises() -> TestResult {
         let act = GroupAction {
             on: Some(true),
             scene: Some("Bxx0x".into()),
             ..GroupAction::default()
         };
-        let body = serde_json::to_value(&act).unwrap();
-        let obj = body.as_object().unwrap();
+        let body = serde_json::to_value(&act)?;
+        let obj = body
+            .as_object()
+            .ok_or("the serialised action is not a JSON object")?;
         assert_eq!(obj.len(), 2);
-        assert_eq!(obj.get("scene").unwrap(), &Value::String("Bxx0x".into()));
+        assert_eq!(
+            obj.get("scene").ok_or("the body has no `scene`")?,
+            &Value::String("Bxx0x".into())
+        );
+        Ok(())
     }
 
     struct StubReq {
@@ -195,50 +205,39 @@ mod tests {
     #[async_trait]
     impl V1Request for StubReq {
         async fn get(&self, path: &str) -> HueResult<Value> {
-            self.called
-                .lock()
-                .unwrap()
-                .push(("get".into(), path.into()));
+            self.called.lock().push(("get".into(), path.into()));
             Ok(
                 json!({"name": "All", "state": {"all_on": false, "any_on": false}, "lights": [], "sensors": []}),
             )
         }
         async fn put(&self, path: &str, _body: Value) -> HueResult<Value> {
-            self.called
-                .lock()
-                .unwrap()
-                .push(("put".into(), path.into()));
+            self.called.lock().push(("put".into(), path.into()));
             Ok(Value::Null)
         }
         async fn post(&self, path: &str, _body: Value) -> HueResult<Value> {
-            self.called
-                .lock()
-                .unwrap()
-                .push(("post".into(), path.into()));
+            self.called.lock().push(("post".into(), path.into()));
             Ok(Value::Null)
         }
         async fn delete(&self, path: &str) -> HueResult<Value> {
-            self.called
-                .lock()
-                .unwrap()
-                .push(("delete".into(), path.into()));
+            self.called.lock().push(("delete".into(), path.into()));
             Ok(Value::Null)
         }
     }
 
     #[tokio::test]
-    async fn get_all_lights_group_uses_path_groups_zero() {
+    async fn get_all_lights_group_uses_path_groups_zero() -> TestResult {
         let req = StubReq {
             called: Mutex::new(Vec::new()),
         };
-        let _ = get_all_lights_group(&req).await.unwrap();
-        let calls = req.called.lock().unwrap().clone();
+        let _ = get_all_lights_group(&req).await?;
+        let calls = req.called.lock().clone();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0], ("get".into(), "groups/0".into()));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn set_action_puts_to_groups_id_action() {
+    async fn set_action_puts_to_groups_id_action() -> TestResult {
         let req = StubReq {
             called: Mutex::new(Vec::new()),
         };
@@ -250,9 +249,53 @@ mod tests {
                 ..Default::default()
             },
         )
-        .await
-        .unwrap();
-        let calls = req.called.lock().unwrap().clone();
+        .await?;
+        let calls = req.called.lock().clone();
         assert_eq!(calls[0], ("put".into(), "groups/5/action".into()));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn set_action_puts_exactly_the_set_fields() -> TestResult {
+        use crate::v1::api::test_support::RecordingReq;
+
+        let req = RecordingReq::default();
+        let group = Group::from_raw("5".into(), serde_json::Map::new());
+        let action = GroupAction {
+            on: Some(false),
+            bri: Some(1),
+            hue: Some(0),
+            sat: Some(255),
+            xy: Some((0.25, 0.5)),
+            ct: Some(500),
+            transition_time: Some(0),
+            hue_inc: Some(-65_534),
+            scene: Some("Bxx0x".into()),
+            ..GroupAction::default()
+        };
+        group.set_action(&req, &action).await?;
+        group.set_action(&req, &GroupAction::default()).await?;
+        let puts = req.puts.lock().clone();
+        assert_eq!(
+            puts,
+            vec![
+                (
+                    "groups/5/action".to_string(),
+                    json!({
+                        "on": false,
+                        "bri": 1,
+                        "hue": 0,
+                        "sat": 255,
+                        "xy": [0.25, 0.5],
+                        "ct": 500,
+                        "transitiontime": 0,
+                        "hue_inc": -65_534,
+                        "scene": "Bxx0x",
+                    }),
+                ),
+                ("groups/5/action".to_string(), json!({})),
+            ]
+        );
+        Ok(())
     }
 }

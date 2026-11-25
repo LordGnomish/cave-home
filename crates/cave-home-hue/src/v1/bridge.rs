@@ -15,7 +15,7 @@ use crate::v1::scenes::{Scenes, new_scenes};
 use crate::v1::sensors::{Sensors, new_sensors};
 use std::sync::Arc;
 
-/// v1 HueBridge — host + app-key + the controllers fetched from the bridge.
+/// v1 `HueBridge` — host + app-key + the controllers fetched from the bridge.
 pub struct HueBridgeV1 {
     pub host: String,
     pub app_key: String,
@@ -76,8 +76,10 @@ mod tests {
     use super::*;
     use crate::errors::HueResult;
     use async_trait::async_trait;
+    use parking_lot::Mutex;
     use serde_json::{Value, json};
-    use std::sync::Mutex;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     struct StubReq {
         full: Mutex<Option<Value>>,
@@ -87,25 +89,25 @@ mod tests {
     #[async_trait]
     impl V1Request for StubReq {
         async fn get(&self, path: &str) -> HueResult<Value> {
-            self.calls.lock().unwrap().push(format!("get {path}"));
-            Ok(self.full.lock().unwrap().clone().unwrap_or(Value::Null))
+            self.calls.lock().push(format!("get {path}"));
+            Ok(self.full.lock().clone().unwrap_or(Value::Null))
         }
         async fn put(&self, path: &str, _b: Value) -> HueResult<Value> {
-            self.calls.lock().unwrap().push(format!("put {path}"));
+            self.calls.lock().push(format!("put {path}"));
             Ok(Value::Null)
         }
         async fn post(&self, path: &str, _b: Value) -> HueResult<Value> {
-            self.calls.lock().unwrap().push(format!("post {path}"));
+            self.calls.lock().push(format!("post {path}"));
             Ok(Value::Null)
         }
         async fn delete(&self, path: &str) -> HueResult<Value> {
-            self.calls.lock().unwrap().push(format!("delete {path}"));
+            self.calls.lock().push(format!("delete {path}"));
             Ok(Value::Null)
         }
     }
 
     #[tokio::test]
-    async fn initialize_pulls_full_tree_into_controllers() {
+    async fn initialize_pulls_full_tree_into_controllers() -> TestResult {
         let req = Arc::new(StubReq {
             full: Mutex::new(Some(json!({
                 "config": {"bridgeid": "001788ABCDEF", "name": "Cave"},
@@ -117,15 +119,16 @@ mod tests {
             calls: Mutex::new(Vec::new()),
         });
         let mut br = HueBridgeV1::new("10.0.0.1".into(), "appkey".into(), req.clone());
-        br.initialize().await.unwrap();
+        br.initialize().await?;
         assert_eq!(br.config.bridge_id(), Some("001788ABCDEF"));
         assert_eq!(br.lights.len(), 2);
         assert_eq!(br.groups.len(), 1);
         assert_eq!(br.scenes.len(), 1);
         assert_eq!(br.sensors.len(), 1);
-        let calls = req.calls.lock().unwrap().clone();
+        let calls = req.calls.lock().clone();
         // initialize() is one full-tree GET, not five separate ones.
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0], "get ");
+        Ok(())
     }
 }
