@@ -248,4 +248,125 @@ mod tests {
         assert!(light.color_gamut().is_none());
         assert_eq!(light.color_gamut_type(), "None");
     }
+
+    use crate::v1::api::test_support::RecordingReq;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    /// A light whose gamut has `red_x` as the red x coordinate.
+    fn light_with_red_x(red_x: &Value) -> Result<Light, &'static str> {
+        let raw = json!({
+            "capabilities": {
+                "control": {
+                    "colorgamut": [[red_x, 0.3083], [0.17, 0.7], [0.1532, 0.0475]],
+                }
+            }
+        });
+        let Value::Object(map) = raw else {
+            return Err("the light fixture is not a JSON object");
+        };
+        Ok(Light::from_raw("1".into(), map))
+    }
+
+    /// `f32` bit pattern `color_gamut()` reports for a red x coordinate.
+    fn red_x_bits(red_x: &Value) -> Result<Option<u32>, &'static str> {
+        Ok(light_with_red_x(red_x)?
+            .color_gamut()
+            .map(|gamut| gamut.red.x.to_bits()))
+    }
+
+    #[test]
+    fn color_gamut_narrows_every_coordinate_to_the_nearest_f32() -> TestResult {
+        let gamut = light_with_red_x(&json!(0.6915))?
+            .color_gamut()
+            .ok_or("`color_gamut()` is None for a complete gamut")?;
+        assert_eq!(gamut.red.x.to_bits(), 0x3f31_0625); // 0.6915
+        assert_eq!(gamut.red.y.to_bits(), 0x3e9d_d97f); // 0.3083
+        assert_eq!(gamut.green.x.to_bits(), 0x3e2e_147b); // 0.17
+        assert_eq!(gamut.green.y.to_bits(), 0x3f33_3333); // 0.7
+        assert_eq!(gamut.blue.x.to_bits(), 0x3e1c_e076); // 0.1532
+        assert_eq!(gamut.blue.y.to_bits(), 0x3d42_8f5c); // 0.0475
+        Ok(())
+    }
+
+    #[test]
+    fn color_gamut_coordinate_edge_values_keep_their_f32_bits() -> TestResult {
+        let cases = [
+            (json!(0), 0x0000_0000),
+            (json!(0.0), 0x0000_0000),
+            (json!(-0.0), 0x8000_0000),
+            (json!(1), 0x3f80_0000),
+            (json!(1.0), 0x3f80_0000),
+            (json!(0.5), 0x3f00_0000),
+            (json!(0.1), 0x3dcc_cccd),
+            (json!(0.300_000_000_000_000_04), 0x3e99_999a),
+            (json!(-0.25), 0xbe80_0000),
+            (json!(2.5), 0x4020_0000),
+            (json!(253), 0x437d_0000),
+            (json!(254), 0x437e_0000),
+            (json!(255), 0x437f_0000),
+            (json!(65_535), 0x477f_ff00),
+            (json!(16_777_217), 0x4b80_0000), // 2^24 + 1: tie, rounds to even
+            (json!(u64::MAX), 0x5f80_0000),   // 2^64 after the f64 step
+            (json!(i64::MIN), 0xdf00_0000),   // -2^63
+            (json!(1e-50), 0x0000_0000),      // underflows to zero
+            (json!(-1e-50), 0x8000_0000),     // ... keeping the sign
+            (json!(1e40), 0x7f80_0000),       // overflows to +infinity
+            (json!(-1e40), 0xff80_0000),      // overflows to -infinity
+            (json!(f64::MAX), 0x7f80_0000),
+        ];
+        for (red_x, expected) in &cases {
+            assert_eq!(red_x_bits(red_x)?, Some(*expected), "red x = {red_x}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn color_gamut_is_none_when_a_coordinate_is_not_a_number() -> TestResult {
+        // JSON has no NaN: `json!(f64::NAN)` is `null`, which is not a number.
+        for red_x in [json!(f64::NAN), json!(null), json!("0.5"), json!([0.5])] {
+            assert_eq!(red_x_bits(&red_x)?, None, "red x = {red_x}");
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn set_state_puts_exactly_the_set_fields() -> TestResult {
+        let req = RecordingReq::default();
+        let light = Light::from_raw("7".into(), serde_json::Map::new());
+        let update = LightStateUpdate {
+            on: Some(true),
+            bri: Some(254),
+            hue: Some(65_535),
+            sat: Some(0),
+            xy: Some((0.5, 0.25)),
+            ct: Some(153),
+            transition_time: Some(4),
+            bri_inc: Some(-254),
+            ..LightStateUpdate::default()
+        };
+        light.set_state(&req, &update).await?;
+        light.set_state(&req, &LightStateUpdate::default()).await?;
+        let puts = req.puts.lock().clone();
+        assert_eq!(
+            puts,
+            vec![
+                (
+                    "lights/7/state".to_string(),
+                    json!({
+                        "on": true,
+                        "bri": 254,
+                        "hue": 65_535,
+                        "sat": 0,
+                        "xy": [0.5, 0.25],
+                        "ct": 153,
+                        "transitiontime": 4,
+                        "bri_inc": -254,
+                    }),
+                ),
+                ("lights/7/state".to_string(), json!({})),
+            ]
+        );
+        Ok(())
+    }
 }

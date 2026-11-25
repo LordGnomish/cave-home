@@ -122,6 +122,39 @@ impl<T: V1Item> ApiItems<T> {
     }
 }
 
+/// Test double shared by the v1 controller tests.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::V1Request;
+    use crate::errors::HueResult;
+    use async_trait::async_trait;
+    use parking_lot::Mutex;
+    use serde_json::Value;
+
+    /// Records every PUT so a test can compare path and body exactly.
+    #[derive(Default)]
+    pub struct RecordingReq {
+        pub puts: Mutex<Vec<(String, Value)>>,
+    }
+
+    #[async_trait]
+    impl V1Request for RecordingReq {
+        async fn get(&self, _path: &str) -> HueResult<Value> {
+            Ok(Value::Null)
+        }
+        async fn put(&self, path: &str, body: Value) -> HueResult<Value> {
+            self.puts.lock().push((path.into(), body));
+            Ok(Value::Null)
+        }
+        async fn post(&self, _path: &str, _body: Value) -> HueResult<Value> {
+            Ok(Value::Null)
+        }
+        async fn delete(&self, _path: &str) -> HueResult<Value> {
+            Ok(Value::Null)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,5 +210,47 @@ mod tests {
         items.process_raw(json!({"1": {"name": "B"}}).as_object().unwrap().clone());
         let item = items.get("1").unwrap();
         assert_eq!(item.raw.get("name").unwrap(), "B");
+    }
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    /// `value` as a raw bridge map.
+    fn raw_map(value: Value) -> Result<RawItem, &'static str> {
+        match value {
+            Value::Object(map) => Ok(map),
+            _ => Err("the fixture is not a JSON object"),
+        }
+    }
+
+    #[test]
+    fn process_raw_keeps_an_item_whose_new_value_is_not_an_object() -> TestResult {
+        let mut items = ApiItems::<DummyItem>::new("lights");
+        items.process_raw(raw_map(json!({"1": {"name": "A"}, "2": {"name": "B"}}))?);
+        // "1" is still listed but carries no object: it stays as it was.
+        // "2" is gone. "3" and "4" are new but only "4" is an object.
+        items.process_raw(raw_map(
+            json!({"1": 5, "3": "not an object", "4": {"name": "D"}}),
+        )?);
+        assert_eq!(items.len(), 2);
+        let kept = items.get("1").ok_or("item 1 was dropped")?;
+        assert_eq!(kept.raw, raw_map(json!({"name": "A"}))?);
+        assert!(items.get("2").is_none());
+        assert!(items.get("3").is_none());
+        let added = items.get("4").ok_or("item 4 was not inserted")?;
+        assert_eq!(added.id, "4");
+        assert_eq!(added.raw, raw_map(json!({"name": "D"}))?);
+        Ok(())
+    }
+
+    #[test]
+    fn process_raw_with_an_empty_map_clears_the_collection() -> TestResult {
+        let mut items = ApiItems::<DummyItem>::new("lights");
+        assert!(items.is_empty());
+        items.process_raw(raw_map(json!({"1": {"name": "A"}}))?);
+        assert!(!items.is_empty());
+        items.process_raw(serde_json::Map::new());
+        assert!(items.is_empty());
+        assert_eq!(items.iter().count(), 0);
+        Ok(())
     }
 }

@@ -119,4 +119,29 @@ mod tests {
         assert_eq!(recall.get("action").unwrap(), &Value::from("active"));
         assert_eq!(recall.get("duration").unwrap(), &Value::from(800));
     }
+
+    #[tokio::test]
+    async fn recall_puts_exactly_the_recall_block() -> Result<(), Box<dyn std::error::Error>> {
+        let req = StubReq::default();
+        let ctrl = ScenesController::new();
+        ctrl.recall(&req, "scn", SceneRecallAction::DynamicPalette, Some(0))
+            .await?;
+        ctrl.recall(&req, "scn", SceneRecallAction::Deactivate, None)
+            .await?;
+        let puts = req.puts.lock().map_err(|e| e.to_string())?.clone();
+        assert_eq!(
+            puts,
+            vec![
+                (
+                    "resource/scene/scn".to_string(),
+                    json!({"recall": {"action": "dynamic_palette", "duration": 0}}),
+                ),
+                (
+                    "resource/scene/scn".to_string(),
+                    json!({"recall": {"action": "deactivate"}}),
+                ),
+            ]
+        );
+        Ok(())
+    }
 }

@@ -154,4 +154,47 @@ mod tests {
         let mut ctrl = LightsController::new();
         assert!(ctrl.update(&req).await.is_err());
     }
+
+    #[tokio::test]
+    async fn set_state_puts_exactly_the_set_features() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::v2::models::feature::{
+            ColorFeatureBase, ColorPoint, ColorTemperatureFeatureBase, DimmingDeltaAction,
+            DimmingDeltaFeaturePut, DimmingFeatureBase, OnFeature,
+        };
+
+        let req = StubReq::default();
+        let ctrl = LightsController::new();
+        let put = LightPut {
+            on: Some(OnFeature { on: false }),
+            dimming: Some(DimmingFeatureBase { brightness: 0.5 }),
+            dimming_delta: Some(DimmingDeltaFeaturePut {
+                action: DimmingDeltaAction::Down,
+                brightness_delta: Some(25.0),
+            }),
+            color_temperature: Some(ColorTemperatureFeatureBase { mirek: Some(500) }),
+            color: Some(ColorFeatureBase {
+                xy: ColorPoint { x: 0.25, y: 0.75 },
+            }),
+        };
+        ctrl.set_state(&req, "abc", &put).await?;
+        ctrl.set_state(&req, "abc", &LightPut::default()).await?;
+        let puts = req.puts.lock().map_err(|e| e.to_string())?.clone();
+        assert_eq!(
+            puts,
+            vec![
+                (
+                    "resource/light/abc".to_string(),
+                    json!({
+                        "on": {"on": false},
+                        "dimming": {"brightness": 0.5},
+                        "dimming_delta": {"action": "down", "brightness_delta": 25.0},
+                        "color_temperature": {"mirek": 500},
+                        "color": {"xy": {"x": 0.25, "y": 0.75}},
+                    }),
+                ),
+                ("resource/light/abc".to_string(), json!({})),
+            ]
+        );
+        Ok(())
+    }
 }

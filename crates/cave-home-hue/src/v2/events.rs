@@ -221,4 +221,27 @@ mod tests {
         let events = p.feed(parse_sse_line(""));
         assert!(events.is_empty());
     }
+
+    #[test]
+    fn parse_sse_line_retry_accepts_only_a_u32() {
+        assert_eq!(parse_sse_line("retry:5000"), SseLine::Retry(5000));
+        assert_eq!(parse_sse_line("retry: 0"), SseLine::Retry(0));
+        assert_eq!(
+            parse_sse_line("retry: 4294967295"),
+            SseLine::Retry(u32::MAX)
+        );
+        for line in [
+            "retry: 4294967296",
+            "retry: -1",
+            "retry: soon",
+            "retry: ",
+            "retry:  5",
+        ] {
+            assert_eq!(
+                parse_sse_line(line),
+                SseLine::Unknown(line.to_string()),
+                "line = {line:?}"
+            );
+        }
+    }
 }

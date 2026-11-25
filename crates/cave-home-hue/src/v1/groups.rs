@@ -255,4 +255,48 @@ mod tests {
         let calls = req.called.lock().unwrap().clone();
         assert_eq!(calls[0], ("put".into(), "groups/5/action".into()));
     }
+
+    #[tokio::test]
+    async fn set_action_puts_exactly_the_set_fields() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::v1::api::test_support::RecordingReq;
+
+        let req = RecordingReq::default();
+        let group = Group::from_raw("5".into(), serde_json::Map::new());
+        let action = GroupAction {
+            on: Some(false),
+            bri: Some(1),
+            hue: Some(0),
+            sat: Some(255),
+            xy: Some((0.25, 0.5)),
+            ct: Some(500),
+            transition_time: Some(0),
+            hue_inc: Some(-65_534),
+            scene: Some("Bxx0x".into()),
+            ..GroupAction::default()
+        };
+        group.set_action(&req, &action).await?;
+        group.set_action(&req, &GroupAction::default()).await?;
+        let puts = req.puts.lock().clone();
+        assert_eq!(
+            puts,
+            vec![
+                (
+                    "groups/5/action".to_string(),
+                    json!({
+                        "on": false,
+                        "bri": 1,
+                        "hue": 0,
+                        "sat": 255,
+                        "xy": [0.25, 0.5],
+                        "ct": 500,
+                        "transitiontime": 0,
+                        "hue_inc": -65_534,
+                        "scene": "Bxx0x",
+                    }),
+                ),
+                ("groups/5/action".to_string(), json!({})),
+            ]
+        );
+        Ok(())
+    }
 }

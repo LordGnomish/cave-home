@@ -322,4 +322,27 @@ mod tests {
         // 2150 = 21.50°C — upstream returns the raw int; consumers divide.
         assert_eq!(s.temperature_centi(), Some(2150));
     }
+
+    use crate::v1::api::test_support::RecordingReq;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    #[tokio::test]
+    async fn set_switch_on_puts_the_on_flag_or_an_empty_object() -> TestResult {
+        let req = RecordingReq::default();
+        let sensor = GenericSensor::from_raw("7".into(), serde_json::Map::new());
+        sensor.set_switch_on(&req, Some(true)).await?;
+        sensor.set_switch_on(&req, Some(false)).await?;
+        sensor.set_switch_on(&req, None).await?;
+        let puts = req.puts.lock().clone();
+        assert_eq!(
+            puts,
+            vec![
+                ("sensors/7/config".to_string(), json!({"on": true})),
+                ("sensors/7/config".to_string(), json!({"on": false})),
+                ("sensors/7/config".to_string(), json!({})),
+            ]
+        );
+        Ok(())
+    }
 }

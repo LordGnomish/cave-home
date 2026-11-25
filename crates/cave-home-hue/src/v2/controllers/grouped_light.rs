@@ -198,4 +198,52 @@ mod tests {
         .unwrap();
         assert!(!ctrl.get("gl-1").unwrap().on.on);
     }
+
+    #[tokio::test]
+    async fn set_state_puts_exactly_the_set_features() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::v2::models::feature::{
+            AlertEffectType, AlertFeature, ColorFeatureBase, ColorPoint,
+            ColorTemperatureFeatureBase,
+        };
+
+        let req = StubReq::default();
+        let ctrl = GroupedLightController::new();
+        let put = GroupedLightPut {
+            on: Some(OnFeature { on: true }),
+            dimming: Some(DimmingFeatureBase { brightness: 100.0 }),
+            color_temperature: Some(ColorTemperatureFeatureBase { mirek: Some(153) }),
+            color: Some(ColorFeatureBase {
+                xy: ColorPoint { x: 0.5, y: 0.25 },
+            }),
+            alert: Some(AlertFeature {
+                action: AlertEffectType::Breathe,
+            }),
+        };
+        ctrl.set_state(&req, "room-1", &put).await?;
+        ctrl.set_state(&req, "room-1", &GroupedLightPut::default())
+            .await?;
+        ctrl.set_brightness(&req, "room-1", 0.0).await?;
+        let puts = req.puts.lock().map_err(|e| e.to_string())?.clone();
+        assert_eq!(
+            puts,
+            vec![
+                (
+                    "resource/grouped_light/room-1".to_string(),
+                    json!({
+                        "on": {"on": true},
+                        "dimming": {"brightness": 100.0},
+                        "color_temperature": {"mirek": 153},
+                        "color": {"xy": {"x": 0.5, "y": 0.25}},
+                        "alert": {"action": "breathe"},
+                    }),
+                ),
+                ("resource/grouped_light/room-1".to_string(), json!({})),
+                (
+                    "resource/grouped_light/room-1".to_string(),
+                    json!({"dimming": {"brightness": 0.0}}),
+                ),
+            ]
+        );
+        Ok(())
+    }
 }
