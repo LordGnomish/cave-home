@@ -56,12 +56,12 @@ pub fn cmd() -> Command {
         )
 }
 
-/// Entry from `main.rs`.
+/// Stand-alone entry with the F5 cross-agent stub signature `() -> i32`.
 ///
-/// The F5 contract uses the simpler signature `() -> i32` for cross-agent
-/// stubs; for solar we re-parse argv here so we can honour
-/// `cavehomectl solar status`, etc. without changing the F5 dispatch
-/// signature.
+/// It re-parses argv after the `solar` token so it can honour
+/// `cavehomectl solar status`, etc., and renders without the verbose fields.
+/// `main.rs` does not use it: it passes the matches it already parsed, and
+/// the global `--verbose` flag, to [`dispatch`].
 #[must_use]
 pub fn run() -> i32 {
     // Skip the binary name and the leading "solar" token.
@@ -77,7 +77,7 @@ pub fn run() -> i32 {
     dispatch(&matches, false)
 }
 
-/// Internal dispatcher — exposed for unit tests.
+/// Dispatcher — the entry from `main.rs`, and what the unit tests drive.
 pub fn dispatch(matches: &ArgMatches, verbose: bool) -> i32 {
     match matches.subcommand() {
         None | Some(("status", _)) => {

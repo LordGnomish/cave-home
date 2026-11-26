@@ -100,11 +100,13 @@ where
         Some(("automation", sub)) => automation::run(sub, verbose),
         Some(("scene", sub)) => scene::run(sub, verbose),
         Some(("top", sub)) => top::run(sub, verbose),
-        // Cross-agent stubs use the simpler signature.
-        Some(("solar", _)) => solar::run(),
-        Some(("energy", _)) => energy::run(),
+        // Cross-agent surfaces. The ones with verbose-aware views get the
+        // parsed matches and the global flag; the stubs use the simpler
+        // signature.
+        Some(("solar", sub)) => solar::dispatch(sub, verbose),
+        Some(("energy", sub)) => energy::dispatch(sub, verbose),
         Some(("unifi", sub)) => unifi::run_matched(sub, verbose),
-        Some(("hue", _)) => hue::run(),
+        Some(("hue", sub)) => hue::dispatch(sub, verbose),
         Some(("knx", _)) => knx::run(),
         Some(("esphome", _)) => esphome::run(),
         Some(("free-home", _)) => free_home::run(),
@@ -121,7 +123,7 @@ where
         Some(("garden", _)) => garden::run(),
         Some(("pool", _)) => pool::run(),
         Some(("voice", _)) => voice::run(),
-        Some(("jarvis", _)) => jarvis::run(),
+        Some(("jarvis", sub)) => jarvis::dispatch(sub, verbose),
         Some(("music", _)) => music::run(),
         Some(("notify", _)) => notify::run(),
         Some(("display", _)) => display::run(),

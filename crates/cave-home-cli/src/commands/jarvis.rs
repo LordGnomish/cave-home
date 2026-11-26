@@ -43,7 +43,10 @@ pub fn cmd() -> Command {
         .subcommand(Command::new("wake").about("Show the wake words it listens for"))
 }
 
-/// Entry from `main.rs`.
+/// Stand-alone entry. Re-parses argv after the `jarvis` token.
+///
+/// It renders without the verbose fields. `main.rs` does not use it: it
+/// passes its own matches and the global `--verbose` flag to [`dispatch`].
 #[must_use]
 pub fn run() -> i32 {
     let after: Vec<std::ffi::OsString> = std::env::args_os()
@@ -55,7 +58,7 @@ pub fn run() -> i32 {
     dispatch(&cmd().get_matches_from(after), false)
 }
 
-/// Internal dispatcher — exposed for unit tests.
+/// Dispatcher — the entry from `main.rs`, and what the unit tests drive.
 #[must_use]
 pub fn dispatch(matches: &ArgMatches, verbose: bool) -> i32 {
     match matches.subcommand() {
