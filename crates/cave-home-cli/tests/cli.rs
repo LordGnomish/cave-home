@@ -183,3 +183,112 @@ fn unifi_stub_runs() -> TestResult {
     cavehomectl()?.arg("unifi").assert().success();
     Ok(())
 }
+
+/// `--verbose` is a global flag, so `solar`, `energy`, `hue` and `jarvis`
+/// have to honour it the way `status` and `device` do, wherever it is written.
+///
+/// Runs `view` plain (no developer line) and then with `--verbose` and `-v`,
+/// before and after it, expecting `developer_line` every time. The expected
+/// lines are the ones the render unit tests in `src/commands/` pin.
+fn assert_verbose_adds(view: &[&str], developer_line: &str) -> TestResult {
+    cavehomectl()?
+        .args(view)
+        .assert()
+        .success()
+        .stdout(contains("[developer]").not());
+    for flag in ["--verbose", "-v"] {
+        cavehomectl()?
+            .arg(flag)
+            .args(view)
+            .assert()
+            .success()
+            .stdout(contains(developer_line));
+        cavehomectl()?
+            .args(view)
+            .arg(flag)
+            .assert()
+            .success()
+            .stdout(contains(developer_line));
+    }
+    Ok(())
+}
+
+#[test]
+fn solar_verbose_shows_raw_fields() -> TestResult {
+    let raw = "grid_w=-3800 pv_w=5200 battery_soc_pct=72";
+    assert_verbose_adds(&["solar"], raw)?;
+    assert_verbose_adds(&["solar", "status"], raw)?;
+    assert_verbose_adds(&["solar", "sunspec", "inverter"], "manufacturer  : Fronius")?;
+    assert_verbose_adds(
+        &["solar", "sunspec", "battery"],
+        "[developer] power_kw=1.40",
+    )?;
+    assert_verbose_adds(&["solar", "evcc", "list"], "[developer] current_a=12")?;
+    let source = "[developer] source=forecast.solar";
+    assert_verbose_adds(&["solar", "forecast", "today"], source)?;
+    assert_verbose_adds(&["solar", "forecast", "tomorrow"], source)?;
+    Ok(())
+}
+
+#[test]
+fn energy_verbose_shows_raw_fields() -> TestResult {
+    let raw = "pv_w=4200 load_w=1800 grid_w=-900 soc_pct=88";
+    assert_verbose_adds(&["energy"], raw)?;
+    assert_verbose_adds(&["energy", "status"], raw)?;
+    assert_verbose_adds(
+        &["energy", "history"],
+        "[developer] produced_kwh=38.4 used_kwh=22.1",
+    )?;
+    Ok(())
+}
+
+#[test]
+fn hue_list_lights_verbose_shows_raw_colour_points() -> TestResult {
+    assert_verbose_adds(
+        &["hue", "list-lights"],
+        "Living room xy=(0.450,0.410) bri=203",
+    )
+}
+
+#[test]
+fn jarvis_verbose_shows_tool_names() -> TestResult {
+    assert_verbose_adds(&["jarvis"], "[developer] set_light")?;
+    assert_verbose_adds(&["jarvis", "tools"], "[developer] set_light")?;
+    assert_verbose_adds(
+        &["jarvis", "ask", "--text", "turn the kitchen light on"],
+        "[developer] tool=set_light args={\"on\":true,\"target\":\"kitchen\"}",
+    )?;
+    Ok(())
+}
+
+#[test]
+fn verbose_is_accepted_by_views_without_technical_fields() -> TestResult {
+    // Nothing technical to add here, so the output stays what it is without
+    // the flag — but the flag must not be rejected, in either position.
+    for view in [
+        &["solar", "evcc", "mode", "garage", "pv"][..],
+        &["energy", "mode", "backup"],
+        &["energy", "backup-reserve", "20"],
+        &["hue", "set-scene", "--id", "abc"],
+        &["hue", "status"],
+        &["jarvis", "wake"],
+    ] {
+        let plain = cavehomectl()?.args(view).assert().success();
+        let expected = plain.get_output().stdout.clone();
+        for flag in ["--verbose", "-v"] {
+            cavehomectl()?
+                .arg(flag)
+                .args(view)
+                .assert()
+                .success()
+                .stdout(expected.clone());
+            cavehomectl()?
+                .args(view)
+                .arg(flag)
+                .assert()
+                .success()
+                .stdout(expected.clone());
+        }
+    }
+    Ok(())
+}
