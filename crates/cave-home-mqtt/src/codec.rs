@@ -133,7 +133,7 @@ pub fn encode_packet(packet: &Packet) -> Result<BytesMut, CodecError> {
             (0u8, PacketType::Connect)
         }
         Packet::ConnAck(c) => {
-            encode_connack(c, &mut body);
+            encode_connack(*c, &mut body);
             (0u8, PacketType::ConnAck)
         }
         Packet::Publish(p) => {
@@ -153,7 +153,7 @@ pub fn encode_packet(packet: &Packet) -> Result<BytesMut, CodecError> {
             (flags, PacketType::Unsubscribe)
         }
         Packet::UnsubAck(a) => {
-            encode_unsuback(a, &mut body);
+            encode_unsuback(*a, &mut body);
             (0u8, PacketType::UnsubAck)
         }
         Packet::PingReq => (0u8, PacketType::PingReq),
@@ -195,8 +195,9 @@ fn encode_connect(c: &Connect, out: &mut BytesMut) {
     encode_str(&c.client_id, out);
 }
 
-fn encode_connack(c: &ConnAck, out: &mut BytesMut) {
-    out.put_u8(if c.session_present { 0x01 } else { 0x00 });
+fn encode_connack(c: ConnAck, out: &mut BytesMut) {
+    // §3.2.2.2: Session Present is bit 0 of the Connect Acknowledge Flags.
+    out.put_u8(u8::from(c.session_present));
     out.put_u8(c.return_code as u8);
 }
 
@@ -207,7 +208,7 @@ fn encode_publish(p: &Publish, out: &mut BytesMut) -> Result<u8, CodecError> {
         out.put_u16(pid);
     }
     out.extend_from_slice(&p.payload);
-    let flags = ((p.dup as u8) << 3) | ((p.qos as u8) << 1) | (p.retain as u8);
+    let flags = (u8::from(p.dup) << 3) | ((p.qos as u8) << 1) | u8::from(p.retain);
     Ok(flags)
 }
 
@@ -479,7 +480,7 @@ fn decode_unsubscribe(buf: &mut &[u8], flags: u8) -> Result<Unsubscribe, CodecEr
 }
 
 /// MQTT 3.1.1 §3.11 UNSUBACK — a packet identifier only.
-fn encode_unsuback(a: &UnsubAck, out: &mut BytesMut) {
+fn encode_unsuback(a: UnsubAck, out: &mut BytesMut) {
     out.put_u16(a.packet_id);
 }
 

@@ -375,8 +375,8 @@ impl Broker {
                         retain: true, // §3.3.1.3 retained delivery has RETAIN=1
                         dup: false,
                         packet_id,
-                        properties: msg.properties.clone(),
-                        payload: msg.payload.clone(),
+                        properties: msg.properties,
+                        payload: msg.payload,
                     };
                     if let Some(pid) = packet_id {
                         sess.outgoing_unacked.insert(pid, p.clone());
@@ -538,10 +538,7 @@ impl Broker {
                     if sub.no_local && publisher == Some(id.as_str()) {
                         continue; // §3.8.3.1 No Local
                     }
-                    best = Some(match best {
-                        Some(q) => qos_max(q, sub.qos),
-                        None => sub.qos,
-                    });
+                    best = Some(best.map_or(sub.qos, |q| qos_max(q, sub.qos)));
                     rap |= sub.retain_as_published;
                 }
                 best.map(|q| (id.clone(), qos_min(src_qos, q), rap))

@@ -84,13 +84,11 @@ impl Authenticator {
     /// enabled.
     #[must_use]
     pub fn authenticate(&self, username: Option<&str>, password: Option<&[u8]>) -> bool {
-        match username {
-            None => self.allow_anonymous,
-            Some(user) => match self.credentials.get(user) {
-                Some(stored) => password == Some(stored.as_slice()),
-                None => false,
-            },
-        }
+        username.map_or(self.allow_anonymous, |user| {
+            self.credentials
+                .get(user)
+                .is_some_and(|stored| password == Some(stored.as_slice()))
+        })
     }
 
     /// Decide whether `username` may perform `action` on `topic`. The
@@ -99,10 +97,10 @@ impl Authenticator {
     #[must_use]
     pub fn authorize(&self, username: Option<&str>, action: AclAction, topic: &str) -> bool {
         for rule in &self.rules {
-            let user_ok = match &rule.username {
-                None => true,
-                Some(u) => Some(u.as_str()) == username,
-            };
+            let user_ok = rule
+                .username
+                .as_deref()
+                .is_none_or(|user| Some(user) == username);
             let action_ok = rule.action.is_none_or(|a| a == action);
             if user_ok && action_ok && topic_matches(&rule.topic, topic) {
                 return rule.allow;
