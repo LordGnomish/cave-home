@@ -29,11 +29,11 @@ use bytes::Bytes;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Broker-wide capabilities advertised in CONNACK and applied to QoS /
+/// Broker-wide capabilities advertised in CONNACK and applied to `QoS` /
 /// retain handling.
 #[derive(Clone, Debug)]
 pub struct BrokerConfig {
-    /// §3.2.2.3.4 — the maximum QoS the server accepts/grants.
+    /// §3.2.2.3.4 — the maximum `QoS` the server accepts/grants.
     pub max_qos: QoS,
     /// §3.2.2.3.5 — whether RETAIN is supported.
     pub retain_available: bool,
@@ -666,7 +666,7 @@ fn qos_max(a: QoS, b: QoS) -> QoS {
     if (a as u8) >= (b as u8) { a } else { b }
 }
 
-/// §3.9.3 — map a granted QoS to its SUBACK reason code.
+/// §3.9.3 — map a granted `QoS` to its SUBACK reason code.
 fn granted_code(qos: QoS) -> ReasonCode {
     match qos {
         QoS::AtMostOnce => ReasonCode::Success, // 0x00 == Granted QoS 0
@@ -686,7 +686,7 @@ fn pubrec(client_id: &str, packet_id: u16, reason: ReasonCode) -> Action {
     }
 }
 
-/// QoS-appropriate negative acknowledgement for a rejected PUBLISH.
+/// `QoS`-appropriate negative acknowledgement for a rejected PUBLISH.
 fn ack_publish_error(client_id: &str, p: &PublishV5, reason: ReasonCode) -> Vec<Action> {
     match (p.qos, p.packet_id) {
         (QoS::AtLeastOnce, Some(pid)) => vec![Action::Send {
@@ -763,7 +763,7 @@ mod router_tests {
         })
     }
 
-    /// Collect (client_id, packet) for every Send action.
+    /// Collect `(client_id, packet)` for every Send action.
     fn sends(actions: &[Action]) -> Vec<(String, PacketV5)> {
         actions
             .iter()

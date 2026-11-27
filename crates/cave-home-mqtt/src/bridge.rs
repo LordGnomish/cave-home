@@ -1,7 +1,7 @@
 //! Bridge to other MQTT brokers (Mosquitto-compatible configuration).
 //!
 //! A bridge mirrors messages between this broker and a remote one. Each
-//! `topic` rule names a topic pattern, a direction, a QoS and optional
+//! `topic` rule names a topic pattern, a direction, a `QoS` and optional
 //! local/remote prefixes — mirroring Mosquitto's
 //! `topic <pattern> [direction [qos [local_prefix remote_prefix]]]`.
 //! This module is the I/O-free decision core: it computes which filters

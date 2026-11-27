@@ -2,7 +2,7 @@
 //!
 //! A [`BrokerHook`] lets the cave-home automation engine observe broker
 //! lifecycle events (connect / subscribe / disconnect) and authorize or
-//! veto individual PUBLISHes without the broker depending on any
+//! veto individual PUBLISH packets without the broker depending on any
 //! automation crate. The hook is synchronous and must not block.
 
 use crate::packet::QoS;

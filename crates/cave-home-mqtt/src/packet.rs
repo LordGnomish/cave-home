@@ -70,7 +70,7 @@ impl QoS {
 }
 
 /// MQTT 3.1.1 §3.1 CONNECT — variable header + payload subset used
-/// during Phase 1 (clean session + client_id + keep_alive). Will,
+/// during Phase 1 (clean session + `client_id` + `keep_alive`). Will,
 /// username/password, and per-connection auth land in Phase 1b.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Connect {
@@ -112,7 +112,7 @@ pub struct ConnAck {
     pub return_code: ConnAckReturnCode,
 }
 
-/// MQTT 3.1.1 §3.3 PUBLISH. `packet_id` is `None` for QoS 0 (§3.3.2.2).
+/// MQTT 3.1.1 §3.3 PUBLISH. `packet_id` is `None` for `QoS` 0 (§3.3.2.2).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Publish {
     pub topic: String,
@@ -123,25 +123,25 @@ pub struct Publish {
     pub payload: Bytes,
 }
 
-/// MQTT 3.1.1 §3.4 PUBACK — QoS 1 publish acknowledgement (packet id only).
+/// MQTT 3.1.1 §3.4 PUBACK — `QoS` 1 publish acknowledgement (packet id only).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PubAck {
     pub packet_id: u16,
 }
 
-/// MQTT 3.1.1 §3.5 PUBREC — QoS 2 publish received, part 1 (packet id only).
+/// MQTT 3.1.1 §3.5 PUBREC — `QoS` 2 publish received, part 1 (packet id only).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PubRec {
     pub packet_id: u16,
 }
 
-/// MQTT 3.1.1 §3.6 PUBREL — QoS 2 publish release, part 2 (packet id only).
+/// MQTT 3.1.1 §3.6 PUBREL — `QoS` 2 publish release, part 2 (packet id only).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PubRel {
     pub packet_id: u16,
 }
 
-/// MQTT 3.1.1 §3.7 PUBCOMP — QoS 2 publish complete, part 3 (packet id only).
+/// MQTT 3.1.1 §3.7 PUBCOMP — `QoS` 2 publish complete, part 3 (packet id only).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PubComp {
     pub packet_id: u16,
@@ -201,7 +201,7 @@ pub struct Subscribe {
     pub subscriptions: Vec<Subscription>,
 }
 
-/// MQTT 3.1.1 §3.9.3 — SUBACK return code: granted max QoS, or failure.
+/// MQTT 3.1.1 §3.9.3 — SUBACK return code: granted max `QoS`, or failure.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SubAckReturnCode {

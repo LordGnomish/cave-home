@@ -20,7 +20,7 @@ pub struct BrokerMetrics {
     pub messages_received: u64,
     /// Counter — PUBLISH packets delivered to subscribers.
     pub messages_sent: u64,
-    /// Counter — PUBLISH packets dropped (denied / no subscriber, QoS 0).
+    /// Counter — PUBLISH packets dropped (denied / no subscriber, `QoS` 0).
     pub messages_dropped: u64,
     /// Counter — payload bytes received.
     pub bytes_received: u64,

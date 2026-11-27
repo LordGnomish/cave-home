@@ -42,11 +42,11 @@ pub enum Error {
 impl From<CodecError> for Error {
     fn from(e: CodecError) -> Self {
         match e {
-            CodecError::Underflow { needed } => Error::Underflow { needed },
-            CodecError::VarIntTooLong => Error::VarIntTooLong,
-            CodecError::BadUtf8 => Error::BadUtf8,
-            CodecError::BadQoS(q) => Error::BadQoS(q),
-            other => Error::Malformed(Box::leak(other.to_string().into_boxed_str())),
+            CodecError::Underflow { needed } => Self::Underflow { needed },
+            CodecError::VarIntTooLong => Self::VarIntTooLong,
+            CodecError::BadUtf8 => Self::BadUtf8,
+            CodecError::BadQoS(q) => Self::BadQoS(q),
+            other => Self::Malformed(Box::leak(other.to_string().into_boxed_str())),
         }
     }
 }

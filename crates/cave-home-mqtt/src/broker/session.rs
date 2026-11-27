@@ -1,6 +1,6 @@
 //! Per-client MQTT session state (§4.1) — clean-room from spec.
 //!
-//! A session holds a client's subscriptions, its QoS 1/2 message-flow
+//! A session holds a client's subscriptions, its `QoS` 1/2 message-flow
 //! bookkeeping (§4.3) and, for a persistent session (§3.1.2.11 Session
 //! Expiry Interval > 0), the messages queued while it is offline.
 
@@ -18,11 +18,11 @@ pub struct Session {
     pub connected: bool,
     pub subscriptions: Vec<SubscriptionV5>,
     next_packet_id: u16,
-    /// QoS 1/2 PUBLISH sent to the client, awaiting PUBACK / PUBREC.
+    /// `QoS` 1/2 PUBLISH sent to the client, awaiting PUBACK / PUBREC.
     pub outgoing_unacked: HashMap<u16, PublishV5>,
-    /// QoS 2 PUBLISH we sent that reached PUBREC; PUBREL sent, awaiting PUBCOMP.
+    /// `QoS` 2 PUBLISH we sent that reached PUBREC; PUBREL sent, awaiting PUBCOMP.
     pub outgoing_pubrel: HashSet<u16>,
-    /// QoS 2 PUBLISH received from the client; PUBREC sent, awaiting PUBREL.
+    /// `QoS` 2 PUBLISH received from the client; PUBREC sent, awaiting PUBREL.
     pub incoming_qos2: HashSet<u16>,
     /// Messages queued while offline (delivered on resume).
     pub queued: VecDeque<PublishV5>,

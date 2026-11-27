@@ -33,8 +33,10 @@ pub fn valid_topic_filter(filter: &str) -> bool {
 }
 
 /// §4.7.1 — does `topic` (an exact Topic Name) match `filter` (which may
-/// contain wildcards)? `filter` is assumed valid. §4.7.2: a wildcard at
-/// the first level does not match a topic whose first level starts `$`.
+/// contain wildcards)?
+///
+/// `filter` is assumed valid. §4.7.2: a wildcard at the first level does
+/// not match a topic whose first level starts `$`.
 pub fn topic_matches(filter: &str, topic: &str) -> bool {
     let f: Vec<&str> = filter.split('/').collect();
     let t: Vec<&str> = topic.split('/').collect();
@@ -80,7 +82,7 @@ pub struct SharedFilter {
 }
 
 /// §4.8.2 — parse `$share/{ShareName}/{filter}`. Returns `None` for a
-/// non-shared filter or a malformed ShareName (empty, or containing
+/// non-shared filter or a malformed `ShareName` (empty, or containing
 /// `/`, `+` or `#`).
 pub fn parse_shared(filter: &str) -> Option<SharedFilter> {
     let rest = filter.strip_prefix("$share/")?;

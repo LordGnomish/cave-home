@@ -41,6 +41,11 @@ pub enum CodecError {
 }
 
 /// MQTT 3.1.1 §2.2.3 — Remaining-Length variable-byte integer encoder.
+///
+/// # Errors
+/// Returns [`CodecError::VarIntTooLong`] for a value above 268 435 455,
+/// which needs more than four bytes; the first four bytes have been
+/// written to `buf` by then.
 pub fn encode_var_int(value: u32, buf: &mut BytesMut) -> Result<(), CodecError> {
     let mut x = value;
     let mut written = 0;
@@ -63,6 +68,11 @@ pub fn encode_var_int(value: u32, buf: &mut BytesMut) -> Result<(), CodecError> 
 
 /// MQTT 3.1.1 §2.2.3 — Remaining-Length variable-byte integer decoder.
 /// Returns `(value, bytes_consumed)`.
+///
+/// # Errors
+/// Returns [`CodecError::Underflow`] when `input` ends before a byte
+/// without the continuation bit, and [`CodecError::VarIntTooLong`] when
+/// the fourth byte still has it set.
 pub fn decode_var_int(input: &[u8]) -> Result<(u32, usize), CodecError> {
     let mut value: u32 = 0;
     let mut multiplier: u32 = 1;
@@ -108,6 +118,13 @@ fn decode_str(buf: &mut &[u8]) -> Result<String, CodecError> {
     Ok(s)
 }
 
+/// Encode one MQTT 3.1.1 control packet (fixed header and body) into a
+/// fresh buffer.
+///
+/// # Errors
+/// Returns [`CodecError::MissingPacketId`] for a PUBLISH above `QoS` 0
+/// without a packet identifier, and [`CodecError::VarIntTooLong`] when the
+/// body exceeds the largest Remaining Length (268 435 455 bytes).
 pub fn encode_packet(packet: &Packet) -> Result<BytesMut, CodecError> {
     let mut body = BytesMut::new();
     let (header_flags, packet_type) = match packet {
@@ -194,6 +211,13 @@ fn encode_publish(p: &Publish, out: &mut BytesMut) -> Result<u8, CodecError> {
     Ok(flags)
 }
 
+/// Decode one MQTT 3.1.1 control packet from the front of `input`,
+/// returning it and the number of bytes consumed.
+///
+/// # Errors
+/// Returns [`CodecError::Underflow`] when `input` does not yet hold the
+/// whole packet, and the variant naming the violated rule when the fixed
+/// header or the body is malformed.
 pub fn decode_packet(input: &[u8]) -> Result<(Packet, usize), CodecError> {
     if input.is_empty() {
         return Err(CodecError::Underflow { needed: 2 });
@@ -325,7 +349,7 @@ fn decode_publish(buf: &mut &[u8], flags: u8) -> Result<Publish, CodecError> {
 }
 
 /// MQTT 3.1.1 §3.8 SUBSCRIBE — variable header (packet id) + payload of
-/// topic-filter/QoS pairs. Returns the reserved fixed-header flags (0b0010).
+/// topic-filter/`QoS` pairs. Returns the reserved fixed-header flags (0b0010).
 fn encode_subscribe(s: &Subscribe, out: &mut BytesMut) -> u8 {
     out.put_u16(s.packet_id);
     for sub in &s.subscriptions {
@@ -419,7 +443,7 @@ fn decode_empty(buf: &[u8]) -> Result<(), CodecError> {
 }
 
 /// MQTT 3.1.1 §3.10 UNSUBSCRIBE — packet id + a payload of topic filters
-/// (no per-filter QoS). Returns the reserved fixed-header flags (0b0010).
+/// (no per-filter `QoS`). Returns the reserved fixed-header flags (0b0010).
 fn encode_unsubscribe(u: &Unsubscribe, out: &mut BytesMut) -> u8 {
     out.put_u16(u.packet_id);
     for filter in &u.topic_filters {

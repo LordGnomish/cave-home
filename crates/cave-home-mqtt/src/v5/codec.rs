@@ -20,6 +20,12 @@ use bytes::{Bytes, BytesMut};
 const RESERVED_0010: u8 = 0x02;
 
 /// Encode an MQTT 5.0 control packet into a fresh buffer.
+///
+/// # Errors
+/// Returns [`Error::Malformed`] for a string or binary field longer than
+/// 65 535 bytes and for a PUBLISH above `QoS` 0 without a packet
+/// identifier, and [`Error::VarIntTooLong`] when the body, a property
+/// block or a Subscription Identifier exceeds 268 435 455.
 pub fn encode_v5(p: &PacketV5) -> Result<BytesMut, Error> {
     let mut body = BytesMut::new();
     let (ty, flags) = match p {
@@ -90,6 +96,11 @@ pub fn encode_v5(p: &PacketV5) -> Result<BytesMut, Error> {
 }
 
 /// Decode one MQTT 5.0 packet, returning it and the bytes consumed.
+///
+/// # Errors
+/// Returns [`Error::Underflow`] when `input` does not yet hold the whole
+/// packet, and the variant naming the violated rule when the fixed header,
+/// a property or the body is malformed.
 pub fn decode_v5(input: &[u8]) -> Result<(PacketV5, usize), Error> {
     if input.is_empty() {
         return Err(Error::Underflow { needed: 2 });
