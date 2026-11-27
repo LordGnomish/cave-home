@@ -28,7 +28,8 @@ pub enum PacketType {
 }
 
 impl PacketType {
-    pub fn from_u8(b: u8) -> Option<Self> {
+    #[must_use]
+    pub const fn from_u8(b: u8) -> Option<Self> {
         Some(match b {
             1 => Self::Connect,
             2 => Self::ConnAck,
@@ -59,7 +60,8 @@ pub enum QoS {
 }
 
 impl QoS {
-    pub fn from_u8(b: u8) -> Option<Self> {
+    #[must_use]
+    pub const fn from_u8(b: u8) -> Option<Self> {
         Some(match b {
             0 => Self::AtMostOnce,
             1 => Self::AtLeastOnce,
@@ -70,7 +72,7 @@ impl QoS {
 }
 
 /// MQTT 3.1.1 §3.1 CONNECT — variable header + payload subset used
-/// during Phase 1 (clean session + client_id + keep_alive). Will,
+/// during Phase 1 (clean session + `client_id` + `keep_alive`). Will,
 /// username/password, and per-connection auth land in Phase 1b.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Connect {
@@ -92,7 +94,8 @@ pub enum ConnAckReturnCode {
 }
 
 impl ConnAckReturnCode {
-    pub fn from_u8(b: u8) -> Option<Self> {
+    #[must_use]
+    pub const fn from_u8(b: u8) -> Option<Self> {
         Some(match b {
             0 => Self::Accepted,
             1 => Self::UnacceptableProtocolVersion,
@@ -112,7 +115,7 @@ pub struct ConnAck {
     pub return_code: ConnAckReturnCode,
 }
 
-/// MQTT 3.1.1 §3.3 PUBLISH. `packet_id` is `None` for QoS 0 (§3.3.2.2).
+/// MQTT 3.1.1 §3.3 PUBLISH. `packet_id` is `None` for `QoS` 0 (§3.3.2.2).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Publish {
     pub topic: String,
@@ -123,25 +126,25 @@ pub struct Publish {
     pub payload: Bytes,
 }
 
-/// MQTT 3.1.1 §3.4 PUBACK — QoS 1 publish acknowledgement (packet id only).
+/// MQTT 3.1.1 §3.4 PUBACK — `QoS` 1 publish acknowledgement (packet id only).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PubAck {
     pub packet_id: u16,
 }
 
-/// MQTT 3.1.1 §3.5 PUBREC — QoS 2 publish received, part 1 (packet id only).
+/// MQTT 3.1.1 §3.5 PUBREC — `QoS` 2 publish received, part 1 (packet id only).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PubRec {
     pub packet_id: u16,
 }
 
-/// MQTT 3.1.1 §3.6 PUBREL — QoS 2 publish release, part 2 (packet id only).
+/// MQTT 3.1.1 §3.6 PUBREL — `QoS` 2 publish release, part 2 (packet id only).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PubRel {
     pub packet_id: u16,
 }
 
-/// MQTT 3.1.1 §3.7 PUBCOMP — QoS 2 publish complete, part 3 (packet id only).
+/// MQTT 3.1.1 §3.7 PUBCOMP — `QoS` 2 publish complete, part 3 (packet id only).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PubComp {
     pub packet_id: u16,
@@ -167,7 +170,7 @@ pub enum Packet {
 }
 
 impl Packet {
-    pub fn packet_type(&self) -> PacketType {
+    pub const fn packet_type(&self) -> PacketType {
         match self {
             Self::Connect(_) => PacketType::Connect,
             Self::ConnAck(_) => PacketType::ConnAck,
@@ -201,7 +204,7 @@ pub struct Subscribe {
     pub subscriptions: Vec<Subscription>,
 }
 
-/// MQTT 3.1.1 §3.9.3 — SUBACK return code: granted max QoS, or failure.
+/// MQTT 3.1.1 §3.9.3 — SUBACK return code: granted max `QoS`, or failure.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SubAckReturnCode {
@@ -212,7 +215,8 @@ pub enum SubAckReturnCode {
 }
 
 impl SubAckReturnCode {
-    pub fn from_u8(b: u8) -> Option<Self> {
+    #[must_use]
+    pub const fn from_u8(b: u8) -> Option<Self> {
         Some(match b {
             0x00 => Self::MaxQoS0,
             0x01 => Self::MaxQoS1,

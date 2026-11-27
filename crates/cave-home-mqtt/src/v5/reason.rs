@@ -3,7 +3,7 @@
 //! A Reason Code is a single byte indicating the result of an operation.
 //! The same byte value carries a context-dependent name across packets
 //! (e.g. `0x00` is *Success* in PUBACK, *Normal disconnection* in
-//! DISCONNECT, and *Granted QoS 0* in SUBACK); we model the byte once
+//! DISCONNECT, and *Granted `QoS` 0* in SUBACK); we model the byte once
 //! and document the aliases. Codes in `0x80..=0xFF` denote failure
 //! (§2.4: "a Reason Code value of 0x80 or greater is an error").
 
@@ -11,11 +11,11 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum ReasonCode {
-    /// `0x00` — Success / Normal disconnection / Granted QoS 0.
+    /// `0x00` — Success / Normal disconnection / Granted `QoS` 0.
     Success = 0x00,
-    /// `0x01` — Granted QoS 1 (SUBACK).
+    /// `0x01` — Granted `QoS` 1 (SUBACK).
     GrantedQoS1 = 0x01,
-    /// `0x02` — Granted QoS 2 (SUBACK).
+    /// `0x02` — Granted `QoS` 2 (SUBACK).
     GrantedQoS2 = 0x02,
     /// `0x04` — Disconnect with Will Message (DISCONNECT, client→server).
     DisconnectWithWill = 0x04,
@@ -66,7 +66,8 @@ pub enum ReasonCode {
 
 impl ReasonCode {
     /// Decode the on-wire byte. Returns `None` for unassigned values.
-    pub fn from_u8(b: u8) -> Option<Self> {
+    #[must_use]
+    pub const fn from_u8(b: u8) -> Option<Self> {
         Some(match b {
             0x00 => Self::Success,
             0x01 => Self::GrantedQoS1,
@@ -116,7 +117,8 @@ impl ReasonCode {
     }
 
     /// §2.4 — `0x80` or greater is an error.
-    pub fn is_error(self) -> bool {
+    #[must_use]
+    pub const fn is_error(self) -> bool {
         (self as u8) >= 0x80
     }
 }

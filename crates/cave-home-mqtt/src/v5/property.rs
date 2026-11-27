@@ -47,71 +47,71 @@ pub enum Property {
 
 impl Property {
     /// The on-wire property identifier byte (§2.2.2.2).
-    pub fn identifier(&self) -> u8 {
+    pub const fn identifier(&self) -> u8 {
         match self {
-            Property::PayloadFormatIndicator(_) => 0x01,
-            Property::MessageExpiryInterval(_) => 0x02,
-            Property::ContentType(_) => 0x03,
-            Property::ResponseTopic(_) => 0x08,
-            Property::CorrelationData(_) => 0x09,
-            Property::SubscriptionIdentifier(_) => 0x0B,
-            Property::SessionExpiryInterval(_) => 0x11,
-            Property::AssignedClientIdentifier(_) => 0x12,
-            Property::ServerKeepAlive(_) => 0x13,
-            Property::AuthenticationMethod(_) => 0x15,
-            Property::AuthenticationData(_) => 0x16,
-            Property::RequestProblemInformation(_) => 0x17,
-            Property::WillDelayInterval(_) => 0x18,
-            Property::RequestResponseInformation(_) => 0x19,
-            Property::ResponseInformation(_) => 0x1A,
-            Property::ServerReference(_) => 0x1C,
-            Property::ReasonString(_) => 0x1F,
-            Property::ReceiveMaximum(_) => 0x21,
-            Property::TopicAliasMaximum(_) => 0x22,
-            Property::TopicAlias(_) => 0x23,
-            Property::MaximumQoS(_) => 0x24,
-            Property::RetainAvailable(_) => 0x25,
-            Property::UserProperty(..) => 0x26,
-            Property::MaximumPacketSize(_) => 0x27,
-            Property::WildcardSubscriptionAvailable(_) => 0x28,
-            Property::SubscriptionIdentifierAvailable(_) => 0x29,
-            Property::SharedSubscriptionAvailable(_) => 0x2A,
+            Self::PayloadFormatIndicator(_) => 0x01,
+            Self::MessageExpiryInterval(_) => 0x02,
+            Self::ContentType(_) => 0x03,
+            Self::ResponseTopic(_) => 0x08,
+            Self::CorrelationData(_) => 0x09,
+            Self::SubscriptionIdentifier(_) => 0x0B,
+            Self::SessionExpiryInterval(_) => 0x11,
+            Self::AssignedClientIdentifier(_) => 0x12,
+            Self::ServerKeepAlive(_) => 0x13,
+            Self::AuthenticationMethod(_) => 0x15,
+            Self::AuthenticationData(_) => 0x16,
+            Self::RequestProblemInformation(_) => 0x17,
+            Self::WillDelayInterval(_) => 0x18,
+            Self::RequestResponseInformation(_) => 0x19,
+            Self::ResponseInformation(_) => 0x1A,
+            Self::ServerReference(_) => 0x1C,
+            Self::ReasonString(_) => 0x1F,
+            Self::ReceiveMaximum(_) => 0x21,
+            Self::TopicAliasMaximum(_) => 0x22,
+            Self::TopicAlias(_) => 0x23,
+            Self::MaximumQoS(_) => 0x24,
+            Self::RetainAvailable(_) => 0x25,
+            Self::UserProperty(..) => 0x26,
+            Self::MaximumPacketSize(_) => 0x27,
+            Self::WildcardSubscriptionAvailable(_) => 0x28,
+            Self::SubscriptionIdentifierAvailable(_) => 0x29,
+            Self::SharedSubscriptionAvailable(_) => 0x2A,
         }
     }
 
     /// §2.2.2 — only User Property and Subscription Identifier may repeat.
-    fn repeatable(id: u8) -> bool {
+    const fn repeatable(id: u8) -> bool {
         id == 0x26 || id == 0x0B
     }
 
     fn encode_value(&self, out: &mut BytesMut) -> Result<(), Error> {
         match self {
-            Property::PayloadFormatIndicator(v)
-            | Property::RequestProblemInformation(v)
-            | Property::RequestResponseInformation(v)
-            | Property::MaximumQoS(v)
-            | Property::RetainAvailable(v)
-            | Property::WildcardSubscriptionAvailable(v)
-            | Property::SubscriptionIdentifierAvailable(v)
-            | Property::SharedSubscriptionAvailable(v) => put_u8(*v, out),
-            Property::ServerKeepAlive(v)
-            | Property::ReceiveMaximum(v)
-            | Property::TopicAliasMaximum(v)
-            | Property::TopicAlias(v) => put_u16(*v, out),
-            Property::MessageExpiryInterval(v)
-            | Property::SessionExpiryInterval(v)
-            | Property::WillDelayInterval(v)
-            | Property::MaximumPacketSize(v) => put_u32(*v, out),
-            Property::SubscriptionIdentifier(v) => put_var_int(*v, out)?,
-            Property::ContentType(s)
-            | Property::ResponseTopic(s)
-            | Property::AssignedClientIdentifier(s)
-            | Property::AuthenticationMethod(s)
-            | Property::ResponseInformation(s)
-            | Property::ServerReference(s)
-            | Property::ReasonString(s) => put_string(s, out)?,
-            Property::CorrelationData(b) | Property::AuthenticationData(b) => put_binary(b, out)?,
-            Property::UserProperty(k, v) => {
+            Self::PayloadFormatIndicator(v)
+            | Self::RequestProblemInformation(v)
+            | Self::RequestResponseInformation(v)
+            | Self::MaximumQoS(v)
+            | Self::RetainAvailable(v)
+            | Self::WildcardSubscriptionAvailable(v)
+            | Self::SubscriptionIdentifierAvailable(v)
+            | Self::SharedSubscriptionAvailable(v) => put_u8(*v, out),
+            Self::ServerKeepAlive(v)
+            | Self::ReceiveMaximum(v)
+            | Self::TopicAliasMaximum(v)
+            | Self::TopicAlias(v) => put_u16(*v, out),
+            Self::MessageExpiryInterval(v)
+            | Self::SessionExpiryInterval(v)
+            | Self::WillDelayInterval(v)
+            | Self::MaximumPacketSize(v) => put_u32(*v, out),
+            Self::SubscriptionIdentifier(v) => put_var_int(*v, out)?,
+            Self::ContentType(s)
+            | Self::ResponseTopic(s)
+            | Self::AssignedClientIdentifier(s)
+            | Self::AuthenticationMethod(s)
+            | Self::ResponseInformation(s)
+            | Self::ServerReference(s)
+            | Self::ReasonString(s) => put_string(s, out)?,
+            Self::CorrelationData(b) | Self::AuthenticationData(b) => put_binary(b, out)?,
+            Self::UserProperty(k, v) => {
                 put_string(k, out)?;
                 put_string(v, out)?;
             }
@@ -119,45 +119,45 @@ impl Property {
         Ok(())
     }
 
-    fn decode_value(id: u8, buf: &mut &[u8]) -> Result<Property, Error> {
+    fn decode_value(id: u8, buf: &mut &[u8]) -> Result<Self, Error> {
         Ok(match id {
-            0x01 => Property::PayloadFormatIndicator(get_u8(buf)?),
-            0x02 => Property::MessageExpiryInterval(get_u32(buf)?),
-            0x03 => Property::ContentType(get_string(buf)?),
-            0x08 => Property::ResponseTopic(get_string(buf)?),
-            0x09 => Property::CorrelationData(get_binary(buf)?),
+            0x01 => Self::PayloadFormatIndicator(get_u8(buf)?),
+            0x02 => Self::MessageExpiryInterval(get_u32(buf)?),
+            0x03 => Self::ContentType(get_string(buf)?),
+            0x08 => Self::ResponseTopic(get_string(buf)?),
+            0x09 => Self::CorrelationData(get_binary(buf)?),
             0x0B => {
                 let v = get_var_int(buf)?;
                 if v == 0 {
                     return Err(Error::ZeroSubscriptionId);
                 }
-                Property::SubscriptionIdentifier(v)
+                Self::SubscriptionIdentifier(v)
             }
-            0x11 => Property::SessionExpiryInterval(get_u32(buf)?),
-            0x12 => Property::AssignedClientIdentifier(get_string(buf)?),
-            0x13 => Property::ServerKeepAlive(get_u16(buf)?),
-            0x15 => Property::AuthenticationMethod(get_string(buf)?),
-            0x16 => Property::AuthenticationData(get_binary(buf)?),
-            0x17 => Property::RequestProblemInformation(get_u8(buf)?),
-            0x18 => Property::WillDelayInterval(get_u32(buf)?),
-            0x19 => Property::RequestResponseInformation(get_u8(buf)?),
-            0x1A => Property::ResponseInformation(get_string(buf)?),
-            0x1C => Property::ServerReference(get_string(buf)?),
-            0x1F => Property::ReasonString(get_string(buf)?),
-            0x21 => Property::ReceiveMaximum(get_u16(buf)?),
-            0x22 => Property::TopicAliasMaximum(get_u16(buf)?),
-            0x23 => Property::TopicAlias(get_u16(buf)?),
-            0x24 => Property::MaximumQoS(get_u8(buf)?),
-            0x25 => Property::RetainAvailable(get_u8(buf)?),
+            0x11 => Self::SessionExpiryInterval(get_u32(buf)?),
+            0x12 => Self::AssignedClientIdentifier(get_string(buf)?),
+            0x13 => Self::ServerKeepAlive(get_u16(buf)?),
+            0x15 => Self::AuthenticationMethod(get_string(buf)?),
+            0x16 => Self::AuthenticationData(get_binary(buf)?),
+            0x17 => Self::RequestProblemInformation(get_u8(buf)?),
+            0x18 => Self::WillDelayInterval(get_u32(buf)?),
+            0x19 => Self::RequestResponseInformation(get_u8(buf)?),
+            0x1A => Self::ResponseInformation(get_string(buf)?),
+            0x1C => Self::ServerReference(get_string(buf)?),
+            0x1F => Self::ReasonString(get_string(buf)?),
+            0x21 => Self::ReceiveMaximum(get_u16(buf)?),
+            0x22 => Self::TopicAliasMaximum(get_u16(buf)?),
+            0x23 => Self::TopicAlias(get_u16(buf)?),
+            0x24 => Self::MaximumQoS(get_u8(buf)?),
+            0x25 => Self::RetainAvailable(get_u8(buf)?),
             0x26 => {
                 let k = get_string(buf)?;
                 let v = get_string(buf)?;
-                Property::UserProperty(k, v)
+                Self::UserProperty(k, v)
             }
-            0x27 => Property::MaximumPacketSize(get_u32(buf)?),
-            0x28 => Property::WildcardSubscriptionAvailable(get_u8(buf)?),
-            0x29 => Property::SubscriptionIdentifierAvailable(get_u8(buf)?),
-            0x2A => Property::SharedSubscriptionAvailable(get_u8(buf)?),
+            0x27 => Self::MaximumPacketSize(get_u32(buf)?),
+            0x28 => Self::WildcardSubscriptionAvailable(get_u8(buf)?),
+            0x29 => Self::SubscriptionIdentifierAvailable(get_u8(buf)?),
+            0x2A => Self::SharedSubscriptionAvailable(get_u8(buf)?),
             other => return Err(Error::UnknownProperty(other)),
         })
     }
@@ -165,6 +165,11 @@ impl Property {
 
 /// Encode a property block: a Variable Byte Integer length (§2.2.2.1)
 /// followed by each property as `identifier || value`.
+///
+/// # Errors
+/// Returns [`Error::Malformed`] for a string or binary value longer than
+/// 65 535 bytes, and [`Error::VarIntTooLong`] for a Subscription Identifier
+/// or a block length above 268 435 455; `out` is left untouched then.
 pub fn encode_properties(props: &[Property], out: &mut BytesMut) -> Result<(), Error> {
     let mut body = BytesMut::new();
     for p in props {
@@ -180,6 +185,14 @@ pub fn encode_properties(props: &[Property], out: &mut BytesMut) -> Result<(), E
 }
 
 /// Decode a property block from the cursor, advancing past it.
+///
+/// # Errors
+/// Returns [`Error::Underflow`] for a truncated block or value,
+/// [`Error::UnknownProperty`] or [`Error::DuplicateProperty`] for an
+/// identifier that is not assigned or must not repeat, and
+/// [`Error::ZeroSubscriptionId`], [`Error::BadUtf8`] or
+/// [`Error::VarIntTooLong`] for a malformed value; the block is not
+/// consumed then.
 pub fn decode_properties(buf: &mut &[u8]) -> Result<Vec<Property>, Error> {
     let len = get_var_int(buf)? as usize;
     if buf.len() < len {
@@ -212,27 +225,30 @@ mod tests {
     use super::*;
     use bytes::{Bytes, BytesMut};
 
-    fn round_trip(props: &[Property]) -> Vec<Property> {
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn round_trip(props: &[Property]) -> Result<Vec<Property>, Error> {
         let mut buf = BytesMut::new();
-        encode_properties(props, &mut buf).expect("encode");
+        encode_properties(props, &mut buf)?;
         let mut cursor: &[u8] = &buf;
-        let decoded = decode_properties(&mut cursor).expect("decode");
+        let decoded = decode_properties(&mut cursor)?;
         assert!(cursor.is_empty(), "decoder must consume the whole block");
-        decoded
+        Ok(decoded)
     }
 
     #[test]
-    fn empty_property_set_is_a_single_zero_length_byte() {
+    fn empty_property_set_is_a_single_zero_length_byte() -> TestResult {
         // §2.2.1.1: the Property Length is a Variable Byte Integer; an
         // empty set is encoded as the single byte 0x00.
         let mut buf = BytesMut::new();
-        encode_properties(&[], &mut buf).expect("encode");
+        encode_properties(&[], &mut buf)?;
         assert_eq!(&buf[..], &[0x00]);
-        assert_eq!(round_trip(&[]), Vec::<Property>::new());
+        assert_eq!(round_trip(&[])?, Vec::<Property>::new());
+        Ok(())
     }
 
     #[test]
-    fn mixed_property_set_round_trips_in_order() {
+    fn mixed_property_set_round_trips_in_order() -> TestResult {
         // One of every wire data-type: byte, u32, utf8, binary, var-int,
         // and a repeated UTF-8 string pair (§2.2.2.2 User Property).
         let props = vec![
@@ -245,11 +261,12 @@ mod tests {
             Property::UserProperty("region".into(), "loft".into()),
             Property::UserProperty("region".into(), "loft".into()),
         ];
-        assert_eq!(round_trip(&props), props);
+        assert_eq!(round_trip(&props)?, props);
+        Ok(())
     }
 
     #[test]
-    fn connect_scoped_properties_round_trip() {
+    fn connect_scoped_properties_round_trip() -> TestResult {
         let props = vec![
             Property::SessionExpiryInterval(120),
             Property::ReceiveMaximum(20),
@@ -260,21 +277,23 @@ mod tests {
             Property::AuthenticationMethod("SCRAM-SHA-256".into()),
             Property::AuthenticationData(Bytes::from_static(b"nonce")),
         ];
-        assert_eq!(round_trip(&props), props);
+        assert_eq!(round_trip(&props)?, props);
+        Ok(())
     }
 
     #[test]
-    fn length_prefix_is_a_variable_byte_integer() {
+    fn length_prefix_is_a_variable_byte_integer() -> TestResult {
         // A reason string >127 bytes forces a 2-byte property-length prefix.
         let long = "x".repeat(300);
-        let props = vec![Property::ReasonString(long.clone())];
+        let props = vec![Property::ReasonString(long)];
         let mut buf = BytesMut::new();
-        encode_properties(&props, &mut buf).expect("encode");
-        // 0xAD 0x02 == 301 (300 payload + 1 id byte... 1 id + 2 strlen + 300).
+        encode_properties(&props, &mut buf)?;
+        // 0xAF 0x02 == 303 (1 id byte + 2 string-length bytes + 300 text).
         // Just assert it round-trips and the first length byte has the
         // continuation bit set (value > 127).
         assert!(buf[0] & 0x80 != 0, "multi-byte var-int length expected");
-        assert_eq!(round_trip(&props), props);
+        assert_eq!(round_trip(&props)?, props);
+        Ok(())
     }
 
     #[test]

@@ -13,7 +13,7 @@
 //!   all 15 v5 control packets (CONNECT level 5 … the new AUTH).
 //! * [`broker`] — the I/O-free decision core: topic-filter wildcard
 //!   matching (§4.7) + shared subscriptions (§4.8.2), retained store
-//!   (§3.3.1.3), per-client sessions with QoS 1/2 flow (§4.3),
+//!   (§3.3.1.3), per-client sessions with `QoS` 1/2 flow (§4.3),
 //!   username/password + topic ACL, Last Will & Testament, and the
 //!   [`Broker`](broker::Broker) router that turns packets into
 //!   [`Action`](broker::Action)s. Pluggable automation

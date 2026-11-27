@@ -60,7 +60,7 @@ pub struct ConnAckV5 {
     pub properties: Vec<Property>,
 }
 
-/// §3.3 PUBLISH. `packet_id` is `None` for QoS 0 (§3.3.2.2).
+/// §3.3 PUBLISH. `packet_id` is `None` for `QoS` 0 (§3.3.2.2).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PublishV5 {
     pub topic: String,
@@ -72,7 +72,7 @@ pub struct PublishV5 {
     pub payload: Bytes,
 }
 
-/// §3.4 PUBACK. The four QoS 1/2 acks (§3.4-§3.7) share one shape:
+/// §3.4 PUBACK. The four `QoS` 1/2 acks (§3.4-§3.7) share one shape:
 /// packet identifier + Reason Code + properties. A reason of Success
 /// with no properties is encoded in the compact 2-byte form.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -82,7 +82,7 @@ pub struct PubAckV5 {
     pub properties: Vec<Property>,
 }
 
-/// §3.5 PUBREC — QoS 2 publish received (same shape as PUBACK).
+/// §3.5 PUBREC — `QoS` 2 publish received (same shape as PUBACK).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PubRecV5 {
     pub packet_id: u16,
@@ -90,7 +90,7 @@ pub struct PubRecV5 {
     pub properties: Vec<Property>,
 }
 
-/// §3.6 PUBREL — QoS 2 publish release (same shape as PUBACK).
+/// §3.6 PUBREL — `QoS` 2 publish release (same shape as PUBACK).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PubRelV5 {
     pub packet_id: u16,
@@ -98,7 +98,7 @@ pub struct PubRelV5 {
     pub properties: Vec<Property>,
 }
 
-/// §3.7 PUBCOMP — QoS 2 publish complete (same shape as PUBACK).
+/// §3.7 PUBCOMP — `QoS` 2 publish complete (same shape as PUBACK).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PubCompV5 {
     pub packet_id: u16,
@@ -119,7 +119,8 @@ pub enum RetainHandling {
 }
 
 impl RetainHandling {
-    pub fn from_u8(b: u8) -> Option<Self> {
+    #[must_use]
+    pub const fn from_u8(b: u8) -> Option<Self> {
         Some(match b {
             0 => Self::SendOnSubscribe,
             1 => Self::SendIfNew,
@@ -206,7 +207,7 @@ pub enum PacketV5 {
 }
 
 impl PacketV5 {
-    pub fn packet_type(&self) -> PacketTypeV5 {
+    pub const fn packet_type(&self) -> PacketTypeV5 {
         match self {
             Self::Connect(_) => PacketTypeV5::Connect,
             Self::ConnAck(_) => PacketTypeV5::ConnAck,

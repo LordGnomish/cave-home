@@ -39,6 +39,7 @@ impl RetainedStore {
 
     /// All retained messages whose topic matches `filter` (§3.3.1.3:
     /// delivered when a matching subscription is created).
+    #[must_use]
     pub fn matching(&self, filter: &str) -> Vec<(&str, &RetainedMessage)> {
         self.map
             .iter()
@@ -47,10 +48,12 @@ impl RetainedStore {
             .collect()
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.map.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
     }
@@ -80,7 +83,7 @@ mod tests {
             .into_iter()
             .map(|(t, _)| t)
             .collect();
-        hits.sort();
+        hits.sort_unstable();
         assert_eq!(hits, vec!["home/cellar/temp", "home/loft/temp"]);
         assert_eq!(store.len(), 2);
     }
@@ -94,7 +97,7 @@ mod tests {
         assert_eq!(store.len(), 1);
         store.apply("home/loft/temp", msg(b""));
         assert_eq!(store.len(), 0);
-        assert!(store.matching("home/loft/temp").is_empty());
+        assert_eq!(store.matching("home/loft/temp"), []);
     }
 
     #[test]

@@ -4,6 +4,7 @@
 /// §4.7.3 — a Topic Name (used in PUBLISH) must be at least one
 /// character, must not contain the wildcards `+` or `#`, and must not
 /// contain the null character U+0000.
+#[must_use]
 pub fn valid_topic_name(name: &str) -> bool {
     !name.is_empty() && !name.contains('+') && !name.contains('#') && !name.contains('\0')
 }
@@ -11,6 +12,7 @@ pub fn valid_topic_name(name: &str) -> bool {
 /// §4.7.1 — a Topic Filter (used in SUBSCRIBE) must be at least one
 /// character, contain no U+0000, and place any wildcards on their own
 /// level: `+` occupies a whole level, `#` is the final level only.
+#[must_use]
 pub fn valid_topic_filter(filter: &str) -> bool {
     if filter.is_empty() || filter.contains('\0') {
         return false;
@@ -33,8 +35,11 @@ pub fn valid_topic_filter(filter: &str) -> bool {
 }
 
 /// §4.7.1 — does `topic` (an exact Topic Name) match `filter` (which may
-/// contain wildcards)? `filter` is assumed valid. §4.7.2: a wildcard at
-/// the first level does not match a topic whose first level starts `$`.
+/// contain wildcards)?
+///
+/// `filter` is assumed valid. §4.7.2: a wildcard at the first level does
+/// not match a topic whose first level starts `$`.
+#[must_use]
 pub fn topic_matches(filter: &str, topic: &str) -> bool {
     let f: Vec<&str> = filter.split('/').collect();
     let t: Vec<&str> = topic.split('/').collect();
@@ -80,8 +85,9 @@ pub struct SharedFilter {
 }
 
 /// §4.8.2 — parse `$share/{ShareName}/{filter}`. Returns `None` for a
-/// non-shared filter or a malformed ShareName (empty, or containing
+/// non-shared filter or a malformed `ShareName` (empty, or containing
 /// `/`, `+` or `#`).
+#[must_use]
 pub fn parse_shared(filter: &str) -> Option<SharedFilter> {
     let rest = filter.strip_prefix("$share/")?;
     let slash = rest.find('/')?;
@@ -99,6 +105,8 @@ pub fn parse_shared(filter: &str) -> Option<SharedFilter> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[test]
     fn topic_names_reject_wildcards_and_empty() {
@@ -181,14 +189,16 @@ mod tests {
     }
 
     #[test]
-    fn shared_subscription_filter_parsing() {
+    fn shared_subscription_filter_parsing() -> TestResult {
         // §4.8.2: $share/{ShareName}/{filter}.
-        let s = parse_shared("$share/consumers/sport/tennis/+").expect("shared");
+        let s = parse_shared("$share/consumers/sport/tennis/+")
+            .ok_or("a shared subscription filter did not parse")?;
         assert_eq!(s.group, "consumers");
         assert_eq!(s.filter, "sport/tennis/+");
         assert!(parse_shared("sport/#").is_none());
         // ShareName must be non-empty and contain no wildcards or '/'.
         assert!(parse_shared("$share//x").is_none());
         assert!(parse_shared("$share/grp").is_none());
+        Ok(())
     }
 }

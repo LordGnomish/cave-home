@@ -42,16 +42,16 @@ pub enum Error {
 impl From<CodecError> for Error {
     fn from(e: CodecError) -> Self {
         match e {
-            CodecError::Underflow { needed } => Error::Underflow { needed },
-            CodecError::VarIntTooLong => Error::VarIntTooLong,
-            CodecError::BadUtf8 => Error::BadUtf8,
-            CodecError::BadQoS(q) => Error::BadQoS(q),
-            other => Error::Malformed(Box::leak(other.to_string().into_boxed_str())),
+            CodecError::Underflow { needed } => Self::Underflow { needed },
+            CodecError::VarIntTooLong => Self::VarIntTooLong,
+            CodecError::BadUtf8 => Self::BadUtf8,
+            CodecError::BadQoS(q) => Self::BadQoS(q),
+            other => Self::Malformed(Box::leak(other.to_string().into_boxed_str())),
         }
     }
 }
 
-pub(crate) fn get_u8(buf: &mut &[u8]) -> Result<u8, Error> {
+pub fn get_u8(buf: &mut &[u8]) -> Result<u8, Error> {
     if buf.is_empty() {
         return Err(Error::Underflow { needed: 1 });
     }
@@ -60,7 +60,7 @@ pub(crate) fn get_u8(buf: &mut &[u8]) -> Result<u8, Error> {
     Ok(v)
 }
 
-pub(crate) fn get_u16(buf: &mut &[u8]) -> Result<u16, Error> {
+pub fn get_u16(buf: &mut &[u8]) -> Result<u16, Error> {
     if buf.len() < 2 {
         return Err(Error::Underflow {
             needed: 2 - buf.len(),
@@ -71,7 +71,7 @@ pub(crate) fn get_u16(buf: &mut &[u8]) -> Result<u16, Error> {
     Ok(v)
 }
 
-pub(crate) fn get_u32(buf: &mut &[u8]) -> Result<u32, Error> {
+pub fn get_u32(buf: &mut &[u8]) -> Result<u32, Error> {
     if buf.len() < 4 {
         return Err(Error::Underflow {
             needed: 4 - buf.len(),
@@ -83,14 +83,14 @@ pub(crate) fn get_u32(buf: &mut &[u8]) -> Result<u32, Error> {
 }
 
 /// §1.5.5 Variable Byte Integer — reuses the shared 3.1.1 decoder.
-pub(crate) fn get_var_int(buf: &mut &[u8]) -> Result<u32, Error> {
+pub fn get_var_int(buf: &mut &[u8]) -> Result<u32, Error> {
     let (value, consumed) = codec::decode_var_int(buf)?;
     buf.advance(consumed);
     Ok(value)
 }
 
 /// §1.5.4 UTF-8 Encoded String — 2-byte length prefix + UTF-8 bytes.
-pub(crate) fn get_string(buf: &mut &[u8]) -> Result<String, Error> {
+pub fn get_string(buf: &mut &[u8]) -> Result<String, Error> {
     let len = get_u16(buf)? as usize;
     if buf.len() < len {
         return Err(Error::Underflow {
@@ -105,7 +105,7 @@ pub(crate) fn get_string(buf: &mut &[u8]) -> Result<String, Error> {
 }
 
 /// §1.5.6 Binary Data — 2-byte length prefix + raw bytes.
-pub(crate) fn get_binary(buf: &mut &[u8]) -> Result<Bytes, Error> {
+pub fn get_binary(buf: &mut &[u8]) -> Result<Bytes, Error> {
     let len = get_u16(buf)? as usize;
     if buf.len() < len {
         return Err(Error::Underflow {
@@ -117,28 +117,28 @@ pub(crate) fn get_binary(buf: &mut &[u8]) -> Result<Bytes, Error> {
     Ok(b)
 }
 
-pub(crate) fn put_u8(v: u8, out: &mut BytesMut) {
+pub fn put_u8(v: u8, out: &mut BytesMut) {
     out.put_u8(v);
 }
-pub(crate) fn put_u16(v: u16, out: &mut BytesMut) {
+pub fn put_u16(v: u16, out: &mut BytesMut) {
     out.put_u16(v);
 }
-pub(crate) fn put_u32(v: u32, out: &mut BytesMut) {
+pub fn put_u32(v: u32, out: &mut BytesMut) {
     out.put_u32(v);
 }
 
-pub(crate) fn put_var_int(v: u32, out: &mut BytesMut) -> Result<(), Error> {
+pub fn put_var_int(v: u32, out: &mut BytesMut) -> Result<(), Error> {
     codec::encode_var_int(v, out).map_err(Error::from)
 }
 
-pub(crate) fn put_string(s: &str, out: &mut BytesMut) -> Result<(), Error> {
+pub fn put_string(s: &str, out: &mut BytesMut) -> Result<(), Error> {
     let len = u16::try_from(s.len()).map_err(|_| Error::Malformed("string exceeds 65535 bytes"))?;
     out.put_u16(len);
     out.put_slice(s.as_bytes());
     Ok(())
 }
 
-pub(crate) fn put_binary(b: &[u8], out: &mut BytesMut) -> Result<(), Error> {
+pub fn put_binary(b: &[u8], out: &mut BytesMut) -> Result<(), Error> {
     let len = u16::try_from(b.len()).map_err(|_| Error::Malformed("binary exceeds 65535 bytes"))?;
     out.put_u16(len);
     out.put_slice(b);

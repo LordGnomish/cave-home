@@ -20,7 +20,7 @@ pub struct BrokerMetrics {
     pub messages_received: u64,
     /// Counter — PUBLISH packets delivered to subscribers.
     pub messages_sent: u64,
-    /// Counter — PUBLISH packets dropped (denied / no subscriber, QoS 0).
+    /// Counter — PUBLISH packets dropped (denied / no subscriber, `QoS` 0).
     pub messages_dropped: u64,
     /// Counter — payload bytes received.
     pub bytes_received: u64,
@@ -33,34 +33,34 @@ pub struct BrokerMetrics {
 }
 
 impl BrokerMetrics {
-    pub fn on_client_connected(&mut self) {
+    pub const fn on_client_connected(&mut self) {
         self.clients_connected += 1;
         self.clients_total += 1;
     }
 
-    pub fn on_client_disconnected(&mut self) {
+    pub const fn on_client_disconnected(&mut self) {
         self.clients_connected = self.clients_connected.saturating_sub(1);
     }
 
-    pub fn on_message_received(&mut self, payload_len: usize) {
+    pub const fn on_message_received(&mut self, payload_len: usize) {
         self.messages_received += 1;
         self.bytes_received += payload_len as u64;
     }
 
-    pub fn on_message_sent(&mut self, payload_len: usize) {
+    pub const fn on_message_sent(&mut self, payload_len: usize) {
         self.messages_sent += 1;
         self.bytes_sent += payload_len as u64;
     }
 
-    pub fn on_message_dropped(&mut self) {
+    pub const fn on_message_dropped(&mut self) {
         self.messages_dropped += 1;
     }
 
-    pub fn set_retained(&mut self, n: u64) {
+    pub const fn set_retained(&mut self, n: u64) {
         self.retained_messages = n;
     }
 
-    pub fn set_subscriptions(&mut self, n: u64) {
+    pub const fn set_subscriptions(&mut self, n: u64) {
         self.subscriptions = n;
     }
 
