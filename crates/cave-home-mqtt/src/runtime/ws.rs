@@ -13,9 +13,8 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
 pub(super) async fn serve_ws(hub: Arc<Hub>, sock: TcpStream) {
-    let ws = match tokio_tungstenite::accept_async(sock).await {
-        Ok(w) => w,
-        Err(_) => return,
+    let Ok(ws) = tokio_tungstenite::accept_async(sock).await else {
+        return;
     };
     let (mut sink, mut stream) = ws.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<ConnMsg>();
@@ -43,22 +42,22 @@ pub(super) async fn serve_ws(hub: Arc<Hub>, sock: TcpStream) {
     let mut buf: Vec<u8> = Vec::new();
     let mut client: Option<(String, u64)> = None;
     'outer: loop {
-        let packets = match drain_packets(&mut buf) {
-            Ok(p) => p,
-            Err(_) => break,
+        let Ok(packets) = drain_packets(&mut buf) else {
+            break;
         };
         for pkt in packets {
             match client.as_ref() {
-                None => match pkt {
-                    PacketV5::Connect(c) => match hub.on_connect(c, &tx).await {
-                        Some(id) => client = Some(id),
-                        None => break 'outer,
-                    },
-                    _ => {
+                None => {
+                    if let PacketV5::Connect(c) = pkt {
+                        match hub.on_connect(c, &tx).await {
+                            Some(id) => client = Some(id),
+                            None => break 'outer,
+                        }
+                    } else {
                         let _ = tx.send(ConnMsg::Close);
                         break 'outer;
                     }
-                },
+                }
                 Some((id, _)) => match pkt {
                     PacketV5::Disconnect(d) => {
                         hub.handle(id, PacketV5::Disconnect(d)).await;
@@ -73,7 +72,7 @@ pub(super) async fn serve_ws(hub: Arc<Hub>, sock: TcpStream) {
             Some(Ok(Message::Binary(b))) => buf.extend_from_slice(&b),
             Some(Ok(Message::Text(t))) => buf.extend_from_slice(t.as_bytes()),
             Some(Ok(Message::Ping(_) | Message::Pong(_) | Message::Frame(_))) => {}
-            Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
+            Some(Ok(Message::Close(_)) | Err(_)) | None => break,
         }
     }
 

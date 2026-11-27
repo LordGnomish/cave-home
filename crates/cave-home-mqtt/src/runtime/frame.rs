@@ -7,6 +7,11 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 /// Read one whole MQTT control packet from `r`. Returns `Ok(None)` on a
 /// clean end-of-stream before any byte of a new packet.
+///
+/// # Errors
+/// Returns the stream's own error (`UnexpectedEof` when it ends inside a
+/// packet), and `InvalidData` for a Remaining Length of more than four
+/// bytes or a packet the decoder refuses.
 pub async fn read_packet<R: AsyncRead + Unpin>(r: &mut R) -> io::Result<Option<PacketV5>> {
     let mut first = [0u8; 1];
     match r.read_exact(&mut first).await {
@@ -46,6 +51,11 @@ pub async fn read_packet<R: AsyncRead + Unpin>(r: &mut R) -> io::Result<Option<P
 }
 
 /// Encode and write one MQTT control packet, flushing the stream.
+///
+/// # Errors
+/// Returns `InvalidData` when the packet cannot be encoded (nothing is
+/// written then), and the stream's own error when writing or flushing
+/// fails.
 pub async fn write_packet<W: AsyncWrite + Unpin>(w: &mut W, packet: &PacketV5) -> io::Result<()> {
     let buf =
         encode_v5(packet).map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))?;
@@ -54,8 +64,14 @@ pub async fn write_packet<W: AsyncWrite + Unpin>(w: &mut W, packet: &PacketV5) -
 }
 
 /// Decode as many whole packets as are fully present at the front of
-/// `buf`, removing them. Used by the WebSocket transport, where a binary
-/// message may carry several or partial MQTT packets (§6 MQTT-over-WS).
+/// `buf`, removing them.
+///
+/// Used by the WebSocket transport, where a binary message may carry
+/// several or partial MQTT packets (§6 MQTT-over-WS).
+///
+/// # Errors
+/// Returns `InvalidData` for a packet the decoder refuses; the packets in
+/// front of it have been removed from `buf` by then.
 pub fn drain_packets(buf: &mut Vec<u8>) -> io::Result<Vec<PacketV5>> {
     let mut out = Vec::new();
     loop {

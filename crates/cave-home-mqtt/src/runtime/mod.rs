@@ -161,13 +161,10 @@ where
         }
     });
 
-    let connect = match read_packet(&mut rd).await {
-        Ok(Some(PacketV5::Connect(c))) => c,
-        _ => {
-            let _ = tx.send(ConnMsg::Close);
-            let _ = writer.await;
-            return;
-        }
+    let Ok(Some(PacketV5::Connect(connect))) = read_packet(&mut rd).await else {
+        let _ = tx.send(ConnMsg::Close);
+        let _ = writer.await;
+        return;
     };
     let Some((client_id, conn_id)) = hub.on_connect(connect, &tx).await else {
         let _ = writer.await;
@@ -197,6 +194,7 @@ pub struct Server {
 }
 
 impl Server {
+    #[must_use]
     pub fn new(broker: Broker) -> Self {
         Self {
             hub: Hub::new(broker),
