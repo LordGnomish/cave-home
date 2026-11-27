@@ -39,6 +39,7 @@ impl RetainedStore {
 
     /// All retained messages whose topic matches `filter` (§3.3.1.3:
     /// delivered when a matching subscription is created).
+    #[must_use]
     pub fn matching(&self, filter: &str) -> Vec<(&str, &RetainedMessage)> {
         self.map
             .iter()
@@ -47,10 +48,12 @@ impl RetainedStore {
             .collect()
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.map.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
     }

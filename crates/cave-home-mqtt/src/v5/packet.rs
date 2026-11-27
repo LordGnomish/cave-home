@@ -119,7 +119,8 @@ pub enum RetainHandling {
 }
 
 impl RetainHandling {
-    pub fn from_u8(b: u8) -> Option<Self> {
+    #[must_use]
+    pub const fn from_u8(b: u8) -> Option<Self> {
         Some(match b {
             0 => Self::SendOnSubscribe,
             1 => Self::SendIfNew,
@@ -206,7 +207,7 @@ pub enum PacketV5 {
 }
 
 impl PacketV5 {
-    pub fn packet_type(&self) -> PacketTypeV5 {
+    pub const fn packet_type(&self) -> PacketTypeV5 {
         match self {
             Self::Connect(_) => PacketTypeV5::Connect,
             Self::ConnAck(_) => PacketTypeV5::ConnAck,

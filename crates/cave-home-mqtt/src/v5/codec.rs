@@ -186,11 +186,11 @@ pub fn decode_v5(input: &[u8]) -> Result<(PacketV5, usize), Error> {
     Ok((packet, total))
 }
 
-fn unknown_type(_n: u8) -> &'static str {
+const fn unknown_type(_n: u8) -> &'static str {
     "unknown MQTT control packet type"
 }
 
-fn require_flags(actual: u8, expected: u8, _packet: &'static str) -> Result<(), Error> {
+const fn require_flags(actual: u8, expected: u8, _packet: &'static str) -> Result<(), Error> {
     if actual == expected {
         Ok(())
     } else {

@@ -47,7 +47,7 @@ pub enum Property {
 
 impl Property {
     /// The on-wire property identifier byte (§2.2.2.2).
-    pub fn identifier(&self) -> u8 {
+    pub const fn identifier(&self) -> u8 {
         match self {
             Self::PayloadFormatIndicator(_) => 0x01,
             Self::MessageExpiryInterval(_) => 0x02,
@@ -80,7 +80,7 @@ impl Property {
     }
 
     /// §2.2.2 — only User Property and Subscription Identifier may repeat.
-    fn repeatable(id: u8) -> bool {
+    const fn repeatable(id: u8) -> bool {
         id == 0x26 || id == 0x0B
     }
 

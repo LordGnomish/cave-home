@@ -32,11 +32,11 @@ impl Direction {
         })
     }
 
-    fn flows_out(self) -> bool {
+    const fn flows_out(self) -> bool {
         matches!(self, Self::Out | Self::Both)
     }
 
-    fn flows_in(self) -> bool {
+    const fn flows_in(self) -> bool {
         matches!(self, Self::In | Self::Both)
     }
 }
@@ -54,6 +54,7 @@ pub struct TopicRule {
 impl TopicRule {
     /// Parse `topic <pattern> [direction [qos [local_prefix remote_prefix]]]`
     /// (the value part, without the leading `topic` keyword).
+    #[must_use]
     pub fn parse(line: &str) -> Option<Self> {
         let mut it = line.split_whitespace();
         let pattern = it.next()?.to_owned();
@@ -116,6 +117,7 @@ impl BridgeConfig {
     }
 
     /// Map a local topic to its remote name, if an outbound rule matches.
+    #[must_use]
     pub fn map_local_to_remote(&self, local_topic: &str) -> Option<String> {
         for r in &self.rules {
             if !r.direction.flows_out() {
@@ -130,6 +132,7 @@ impl BridgeConfig {
     }
 
     /// Map a remote topic to its local name, if an inbound rule matches.
+    #[must_use]
     pub fn map_remote_to_local(&self, remote_topic: &str) -> Option<String> {
         for r in &self.rules {
             if !r.direction.flows_in() {

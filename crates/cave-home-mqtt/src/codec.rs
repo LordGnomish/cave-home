@@ -434,7 +434,7 @@ fn decode_packet_id(buf: &mut &[u8]) -> Result<u16, CodecError> {
 
 /// Validate that a packet body is empty (§3.12-§3.14: PINGREQ, PINGRESP
 /// and DISCONNECT carry no variable header or payload).
-fn decode_empty(buf: &[u8]) -> Result<(), CodecError> {
+const fn decode_empty(buf: &[u8]) -> Result<(), CodecError> {
     if buf.is_empty() {
         Ok(())
     } else {

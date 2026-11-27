@@ -29,6 +29,7 @@ pub struct Session {
 }
 
 impl Session {
+    #[must_use]
     pub fn new(client_id: String, session_expiry_secs: u32) -> Self {
         Self {
             client_id,

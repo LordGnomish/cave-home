@@ -66,7 +66,8 @@ pub enum ReasonCode {
 
 impl ReasonCode {
     /// Decode the on-wire byte. Returns `None` for unassigned values.
-    pub fn from_u8(b: u8) -> Option<Self> {
+    #[must_use]
+    pub const fn from_u8(b: u8) -> Option<Self> {
         Some(match b {
             0x00 => Self::Success,
             0x01 => Self::GrantedQoS1,
@@ -116,7 +117,8 @@ impl ReasonCode {
     }
 
     /// §2.4 — `0x80` or greater is an error.
-    pub fn is_error(self) -> bool {
+    #[must_use]
+    pub const fn is_error(self) -> bool {
         (self as u8) >= 0x80
     }
 }

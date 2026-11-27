@@ -28,7 +28,8 @@ pub enum PacketType {
 }
 
 impl PacketType {
-    pub fn from_u8(b: u8) -> Option<Self> {
+    #[must_use]
+    pub const fn from_u8(b: u8) -> Option<Self> {
         Some(match b {
             1 => Self::Connect,
             2 => Self::ConnAck,
@@ -59,7 +60,8 @@ pub enum QoS {
 }
 
 impl QoS {
-    pub fn from_u8(b: u8) -> Option<Self> {
+    #[must_use]
+    pub const fn from_u8(b: u8) -> Option<Self> {
         Some(match b {
             0 => Self::AtMostOnce,
             1 => Self::AtLeastOnce,
@@ -92,7 +94,8 @@ pub enum ConnAckReturnCode {
 }
 
 impl ConnAckReturnCode {
-    pub fn from_u8(b: u8) -> Option<Self> {
+    #[must_use]
+    pub const fn from_u8(b: u8) -> Option<Self> {
         Some(match b {
             0 => Self::Accepted,
             1 => Self::UnacceptableProtocolVersion,
@@ -167,7 +170,7 @@ pub enum Packet {
 }
 
 impl Packet {
-    pub fn packet_type(&self) -> PacketType {
+    pub const fn packet_type(&self) -> PacketType {
         match self {
             Self::Connect(_) => PacketType::Connect,
             Self::ConnAck(_) => PacketType::ConnAck,
@@ -212,7 +215,8 @@ pub enum SubAckReturnCode {
 }
 
 impl SubAckReturnCode {
-    pub fn from_u8(b: u8) -> Option<Self> {
+    #[must_use]
+    pub const fn from_u8(b: u8) -> Option<Self> {
         Some(match b {
             0x00 => Self::MaxQoS0,
             0x01 => Self::MaxQoS1,

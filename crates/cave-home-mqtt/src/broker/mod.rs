@@ -74,6 +74,7 @@ pub struct Broker {
 }
 
 impl Broker {
+    #[must_use]
     pub fn new(config: BrokerConfig, auth: Authenticator) -> Self {
         Self {
             config,
@@ -94,16 +95,19 @@ impl Broker {
         self
     }
 
+    #[must_use]
     pub fn session_count(&self) -> usize {
         self.sessions.len()
     }
 
+    #[must_use]
     pub fn retained_count(&self) -> usize {
         self.retained.len()
     }
 
     /// A live snapshot of the broker's counters.
-    pub fn metrics(&self) -> &BrokerMetrics {
+    #[must_use]
+    pub const fn metrics(&self) -> &BrokerMetrics {
         &self.metrics
     }
 
@@ -658,16 +662,16 @@ fn session_expiry_from(props: &[Property]) -> u32 {
         .unwrap_or(0)
 }
 
-fn qos_min(a: QoS, b: QoS) -> QoS {
+const fn qos_min(a: QoS, b: QoS) -> QoS {
     if (a as u8) <= (b as u8) { a } else { b }
 }
 
-fn qos_max(a: QoS, b: QoS) -> QoS {
+const fn qos_max(a: QoS, b: QoS) -> QoS {
     if (a as u8) >= (b as u8) { a } else { b }
 }
 
 /// §3.9.3 — map a granted `QoS` to its SUBACK reason code.
-fn granted_code(qos: QoS) -> ReasonCode {
+const fn granted_code(qos: QoS) -> ReasonCode {
     match qos {
         QoS::AtMostOnce => ReasonCode::Success, // 0x00 == Granted QoS 0
         QoS::AtLeastOnce => ReasonCode::GrantedQoS1,
