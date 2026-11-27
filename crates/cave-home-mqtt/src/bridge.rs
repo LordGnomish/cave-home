@@ -152,24 +152,33 @@ mod tests {
     use super::*;
     use crate::packet::QoS;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    /// Parse a topic rule the test relies on.
+    fn rule(line: &str) -> Result<TopicRule, String> {
+        TopicRule::parse(line).ok_or_else(|| format!("topic rule {line:?} did not parse"))
+    }
+
     #[test]
-    fn parse_full_mosquitto_topic_line() {
-        let r = TopicRule::parse("sensors/# out 0 home/ cloud/").unwrap();
+    fn parse_full_mosquitto_topic_line() -> TestResult {
+        let r = rule("sensors/# out 0 home/ cloud/")?;
         assert_eq!(r.pattern, "sensors/#");
         assert_eq!(r.direction, Direction::Out);
         assert_eq!(r.qos, QoS::AtMostOnce);
         assert_eq!(r.local_prefix, "home/");
         assert_eq!(r.remote_prefix, "cloud/");
+        Ok(())
     }
 
     #[test]
-    fn parse_defaults_direction_and_qos() {
-        let r = TopicRule::parse("alerts/+").unwrap();
+    fn parse_defaults_direction_and_qos() -> TestResult {
+        let r = rule("alerts/+")?;
         assert_eq!(r.pattern, "alerts/+");
         assert_eq!(r.direction, Direction::Both);
         assert_eq!(r.qos, QoS::AtMostOnce);
-        assert!(r.local_prefix.is_empty());
-        assert!(r.remote_prefix.is_empty());
+        assert_eq!(r.local_prefix, "");
+        assert_eq!(r.remote_prefix, "");
+        Ok(())
     }
 
     #[test]
@@ -178,45 +187,47 @@ mod tests {
         assert!(TopicRule::parse("a sideways 0").is_none()); // bad direction
     }
 
-    fn cfg() -> BridgeConfig {
-        BridgeConfig {
+    fn cfg() -> Result<BridgeConfig, String> {
+        Ok(BridgeConfig {
             name: "cloud".into(),
             remote_addr: "mqtt.example:8883".into(),
             client_id: "cave-bridge".into(),
             remote_username: None,
             remote_password: None,
             rules: vec![
-                TopicRule::parse("sensors/# out 1 home/ cloud/").unwrap(),
-                TopicRule::parse("commands/# in 1 home/ cloud/").unwrap(),
-                TopicRule::parse("status/+ both 0").unwrap(),
+                rule("sensors/# out 1 home/ cloud/")?,
+                rule("commands/# in 1 home/ cloud/")?,
+                rule("status/+ both 0")?,
             ],
-        }
+        })
     }
 
     #[test]
-    fn local_subscriptions_cover_out_and_both_rules() {
+    fn local_subscriptions_cover_out_and_both_rules() -> TestResult {
         // Outbound rules require a *local* subscription on local_prefix+pattern.
-        let mut subs = cfg().local_subscriptions();
+        let mut subs = cfg()?.local_subscriptions();
         subs.sort();
         assert_eq!(
             subs,
             vec!["home/sensors/#".to_string(), "status/+".to_string()]
         );
+        Ok(())
     }
 
     #[test]
-    fn remote_subscriptions_cover_in_and_both_rules() {
-        let mut subs = cfg().remote_subscriptions();
+    fn remote_subscriptions_cover_in_and_both_rules() -> TestResult {
+        let mut subs = cfg()?.remote_subscriptions();
         subs.sort();
         assert_eq!(
             subs,
             vec!["cloud/commands/#".to_string(), "status/+".to_string()]
         );
+        Ok(())
     }
 
     #[test]
-    fn maps_local_topic_to_remote_with_prefix_rewrite() {
-        let c = cfg();
+    fn maps_local_topic_to_remote_with_prefix_rewrite() -> TestResult {
+        let c = cfg()?;
         // Local home/sensors/loft/temp → remote cloud/sensors/loft/temp.
         assert_eq!(
             c.map_local_to_remote("home/sensors/loft/temp"),
@@ -229,11 +240,12 @@ mod tests {
         );
         // A purely inbound topic does not go out.
         assert_eq!(c.map_local_to_remote("home/commands/x"), None);
+        Ok(())
     }
 
     #[test]
-    fn maps_remote_topic_to_local_with_prefix_rewrite() {
-        let c = cfg();
+    fn maps_remote_topic_to_local_with_prefix_rewrite() -> TestResult {
+        let c = cfg()?;
         // Remote cloud/commands/reboot → local home/commands/reboot.
         assert_eq!(
             c.map_remote_to_local("cloud/commands/reboot"),
@@ -245,5 +257,6 @@ mod tests {
         );
         // A purely outbound topic does not come in.
         assert_eq!(c.map_remote_to_local("cloud/sensors/x"), None);
+        Ok(())
     }
 }

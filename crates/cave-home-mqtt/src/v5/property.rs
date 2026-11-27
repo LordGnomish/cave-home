@@ -225,27 +225,30 @@ mod tests {
     use super::*;
     use bytes::{Bytes, BytesMut};
 
-    fn round_trip(props: &[Property]) -> Vec<Property> {
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn round_trip(props: &[Property]) -> Result<Vec<Property>, Error> {
         let mut buf = BytesMut::new();
-        encode_properties(props, &mut buf).expect("encode");
+        encode_properties(props, &mut buf)?;
         let mut cursor: &[u8] = &buf;
-        let decoded = decode_properties(&mut cursor).expect("decode");
+        let decoded = decode_properties(&mut cursor)?;
         assert!(cursor.is_empty(), "decoder must consume the whole block");
-        decoded
+        Ok(decoded)
     }
 
     #[test]
-    fn empty_property_set_is_a_single_zero_length_byte() {
+    fn empty_property_set_is_a_single_zero_length_byte() -> TestResult {
         // §2.2.1.1: the Property Length is a Variable Byte Integer; an
         // empty set is encoded as the single byte 0x00.
         let mut buf = BytesMut::new();
-        encode_properties(&[], &mut buf).expect("encode");
+        encode_properties(&[], &mut buf)?;
         assert_eq!(&buf[..], &[0x00]);
-        assert_eq!(round_trip(&[]), Vec::<Property>::new());
+        assert_eq!(round_trip(&[])?, Vec::<Property>::new());
+        Ok(())
     }
 
     #[test]
-    fn mixed_property_set_round_trips_in_order() {
+    fn mixed_property_set_round_trips_in_order() -> TestResult {
         // One of every wire data-type: byte, u32, utf8, binary, var-int,
         // and a repeated UTF-8 string pair (§2.2.2.2 User Property).
         let props = vec![
@@ -258,11 +261,12 @@ mod tests {
             Property::UserProperty("region".into(), "loft".into()),
             Property::UserProperty("region".into(), "loft".into()),
         ];
-        assert_eq!(round_trip(&props), props);
+        assert_eq!(round_trip(&props)?, props);
+        Ok(())
     }
 
     #[test]
-    fn connect_scoped_properties_round_trip() {
+    fn connect_scoped_properties_round_trip() -> TestResult {
         let props = vec![
             Property::SessionExpiryInterval(120),
             Property::ReceiveMaximum(20),
@@ -273,21 +277,23 @@ mod tests {
             Property::AuthenticationMethod("SCRAM-SHA-256".into()),
             Property::AuthenticationData(Bytes::from_static(b"nonce")),
         ];
-        assert_eq!(round_trip(&props), props);
+        assert_eq!(round_trip(&props)?, props);
+        Ok(())
     }
 
     #[test]
-    fn length_prefix_is_a_variable_byte_integer() {
+    fn length_prefix_is_a_variable_byte_integer() -> TestResult {
         // A reason string >127 bytes forces a 2-byte property-length prefix.
         let long = "x".repeat(300);
-        let props = vec![Property::ReasonString(long.clone())];
+        let props = vec![Property::ReasonString(long)];
         let mut buf = BytesMut::new();
-        encode_properties(&props, &mut buf).expect("encode");
-        // 0xAD 0x02 == 301 (300 payload + 1 id byte... 1 id + 2 strlen + 300).
+        encode_properties(&props, &mut buf)?;
+        // 0xAF 0x02 == 303 (1 id byte + 2 string-length bytes + 300 text).
         // Just assert it round-trips and the first length byte has the
         // continuation bit set (value > 127).
         assert!(buf[0] & 0x80 != 0, "multi-byte var-int length expected");
-        assert_eq!(round_trip(&props), props);
+        assert_eq!(round_trip(&props)?, props);
+        Ok(())
     }
 
     #[test]

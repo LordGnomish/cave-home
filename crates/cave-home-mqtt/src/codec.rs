@@ -499,36 +499,41 @@ fn decode_unsuback(buf: &mut &[u8]) -> Result<UnsubAck, CodecError> {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn puback_round_trip() {
+    fn puback_round_trip() -> TestResult {
         // §3.4 PUBACK: QoS 1 acknowledgement — packet id only, flags 0.
         let a = PubAck { packet_id: 0x1234 };
-        let bytes = encode_packet(&Packet::PubAck(a)).expect("encode");
+        let bytes = encode_packet(&Packet::PubAck(a))?;
         assert_eq!(&bytes[..], [0x40, 0x02, 0x12, 0x34].as_slice());
-        let (back, used) = decode_packet(&bytes).expect("decode");
+        let (back, used) = decode_packet(&bytes)?;
         assert_eq!(used, bytes.len());
         assert_eq!(back, Packet::PubAck(a));
+        Ok(())
     }
 
     #[test]
-    fn pubrec_round_trip() {
+    fn pubrec_round_trip() -> TestResult {
         // §3.5 PUBREC: QoS 2 publish received (part 1), flags 0.
         let p = PubRec { packet_id: 0x1234 };
-        let bytes = encode_packet(&Packet::PubRec(p)).expect("encode");
+        let bytes = encode_packet(&Packet::PubRec(p))?;
         assert_eq!(&bytes[..], [0x50, 0x02, 0x12, 0x34].as_slice());
-        let (back, _) = decode_packet(&bytes).expect("decode");
+        let (back, _) = decode_packet(&bytes)?;
         assert_eq!(back, Packet::PubRec(p));
+        Ok(())
     }
 
     #[test]
-    fn pubrel_round_trip() {
+    fn pubrel_round_trip() -> TestResult {
         // §3.6 PUBREL: QoS 2 publish release (part 2). §3.6.1 reserves the
         // fixed-header flags as 0b0010.
         let p = PubRel { packet_id: 0x1234 };
-        let bytes = encode_packet(&Packet::PubRel(p)).expect("encode");
+        let bytes = encode_packet(&Packet::PubRel(p))?;
         assert_eq!(&bytes[..], [0x62, 0x02, 0x12, 0x34].as_slice());
-        let (back, _) = decode_packet(&bytes).expect("decode");
+        let (back, _) = decode_packet(&bytes)?;
         assert_eq!(back, Packet::PubRel(p));
+        Ok(())
     }
 
     #[test]
@@ -542,43 +547,47 @@ mod tests {
     }
 
     #[test]
-    fn pubcomp_round_trip() {
+    fn pubcomp_round_trip() -> TestResult {
         // §3.7 PUBCOMP: QoS 2 publish complete (part 3), flags 0.
         let p = PubComp { packet_id: 0x1234 };
-        let bytes = encode_packet(&Packet::PubComp(p)).expect("encode");
+        let bytes = encode_packet(&Packet::PubComp(p))?;
         assert_eq!(&bytes[..], [0x70, 0x02, 0x12, 0x34].as_slice());
-        let (back, _) = decode_packet(&bytes).expect("decode");
+        let (back, _) = decode_packet(&bytes)?;
         assert_eq!(back, Packet::PubComp(p));
+        Ok(())
     }
 
     #[test]
-    fn pingreq_round_trip() {
+    fn pingreq_round_trip() -> TestResult {
         // §3.12: PINGREQ is a 2-byte packet with zero remaining length.
-        let bytes = encode_packet(&Packet::PingReq).expect("encode");
+        let bytes = encode_packet(&Packet::PingReq)?;
         assert_eq!(&bytes[..], [0xc0, 0x00].as_slice());
-        let (back, used) = decode_packet(&bytes).expect("decode");
+        let (back, used) = decode_packet(&bytes)?;
         assert_eq!(used, 2);
         assert_eq!(back, Packet::PingReq);
+        Ok(())
     }
 
     #[test]
-    fn pingresp_round_trip() {
+    fn pingresp_round_trip() -> TestResult {
         // §3.13: PINGRESP is the server's reply to a PINGREQ.
-        let bytes = encode_packet(&Packet::PingResp).expect("encode");
+        let bytes = encode_packet(&Packet::PingResp)?;
         assert_eq!(&bytes[..], [0xd0, 0x00].as_slice());
-        let (back, used) = decode_packet(&bytes).expect("decode");
+        let (back, used) = decode_packet(&bytes)?;
         assert_eq!(used, 2);
         assert_eq!(back, Packet::PingResp);
+        Ok(())
     }
 
     #[test]
-    fn disconnect_round_trip() {
+    fn disconnect_round_trip() -> TestResult {
         // §3.14: DISCONNECT is the client's clean network teardown.
-        let bytes = encode_packet(&Packet::Disconnect).expect("encode");
+        let bytes = encode_packet(&Packet::Disconnect)?;
         assert_eq!(&bytes[..], [0xe0, 0x00].as_slice());
-        let (back, used) = decode_packet(&bytes).expect("decode");
+        let (back, used) = decode_packet(&bytes)?;
         assert_eq!(used, 2);
         assert_eq!(back, Packet::Disconnect);
+        Ok(())
     }
 
     #[test]
@@ -592,19 +601,20 @@ mod tests {
     }
 
     #[test]
-    fn unsubscribe_round_trip() {
+    fn unsubscribe_round_trip() -> TestResult {
         // §3.10 UNSUBSCRIBE: packet id 11, filters "a/b" and "c/d"
         // (topic filters only — no per-filter QoS byte).
         let u = Unsubscribe {
             packet_id: 11,
             topic_filters: vec!["a/b".into(), "c/d".into()],
         };
-        let bytes = encode_packet(&Packet::Unsubscribe(u.clone())).expect("encode");
+        let bytes = encode_packet(&Packet::Unsubscribe(u.clone()))?;
         // §3.10.1: UNSUBSCRIBE reserved fixed-header flags are 0b0010.
         assert_eq!(bytes[0], 0xa2);
-        let (back, used) = decode_packet(&bytes).expect("decode");
+        let (back, used) = decode_packet(&bytes)?;
         assert_eq!(used, bytes.len());
         assert_eq!(back, Packet::Unsubscribe(u));
+        Ok(())
     }
 
     #[test]
@@ -628,17 +638,18 @@ mod tests {
     }
 
     #[test]
-    fn unsuback_round_trip() {
+    fn unsuback_round_trip() -> TestResult {
         // §3.11: UNSUBACK is a packet identifier only; remaining len 2.
         let a = UnsubAck { packet_id: 11 };
-        let bytes = encode_packet(&Packet::UnsubAck(a.clone())).expect("encode");
+        let bytes = encode_packet(&Packet::UnsubAck(a))?;
         assert_eq!(&bytes[..], [0xb0, 0x02, 0x00, 0x0b].as_slice());
-        let (back, _) = decode_packet(&bytes).expect("decode");
+        let (back, _) = decode_packet(&bytes)?;
         assert_eq!(back, Packet::UnsubAck(a));
+        Ok(())
     }
 
     #[test]
-    fn subscribe_round_trip() {
+    fn subscribe_round_trip() -> TestResult {
         // §3.8 SUBSCRIBE: packet id 10, "a/b" QoS 1, "c/d" QoS 2.
         let s = Subscribe {
             packet_id: 10,
@@ -653,12 +664,13 @@ mod tests {
                 },
             ],
         };
-        let bytes = encode_packet(&Packet::Subscribe(s.clone())).expect("encode");
+        let bytes = encode_packet(&Packet::Subscribe(s.clone()))?;
         // §3.8.1: SUBSCRIBE reserved fixed-header flags are 0b0010.
         assert_eq!(bytes[0], 0x82);
-        let (back, used) = decode_packet(&bytes).expect("decode");
+        let (back, used) = decode_packet(&bytes)?;
         assert_eq!(used, bytes.len());
         assert_eq!(back, Packet::Subscribe(s));
+        Ok(())
     }
 
     #[test]
@@ -689,20 +701,21 @@ mod tests {
     }
 
     #[test]
-    fn suback_round_trip() {
+    fn suback_round_trip() -> TestResult {
         // §3.9.3: granted QoS 1, then a failure return code (0x80).
         let a = SubAck {
             packet_id: 10,
             return_codes: vec![SubAckReturnCode::MaxQoS1, SubAckReturnCode::Failure],
         };
-        let bytes = encode_packet(&Packet::SubAck(a.clone())).expect("encode");
+        let bytes = encode_packet(&Packet::SubAck(a.clone()))?;
         assert_eq!(&bytes[..], [0x90, 0x04, 0x00, 0x0a, 0x01, 0x80].as_slice());
-        let (back, _) = decode_packet(&bytes).expect("decode");
+        let (back, _) = decode_packet(&bytes)?;
         assert_eq!(back, Packet::SubAck(a));
+        Ok(())
     }
 
     #[test]
-    fn var_int_round_trip_at_spec_boundaries() {
+    fn var_int_round_trip_at_spec_boundaries() -> TestResult {
         // MQTT 3.1.1 §2.2.3 examples: 0, 127, 128, 16383, 16384, 2_097_151, 2_097_152.
         for v in [
             0u32,
@@ -715,38 +728,41 @@ mod tests {
             268_435_455,
         ] {
             let mut buf = BytesMut::new();
-            encode_var_int(v, &mut buf).expect("encode");
-            let (decoded, _) = decode_var_int(&buf).expect("decode");
+            encode_var_int(v, &mut buf)?;
+            let (decoded, _) = decode_var_int(&buf)?;
             assert_eq!(decoded, v, "round-trip {v}");
         }
+        Ok(())
     }
 
     #[test]
-    fn connect_round_trip() {
+    fn connect_round_trip() -> TestResult {
         let c = Connect {
             client_id: "kitchen-pi".into(),
             clean_session: true,
             keep_alive_secs: 60,
         };
-        let bytes = encode_packet(&Packet::Connect(c.clone())).expect("encode");
-        let (back, used) = decode_packet(&bytes).expect("decode");
+        let bytes = encode_packet(&Packet::Connect(c.clone()))?;
+        let (back, used) = decode_packet(&bytes)?;
         assert_eq!(used, bytes.len());
         assert_eq!(back, Packet::Connect(c));
+        Ok(())
     }
 
     #[test]
-    fn connack_round_trip() {
+    fn connack_round_trip() -> TestResult {
         let c = ConnAck {
             session_present: false,
             return_code: ConnAckReturnCode::Accepted,
         };
-        let bytes = encode_packet(&Packet::ConnAck(c)).expect("encode");
-        let (back, _) = decode_packet(&bytes).expect("decode");
+        let bytes = encode_packet(&Packet::ConnAck(c))?;
+        let (back, _) = decode_packet(&bytes)?;
         assert_eq!(back, Packet::ConnAck(c));
+        Ok(())
     }
 
     #[test]
-    fn publish_qos0_and_qos1_round_trip() {
+    fn publish_qos0_and_qos1_round_trip() -> TestResult {
         let q0 = Publish {
             topic: "home/light/kitchen".into(),
             qos: QoS::AtMostOnce,
@@ -755,8 +771,8 @@ mod tests {
             packet_id: None,
             payload: Bytes::from_static(b"ON"),
         };
-        let bytes = encode_packet(&Packet::Publish(q0.clone())).expect("encode q0");
-        let (back, _) = decode_packet(&bytes).expect("decode q0");
+        let bytes = encode_packet(&Packet::Publish(q0.clone()))?;
+        let (back, _) = decode_packet(&bytes)?;
         assert_eq!(back, Packet::Publish(q0));
 
         let q1 = Publish {
@@ -767,13 +783,14 @@ mod tests {
             packet_id: Some(0x4242),
             payload: Bytes::from_static(b"21.5"),
         };
-        let bytes = encode_packet(&Packet::Publish(q1.clone())).expect("encode q1");
-        let (back, _) = decode_packet(&bytes).expect("decode q1");
+        let bytes = encode_packet(&Packet::Publish(q1.clone()))?;
+        let (back, _) = decode_packet(&bytes)?;
         assert_eq!(back, Packet::Publish(q1));
+        Ok(())
     }
 
     #[test]
-    fn decode_rejects_non_mqtt_3_1_1_protocol_level() {
+    fn decode_rejects_non_mqtt_3_1_1_protocol_level() -> TestResult {
         // CONNECT with protocol name MQTT, level 5 (not yet supported here).
         let mut body = BytesMut::new();
         encode_str("MQTT", &mut body);
@@ -783,11 +800,12 @@ mod tests {
         encode_str("c", &mut body);
         let mut frame = BytesMut::new();
         frame.put_u8((PacketType::Connect as u8) << 4);
-        encode_var_int(body.len() as u32, &mut frame).unwrap();
+        encode_var_int(u32::try_from(body.len())?, &mut frame)?;
         frame.extend_from_slice(&body);
         assert!(matches!(
             decode_packet(&frame),
             Err(CodecError::BadProtocolLevel(5))
         ));
+        Ok(())
     }
 }

@@ -106,6 +106,8 @@ pub fn parse_shared(filter: &str) -> Option<SharedFilter> {
 mod tests {
     use super::*;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn topic_names_reject_wildcards_and_empty() {
         // §4.7.3: a Topic Name must not contain '+' or '#' and must be
@@ -187,14 +189,16 @@ mod tests {
     }
 
     #[test]
-    fn shared_subscription_filter_parsing() {
+    fn shared_subscription_filter_parsing() -> TestResult {
         // §4.8.2: $share/{ShareName}/{filter}.
-        let s = parse_shared("$share/consumers/sport/tennis/+").expect("shared");
+        let s = parse_shared("$share/consumers/sport/tennis/+")
+            .ok_or("a shared subscription filter did not parse")?;
         assert_eq!(s.group, "consumers");
         assert_eq!(s.filter, "sport/tennis/+");
         assert!(parse_shared("sport/#").is_none());
         // ShareName must be non-empty and contain no wildcards or '/'.
         assert!(parse_shared("$share//x").is_none());
         assert!(parse_shared("$share/grp").is_none());
+        Ok(())
     }
 }

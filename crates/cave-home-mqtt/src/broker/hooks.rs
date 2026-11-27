@@ -45,7 +45,7 @@ mod tests {
     use crate::v5::packet::*;
     use crate::v5::reason::ReasonCode;
     use bytes::Bytes;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
     #[derive(Default)]
     struct Recorder {
@@ -53,29 +53,26 @@ mod tests {
         reject_topic: Option<String>,
     }
 
+    impl Recorder {
+        /// The recorded events. A poisoned lock still holds every event
+        /// pushed before the panic, so it is read all the same.
+        fn log(&self) -> MutexGuard<'_, Vec<String>> {
+            self.events.lock().unwrap_or_else(PoisonError::into_inner)
+        }
+    }
+
     impl BrokerHook for Recorder {
         fn on_connect(&self, client_id: &str) {
-            self.events
-                .lock()
-                .unwrap()
-                .push(format!("connect:{client_id}"));
+            self.log().push(format!("connect:{client_id}"));
         }
         fn on_disconnect(&self, client_id: &str) {
-            self.events
-                .lock()
-                .unwrap()
-                .push(format!("disconnect:{client_id}"));
+            self.log().push(format!("disconnect:{client_id}"));
         }
         fn on_subscribe(&self, client_id: &str, filter: &str) {
-            self.events
-                .lock()
-                .unwrap()
-                .push(format!("subscribe:{client_id}:{filter}"));
+            self.log().push(format!("subscribe:{client_id}:{filter}"));
         }
         fn on_publish(&self, e: &PublishEvent<'_>) -> PublishDecision {
-            self.events
-                .lock()
-                .unwrap()
+            self.log()
                 .push(format!("publish:{}:{}", e.client_id, e.topic));
             if self.reject_topic.as_deref() == Some(e.topic) {
                 PublishDecision::Reject
@@ -137,7 +134,7 @@ mod tests {
         );
         b.network_disconnect("c");
 
-        let events = rec.events.lock().unwrap().clone();
+        let events = rec.log().clone();
         assert_eq!(
             events,
             vec![

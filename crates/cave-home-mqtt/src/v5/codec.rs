@@ -569,15 +569,18 @@ mod tests {
     use crate::v5::reason::ReasonCode;
     use bytes::Bytes;
 
-    fn round_trip(p: &PacketV5) {
-        let bytes = encode_v5(p).expect("encode");
-        let (back, used) = decode_v5(&bytes).expect("decode");
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn round_trip(p: &PacketV5) -> TestResult {
+        let bytes = encode_v5(p)?;
+        let (back, used) = decode_v5(&bytes)?;
         assert_eq!(used, bytes.len(), "decoder must consume the whole frame");
         assert_eq!(&back, p);
+        Ok(())
     }
 
     #[test]
-    fn connect_v5_full_round_trip() {
+    fn connect_v5_full_round_trip() -> TestResult {
         let c = ConnectV5 {
             client_id: "loft-pi".into(),
             clean_start: true,
@@ -596,11 +599,12 @@ mod tests {
             username: Some("admin".into()),
             password: Some(Bytes::from_static(b"s3cret")),
         };
-        round_trip(&PacketV5::Connect(c));
+        round_trip(&PacketV5::Connect(c))?;
+        Ok(())
     }
 
     #[test]
-    fn connect_v5_minimal_round_trip() {
+    fn connect_v5_minimal_round_trip() -> TestResult {
         let c = ConnectV5 {
             client_id: String::new(),
             clean_start: true,
@@ -610,11 +614,12 @@ mod tests {
             username: None,
             password: None,
         };
-        round_trip(&PacketV5::Connect(c));
+        round_trip(&PacketV5::Connect(c))?;
+        Ok(())
     }
 
     #[test]
-    fn connect_v5_rejects_protocol_level_4() {
+    fn connect_v5_rejects_protocol_level_4() -> TestResult {
         // A v5 frame must declare protocol level 5 (§3.1.2.2).
         let c = ConnectV5 {
             client_id: "x".into(),
@@ -625,17 +630,18 @@ mod tests {
             username: None,
             password: None,
         };
-        let mut bytes = encode_v5(&PacketV5::Connect(c)).unwrap();
+        let mut bytes = encode_v5(&PacketV5::Connect(c))?;
         // Locate the protocol level byte: header(1) + remlen(1) + "MQTT"(6) = idx 8.
         bytes[8] = 4;
         assert!(matches!(
             decode_v5(&bytes),
             Err(crate::v5::Error::BadProtocolLevel(4))
         ));
+        Ok(())
     }
 
     #[test]
-    fn connack_v5_round_trip() {
+    fn connack_v5_round_trip() -> TestResult {
         let c = ConnAckV5 {
             session_present: true,
             reason_code: ReasonCode::Success,
@@ -644,11 +650,12 @@ mod tests {
                 Property::MaximumQoS(1),
             ],
         };
-        round_trip(&PacketV5::ConnAck(c));
+        round_trip(&PacketV5::ConnAck(c))?;
+        Ok(())
     }
 
     #[test]
-    fn publish_v5_round_trip_with_properties() {
+    fn publish_v5_round_trip_with_properties() -> TestResult {
         let p = PublishV5 {
             topic: "home/sensor/temp".into(),
             qos: QoS::AtLeastOnce,
@@ -662,11 +669,12 @@ mod tests {
             ],
             payload: Bytes::from_static(b"21.7"),
         };
-        round_trip(&PacketV5::Publish(p));
+        round_trip(&PacketV5::Publish(p))?;
+        Ok(())
     }
 
     #[test]
-    fn publish_v5_qos0_has_no_packet_id() {
+    fn publish_v5_qos0_has_no_packet_id() -> TestResult {
         let p = PublishV5 {
             topic: "home/light".into(),
             qos: QoS::AtMostOnce,
@@ -676,11 +684,12 @@ mod tests {
             properties: vec![],
             payload: Bytes::from_static(b"ON"),
         };
-        round_trip(&PacketV5::Publish(p));
+        round_trip(&PacketV5::Publish(p))?;
+        Ok(())
     }
 
     #[test]
-    fn puback_v5_short_form_is_two_bytes() {
+    fn puback_v5_short_form_is_two_bytes() -> TestResult {
         // §3.4.2.1: a PUBACK with reason Success and no properties may
         // omit the reason code and property length (Remaining Length 2).
         let ack = PubAckV5 {
@@ -688,43 +697,46 @@ mod tests {
             reason_code: ReasonCode::Success,
             properties: vec![],
         };
-        let bytes = encode_v5(&PacketV5::PubAck(ack.clone())).unwrap();
+        let bytes = encode_v5(&PacketV5::PubAck(ack.clone()))?;
         assert_eq!(bytes.len(), 4, "fixed header(2) + packet id(2)");
-        let (back, _) = decode_v5(&bytes).unwrap();
+        let (back, _) = decode_v5(&bytes)?;
         assert_eq!(back, PacketV5::PubAck(ack));
+        Ok(())
     }
 
     #[test]
-    fn puback_v5_long_form_carries_reason_and_props() {
+    fn puback_v5_long_form_carries_reason_and_props() -> TestResult {
         let ack = PubAckV5 {
             packet_id: 42,
             reason_code: ReasonCode::NoMatchingSubscribers,
             properties: vec![Property::ReasonString("nobody home".into())],
         };
-        round_trip(&PacketV5::PubAck(ack));
+        round_trip(&PacketV5::PubAck(ack))?;
+        Ok(())
     }
 
     #[test]
-    fn pubrec_pubrel_pubcomp_v5_round_trip() {
+    fn pubrec_pubrel_pubcomp_v5_round_trip() -> TestResult {
         round_trip(&PacketV5::PubRec(PubRecV5 {
             packet_id: 9,
             reason_code: ReasonCode::Success,
             properties: vec![],
-        }));
+        }))?;
         round_trip(&PacketV5::PubRel(PubRelV5 {
             packet_id: 9,
             reason_code: ReasonCode::PacketIdentifierNotFound,
             properties: vec![],
-        }));
+        }))?;
         round_trip(&PacketV5::PubComp(PubCompV5 {
             packet_id: 9,
             reason_code: ReasonCode::Success,
             properties: vec![],
-        }));
+        }))?;
+        Ok(())
     }
 
     #[test]
-    fn subscribe_v5_round_trip_with_options() {
+    fn subscribe_v5_round_trip_with_options() -> TestResult {
         let s = SubscribeV5 {
             packet_id: 11,
             properties: vec![Property::SubscriptionIdentifier(5)],
@@ -745,11 +757,12 @@ mod tests {
                 },
             ],
         };
-        round_trip(&PacketV5::Subscribe(s));
+        round_trip(&PacketV5::Subscribe(s))?;
+        Ok(())
     }
 
     #[test]
-    fn subscribe_v5_rejects_reserved_subscription_option_bits() {
+    fn subscribe_v5_rejects_reserved_subscription_option_bits() -> TestResult {
         // §3.8.3.1: bits 6-7 of the subscription options byte are reserved.
         let s = SubscribeV5 {
             packet_id: 1,
@@ -762,7 +775,7 @@ mod tests {
                 retain_handling: RetainHandling::SendOnSubscribe,
             }],
         };
-        let mut bytes = encode_v5(&PacketV5::Subscribe(s)).unwrap();
+        let mut bytes = encode_v5(&PacketV5::Subscribe(s))?;
         // Flip a reserved high bit in the last byte (the options byte).
         let last = bytes.len() - 1;
         bytes[last] |= 0x40;
@@ -770,10 +783,11 @@ mod tests {
             decode_v5(&bytes),
             Err(crate::v5::Error::Malformed(_))
         ));
+        Ok(())
     }
 
     #[test]
-    fn suback_v5_round_trip() {
+    fn suback_v5_round_trip() -> TestResult {
         let s = SubAckV5 {
             packet_id: 11,
             properties: vec![],
@@ -783,65 +797,71 @@ mod tests {
                 ReasonCode::TopicFilterInvalid,
             ],
         };
-        round_trip(&PacketV5::SubAck(s));
+        round_trip(&PacketV5::SubAck(s))?;
+        Ok(())
     }
 
     #[test]
-    fn unsubscribe_and_unsuback_v5_round_trip() {
+    fn unsubscribe_and_unsuback_v5_round_trip() -> TestResult {
         round_trip(&PacketV5::Unsubscribe(UnsubscribeV5 {
             packet_id: 21,
             properties: vec![Property::UserProperty("x".into(), "y".into())],
             topic_filters: vec!["home/+/temp".into(), "#".into()],
-        }));
+        }))?;
         round_trip(&PacketV5::UnsubAck(UnsubAckV5 {
             packet_id: 21,
             properties: vec![],
             reason_codes: vec![ReasonCode::Success, ReasonCode::NoSubscriptionExisted],
-        }));
+        }))?;
+        Ok(())
     }
 
     #[test]
-    fn ping_round_trip() {
-        round_trip(&PacketV5::PingReq);
-        round_trip(&PacketV5::PingResp);
+    fn ping_round_trip() -> TestResult {
+        round_trip(&PacketV5::PingReq)?;
+        round_trip(&PacketV5::PingResp)?;
+        Ok(())
     }
 
     #[test]
-    fn disconnect_v5_short_and_long_form() {
+    fn disconnect_v5_short_and_long_form() -> TestResult {
         // §3.14.2.1: Remaining Length 0 ⇒ reason Normal disconnection (0x00).
         let short = DisconnectV5 {
             reason_code: ReasonCode::Success,
             properties: vec![],
         };
-        let bytes = encode_v5(&PacketV5::Disconnect(short.clone())).unwrap();
+        let bytes = encode_v5(&PacketV5::Disconnect(short.clone()))?;
         assert_eq!(bytes.len(), 2, "header byte + zero remaining length");
-        let (back, _) = decode_v5(&bytes).unwrap();
+        let (back, _) = decode_v5(&bytes)?;
         assert_eq!(back, PacketV5::Disconnect(short));
 
         round_trip(&PacketV5::Disconnect(DisconnectV5 {
             reason_code: ReasonCode::SessionTakenOver,
             properties: vec![Property::ReasonString("elsewhere".into())],
-        }));
+        }))?;
+        Ok(())
     }
 
     #[test]
-    fn auth_v5_round_trip() {
+    fn auth_v5_round_trip() -> TestResult {
         round_trip(&PacketV5::Auth(AuthV5 {
             reason_code: ReasonCode::ContinueAuthentication,
             properties: vec![
                 Property::AuthenticationMethod("SCRAM-SHA-256".into()),
                 Property::AuthenticationData(Bytes::from_static(b"server-first")),
             ],
-        }));
+        }))?;
+        Ok(())
     }
 
     #[test]
-    fn decode_v5_reports_underflow_on_partial_frame() {
-        let full = encode_v5(&PacketV5::PingReq).unwrap();
+    fn decode_v5_reports_underflow_on_partial_frame() -> TestResult {
+        let full = encode_v5(&PacketV5::PingReq)?;
         // PINGREQ is 2 bytes; one byte must be insufficient.
         assert!(matches!(
             decode_v5(&full[..1]),
             Err(crate::v5::Error::Underflow { .. })
         ));
+        Ok(())
     }
 }

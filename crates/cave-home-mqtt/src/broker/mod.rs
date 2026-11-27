@@ -713,6 +713,8 @@ mod router_tests {
     use crate::v5::reason::ReasonCode;
     use bytes::Bytes;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn allow_all() -> Broker {
         let mut auth = Authenticator::default();
         auth.set_anonymous(true);
@@ -785,24 +787,32 @@ mod router_tests {
         })
     }
 
+    /// The packet of the first Send action.
+    fn first_sent(actions: &[Action]) -> Result<PacketV5, &'static str> {
+        sends(actions)
+            .into_iter()
+            .next()
+            .map(|(_, packet)| packet)
+            .ok_or("no packet was sent")
+    }
+
     #[test]
-    fn connect_yields_connack_success() {
+    fn connect_yields_connack_success() -> TestResult {
         let mut b = allow_all();
         let acts = b.connect(connect("c1", true));
         let s = sends(&acts);
         assert_eq!(s.len(), 1);
-        match &s[0].1 {
-            PacketV5::ConnAck(ack) => {
-                assert_eq!(ack.reason_code, ReasonCode::Success);
-                assert!(!ack.session_present);
-            }
-            other => panic!("expected CONNACK, got {other:?}"),
-        }
+        let PacketV5::ConnAck(ack) = first_sent(&acts)? else {
+            return Err(format!("expected CONNACK, got {s:?}").into());
+        };
+        assert_eq!(ack.reason_code, ReasonCode::Success);
+        assert!(!ack.session_present);
         assert_eq!(b.session_count(), 1);
+        Ok(())
     }
 
     #[test]
-    fn bad_credentials_are_refused() {
+    fn bad_credentials_are_refused() -> TestResult {
         let mut auth = Authenticator::default();
         auth.set_anonymous(false);
         auth.add_user("admin", b"pw");
@@ -811,38 +821,38 @@ mod router_tests {
         c.username = Some("admin".into());
         c.password = Some(Bytes::from_static(b"wrong"));
         let acts = b.connect(c);
-        match &sends(&acts)[0].1 {
-            PacketV5::ConnAck(ack) => {
-                assert_eq!(ack.reason_code, ReasonCode::BadUserNameOrPassword)
-            }
-            other => panic!("expected CONNACK, got {other:?}"),
-        }
+        let PacketV5::ConnAck(ack) = first_sent(&acts)? else {
+            return Err(format!("expected CONNACK, got {acts:?}").into());
+        };
+        assert_eq!(ack.reason_code, ReasonCode::BadUserNameOrPassword);
         assert!(acts.iter().any(|a| matches!(a, Action::Drop { .. })));
         assert_eq!(b.session_count(), 0);
+        Ok(())
     }
 
     #[test]
-    fn subscribe_grants_qos_and_qos0_publish_is_routed() {
+    fn subscribe_grants_qos_and_qos0_publish_is_routed() -> TestResult {
         let mut b = allow_all();
         b.connect(connect("sub", true));
         let suback = b.handle("sub", subscribe("home/+/temp", QoS::ExactlyOnce, 1));
-        match &sends(&suback)[0].1 {
-            PacketV5::SubAck(s) => assert_eq!(s.reason_codes, vec![ReasonCode::GrantedQoS2]),
-            other => panic!("expected SUBACK, got {other:?}"),
-        }
+        let PacketV5::SubAck(s) = first_sent(&suback)? else {
+            return Err(format!("expected SUBACK, got {suback:?}").into());
+        };
+        assert_eq!(s.reason_codes, vec![ReasonCode::GrantedQoS2]);
         b.connect(connect("pub", true));
         let acts = b.handle(
             "pub",
             publish("home/loft/temp", QoS::AtMostOnce, None, false, b"21"),
         );
-        let p = find_publish_to(&acts, "sub").expect("routed to sub");
+        let p = find_publish_to(&acts, "sub").ok_or("the publish was not routed to sub")?;
         assert_eq!(p.topic, "home/loft/temp");
         assert_eq!(p.qos, QoS::AtMostOnce);
         assert_eq!(&p.payload[..], b"21");
+        Ok(())
     }
 
     #[test]
-    fn qos1_publish_acks_publisher_and_delivers_then_clears_on_puback() {
+    fn qos1_publish_acks_publisher_and_delivers_then_clears_on_puback() -> TestResult {
         let mut b = allow_all();
         b.connect(connect("sub", true));
         b.handle("sub", subscribe("home/#", QoS::AtLeastOnce, 1));
@@ -858,8 +868,8 @@ mod router_tests {
             if client_id == "pub" && ack.packet_id == 5 && ack.reason_code == ReasonCode::Success))
         );
         // Subscriber gets a PUBLISH with a server-assigned packet id.
-        let p = find_publish_to(&acts, "sub").expect("delivered");
-        let pid = p.packet_id.expect("qos1 needs id");
+        let p = find_publish_to(&acts, "sub").ok_or("the publish was not delivered to sub")?;
+        let pid = p.packet_id.ok_or("a qos1 delivery needs a packet id")?;
         assert_eq!(p.qos, QoS::AtLeastOnce);
         // Subscriber acks; inflight is cleared (no resend on takeover later).
         let after = b.handle(
@@ -870,7 +880,8 @@ mod router_tests {
                 properties: vec![],
             }),
         );
-        assert!(sends(&after).is_empty());
+        assert_eq!(sends(&after), []);
+        Ok(())
     }
 
     #[test]
@@ -887,7 +898,7 @@ mod router_tests {
     }
 
     #[test]
-    fn qos2_full_handshake_both_directions() {
+    fn qos2_full_handshake_both_directions() -> TestResult {
         let mut b = allow_all();
         b.connect(connect("sub", true));
         b.handle("sub", subscribe("home/#", QoS::ExactlyOnce, 1));
@@ -901,7 +912,10 @@ mod router_tests {
         assert!(acts.iter().any(|a| matches!(a,
             Action::Send { client_id, packet: PacketV5::PubRec(r) }
             if client_id == "pub" && r.packet_id == 7)));
-        let pid = find_publish_to(&acts, "sub").unwrap().packet_id.unwrap();
+        let pid = find_publish_to(&acts, "sub")
+            .ok_or("the publish was not delivered to sub")?
+            .packet_id
+            .ok_or("a qos2 delivery needs a packet id")?;
 
         // Publisher → broker: PUBREL(7) ⇒ PUBCOMP(7) to publisher.
         let comp = b.handle(
@@ -938,11 +952,12 @@ mod router_tests {
                 properties: vec![],
             }),
         );
-        assert!(sends(&done).is_empty());
+        assert_eq!(sends(&done), []);
+        Ok(())
     }
 
     #[test]
-    fn retained_message_delivered_on_new_subscription() {
+    fn retained_message_delivered_on_new_subscription() -> TestResult {
         let mut b = allow_all();
         b.connect(connect("pub", true));
         b.handle(
@@ -953,10 +968,11 @@ mod router_tests {
 
         b.connect(connect("sub", true));
         let acts = b.handle("sub", subscribe("home/#", QoS::AtLeastOnce, 2));
-        let p = find_publish_to(&acts, "sub").expect("retained delivered");
+        let p = find_publish_to(&acts, "sub").ok_or("the retained message was not delivered")?;
         assert_eq!(p.topic, "home/loft/temp");
         assert!(p.retain, "retained delivery sets RETAIN=1");
         assert_eq!(&p.payload[..], b"21.0");
+        Ok(())
     }
 
     #[test]
@@ -975,7 +991,7 @@ mod router_tests {
     }
 
     #[test]
-    fn persistent_session_queues_offline_and_delivers_on_resume() {
+    fn persistent_session_queues_offline_and_delivers_on_resume() -> TestResult {
         let mut b = allow_all();
         // Subscriber with a non-zero session expiry, clean_start = false.
         let mut sub_connect = connect("sub", false);
@@ -999,8 +1015,10 @@ mod router_tests {
         let resume = b.connect(sub_connect);
         assert!(resume.iter().any(|a| matches!(a,
             Action::Send { packet: PacketV5::ConnAck(ack), .. } if ack.session_present)));
-        let p = find_publish_to(&resume, "sub").expect("queued msg delivered on resume");
+        let p = find_publish_to(&resume, "sub")
+            .ok_or("the queued message was not delivered on resume")?;
         assert_eq!(p.topic, "home/x");
+        Ok(())
     }
 
     #[test]
@@ -1018,7 +1036,7 @@ mod router_tests {
     }
 
     #[test]
-    fn last_will_is_published_on_ungraceful_disconnect() {
+    fn last_will_is_published_on_ungraceful_disconnect() -> TestResult {
         let mut b = allow_all();
         b.connect(connect("watcher", true));
         b.handle("watcher", subscribe("home/+/status", QoS::AtMostOnce, 1));
@@ -1034,9 +1052,10 @@ mod router_tests {
         b.connect(dier);
 
         let acts = b.network_disconnect("dier");
-        let p = find_publish_to(&acts, "watcher").expect("will routed");
+        let p = find_publish_to(&acts, "watcher").ok_or("the will was not routed")?;
         assert_eq!(p.topic, "home/dier/status");
         assert_eq!(&p.payload[..], b"offline");
+        Ok(())
     }
 
     #[test]
